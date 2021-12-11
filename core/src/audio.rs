@@ -34,6 +34,7 @@ cfg_if! {
         const INTERP_SAMPLE_ZERO: InterpSample = 0.0;
 
         #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "kebab-case")]
         pub enum InterpMethod {
             Nearest,
             Cubic,

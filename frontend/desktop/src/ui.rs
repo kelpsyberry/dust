@@ -903,7 +903,7 @@ pub fn main() {
                         let abs_base = [x_base + window_pos[0], y_base + window_pos[1]];
                         state.set_touchscreen_bounds(
                             [abs_base[0], abs_base[1] + height * 0.5],
-                            [abs_base[0] + width, abs_base[1] + height * 0.5],
+                            [abs_base[0] + width, abs_base[1] + height],
                             window,
                         );
                     });
