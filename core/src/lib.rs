@@ -1,0 +1,55 @@
+#![feature(
+    asm,
+    core_intrinsics,
+    // rustc_attrs,
+    adt_const_params,
+    doc_cfg,
+    step_trait,
+    maybe_uninit_uninit_array,
+)]
+#![warn(clippy::pedantic)]
+#![allow(
+    incomplete_features,
+    clippy::cast_lossless,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation,
+    clippy::struct_excessive_bools,
+    clippy::used_underscore_binding,
+    clippy::too_many_lines,
+    clippy::missing_panics_doc,
+    clippy::cast_ptr_alignment,
+    clippy::ptr_as_ptr,
+    clippy::option_if_let_else,
+    clippy::module_name_repetitions,
+    clippy::verbose_bit_mask,
+    clippy::wildcard_imports,
+    clippy::must_use_candidate,
+    clippy::unused_self,
+    clippy::missing_errors_doc,
+    clippy::if_same_then_else, // False positives
+)]
+
+extern crate bitflags;
+extern crate cfg_if;
+pub extern crate emu_utils as utils;
+
+pub mod audio;
+pub mod cpu;
+pub mod ds_slot;
+pub mod emu;
+pub mod flash;
+pub mod gpu;
+pub mod ipc;
+pub mod rtc;
+pub mod spi;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Model {
+    Ds,
+    Lite,
+    Ique,
+    IqueLite,
+    Dsi,
+}

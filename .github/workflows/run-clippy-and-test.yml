@@ -1,0 +1,68 @@
+name: Run Clippy and test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # `compile-shaders` shouldn't be enabled, as it requires building the entirety of shaderc from
+  # source.
+  FEATURES: log,debug-views,discord-presence
+  MACOSX_DEPLOYMENT_TARGET: 10.11
+
+jobs:
+  run-clippy-and-test:
+    name: Run Clippy and test
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install nightly toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+          toolchain: nightly
+          override: true
+          components: clippy
+
+    - name: Cache dependencies and build directory
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/bin
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+          target/
+        key: ${{ matrix.os }}-clippy
+
+    - name: Install GTK and ALSA
+      if: ${{ matrix.os == 'ubuntu-latest' }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install libgtk-3-dev libasound2-dev
+
+    - name: Run clippy (no default features)
+      uses: actions-rs/clippy-check@v1
+      with:
+        name: Run clippy (${{ matrix.os }}, no default features)
+        token: ${{ secrets.GITHUB_TOKEN }}
+        args: --no-default-features --package dust-desktop
+
+    - name: Run clippy (all features)
+      uses: actions-rs/clippy-check@v1
+      with:
+        name: Run clippy (${{ matrix.os }}, all features)
+        token: ${{ secrets.GITHUB_TOKEN }}
+        args: --features=${{ env.FEATURES }} --package dust-desktop
+
+    - name: Run tests (no default features)
+      run: cargo test --verbose --no-default-features --package dust-desktop
+
+    - name: Run tests (all features)
+      run: cargo test --verbose --features=${{ env.FEATURES }} --package dust-desktop

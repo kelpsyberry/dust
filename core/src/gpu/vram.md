@@ -1,0 +1,109 @@
+# VRAM map (based on GBATEK and notes in melonDS's `GPU.cpp`)
+
+## Bank and MST by usage
+- LCDC (0x29 16 KiB regions):
+    - A (`0`): `0x0..=0x7`
+    - B (`0`): `0x8..=0xF`
+    - C (`0`): `0x10..=0x17`
+    - D (`0`): `0x18..=0x1F`
+    - E (`0`): `0x20..=0x23`
+    - F (`0`): `0x24`
+    - G (`0`): `0x25`
+    - H (`0`): `0x26..=0x27`
+    - I (`0`): `0x28`
+- A BG (max 512 KiB, 32 16 KiB regions):
+    - A-D (`1`): `OFS << 3..=OFS << 3 | 7`
+    - E   (`1`): `0..=3`
+    - F-G (`1`): `(OFS & 1) | (OFS & 2) << 1`, `(OFS & 1) | (OFS & 2) << 1 | 2` (mirrored)
+- A OBJ (max 256 KiB, 16 16 KiB regions):
+    - A-B (`2`): `(OFS & 1) << 3..=(OFS & 1) << 3 | 7`
+    - E   (`2`): `0..=3`
+    - F-G (`2`): `(OFS & 1) | (OFS & 2) << 1`, `(OFS & 1) | (OFS & 2) << 1 | 2` (mirrored)
+- A BG extended palette (max 32 KiB, 2 16 KiB regions):
+    - E   (`4`): `0..=1` (only lower 32 KiB used)
+    - F-G (`4`): `OFS & 1`
+- A OBJ extended palette (1 8 KiB region):
+    - F-G (`5`): `0` (only lower 8 KiB used)
+- B BG (max 128 KiB, 8 16 KiB regions, but can be collapsed into 4 32 KiB regions for bank tracking):
+    - C (`4`): `0..=7`
+    - H (`1`): `0..=1`, `4..=5` (mirrored)
+    - I (`1`): `2..=3`, `6..=7` (mirrored)
+- B OBJ (max 128 KiB, 8 16 KiB regions, but can be collapsed into 1 128 KiB region for bank tracking):
+    - D (`4`): `0..=7`
+    - I (`2`): `0..=7` (mirrored)
+- B BG extended palette (1 32 KiB region):
+    - H (`2`): `0`
+- B OBJ extended palette (1 8 KiB region):
+    - I (`3`): `0` (only lower 8 KiB used)
+- Texture (max 512 KiB, 4 128 KiB regions):
+    - A-D (`3`): `OFS`
+- Texture palette (max 96 KiB, 6 16 KiB regions):
+    - E (`3`): `0..=3`
+    - F-G (`3`): `(OFS & 1) | (OFS & 2) << 1`
+- ARM7 (max 256 KiB, 2 128 KiB regions):
+    - C-D (`2`): `OFS & 1`
+
+## Usage by bank and MST
+- A (bit 2 unused):
+    - `0`: LCDC    @ `0x0..=0x7`
+    - `1`: A BG    @ `OFS << 3..=OFS << 3 | 7`
+    - `2`: A OBJ   @ `(OFS & 1) << 3..=(OFS & 1) << 3 | 7`
+    - `3`: Texture @ `OFS`
+- B (bit 2 unused):
+    - `0`: LCDC    @ `0x8..=0xF`
+    - `1`: A BG    @ `OFS << 3..=OFS << 3 | 7`
+    - `2`: A OBJ   @ `(OFS & 1) << 3..=(OFS & 1) << 3 | 7`
+    - `3`: Texture @ `OFS`
+- C (`5..=7` invalid?):
+    - `0`: LCDC    @ `0x10..=0x17`
+    - `1`: A BG    @ `OFS << 3..=OFS << 3 | 7`
+    - `2`: ARM7    @ `OFS & 1`
+    - `3`: Texture @ `OFS`
+    - `4`: B BG    @ `0..=7`
+- D (`5..=7` invalid?):
+    - `0`: LCDC    @ `0x18..=0x1F`
+    - `1`: A BG    @ `OFS << 3..=OFS << 3 | 7`
+    - `2`: ARM7    @ `OFS & 1`
+    - `3`: Texture @ `OFS`
+    - `4`: B OBJ   @ `0..=7`
+- E (`5..=7` invalid?):
+    - `0`: LCDC        @ `0x20..=0x23`
+    - `1`: A BG        @ `0..=3`
+    - `2`: A OBJ       @ `0..=3`
+    - `3`: Texpal      @ `0..=3`
+    - `4`: A BG extpal @ `0..=1` (only lower 32 KiB used)
+- F (`6..=7` invalid?):
+    - `0`: LCDC         @ `0x24`
+    - `2`: A BG         @ `(OFS & 1) | (OFS & 2) << 1`, `(OFS & 1) | (OFS & 2) << 1 | 2` (mirrored)
+    - `2`: A OBJ        @ `(OFS & 1) | (OFS & 2) << 1`, `(OFS & 1) | (OFS & 2) << 1 | 2` (mirrored)
+    - `3`: Texpal       @ `(OFS & 1) | (OFS & 2) << 1`
+    - `4`: A BG extpal  @ `OFS & 1`
+    - `5`: A OBJ extpal @ `0` (only lower 8 KiB used)
+- G (`6..=7` invalid?):
+    - `0`: LCDC         @ `0x25`
+    - `2`: A BG         @ `(OFS & 1) | (OFS & 2) << 1`, `(OFS & 1) | (OFS & 2) << 1 | 2` (mirrored)
+    - `2`: A OBJ        @ `(OFS & 1) | (OFS & 2) << 1`, `(OFS & 1) | (OFS & 2) << 1 | 2` (mirrored)
+    - `3`: Texpal       @ `(OFS & 1) | (OFS & 2) << 1`
+    - `4`: A BG extpal  @ `OFS & 1`
+    - `5`: A OBJ extpal @ `0` (only lower 8 KiB used)
+- H (bit 2 unused, `3` invalid?):
+    - `0`: LCDC        @ `0x26..=0x27`
+    - `1`: B BG        @ `0..=1`, `4..=5` (mirrored)
+    - `2`: B BG extpal @ `0`
+- I (bit 2 unused):
+    - `0`: LCDC         @ `0x28`
+    - `1`: B BG         @ `2..=3`, `6..=7` (mirrored)
+    - `2`: B OBJ        @ `0..=7` (mirrored)
+    - `3`: B OBJ extpal @ `0` (only lower 8 KiB used)
+
+## Notes
+ - For unmapped regions reads result in 0 (at least for CPU-visible ones, not verified for extpal/texture/texpal) and writes are ignored
+ - CPU map:
+     - LCDC is mirrored every `0x10_0000` bytes
+     - A BG is mirrored every `0x8_0000` bytes
+     - A OBJ is mirrored every `0x4_0000` bytes
+     - B BG and B OBJ are mirrored every `0x2_0000` bytes
+     - ARM7 is mirrored every `0x4_0000` bytes
+ - Overlap:
+     - When reading, values from all mapped banks are ORed together
+     - When writing, values are written to all mapped banks

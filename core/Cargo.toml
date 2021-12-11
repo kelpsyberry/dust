@@ -1,0 +1,36 @@
+[package]
+name = "dust-core"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[features]
+log = ["slog"]
+disasm = []
+
+# Bus fallback toggling (to temporarily switch to slow memory handlers for breakpoint checking or
+# JIT block invalidation)
+bft-r = []
+bft-w = []
+
+jit = ["bft-w"]
+
+interp-pipeline = []
+interp-pipeline-accurate-reloads = ["interp-pipeline"]
+interp-arm9-interlocks = ["interp-pipeline"]
+interp-r15-write-checks = []
+
+pu-checks = []
+
+xq-audio = []
+debugger-hooks = ["bft-r", "bft-w"]
+
+[dependencies]
+emu-utils = { git = "https://github.com/Kelpsy/emu-utils" }
+bitflags = "1.2"
+cfg-if = "1.0"
+slog = { version = "2.7", optional = true }
+serde = { version = "1.0", features = ["derive"] }
+
+[build-dependencies]
+arm-decoder = { git = "https://github.com/Kelpsy/arm-decoder" }

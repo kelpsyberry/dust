@@ -1,0 +1,71 @@
+name: Build release binaries
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  DEBUG_FEATURES: log,debug-views
+  MACOSX_DEPLOYMENT_TARGET: 10.11
+
+jobs:
+  build:
+    name: Build release binaries
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: Windows
+            artifact-extension: .exe
+          - os: ubuntu-latest
+            artifact: Linux
+          - os: macos-latest
+            artifact: macOS
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install nightly toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        override: true
+        components: clippy
+    
+    - name: Cache dependencies and build directory
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/bin
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+          target/
+        key: ${{ matrix.os }}-release
+
+    - name: Install GTK and ALSA
+      if: ${{ matrix.os == 'ubuntu-latest' }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install libgtk-3-dev libasound2-dev
+
+    - name: Build release binary (no debugging features)
+      run: cargo build --profile ci --verbose --no-default-features --package dust-desktop
+
+    - name: Upload release binary (no debugging features)
+      uses: actions/upload-artifact@v2
+      with:
+        name: ${{ matrix.artifact }}
+        path: target/ci/dust-desktop${{ matrix.artifact-extension }}
+
+    - name: Build release binary (debugging features)
+      run: cargo build --profile ci --verbose --features=${{ env.DEBUG_FEATURES }} --package dust-desktop
+      
+    - name: Upload release binary (debugging features)
+      uses: actions/upload-artifact@v2
+      with:
+        name: ${{ matrix.artifact }}-debug
+        path: target/ci/dust-desktop${{ matrix.artifact-extension }}
