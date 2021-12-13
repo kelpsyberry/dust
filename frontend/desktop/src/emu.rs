@@ -2,12 +2,19 @@
 use super::debug_views;
 use super::{audio, config::CommonLaunchConfig, input, triple_buffer, FrameData};
 use dust_core::{
-    audio::DummyBackend as DummyAudioBackend, cpu::interpreter::Interpreter, ds_slot,
-    utils::BoxedByteSlice,
+    audio::DummyBackend as DummyAudioBackend,
+    cpu::{arm9, interpreter::Interpreter},
+    ds_slot::{self, rom::Rom as DsSlotRom, spi::Spi as DsSlotSpi},
+    flash::Flash,
+    spi::firmware,
+    utils::{zeroed_box, BoxedByteSlice, Bytes},
+    SaveContents,
 };
 use parking_lot::RwLock;
 use std::{
+    fs::{self, File},
     hint,
+    io::{self, Read},
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -37,8 +44,10 @@ pub enum Message {
     Reset,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn main(
-    mut config: CommonLaunchConfig,
+    config: CommonLaunchConfig,
+    mut cur_save_path: Option<PathBuf>,
     ds_slot_rom: Option<BoxedByteSlice>,
     audio_tx_data: Option<audio::SenderData>,
     mut frame_tx: triple_buffer::Sender<FrameData>,
@@ -46,15 +55,124 @@ pub(super) fn main(
     shared_state: Arc<SharedState>,
     #[cfg(feature = "log")] logger: slog::Logger,
 ) -> triple_buffer::Sender<FrameData> {
-    let mut emu_builder = dust_core::emu::Builder::new();
+    let direct_boot = config.skip_firmware && ds_slot_rom.is_some();
+    let mut sync_to_audio = config.sync_to_audio.value;
 
-    emu_builder
-        .arm7_bios
-        .copy_from_slice(&config.sys_files.arm7_bios[..]);
-    emu_builder
-        .arm9_bios
-        .copy_from_slice(&config.sys_files.arm9_bios[..]);
+    println!("{:?}", cur_save_path);
+    let ds_slot_rom = if let Some(rom) = ds_slot_rom {
+        ds_slot::rom::normal::Normal::new(
+            rom,
+            &config.sys_files.arm7_bios,
+            #[cfg(feature = "log")]
+            logger.new(slog::o!("ds_rom" => "normal")),
+        )
+        .unwrap()
+        .into()
+    } else {
+        ds_slot::rom::Empty::new(
+            #[cfg(feature = "log")]
+            logger.new(slog::o!("ds_rom" => "empty")),
+        )
+        .into()
+    };
+    let spi_device = if let Some(path) = cur_save_path.as_deref() {
+        match File::open(path) {
+            Ok(mut save_file) => {
+                let save_len = save_file
+                    .metadata()
+                    .expect("Couldn't get save RAM file metadata")
+                    .len()
+                    .next_power_of_two() as usize;
+                let mut save = BoxedByteSlice::new_zeroed(save_len);
+                save_file
+                    .read_exact(&mut save[..])
+                    .expect("Couldn't read save file");
+                let save_contents = SaveContents::Existing(save);
+                match save_len {
+                    0x200 => Some(
+                        ds_slot::spi::eeprom_4k::Eeprom4K::new(
+                            save_contents,
+                            None,
+                            #[cfg(feature = "log")]
+                            logger.new(slog::o!("ds_spi" => "eeprom_4k")),
+                        )
+                        .expect("Couldn't create 4 Kib EEPROM DS slot SPI device")
+                        .into(),
+                    ),
+                    0x2000 | 0x8000 | 0x1_0000 | 0x2_0000 => Some(
+                        ds_slot::spi::eeprom_fram::EepromFram::new(
+                            save_contents,
+                            None,
+                            #[cfg(feature = "log")]
+                            logger.new(slog::o!("ds_spi" => "eeprom_fram")),
+                        )
+                        .expect("Couldn't create EEPROM/FRAM DS slot SPI device")
+                        .into(),
+                    ),
+                    0x4_0000 | 0x8_0000 | 0x10_0000 | 0x80_0000 => Some(
+                        ds_slot::spi::flash::Flash::new(
+                            save_contents,
+                            [0; 20],
+                            #[cfg(feature = "log")]
+                            logger.new(slog::o!("ds_spi" => "flash")),
+                        )
+                        .expect("Couldn't create FLASH DS slot SPI device")
+                        .into(),
+                    ),
+                    len => {
+                        #[cfg(feature = "log")]
+                        slog::error!(logger, "Unrecognized save file size: {} B.", len);
+                        None
+                    }
+                }
+            }
+            Err(err) => match err.kind() {
+                io::ErrorKind::NotFound => None,
+                err => {
+                    #[cfg(feature = "log")]
+                    slog::error!(logger, "Couldn't read save file: {:?}.", err);
+                    None
+                }
+            },
+        }
+    } else {
+        None
+    }
+    .unwrap_or_else(|| {
+        // TODO: Use a game database to detect the required device and save file size
+        ds_slot::spi::Empty::new(
+            #[cfg(feature = "log")]
+            logger.new(slog::o!("ds_spi" => "empty")),
+        )
+        .into()
+    });
+    let mut emu_builder = dust_core::emu::Builder::new(
+        config.sys_files.arm7_bios,
+        {
+            let mut bios = zeroed_box::<Bytes<{ arm9::BIOS_BUFFER_SIZE }>>();
+            bios[..arm9::BIOS_SIZE].copy_from_slice(&config.sys_files.arm9_bios[..]);
+            bios
+        },
+        Flash::new(
+            SaveContents::Existing(config.sys_files.firmware),
+            firmware::id_for_model(config.model),
+            #[cfg(feature = "log")]
+            logger.new(slog::o!("fw" => "")),
+        )
+        .expect("Couldn't build firmware"),
+        ds_slot_rom,
+        spi_device,
+        match &audio_tx_data {
+            Some(data) => Box::new(audio::Sender::new(data, sync_to_audio)),
+            None => Box::new(DummyAudioBackend),
+        },
+        #[cfg(feature = "log")]
+        &logger,
+    );
 
+    emu_builder.model = config.model;
+    emu_builder.direct_boot = direct_boot;
+    // TODO: Set batch_duration and first_launch?
     emu_builder.audio_sample_chunk_size = config.audio_sample_chunk_size as usize;
     #[cfg(feature = "xq-audio")]
     {
@@ -62,41 +180,7 @@ pub(super) fn main(
         emu_builder.audio_xq_interp_method = config.audio_xq_interp_method.value;
     }
 
-    // TODO: Set first_launch in emu_builder?
-    let mut emu = emu_builder
-        .build(
-            config.model,
-            config.sys_files.firmware,
-            if let Some(rom) = ds_slot_rom.clone() {
-                Box::new(
-                    ds_slot::rom::Normal::new(
-                        rom,
-                        &config.sys_files.arm7_bios,
-                        #[cfg(feature = "log")]
-                        logger.new(slog::o!("ds_rom" => "normal")),
-                    )
-                    .unwrap(),
-                )
-            } else {
-                Box::new(ds_slot::rom::Empty::new(
-                    #[cfg(feature = "log")]
-                    logger.new(slog::o!("ds_rom" => "empty")),
-                ))
-            },
-            Box::new(ds_slot::spi::Empty::new(
-                #[cfg(feature = "log")]
-                logger.new(slog::o!("ds_spi" => "normal")),
-            )),
-            config.skip_firmware && ds_slot_rom.is_some(),
-            Interpreter,
-            match &audio_tx_data {
-                Some(data) => Box::new(audio::Sender::new(data, config.sync_to_audio.value)),
-                None => Box::new(DummyAudioBackend),
-            },
-            #[cfg(feature = "log")]
-            &logger,
-        )
-        .expect("Couldn't setup emulator");
+    let mut emu = emu_builder.build(Interpreter);
 
     const FRAME_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
     let mut last_frame_time = Instant::now();
@@ -105,6 +189,22 @@ pub(super) fn main(
     let mut frames_since_last_fps_calc = 0;
     let mut last_fps_calc_time = last_frame_time;
     let mut fps = 0.0;
+
+    let mut last_save_flush_time = last_frame_time;
+
+    macro_rules! save {
+        ($save_path: expr) => {
+            if emu.ds_slot.spi.contents_dirty()
+                && $save_path
+                    .parent()
+                    .map(|parent| fs::create_dir_all(parent).is_ok())
+                    .unwrap_or(true)
+                && fs::write($save_path, &emu.ds_slot.spi.contents()[..]).is_ok()
+            {
+                emu.ds_slot.spi.mark_contents_flushed();
+            }
+        };
+    }
 
     #[cfg(feature = "debug-views")]
     let mut debug_views = debug_views::EmuState::new();
@@ -128,31 +228,35 @@ pub(super) fn main(
                     }
                 }
 
-                Message::UpdateSavePath(_new_path) => {
-                    // TOOD
+                Message::UpdateSavePath(new_path) => {
+                    if let Some(prev_path) = cur_save_path {
+                        let _ = if let Some(new_path) = &new_path {
+                            fs::rename(prev_path, new_path)
+                        } else {
+                            fs::remove_file(prev_path)
+                        };
+                    }
+                    cur_save_path = new_path;
                 }
 
                 Message::UpdateAudioSampleChunkSize(chunk_size) => {
-                    config.audio_sample_chunk_size = chunk_size;
                     emu.audio.sample_chunk_size = chunk_size as usize;
                 }
 
                 #[cfg(feature = "xq-audio")]
                 Message::UpdateAudioXqSampleRateShift(shift) => {
-                    config.audio_xq_sample_rate_shift.value = shift;
                     dust_core::audio::Audio::set_xq_sample_rate_shift(&mut emu, shift);
                 }
 
                 #[cfg(feature = "xq-audio")]
                 Message::UpdateAudioXqInterpMethod(interp_method) => {
-                    config.audio_xq_interp_method.value = interp_method;
                     emu.audio.set_xq_interp_method(interp_method);
                 }
 
-                Message::UpdateAudioSync(audio_sync) => {
-                    config.sync_to_audio.value = audio_sync;
+                Message::UpdateAudioSync(new_sync_to_audio) => {
+                    sync_to_audio = new_sync_to_audio;
                     if let Some(data) = &audio_tx_data {
-                        emu.audio.backend = Box::new(audio::Sender::new(data, audio_sync));
+                        emu.audio.backend = Box::new(audio::Sender::new(data, sync_to_audio));
                     }
                 }
 
@@ -162,59 +266,41 @@ pub(super) fn main(
                 }
 
                 Message::Reset => {
-                    let mut emu_builder = dust_core::emu::Builder::new();
-                    emu_builder
-                        .arm7_bios
-                        .copy_from_slice(&config.sys_files.arm7_bios[..]);
-                    emu_builder
-                        .arm9_bios
-                        .copy_from_slice(&config.sys_files.arm9_bios[..]);
+                    #[cfg(feature = "xq-audio")]
+                    let audio_xq_sample_rate_shift = emu.audio.xq_sample_rate_shift();
+                    #[cfg(feature = "xq-audio")]
+                    let audio_xq_interp_method = emu.audio.xq_interp_method();
 
-                    emu_builder.audio_sample_chunk_size = config.audio_sample_chunk_size as usize;
+                    let mut emu_builder = dust_core::emu::Builder::new(
+                        emu.arm7.into_bios().into(),
+                        emu.arm9.into_bios().into(),
+                        emu.spi.firmware.reset(),
+                        match emu.ds_slot.rom {
+                            DsSlotRom::Empty(device) => DsSlotRom::Empty(device.reset()),
+                            DsSlotRom::Normal(device) => DsSlotRom::Normal(device.reset()),
+                        },
+                        match emu.ds_slot.spi {
+                            DsSlotSpi::Empty(device) => DsSlotSpi::Empty(device.reset()),
+                            DsSlotSpi::Eeprom4K(device) => DsSlotSpi::Eeprom4K(device.reset()),
+                            DsSlotSpi::EepromFram(device) => DsSlotSpi::EepromFram(device.reset()),
+                            DsSlotSpi::Flash(device) => DsSlotSpi::Flash(device.reset()),
+                        },
+                        emu.audio.backend,
+                        #[cfg(feature = "log")]
+                        &logger,
+                    );
+
+                    emu_builder.model = config.model;
+                    emu_builder.direct_boot = direct_boot;
+                    // TODO: Set batch_duration and first_launch?
+                    emu_builder.audio_sample_chunk_size = emu.audio.sample_chunk_size;
                     #[cfg(feature = "xq-audio")]
                     {
-                        emu_builder.audio_xq_sample_rate_shift =
-                            config.audio_xq_sample_rate_shift.value;
-                        emu_builder.audio_xq_interp_method = config.audio_xq_interp_method.value;
+                        emu_builder.audio_xq_sample_rate_shift = audio_xq_sample_rate_shift;
+                        emu_builder.audio_xq_interp_method = audio_xq_interp_method;
                     }
 
-                    // TODO: Same as above
-                    emu = emu_builder
-                        .build(
-                            config.model,
-                            emu.spi.firmware.contents,
-                            if let Some(rom) = ds_slot_rom.clone() {
-                                Box::new(
-                                    ds_slot::rom::Normal::new(
-                                        rom,
-                                        &config.sys_files.arm7_bios,
-                                        #[cfg(feature = "log")]
-                                        logger.new(slog::o!("ds_rom" => "normal")),
-                                    )
-                                    .unwrap(),
-                                )
-                            } else {
-                                Box::new(ds_slot::rom::Empty::new(
-                                    #[cfg(feature = "log")]
-                                    logger.new(slog::o!("ds_rom" => "empty")),
-                                ))
-                            },
-                            Box::new(ds_slot::spi::Empty::new(
-                                #[cfg(feature = "log")]
-                                logger.new(slog::o!("ds_spi" => "normal")),
-                            )),
-                            config.skip_firmware && ds_slot_rom.is_some(),
-                            Interpreter,
-                            match &audio_tx_data {
-                                Some(data) => {
-                                    Box::new(audio::Sender::new(data, config.sync_to_audio.value))
-                                }
-                                None => Box::new(DummyAudioBackend),
-                            },
-                            #[cfg(feature = "log")]
-                            &logger,
-                        )
-                        .expect("Couldn't setup emulator");
+                    emu = emu_builder.build(Interpreter);
                 }
             }
         }
@@ -245,6 +331,14 @@ pub(super) fn main(
         frame.fps = fps;
 
         frame_tx.finish();
+
+        if let Some(save_path) = &cur_save_path {
+            let now = Instant::now();
+            if now - last_save_flush_time >= *shared_state.autosave_interval.read() {
+                last_save_flush_time = now;
+                save!(save_path);
+            }
+        }
 
         if !playing || shared_state.limit_framerate.load(Ordering::Relaxed) {
             let now = Instant::now();

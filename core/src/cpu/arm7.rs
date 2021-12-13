@@ -41,7 +41,7 @@ pub struct Arm7<E: Engine> {
 impl<E: Engine> Arm7<E> {
     pub(crate) fn new(
         engine_data: E::Arm7Data,
-        bios: Box<Bytes<BIOS_SIZE>>,
+        bios: OwnedBytesCellPtr<BIOS_SIZE>,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Self {
         let mut schedule = Schedule::new();
@@ -53,7 +53,7 @@ impl<E: Engine> Arm7<E> {
             #[cfg(feature = "debug-hooks")]
             debug: debug::CoreData::new(),
             engine_data,
-            bios: bios.into(),
+            bios,
             wram: OwnedBytesCellPtr::new_zeroed(),
             schedule,
             bus_ptrs: bus::Ptrs::new_boxed(),
@@ -188,8 +188,13 @@ impl<E: Engine> Arm7<E> {
     }
 
     #[inline]
-    pub fn bios(&self) -> &Bytes<0x4000> {
+    pub fn bios(&self) -> &Bytes<BIOS_SIZE> {
         unsafe { &*self.bios.as_bytes_ptr() }
+    }
+
+    #[inline]
+    pub fn into_bios(self) -> OwnedBytesCellPtr<BIOS_SIZE> {
+        self.bios
     }
 
     #[inline]

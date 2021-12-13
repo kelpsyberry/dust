@@ -433,21 +433,21 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
                         emu.gpu.vram.arm7_status().0 as u32 | (emu.swram.control().0 as u32) << 8
                     }
                     0x10_0000 => {
-                        if !A::IS_DEBUG {
-                            emu.ipc.recv_7(&mut emu.arm9.irqs)
-                        } else {
+                        if A::IS_DEBUG {
                             emu.ipc.peek_7()
+                        } else {
+                            emu.ipc.recv_7(&mut emu.arm9.irqs)
                         }
                     }
                     0x10_0010 => {
                         if emu.ds_slot.arm7_access() {
-                            if !A::IS_DEBUG {
+                            if A::IS_DEBUG {
+                                emu.ds_slot.peek_rom_data()
+                            } else {
                                 emu.ds_slot.consume_rom_data_arm7(
                                     &mut emu.arm7.irqs,
                                     &mut emu.arm7.schedule,
                                 )
-                            } else {
-                                emu.ds_slot.peek_rom_data()
                             }
                         } else {
                             // TODO: What happens?

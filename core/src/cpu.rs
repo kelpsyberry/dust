@@ -9,10 +9,10 @@ pub(crate) use irqs::Irqs;
 pub mod debug;
 pub mod arm7;
 pub mod arm9;
-pub mod dma;
-mod engines_common;
 #[cfg(feature = "disasm")]
 pub mod disasm;
+pub mod dma;
+mod engines_common;
 pub mod interpreter;
 #[cfg(feature = "jit")]
 pub mod jit;

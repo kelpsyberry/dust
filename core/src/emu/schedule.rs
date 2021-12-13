@@ -7,6 +7,8 @@ use crate::{
 };
 use core::ops::Add;
 
+pub const DEFAULT_BATCH_DURATION: u32 = 64;
+
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Timestamp(pub RawTimestamp);

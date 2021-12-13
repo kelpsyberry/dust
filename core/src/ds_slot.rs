@@ -1,3 +1,26 @@
+macro_rules! handle_variants {
+    ($ty: ident; $($variant: ident),*; $expr: expr, $f: ident $args: tt) => {
+        match $expr {
+            $(
+                $ty::$variant(value) => value.$f $args,
+            )*
+        }
+    }
+}
+
+macro_rules! impl_from_variants {
+    ($ty: ident; $($variant: ident),*; $($variant_ty: ty),*) => {
+        $(
+            impl From<$variant_ty> for $ty {
+                #[inline]
+                fn from(other: $variant_ty) -> Self {
+                    $ty::$variant(other)
+                }
+            }
+        )*
+    }
+}
+
 pub mod rom;
 pub mod spi;
 
@@ -52,8 +75,8 @@ mod bounded {
 pub use bounded::{RomOutputLen, RomOutputPos};
 
 pub struct DsSlot {
-    pub rom: Box<dyn rom::Rom>,
-    pub spi: Box<dyn spi::SpiDevice>,
+    pub rom: rom::Rom,
+    pub spi: spi::Spi,
     aux_spi_control: AuxSpiControl,
     rom_control: RomControl,
     pub rom_cmd: Bytes<8>,
@@ -71,8 +94,8 @@ pub struct DsSlot {
 
 impl DsSlot {
     pub(crate) fn new(
-        rom: Box<dyn rom::Rom>,
-        spi: Box<dyn spi::SpiDevice>,
+        rom: rom::Rom,
+        spi: spi::Spi,
         arm7_schedule: &mut arm7::Schedule,
         arm9_schedule: &mut arm9::Schedule,
     ) -> Self {

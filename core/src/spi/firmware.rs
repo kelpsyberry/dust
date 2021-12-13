@@ -122,6 +122,18 @@ pub fn verify(firmware: ByteSlice, model: Model) -> Result<(), VerificationError
     )
 }
 
+pub fn id_for_model(model: Model) -> [u8; 20] {
+    let mut id = [0; 20];
+    id[..3].copy_from_slice(&match model {
+        Model::Ds => [0x20, 0x40, 0x12],
+        Model::Lite => [0x20, 0x50, 0x12],
+        // TODO: What's the ID for the iQue Lite?
+        Model::Ique | Model::IqueLite => [0x20, 0x80, 0x13],
+        Model::Dsi => [0x20, 0x40, 0x11],
+    });
+    id
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelDetectionError {
     IncorrectSize,

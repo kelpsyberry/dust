@@ -1,37 +1,62 @@
-pub trait SpiDevice {
+mod empty;
+pub use empty::Empty;
+pub mod eeprom_4k;
+pub mod eeprom_fram;
+pub mod flash;
+
+use crate::utils::ByteSlice;
+
+trait SpiDevice {
+    fn contents(&self) -> ByteSlice;
+    fn contents_dirty(&self) -> bool;
+    fn mark_contents_flushed(&mut self);
     fn write_data(&mut self, data: u8, first: bool, last: bool) -> u8;
 }
 
-pub struct Empty {
-    #[cfg(feature = "log")]
-    logger: slog::Logger,
+#[derive(Clone)]
+pub enum Spi {
+    Eeprom4K(eeprom_4k::Eeprom4K),
+    EepromFram(eeprom_fram::EepromFram),
+    Flash(flash::Flash),
+    Empty(Empty),
 }
 
-#[allow(clippy::new_without_default)]
-impl Empty {
-    #[inline]
-    pub fn new(#[cfg(feature = "log")] logger: slog::Logger) -> Self {
-        Empty {
-            #[cfg(feature = "log")]
-            logger,
-        }
+impl Spi {
+    pub fn contents(&self) -> ByteSlice {
+        handle_variants!(
+            Spi;
+            Eeprom4K, EepromFram, Flash, Empty;
+            self, contents()
+        )
+    }
+
+    pub fn contents_dirty(&self) -> bool {
+        handle_variants!(
+            Spi;
+            Eeprom4K, EepromFram, Flash, Empty;
+            self, contents_dirty()
+        )
+    }
+
+    pub fn mark_contents_flushed(&mut self) {
+        handle_variants!(
+            Spi;
+            Eeprom4K, EepromFram, Flash, Empty;
+            self, mark_contents_flushed()
+        )
+    }
+
+    pub fn write_data(&mut self, data: u8, first: bool, last: bool) -> u8 {
+        handle_variants!(
+            Spi;
+            Eeprom4K, EepromFram, Flash, Empty;
+            self, write_data(data, first, last)
+        )
     }
 }
 
-impl SpiDevice for Empty {
-    fn write_data(&mut self, _data: u8, _first: bool, _last: bool) -> u8 {
-        #[cfg(feature = "log")]
-        slog::warn!(
-            self.logger,
-            "{:#04X} {}",
-            _data,
-            match (_first, _last) {
-                (false, false) => "",
-                (true, false) => "(first)",
-                (false, true) => "(last)",
-                (true, true) => "(first, last)",
-            }
-        );
-        0
-    }
-}
+impl_from_variants!(
+    Spi;
+    Eeprom4K, EepromFram, Flash, Empty;
+    eeprom_4k::Eeprom4K, eeprom_fram::EepromFram, flash::Flash, Empty
+);

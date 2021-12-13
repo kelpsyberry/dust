@@ -1,5 +1,7 @@
 mod schedule;
-pub use schedule::{event_slots, Event, EventSlotIndex, Schedule, Timestamp};
+pub use schedule::{
+    event_slots, Event, EventSlotIndex, Schedule, Timestamp, DEFAULT_BATCH_DURATION,
+};
 pub mod input;
 pub mod swram;
 
@@ -12,13 +14,13 @@ use crate::{
         Arm7Data, Arm9Data, CoreData,
     },
     ds_slot::{self, DsSlot},
-    flash,
+    flash::Flash,
     gpu::{self, Gpu},
     ipc::Ipc,
     rtc::Rtc,
     spi,
     utils::{
-        bitfield_debug, schedule::RawTimestamp, zeroed_box, BoxedByteSlice, ByteMutSlice, Bytes,
+        bitfield_debug, schedule::RawTimestamp, BoxedByteSlice, ByteMutSlice, Bytes,
         OwnedBytesCellPtr,
     },
     Model,
@@ -65,27 +67,53 @@ pub struct Emu<E: cpu::Engine> {
     rcnt: u16, // TODO: Move to SIO
 }
 
-pub struct Builder {
+pub struct Builder<'a> {
     pub arm7_bios: Box<Bytes<{ arm7::BIOS_SIZE }>>,
-    pub arm9_bios: Box<Bytes<{ arm9::BIOS_SIZE }>>,
+    pub arm9_bios: Box<Bytes<{ arm9::BIOS_BUFFER_SIZE }>>,
+    pub firmware: Flash,
+    pub ds_rom: ds_slot::rom::Rom,
+    pub ds_spi: ds_slot::spi::Spi,
+    pub audio_backend: Box<dyn audio::Backend>,
+    #[cfg(feature = "log")]
+    logger: &'a slog::Logger,
+
+    pub model: Model,
+    pub direct_boot: bool,
     pub batch_duration: u32,
-    pub audio_sample_chunk_size: usize,
     pub first_launch: bool,
+    pub audio_sample_chunk_size: usize,
     #[cfg(feature = "xq-audio")]
     pub audio_xq_sample_rate_shift: u8,
     #[cfg(feature = "xq-audio")]
     pub audio_xq_interp_method: audio::InterpMethod,
 }
 
-impl Builder {
+impl<'a> Builder<'a> {
     #[inline]
-    pub fn new() -> Self {
+    pub fn new(
+        arm7_bios: Box<Bytes<{ arm7::BIOS_SIZE }>>,
+        arm9_bios: Box<Bytes<{ arm9::BIOS_BUFFER_SIZE }>>,
+        firmware: Flash,
+        ds_rom: ds_slot::rom::Rom,
+        ds_spi: ds_slot::spi::Spi,
+        audio_backend: Box<dyn audio::Backend>,
+        #[cfg(feature = "log")] logger: &'a slog::Logger,
+    ) -> Self {
         Builder {
-            arm7_bios: zeroed_box(),
-            arm9_bios: zeroed_box(),
-            batch_duration: 64,
-            audio_sample_chunk_size: audio::DEFAULT_SAMPLE_CHUNK_SIZE,
+            arm7_bios,
+            arm9_bios,
+            firmware,
+            ds_rom,
+            ds_spi,
+            audio_backend,
+            #[cfg(feature = "log")]
+            logger,
+
+            model: Model::Ds,
+            direct_boot: true,
+            batch_duration: DEFAULT_BATCH_DURATION,
             first_launch: false,
+            audio_sample_chunk_size: audio::DEFAULT_SAMPLE_CHUNK_SIZE,
             #[cfg(feature = "xq-audio")]
             audio_xq_sample_rate_shift: 0,
             #[cfg(feature = "xq-audio")]
@@ -93,33 +121,19 @@ impl Builder {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    /// # Errors
-    /// - [`CreationError::SizeNotPowerOfTwo`](flash::CreationError::SizeNotPowerOfTwo): the given
-    ///   firmware image's size is not a power of two.
-    pub fn build<E: cpu::Engine>(
-        self,
-        model: Model,
-        firmware_contents: BoxedByteSlice,
-        ds_rom: Box<dyn ds_slot::rom::Rom>,
-        ds_spi: Box<dyn ds_slot::spi::SpiDevice>,
-        direct_boot: bool,
-        engine: E,
-        audio_backend: Box<dyn audio::Backend>,
-        #[cfg(feature = "log")] logger: &slog::Logger,
-    ) -> Result<Emu<E>, flash::CreationError> {
+    pub fn build<E: cpu::Engine>(self, engine: E) -> Emu<E> {
         let (global_engine_data, arm7_engine_data, arm9_engine_data) = engine.into_data();
         let mut arm7 = Arm7::new(
             arm7_engine_data,
-            self.arm7_bios,
+            self.arm7_bios.into(),
             #[cfg(feature = "log")]
-            logger.new(slog::o!("cpu" => "arm7")),
+            self.logger.new(slog::o!("cpu" => "arm7")),
         );
         let mut arm9 = Arm9::new(
             arm9_engine_data,
-            self.arm9_bios,
+            self.arm9_bios.into(),
             #[cfg(feature = "log")]
-            logger.new(slog::o!("cpu" => "arm9")),
+            self.logger.new(slog::o!("cpu" => "arm9")),
         );
         let mut global_schedule = Schedule::new(Timestamp(self.batch_duration as RawTimestamp));
         let mut emu = Emu {
@@ -128,28 +142,33 @@ impl Builder {
             swram: Swram::new(),
             global_ex_mem_control: GlobalExMemControl(0x6000),
             ipc: Ipc::new(),
-            ds_slot: DsSlot::new(ds_rom, ds_spi, &mut arm7.schedule, &mut arm9.schedule),
+            ds_slot: DsSlot::new(
+                self.ds_rom,
+                self.ds_spi,
+                &mut arm7.schedule,
+                &mut arm9.schedule,
+            ),
             spi: spi::Controller::new(
-                firmware_contents,
-                model,
+                self.firmware,
+                self.model,
                 &mut arm7.schedule,
                 &mut global_schedule,
                 #[cfg(feature = "log")]
-                logger.new(slog::o!("spi" => "")),
-            )?,
+                self.logger.new(slog::o!("spi" => "")),
+            ),
             rtc: Rtc::new(
                 self.first_launch,
                 #[cfg(feature = "log")]
-                logger.new(slog::o!("rtc" => "")),
+                self.logger.new(slog::o!("rtc" => "")),
             ),
             gpu: Gpu::new(
                 &mut global_schedule,
                 #[cfg(feature = "log")]
-                &logger.new(slog::o!("gpu" => "")),
+                &self.logger.new(slog::o!("gpu" => "")),
             ),
             input: Input(0x007F_03FF),
             audio: Audio::new(
-                audio_backend,
+                self.audio_backend,
                 &mut arm7.schedule,
                 self.audio_sample_chunk_size,
                 #[cfg(feature = "xq-audio")]
@@ -157,7 +176,7 @@ impl Builder {
                 #[cfg(feature = "xq-audio")]
                 self.audio_xq_interp_method,
                 #[cfg(feature = "log")]
-                logger.new(slog::o!("audio" => "")),
+                self.logger.new(slog::o!("audio" => "")),
             ),
             rcnt: 0,
             schedule: global_schedule,
@@ -166,20 +185,14 @@ impl Builder {
         };
         Arm7::setup(&mut emu);
         Arm9::setup(&mut emu);
-        emu.ds_slot.rom.setup(direct_boot, emu.arm7.bios());
+        emu.ds_slot.rom.setup(self.direct_boot);
         emu.swram.recalc(&mut emu.arm7, &mut emu.arm9);
         E::Arm7Data::setup(&mut emu);
         E::Arm9Data::setup(&mut emu);
-        if direct_boot {
+        if self.direct_boot {
             emu.setup_direct_boot();
         }
-        Ok(emu)
-    }
-}
-
-impl Default for Builder {
-    fn default() -> Self {
-        Self::new()
+        emu
     }
 }
 

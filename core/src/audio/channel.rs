@@ -607,16 +607,27 @@ impl Channel {
         let elapsed = 512 >> xq_sample_rate_shift;
         let mut timer_counter = channel.timer_counter as u32 + elapsed;
         let timer_reload = channel.timer_reload as u32;
-        while timer_counter >> 16 != 0 {
+        if channel.control.running() {
+            while timer_counter >> 16 != 0 {
+                #[cfg(feature = "xq-audio")]
+                {
+                    let channel = &mut emu.audio.channels[i.get() as usize];
+                    channel.last_sample_time = Some(arm7::Timestamp(
+                        time.0 - ((timer_counter - (1 << 16)) << 1) as RawTimestamp,
+                    ));
+                }
+                timer_counter = timer_counter - (1 << 16) + timer_reload;
+                f(emu, i);
+            }
+        } else {
+            channel.push_sample(0);
             #[cfg(feature = "xq-audio")]
-            {
-                let channel = &mut emu.audio.channels[i.get() as usize];
+            while timer_counter >> 16 != 0 {
                 channel.last_sample_time = Some(arm7::Timestamp(
                     time.0 - ((timer_counter - (1 << 16)) << 1) as RawTimestamp,
                 ));
+                timer_counter = timer_counter - (1 << 16) + timer_reload;
             }
-            timer_counter = timer_counter - (1 << 16) + timer_reload;
-            f(emu, i);
         }
         let channel = &mut emu.audio.channels[i.get() as usize];
         channel.timer_counter = timer_counter as u16;

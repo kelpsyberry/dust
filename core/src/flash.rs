@@ -1,4 +1,7 @@
-use crate::utils::{bitfield_debug, fill_8, BoxedByteSlice};
+use crate::{
+    utils::{bitfield_debug, zeroed_box, BoxedByteSlice, ByteSlice},
+    SaveContents,
+};
 
 bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -8,21 +11,27 @@ bitfield_debug! {
     }
 }
 
+#[derive(Clone)]
 pub struct Flash {
     #[cfg(feature = "log")]
     logger: slog::Logger,
-    pub contents: BoxedByteSlice,
-    contents_len_mask: u32,
-    cur_addr: u32,
-    cur_command_pos: u8,
+
     id: [u8; 20],
+
+    contents: BoxedByteSlice,
+    contents_len_mask: u32,
+    contents_dirty: bool,
+
     status: Status,
-    power_down: bool,
-    cur_command: u8,
-    pub contents_dirty: bool,
-    write_buffer: [u8; 256],
+    powered_down: bool,
+
+    write_buffer: Box<[u8; 256]>,
     write_buffer_start: u8,
     write_buffer_end: u8,
+
+    cur_command: u8,
+    cur_command_pos: u8,
+    cur_addr: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,8 +40,8 @@ pub enum CreationError {
 }
 
 impl Flash {
-    pub(crate) fn new(
-        contents: BoxedByteSlice,
+    pub fn new(
+        contents: SaveContents,
         id: [u8; 20],
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Result<Self, CreationError> {
@@ -43,67 +52,105 @@ impl Flash {
         Ok(Flash {
             #[cfg(feature = "log")]
             logger,
-            contents,
-            contents_len_mask,
-            cur_addr: 0,
-            cur_command_pos: 0,
+
             id,
-            status: Status(0),
-            power_down: false,
-            cur_command: 0,
+
+            contents: contents.get_or_create(|len| {
+                let mut contents = BoxedByteSlice::new_zeroed(len);
+                contents.fill(0xFF);
+                contents
+            }),
+            contents_len_mask,
             contents_dirty: false,
-            write_buffer: [0; 256],
+
+            status: Status(0),
+            powered_down: false,
+
+            write_buffer: zeroed_box(),
             write_buffer_start: 0,
             write_buffer_end: 0,
+
+            cur_command: 0,
+            cur_command_pos: 0,
+            cur_addr: 0,
         })
     }
 
+    pub fn reset(self) -> Self {
+        Flash {
+            status: Status(0),
+            powered_down: false,
+
+            write_buffer_start: 0,
+            write_buffer_end: 0,
+
+            cur_command: 0,
+            cur_command_pos: 0,
+            cur_addr: 0,
+
+            ..self
+        }
+    }
+
     #[inline]
-    pub const fn id(&self) -> &[u8; 20] {
+    pub fn contents(&self) -> ByteSlice {
+        self.contents.as_byte_slice()
+    }
+
+    #[inline]
+    pub fn contents_dirty(&self) -> bool {
+        self.contents_dirty
+    }
+
+    #[inline]
+    pub fn mark_contents_flushed(&mut self) {
+        self.contents_dirty = false;
+    }
+
+    #[inline]
+    pub fn id(&self) -> &[u8; 20] {
         &self.id
     }
 
     #[inline]
-    pub const fn status(&self) -> Status {
+    pub fn status(&self) -> Status {
         self.status
     }
 
     #[inline]
-    pub const fn power_down(&self) -> bool {
-        self.power_down
+    pub fn powered_down(&self) -> bool {
+        self.powered_down
     }
 
     #[inline]
-    pub const fn cur_command(&self) -> u8 {
+    pub fn cur_command(&self) -> u8 {
         self.cur_command
     }
 
     #[inline]
-    pub const fn cur_addr(&self) -> u32 {
+    pub fn cur_addr(&self) -> u32 {
         self.cur_addr
     }
 
     #[inline]
-    pub const fn cur_command_pos(&self) -> u8 {
+    pub fn cur_command_pos(&self) -> u8 {
         self.cur_command_pos
     }
 
-    pub fn handle_byte(&mut self, value: u8, is_first: bool, is_last: bool) -> u8 {
+    pub fn handle_byte(&mut self, value: u8, first: bool, last: bool) -> u8 {
         // Implemented based on official docs for the ST M25PE40, found in the iQue DS, and
-        // Sanyo LE25FW403A (similar to the flash memory used in some DS cartridges)
+        // Sanyo LE25FW403A (similar to the flash memory used in some DS cartridges).
         // TODO:
         // - What happens when writes are disabled and a write command is issued?
-        // - What's the range for the amount of written bytes (GBATEK says 1-256) and what
-        //   happens if it's exceeded?
         // - What's the actual value for high-z responses? Since no other device should be
-        //   connected, does it float to 0 or 1?
-        if is_first {
+        //   connected, does it float to 0 or 0xFF?
+        if first {
             self.cur_command = value;
             self.cur_command_pos = 0;
         }
-        if self.power_down {
+        if self.powered_down {
             if self.cur_command == 0xAB {
-                self.power_down = false;
+                self.powered_down = false;
             }
             0xFF // High-Z
         } else {
@@ -217,7 +264,7 @@ impl Flash {
                                 self.write_buffer_start = self.write_buffer_start.wrapping_add(1);
                             }
                             self.write_buffer_end = self.write_buffer_end.wrapping_add(1);
-                            if is_last {
+                            if last {
                                 // TODO: When more than 256 bytes are written, should the address be
                                 // advanced even for the unwritten ones or should the write start at
                                 // the original address, completely ignoring the skipped leading
@@ -264,7 +311,7 @@ impl Flash {
                                 self.write_buffer_start = self.write_buffer_start.wrapping_add(1);
                             }
                             self.write_buffer_end = self.write_buffer_end.wrapping_add(1);
-                            if is_last {
+                            if last {
                                 // TODO: See note for write command
                                 let mut addr = self.cur_addr;
                                 let page_base_addr = addr & !0xFF;
@@ -299,15 +346,14 @@ impl Flash {
                         }
                         _ => {
                             self.cur_addr &= !0xFF;
-                            if is_last {
-                                fill_8(
-                                    unsafe {
-                                        self.contents.get_unchecked_mut(
+                            if last {
+                                unsafe {
+                                    self.contents
+                                        .get_unchecked_mut(
                                             self.cur_addr as usize..self.cur_addr as usize + 0x100,
                                         )
-                                    },
-                                    0xFF,
-                                );
+                                        .fill(0xFF);
+                                }
                                 self.contents_dirty = true;
                             }
                         }
@@ -328,16 +374,15 @@ impl Flash {
                         }
                         _ => {
                             self.cur_addr &= !0xFFFF;
-                            if is_last {
-                                fill_8(
-                                    unsafe {
-                                        self.contents.get_unchecked_mut(
+                            if last {
+                                unsafe {
+                                    self.contents
+                                        .get_unchecked_mut(
                                             self.cur_addr as usize
                                                 ..self.cur_addr as usize + 0x1_0000,
                                         )
-                                    },
-                                    0xFF,
-                                );
+                                        .fill(0xFF);
+                                }
                                 self.contents_dirty = true;
                             }
                         }
@@ -347,8 +392,8 @@ impl Flash {
 
                 0xC7 => {
                     // Erase entire chip
-                    if is_last {
-                        fill_8(&mut self.contents[..], 0xFF);
+                    if last {
+                        self.contents.fill(0xFF);
                         self.contents_dirty = true;
                     }
                     0xFF // High-Z
@@ -356,12 +401,12 @@ impl Flash {
 
                 0xB9 => {
                     // Power down
-                    self.power_down = true;
+                    self.powered_down = true;
                     0xFF // High-Z
                 }
 
                 _ => {
-                    if is_first {
+                    if first {
                         #[cfg(feature = "log")]
                         slog::warn!(self.logger, "Unrecognized command: {:#X}", self.cur_command);
                     }

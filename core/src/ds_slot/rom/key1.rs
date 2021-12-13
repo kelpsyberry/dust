@@ -4,7 +4,7 @@ use crate::{cpu::arm7, utils::Bytes};
 pub struct KeyBuffer {
     key_buf: [u32; 0x412],
     key_code: [u32; 3],
-    level: u8,
+    level_3: bool,
 }
 
 impl KeyBuffer {
@@ -17,8 +17,9 @@ impl KeyBuffer {
         let mut result = KeyBuffer {
             key_buf,
             key_code,
-            level: 1,
+            level_3: false,
         };
+        result.apply_key_code::<MODULO>();
         result.apply_key_code::<MODULO>();
         result
     }
@@ -67,24 +68,13 @@ impl KeyBuffer {
         }
     }
 
-    pub fn make_level_2<const MODULO: usize>(&mut self) {
-        if self.level >= 2 {
-            return;
-        }
-        self.apply_key_code::<MODULO>();
-        self.level += 1;
-    }
-
     pub fn make_level_3<const MODULO: usize>(&mut self) {
-        if self.level >= 3 {
+        if self.level_3 {
             return;
         }
-        if self.level == 1 {
-            self.make_level_2::<MODULO>();
-        }
+        self.level_3 = true;
         self.key_code[1] <<= 1;
         self.key_code[2] >>= 1;
         self.apply_key_code::<MODULO>();
-        self.level += 1;
     }
 }

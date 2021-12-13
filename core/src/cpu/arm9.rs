@@ -14,7 +14,7 @@ use super::{psr::Cpsr, timers::Timers, CoreData, Engine};
 use crate::{
     cpu,
     emu::{swram::Swram, Emu, LocalExMemControl},
-    utils::{bitfield_debug, zeroed_box, Bytes, OwnedBytesCellPtr},
+    utils::{bitfield_debug, Bytes, OwnedBytesCellPtr},
 };
 use cfg_if::cfg_if;
 use cp15::Cp15;
@@ -30,7 +30,7 @@ bitfield_debug! {
 }
 
 pub const BIOS_SIZE: usize = 0x1000;
-pub(crate) const BIOS_BUFFER_SIZE: usize = bus::ptrs::Ptrs::PAGE_SIZE;
+pub const BIOS_BUFFER_SIZE: usize = bus::ptrs::Ptrs::PAGE_SIZE;
 
 pub struct Arm9<E: Engine> {
     #[cfg(feature = "log")]
@@ -56,7 +56,7 @@ pub struct Arm9<E: Engine> {
 impl<E: Engine> Arm9<E> {
     pub(crate) fn new(
         engine_data: E::Arm9Data,
-        bios: Box<Bytes<BIOS_SIZE>>,
+        bios: OwnedBytesCellPtr<BIOS_BUFFER_SIZE>,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Self {
         let mut schedule = Schedule::new();
@@ -69,12 +69,7 @@ impl<E: Engine> Arm9<E> {
             #[cfg(feature = "debug-hooks")]
             debug: debug::CoreData::new(),
             engine_data,
-            bios: {
-                let mut buffer = zeroed_box::<Bytes<BIOS_BUFFER_SIZE>>();
-                buffer[..BIOS_SIZE].copy_from_slice(&bios[..]);
-                drop(bios);
-                buffer.into()
-            },
+            bios,
             schedule,
             bus_ptrs: bus::ptrs::Ptrs::new_boxed(),
             bus_timings: bus::timings::Timings::new_boxed(),
@@ -206,6 +201,16 @@ impl<E: Engine> Arm9<E> {
                 todo!();
             }
         }
+    }
+
+    #[inline]
+    pub fn bios(&self) -> &Bytes<BIOS_BUFFER_SIZE> {
+        unsafe { &*self.bios.as_bytes_ptr() }
+    }
+
+    #[inline]
+    pub fn into_bios(self) -> OwnedBytesCellPtr<BIOS_BUFFER_SIZE> {
+        self.bios
     }
 
     #[inline]

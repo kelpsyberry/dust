@@ -5,8 +5,8 @@ pub mod tsc;
 use crate::{
     cpu::{arm7, Schedule as _},
     emu::{self, input::Input},
-    flash::{self, Flash},
-    utils::{bitfield_debug, BoxedByteSlice},
+    flash::Flash,
+    utils::bitfield_debug,
     Model,
 };
 use power::Power;
@@ -41,31 +41,18 @@ pub struct Controller {
 
 impl Controller {
     pub(crate) fn new(
-        firmware_contents: BoxedByteSlice,
+        firmware: Flash,
         model: Model,
         arm7_schedule: &mut arm7::Schedule,
         emu_schedule: &mut emu::Schedule,
         #[cfg(feature = "log")] logger: slog::Logger,
-    ) -> Result<Self, flash::CreationError> {
+    ) -> Self {
         arm7_schedule.set_event(arm7::event_slots::SPI, arm7::Event::SpiDataReady);
-        let mut firmware_id = [0; 20];
-        firmware_id[..3].copy_from_slice(&match model {
-            Model::Ds => [0x20, 0x40, 0x12],
-            Model::Lite => [0x20, 0x50, 0x12],
-            // TODO: What's the ID for the iQue Lite?
-            Model::Ique | Model::IqueLite => [0x20, 0x80, 0x13],
-            Model::Dsi => [0x20, 0x40, 0x11],
-        });
-        Ok(Controller {
+        Controller {
             control: Control(0),
             data_out: 0,
             firmware_hold: false,
-            firmware: Flash::new(
-                firmware_contents,
-                firmware_id,
-                #[cfg(feature = "log")]
-                logger.new(slog::o!("fw" => "")),
-            )?,
+            firmware,
             power_hold: false,
             power: Power::new(model == Model::Lite, arm7_schedule, emu_schedule),
             touchscreen_hold: false,
@@ -76,7 +63,7 @@ impl Controller {
             ),
             #[cfg(feature = "log")]
             logger,
-        })
+        }
     }
 
     #[inline]

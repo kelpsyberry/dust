@@ -29,7 +29,7 @@ use std::{
     env,
     fs::{self, File},
     io::Read,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -170,9 +170,13 @@ impl UiState {
             &game_config.contents,
             game_title,
         ) {
-            Ok(launch_config) => {
+            Ok((launch_config, warnings)) => {
+                if !warnings.is_empty() {
+                    warning!("Firmware verification failed", "{}", format_list!(warnings));
+                }
                 self.start(
                     launch_config.common,
+                    launch_config.cur_save_path,
                     game_title.to_string(),
                     Some(game_config),
                     Some(ds_slot_rom),
@@ -181,11 +185,7 @@ impl UiState {
             Err(errors) => {
                 config_error!(
                     "Couldn't determine final configuration for game: {}",
-                    errors.into_iter().fold(String::new(), |mut acc, err| {
-                        use core::fmt::Write;
-                        let _ = write!(acc, "\n- {}", err);
-                        acc
-                    })
+                    format_list!(errors)
                 );
             }
         }
@@ -193,17 +193,16 @@ impl UiState {
 
     fn load_firmware(&mut self) {
         match config::firmware_launch_config(&self.global_config.contents) {
-            Ok(launch_config) => {
-                self.start(launch_config, "Firmware".to_string(), None, None);
+            Ok((launch_config, warnings)) => {
+                if !warnings.is_empty() {
+                    warning!("Firmware verification failed", "{}", format_list!(warnings));
+                }
+                self.start(launch_config, None, "Firmware".to_string(), None, None);
             }
             Err(errors) => {
                 config_error!(
                     "Couldn't determine final configuration for firmware: {}",
-                    errors.into_iter().fold(String::new(), |mut acc, err| {
-                        use core::fmt::Write;
-                        let _ = write!(acc, "\n- {}", err);
-                        acc
-                    })
+                    format_list!(errors)
                 );
             }
         }
@@ -212,6 +211,7 @@ impl UiState {
     fn start(
         &mut self,
         config: CommonLaunchConfig,
+        cur_save_path: Option<PathBuf>,
         game_title: String,
         game_config: Option<Config<config::Game>>,
         ds_slot_rom: Option<BoxedByteSlice>,
@@ -267,6 +267,7 @@ impl UiState {
                 .spawn(move || {
                     emu::main(
                         config,
+                        cur_save_path,
                         ds_slot_rom,
                         audio_tx_data,
                         frame_tx,

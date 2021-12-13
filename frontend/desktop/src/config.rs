@@ -281,6 +281,44 @@ pub enum SystemFile {
 }
 
 #[derive(Debug)]
+pub enum LaunchConfigWarning {
+    InvalidFirmware(firmware::VerificationError),
+}
+
+impl fmt::Display for LaunchConfigWarning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LaunchConfigWarning::InvalidFirmware(verification_error) => match verification_error {
+                firmware::VerificationError::IncorrectSize(got) => {
+                    write!(f, "Invalid firmware size ({} bytes)", got)
+                }
+                firmware::VerificationError::IncorrectCrc16 {
+                    region,
+                    expected,
+                    calculated,
+                } => write!(
+                    f,
+                    concat!(
+                        "Incorrect CRC16 for firmware {} region: expected {:#06X}, calculated ",
+                        "{:#06X}",
+                    ),
+                    match region {
+                        firmware::VerificationRegion::Wifi => "Wi-Fi",
+                        firmware::VerificationRegion::Ap1 => "Access Point 1",
+                        firmware::VerificationRegion::Ap2 => "Access Point 2",
+                        firmware::VerificationRegion::Ap3 => "Access Point 3",
+                        firmware::VerificationRegion::User0 => "User 0",
+                        firmware::VerificationRegion::User1 => "User 1",
+                    },
+                    expected,
+                    calculated
+                ),
+            },
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum LaunchConfigError {
     MissingSysPath(SystemFile),
     SysFileError(SystemFile, io::Error),
@@ -289,7 +327,6 @@ pub enum LaunchConfigError {
         expected: usize,
         got: u64,
     },
-    InvalidFirmware(firmware::VerificationError),
     UnknownModel(firmware::ModelDetectionError),
 }
 
@@ -319,32 +356,6 @@ impl fmt::Display for LaunchConfigError {
                     SYS_FILE_NAMES[*file as usize], expected, got
                 )
             }
-            LaunchConfigError::InvalidFirmware(verification_error) => match verification_error {
-                firmware::VerificationError::IncorrectSize(got) => {
-                    write!(f, "Invalid firmware size ({} bytes)", got)
-                }
-                firmware::VerificationError::IncorrectCrc16 {
-                    region,
-                    expected,
-                    calculated,
-                } => write!(
-                    f,
-                    concat!(
-                        "Incorrect CRC16 for firmware {} region: expected {:#06X}, calculated ",
-                        "{:#06X}",
-                    ),
-                    match region {
-                        firmware::VerificationRegion::Wifi => "Wi-Fi",
-                        firmware::VerificationRegion::Ap1 => "Access Point 1",
-                        firmware::VerificationRegion::Ap2 => "Access Point 2",
-                        firmware::VerificationRegion::Ap3 => "Access Point 3",
-                        firmware::VerificationRegion::User0 => "User 0",
-                        firmware::VerificationRegion::User1 => "User 1",
-                    },
-                    expected,
-                    calculated
-                ),
-            },
             LaunchConfigError::UnknownModel(_) => {
                 write!(
                     f,
@@ -451,7 +462,7 @@ fn read_sys_files(paths: SysPaths, errors: &mut Vec<LaunchConfigError>) -> Optio
 fn common_launch_config(
     global_config: &Global,
     game_config: Option<&Game>,
-) -> Result<CommonLaunchConfig, Vec<LaunchConfigError>> {
+) -> Result<(CommonLaunchConfig, Vec<LaunchConfigWarning>), Vec<LaunchConfigError>> {
     macro_rules! plain_setting {
         ($field: ident) => {
             game_config
@@ -495,7 +506,9 @@ fn common_launch_config(
         };
     }
 
+    let mut warnings = Vec::new();
     let mut errors = Vec::new();
+
     let sys_files = read_sys_files(
         SysPaths {
             arm7_bios: sys_path!(arm7_bios, "biosnds7.bin"),
@@ -523,7 +536,7 @@ fn common_launch_config(
         };
         if let Some(model) = model {
             if let Err(error) = firmware::verify(firmware.as_byte_slice(), model) {
-                errors.push(LaunchConfigError::InvalidFirmware(error));
+                warnings.push(LaunchConfigWarning::InvalidFirmware(error));
             }
         }
     }
@@ -543,26 +556,29 @@ fn common_launch_config(
     let pause_on_launch = plain_setting!(pause_on_launch);
     let autosave_interval_ms = runtime_modifiable!(autosave_interval_ms);
 
-    Ok(CommonLaunchConfig {
-        sys_files: sys_files.unwrap(),
-        skip_firmware,
-        model: model.unwrap(),
-        limit_framerate,
-        sync_to_audio,
-        audio_interp_method,
-        audio_sample_chunk_size: global_config.audio_sample_chunk_size,
-        #[cfg(feature = "xq-audio")]
-        audio_xq_sample_rate_shift,
-        #[cfg(feature = "xq-audio")]
-        audio_xq_interp_method,
-        pause_on_launch,
-        autosave_interval_ms,
-    })
+    Ok((
+        CommonLaunchConfig {
+            sys_files: sys_files.unwrap(),
+            skip_firmware,
+            model: model.unwrap(),
+            limit_framerate,
+            sync_to_audio,
+            audio_interp_method,
+            audio_sample_chunk_size: global_config.audio_sample_chunk_size,
+            #[cfg(feature = "xq-audio")]
+            audio_xq_sample_rate_shift,
+            #[cfg(feature = "xq-audio")]
+            audio_xq_interp_method,
+            pause_on_launch,
+            autosave_interval_ms,
+        },
+        warnings,
+    ))
 }
 
 pub fn firmware_launch_config(
     global_config: &Global,
-) -> Result<CommonLaunchConfig, Vec<LaunchConfigError>> {
+) -> Result<(CommonLaunchConfig, Vec<LaunchConfigWarning>), Vec<LaunchConfigError>> {
     common_launch_config(global_config, None)
 }
 
@@ -570,8 +586,8 @@ pub fn game_launch_config(
     global_config: &Global,
     game_config: &Game,
     game_title: &str,
-) -> Result<GameLaunchConfig, Vec<LaunchConfigError>> {
-    let common = common_launch_config(global_config, Some(game_config))?;
+) -> Result<(GameLaunchConfig, Vec<LaunchConfigWarning>), Vec<LaunchConfigError>> {
+    let (common, warnings) = common_launch_config(global_config, Some(game_config))?;
 
     let cur_save_path = save_path(
         &global_config.save_dir_path,
@@ -579,8 +595,11 @@ pub fn game_launch_config(
         game_title,
     );
 
-    Ok(GameLaunchConfig {
-        common,
-        cur_save_path,
-    })
+    Ok((
+        GameLaunchConfig {
+            common,
+            cur_save_path,
+        },
+        warnings,
+    ))
 }

@@ -53,3 +53,37 @@ pub enum Model {
     IqueLite,
     Dsi,
 }
+
+#[derive(Clone)]
+pub enum SaveContents {
+    Existing(utils::BoxedByteSlice),
+    New(usize),
+}
+
+impl From<utils::BoxedByteSlice> for SaveContents {
+    #[inline]
+    fn from(other: utils::BoxedByteSlice) -> Self {
+        Self::Existing(other)
+    }
+}
+
+impl SaveContents {
+    pub(crate) fn get_or_create(
+        self,
+        f: impl FnOnce(usize) -> utils::BoxedByteSlice,
+    ) -> utils::BoxedByteSlice {
+        match self {
+            Self::Existing(data) => data,
+            Self::New(len) => f(len),
+        }
+    }
+
+    #[inline]
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Existing(data) => data.len(),
+            Self::New(len) => *len,
+        }
+    }
+}
