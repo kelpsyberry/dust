@@ -17,6 +17,7 @@ impl Empty {
     }
 
     #[inline]
+    #[must_use]
     pub fn reset(self) -> Self {
         self
     }

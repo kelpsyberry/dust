@@ -76,6 +76,7 @@ impl Flash {
         })
     }
 
+    #[must_use]
     pub fn reset(self) -> Self {
         Flash {
             status: Status(0),

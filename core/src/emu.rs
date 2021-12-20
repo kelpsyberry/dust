@@ -67,7 +67,7 @@ pub struct Emu<E: cpu::Engine> {
     rcnt: u16, // TODO: Move to SIO
 }
 
-pub struct Builder<'a> {
+pub struct Builder {
     pub arm7_bios: Box<Bytes<{ arm7::BIOS_SIZE }>>,
     pub arm9_bios: Box<Bytes<{ arm9::BIOS_BUFFER_SIZE }>>,
     pub firmware: Flash,
@@ -75,7 +75,7 @@ pub struct Builder<'a> {
     pub ds_spi: ds_slot::spi::Spi,
     pub audio_backend: Box<dyn audio::Backend>,
     #[cfg(feature = "log")]
-    logger: &'a slog::Logger,
+    logger: slog::Logger,
 
     pub model: Model,
     pub direct_boot: bool,
@@ -88,7 +88,7 @@ pub struct Builder<'a> {
     pub audio_xq_interp_method: audio::InterpMethod,
 }
 
-impl<'a> Builder<'a> {
+impl Builder {
     #[inline]
     pub fn new(
         arm7_bios: Box<Bytes<{ arm7::BIOS_SIZE }>>,
@@ -97,7 +97,7 @@ impl<'a> Builder<'a> {
         ds_rom: ds_slot::rom::Rom,
         ds_spi: ds_slot::spi::Spi,
         audio_backend: Box<dyn audio::Backend>,
-        #[cfg(feature = "log")] logger: &'a slog::Logger,
+        #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Self {
         Builder {
             arm7_bios,

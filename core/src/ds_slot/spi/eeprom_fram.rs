@@ -91,6 +91,7 @@ impl EepromFram {
         Ok(result)
     }
 
+    #[must_use]
     pub fn reset(self) -> Self {
         EepromFram {
             status: Status(self.saved_status().0),

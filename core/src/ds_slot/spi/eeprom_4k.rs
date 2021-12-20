@@ -1,5 +1,5 @@
 use crate::{
-    utils::{bitfield_debug, ByteSlice, BoxedByteSlice},
+    utils::{bitfield_debug, BoxedByteSlice, ByteSlice},
     SaveContents,
 };
 
@@ -71,6 +71,7 @@ impl Eeprom4K {
         Ok(result)
     }
 
+    #[must_use]
     pub fn reset(self) -> Self {
         Eeprom4K {
             status: Status(0xF0 | self.saved_status().0),

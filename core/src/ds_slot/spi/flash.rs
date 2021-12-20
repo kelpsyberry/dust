@@ -34,6 +34,7 @@ impl Flash {
         })
     }
 
+    #[must_use]
     pub fn reset(self) -> Self {
         Flash {
             contents: self.contents.reset(),

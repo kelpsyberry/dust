@@ -166,7 +166,7 @@ pub(super) fn main(
             None => Box::new(DummyAudioBackend),
         },
         #[cfg(feature = "log")]
-        &logger,
+        logger.clone(),
     );
 
     emu_builder.model = config.model;
@@ -286,7 +286,7 @@ pub(super) fn main(
                         },
                         emu.audio.backend,
                         #[cfg(feature = "log")]
-                        &logger,
+                        logger.clone(),
                     );
 
                     emu_builder.model = config.model;

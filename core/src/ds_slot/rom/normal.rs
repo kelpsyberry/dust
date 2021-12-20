@@ -54,6 +54,7 @@ impl Normal {
         })
     }
 
+    #[must_use]
     pub fn reset(self) -> Self {
         Normal {
             stage: Stage::Initial,
