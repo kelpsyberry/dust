@@ -81,12 +81,14 @@ bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     pub struct BgControl(pub u16) {
         pub priority: u8 @ 0..=1,
+        pub use_direct_color_extended_bg: bool @ 2,
         pub tile_base_raw: u8 @ 2..=5,
         pub mosaic: bool @ 6,
         pub use_256_colors: bool @ 7,
+        pub use_bitmap_extended_bg: bool @ 7,
         pub map_base_raw: u8 @ 8..=12,
         pub bg01_ext_pal_slot: u8 @ 13..=13,
-        pub bg23_display_area_overflow: bool @ 13,
+        pub affine_display_area_overflow: bool @ 13,
         pub size_key: u8 @ 14..=15,
     }
 }
@@ -535,6 +537,14 @@ impl<R: Role> Engine2d<R> {
                 }
             }
             self.obj_ext_pal_dirty = false;
+        }
+    }
+
+    pub(super) fn end_vblank(&mut self) {
+        // TODO: When does this happen? This is just what might make the most sense, but GBATEK
+        // doesn't say.
+        for affine_bg in &mut self.affine_bg_data {
+            affine_bg.pos = affine_bg.ref_points;
         }
     }
 }

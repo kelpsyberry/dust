@@ -43,7 +43,7 @@ impl Spi {
             Spi;
             Eeprom4K, EepromFram, Flash, Empty;
             self, mark_contents_flushed()
-        )
+        );
     }
 
     pub fn write_data(&mut self, data: u8, first: bool, last: bool) -> u8 {

@@ -7,7 +7,7 @@ pub fn lsl_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     unsafe {
         let mut cpsr = regs.cpsr.raw();
         let result: u32;
-        asm!(
+        core::arch::asm!(
             "btr {cpsr:e}, 29",
             "shl {value_res:e}, cl",
             "setc {carry_flag:l}",
@@ -27,7 +27,7 @@ pub fn lsl_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
 pub fn lsl_reg(value: u32, shift: u8) -> u32 {
     unsafe {
         let result: u32;
-        asm!(
+        core::arch::asm!(
             "shl {value_res:e}, cl",
             "xor {scratch:e}, {scratch:e}",
             "cmp cl, 32",
@@ -48,7 +48,7 @@ pub fn lsl_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
         unsafe {
             let result: u32;
             let carry_flag: u8;
-            asm!(
+            core::arch::asm!(
                 "shl {value_res:e}, cl",
                 "shl {value_res:e}, 1",
                 "setc {carry_flag}",
@@ -76,7 +76,7 @@ fn lsr_1_32_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
         // that, when used as a shift amount with a 32-bit register, it wraps back to 31 + the
         // later shr by 1, doing a 32-bit shift and exhibiting the correct behavior without
         // branching.
-        asm!(
+        core::arch::asm!(
             "shr {value_res:e}, cl",
             "shr {value_res:e}, 1",
             "setc {carry_flag}",
@@ -98,7 +98,7 @@ pub fn lsr_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
 pub fn lsr_reg(value: u32, shift: u8) -> u32 {
     unsafe {
         let result: u32;
-        asm!(
+        core::arch::asm!(
             "shr {value_res:e}, cl",
             "xor {scratch:e}, {scratch:e}",
             "cmp cl, 32",
@@ -124,7 +124,7 @@ pub fn lsr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
         unsafe {
             let result: u32;
             let carry_flag: u8;
-            asm!(
+            core::arch::asm!(
                 "shr {value_res:r}, cl",
                 "setc {carry_flag}",
                 value_res = inlateout(reg) value => result,
@@ -147,7 +147,7 @@ pub fn asr_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     unsafe {
         let result: u32;
         let carry_flag: u8;
-        asm!(
+        core::arch::asm!(
             "sar {value_res:e}, cl",
             "sar {value_res:e}, 1",
             "setc {carry_flag}",
@@ -165,7 +165,7 @@ pub fn asr_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
 pub fn asr_reg(value: u32, shift: u8) -> u32 {
     unsafe {
         let result: u32;
-        asm!(
+        core::arch::asm!(
             "mov {scratch:e}, {value_res:e}",
             "sar {value_res:e}, cl",
             "sar {scratch:e}, 31",
@@ -188,7 +188,7 @@ pub fn asr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
             let result: u32;
             let carry_flag: u8;
             if shift < 32 {
-                asm!(
+                core::arch::asm!(
                     "sar {value_res:e}, cl",
                     "setc {carry_flag}",
                     value_res = inlateout(reg) value => result,
@@ -197,7 +197,7 @@ pub fn asr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
                     options(pure, nomem, nostack),
                 );
             } else {
-                asm!(
+                core::arch::asm!(
                     "sar {value_res:e}, 31",
                     "mov {carry_flag}, {value_res:l}",
                     "and {carry_flag}, 1",
@@ -217,7 +217,7 @@ pub fn asr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
 fn rrx(regs: &Regs, value: u32) -> u32 {
     unsafe {
         let result: u32;
-        asm!(
+        core::arch::asm!(
             "bt {cpsr:e}, 29",
             "rcr {value_res:e}, 1",
             value_res = inlateout(reg) value => result,
@@ -233,7 +233,7 @@ fn rrx_s(regs: &mut Regs, value: u32) -> u32 {
         let mut cpsr = regs.cpsr.raw();
         let result: u32;
         let carry_flag: u8;
-        asm!(
+        core::arch::asm!(
             "btr {cpsr:e}, 29",
             "rcr {value_res:e}, 1",
             "setc {carry_flag}",
@@ -262,7 +262,7 @@ pub fn ror_imm_s_no_rrx(regs: &mut Regs, value: u32, shift: u8) -> u32 {
         unsafe {
             let result: u32;
             let carry_flag: u8;
-            asm!(
+            core::arch::asm!(
                 "ror {value_res:e}, cl",
                 "setc {carry_flag}",
                 value_res = inlateout(reg) value => result,
@@ -285,7 +285,7 @@ pub fn ror_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
         unsafe {
             let result: u32;
             let carry_flag: u8;
-            asm!(
+            core::arch::asm!(
                 "ror {value_res:e}, cl",
                 "setc {carry_flag}",
                 value_res = inlateout(reg) value => result,
@@ -308,7 +308,7 @@ pub fn ror_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
         unsafe {
             let result: u32;
             let carry_flag: u8;
-            asm!(
+            core::arch::asm!(
                 "bt {value_res:e}, 31",
                 "ror {value_res:e}, cl",
                 "setc {carry_flag}",

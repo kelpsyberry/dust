@@ -1,5 +1,4 @@
 #![feature(
-    asm,
     core_intrinsics,
     // rustc_attrs,
     adt_const_params,

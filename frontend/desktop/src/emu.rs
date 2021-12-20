@@ -58,7 +58,6 @@ pub(super) fn main(
     let direct_boot = config.skip_firmware && ds_slot_rom.is_some();
     let mut sync_to_audio = config.sync_to_audio.value;
 
-    println!("{:?}", cur_save_path);
     let ds_slot_rom = if let Some(rom) = ds_slot_rom {
         ds_slot::rom::normal::Normal::new(
             rom,

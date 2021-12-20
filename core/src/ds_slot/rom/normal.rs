@@ -89,7 +89,7 @@ impl super::RomDevice for Normal {
                     let res = level_3_key_buf
                         .encrypt_64_bit([secure_area.read_le(i), secure_area.read_le(4 + i)]);
                     secure_area.write_le(i, res[0]);
-                    secure_area.write_le(4 + i, res[1]);
+                    secure_area.write_le(i + 4, res[1]);
                 }
                 let res = self
                     .key_buf
@@ -195,7 +195,7 @@ impl super::RomDevice for Normal {
                         //       happen for homebrew)
                         let start_addr = 0x4000 | (cmd[2] as usize & 0x30 << 8);
                         for start_i in (0..output_len.get() as usize).step_by(0x1000) {
-                            let len = 0x1000.min(output_len.get() as usize - start_i);
+                            let len = (output_len.get() as usize - start_i).min(0x1000);
                             output[start_i..start_i + len]
                                 .copy_from_slice(&self.rom[start_addr..start_addr + len]);
                         }

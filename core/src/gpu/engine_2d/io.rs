@@ -194,22 +194,22 @@ impl<R: Role> Engine2d<R> {
             0x26 => self.affine_bg_data[0].params[3] = value as i16,
             0x28 => {
                 self.affine_bg_data[0].ref_points[0] =
-                    (self.affine_bg_data[0].ref_points[0] & 0x0FFF_0000) | value as i32;
+                    (self.affine_bg_data[0].ref_points[0] & !0xFFFF) | value as i32;
                 self.affine_bg_data[0].pos[0] = self.affine_bg_data[0].ref_points[0];
             }
             0x2A => {
                 self.affine_bg_data[0].ref_points[0] =
-                    (self.affine_bg_data[0].ref_points[0] & 0x0000_FFFF) | (value as i32) << 16;
+                    (self.affine_bg_data[0].ref_points[0] & 0xFFFF) | (value as i32) << 20 >> 4;
                 self.affine_bg_data[0].pos[0] = self.affine_bg_data[0].ref_points[0];
             }
             0x2C => {
                 self.affine_bg_data[0].ref_points[1] =
-                    (self.affine_bg_data[0].ref_points[1] & 0x0FFF_0000) | value as i32;
+                    (self.affine_bg_data[0].ref_points[1] & !0xFFFF) | value as i32;
                 self.affine_bg_data[0].pos[1] = self.affine_bg_data[0].ref_points[1];
             }
             0x2E => {
                 self.affine_bg_data[0].ref_points[1] =
-                    (self.affine_bg_data[0].ref_points[1] & 0x0000_FFFF) | (value as i32) << 16;
+                    (self.affine_bg_data[0].ref_points[1] & 0xFFFF) | (value as i32) << 20 >> 4;
                 self.affine_bg_data[0].pos[1] = self.affine_bg_data[0].ref_points[1];
             }
             0x30 => self.affine_bg_data[1].params[0] = value as i16,
@@ -218,22 +218,22 @@ impl<R: Role> Engine2d<R> {
             0x36 => self.affine_bg_data[1].params[3] = value as i16,
             0x38 => {
                 self.affine_bg_data[1].ref_points[0] =
-                    (self.affine_bg_data[1].ref_points[0] & 0x0FFF_0000) | value as i32;
+                    (self.affine_bg_data[1].ref_points[0] & !0xFFFF) | value as i32;
                 self.affine_bg_data[1].pos[0] = self.affine_bg_data[1].ref_points[0];
             }
             0x3A => {
                 self.affine_bg_data[1].ref_points[0] =
-                    (self.affine_bg_data[1].ref_points[0] & 0x0000_FFFF) | (value as i32) << 16;
+                    (self.affine_bg_data[1].ref_points[0] & 0xFFFF) | (value as i32) << 20 >> 4;
                 self.affine_bg_data[1].pos[0] = self.affine_bg_data[1].ref_points[0];
             }
             0x3C => {
                 self.affine_bg_data[1].ref_points[1] =
-                    (self.affine_bg_data[1].ref_points[1] & 0x0FFF_0000) | value as i32;
+                    (self.affine_bg_data[1].ref_points[1] & !0xFFFF) | value as i32;
                 self.affine_bg_data[1].pos[1] = self.affine_bg_data[1].ref_points[1];
             }
             0x3E => {
                 self.affine_bg_data[1].ref_points[1] =
-                    (self.affine_bg_data[1].ref_points[1] & 0x0000_FFFF) | (value as i32) << 16;
+                    (self.affine_bg_data[1].ref_points[1] & 0xFFFF) | (value as i32) << 20 >> 4;
                 self.affine_bg_data[1].pos[1] = self.affine_bg_data[1].ref_points[1];
             }
             0x40 => self.window_ranges[0].set_x_range((value >> 8) as u8..value as u8),
@@ -304,11 +304,11 @@ impl<R: Role> Engine2d<R> {
                 self.affine_bg_data[0].params[3] = (value >> 16) as i16;
             }
             0x28 => {
-                self.affine_bg_data[0].ref_points[0] = value as i32 & 0x0FFF_FFFF;
+                self.affine_bg_data[0].ref_points[0] = (value as i32) << 4 >> 4;
                 self.affine_bg_data[0].pos[0] = self.affine_bg_data[0].ref_points[0];
             }
             0x2C => {
-                self.affine_bg_data[0].ref_points[1] = value as i32 & 0x0FFF_FFFF;
+                self.affine_bg_data[0].ref_points[1] = (value as i32) << 4 >> 4;
                 self.affine_bg_data[0].pos[1] = self.affine_bg_data[0].ref_points[1];
             }
             0x30 => {
@@ -320,11 +320,11 @@ impl<R: Role> Engine2d<R> {
                 self.affine_bg_data[1].params[3] = (value >> 16) as i16;
             }
             0x38 => {
-                self.affine_bg_data[1].ref_points[0] = value as i32 & 0x0FFF_FFFF;
+                self.affine_bg_data[1].ref_points[0] = (value as i32) << 4 >> 4;
                 self.affine_bg_data[1].pos[0] = self.affine_bg_data[1].ref_points[0];
             }
             0x3C => {
-                self.affine_bg_data[1].ref_points[1] = value as i32 & 0x0FFF_FFFF;
+                self.affine_bg_data[1].ref_points[1] = (value as i32) << 4 >> 4;
                 self.affine_bg_data[1].pos[1] = self.affine_bg_data[1].ref_points[1];
             }
             0x40 => {

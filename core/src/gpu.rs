@@ -216,7 +216,7 @@ impl Gpu {
                             .as_mut_ptr()
                             .add(scanline_base)
                             as *mut Scanline<u32>),
-                        &mut emu.gpu.vram,
+                        &emu.gpu.vram,
                     );
                     emu.gpu.engine_2d_b.render_scanline(
                         emu.gpu.vcount,
@@ -224,22 +224,22 @@ impl Gpu {
                             .as_mut_ptr()
                             .add(scanline_base)
                             as *mut Scanline<u32>),
-                        &mut emu.gpu.vram,
+                        &emu.gpu.vram,
                     );
                 }
                 if emu.gpu.cur_scanline < (SCREEN_HEIGHT - 1) as u32 {
                     emu.gpu
                         .engine_2d_a
-                        .prerender_sprites(emu.gpu.cur_scanline + 1, &mut emu.gpu.vram);
+                        .prerender_sprites(emu.gpu.cur_scanline + 1, &emu.gpu.vram);
                     emu.gpu
                         .engine_2d_b
-                        .prerender_sprites(emu.gpu.cur_scanline + 1, &mut emu.gpu.vram);
+                        .prerender_sprites(emu.gpu.cur_scanline + 1, &emu.gpu.vram);
                 }
             }
         } else if emu.gpu.vcount == (TOTAL_SCANLINES - 1) as u16 {
             // Render scanline 0 OBJs
-            emu.gpu.engine_2d_a.prerender_sprites(0, &mut emu.gpu.vram);
-            emu.gpu.engine_2d_b.prerender_sprites(0, &mut emu.gpu.vram);
+            emu.gpu.engine_2d_a.prerender_sprites(0, &emu.gpu.vram);
+            emu.gpu.engine_2d_b.prerender_sprites(0, &emu.gpu.vram);
         }
 
         emu.schedule.set_event(
@@ -264,6 +264,8 @@ impl Gpu {
         if emu.gpu.vcount == TOTAL_SCANLINES as u16 {
             emu.gpu.vcount = 0;
             emu.gpu.cur_scanline = 0;
+            emu.gpu.engine_2d_a.end_vblank();
+            emu.gpu.engine_2d_b.end_vblank();
         }
         if emu.gpu.vcount == emu.gpu.vcount_compare_7 {
             emu.gpu.disp_status_7.set_vcount_match(true);

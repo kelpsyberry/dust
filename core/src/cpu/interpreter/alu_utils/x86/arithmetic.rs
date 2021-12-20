@@ -5,7 +5,7 @@ pub fn add_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
     unsafe {
         let result: u32;
         let flags: u32;
-        asm!(
+        core::arch::asm!(
             "add {a_res:e}, {b:e}",
             "lahf",
             "seto al",
@@ -30,7 +30,7 @@ pub fn cmn(regs: &mut Regs, a: u32, b: u32) {
 pub fn adc(regs: &Regs, a: u32, b: u32) -> u32 {
     unsafe {
         let result;
-        asm!(
+        core::arch::asm!(
             "bt {cpsr:e}, 29",
             "adc {a_res:e}, {b:e}",
             a_res = inlateout(reg) a => result,
@@ -47,7 +47,7 @@ pub fn adc_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
         let result: u32;
         let flags: u32;
         let cpsr = regs.cpsr.raw();
-        asm!(
+        core::arch::asm!(
             "bt {cpsr:e}, 29",
             "adc {a_res:e}, {b:e}",
             "lahf",
@@ -71,7 +71,7 @@ pub fn sub_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
     unsafe {
         let result: u32;
         let flags: u32;
-        asm!(
+        core::arch::asm!(
             "sub {a_res:e}, {b:e}",
             "cmc",
             "lahf",
@@ -93,7 +93,7 @@ pub fn sub_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
 pub fn cmp(regs: &mut Regs, a: u32, b: u32) {
     unsafe {
         let flags: u32;
-        asm!(
+        core::arch::asm!(
             "cmp {a:e}, {b:e}",
             "cmc",
             "lahf",
