@@ -154,6 +154,14 @@ impl<R: Role> Engine2d<R> {
             0x1F => {
                 self.bgs[3].scroll[1] = (self.bgs[3].scroll[1] & 0x00FF) | (value as u16 & 1) << 8;
             }
+            0x40 => self.window_ranges[0].x.end = value,
+            0x41 => self.window_ranges[0].x.start = value,
+            0x42 => self.window_ranges[1].x.end = value,
+            0x43 => self.window_ranges[1].x.start = value,
+            0x44 => self.window_ranges[0].y.end = value,
+            0x45 => self.window_ranges[0].y.start = value,
+            0x46 => self.window_ranges[1].y.end = value,
+            0x47 => self.window_ranges[1].y.start = value,
             _ =>
             {
                 #[cfg(feature = "log")]
@@ -236,10 +244,10 @@ impl<R: Role> Engine2d<R> {
                     (self.affine_bg_data[1].ref_points[1] & 0xFFFF) | (value as i32) << 20 >> 4;
                 self.affine_bg_data[1].pos[1] = self.affine_bg_data[1].ref_points[1];
             }
-            0x40 => self.window_ranges[0].set_x_range((value >> 8) as u8..value as u8),
-            0x42 => self.window_ranges[1].set_x_range((value >> 8) as u8..value as u8),
-            0x44 => self.window_ranges[0].set_y_range((value >> 8) as u8..value as u8),
-            0x46 => self.window_ranges[1].set_y_range((value >> 8) as u8..value as u8),
+            0x40 => self.window_ranges[0].x = (value >> 8) as u8..value as u8,
+            0x42 => self.window_ranges[1].x = (value >> 8) as u8..value as u8,
+            0x44 => self.window_ranges[0].y = (value >> 8) as u8..value as u8,
+            0x46 => self.window_ranges[1].y = (value >> 8) as u8..value as u8,
             0x48 => {
                 self.set_window_control(0, WindowControl(value as u8));
                 self.set_window_control(1, WindowControl((value >> 8) as u8));
@@ -328,12 +336,12 @@ impl<R: Role> Engine2d<R> {
                 self.affine_bg_data[1].pos[1] = self.affine_bg_data[1].ref_points[1];
             }
             0x40 => {
-                self.window_ranges[0].set_x_range((value >> 8) as u8..value as u8);
-                self.window_ranges[1].set_x_range((value >> 24) as u8..(value >> 16) as u8);
+                self.window_ranges[0].x = (value >> 8) as u8..value as u8;
+                self.window_ranges[1].x = (value >> 24) as u8..(value >> 16) as u8;
             }
             0x44 => {
-                self.window_ranges[0].set_y_range((value >> 8) as u8..value as u8);
-                self.window_ranges[1].set_y_range((value >> 24) as u8..(value >> 16) as u8);
+                self.window_ranges[0].y = (value >> 8) as u8..value as u8;
+                self.window_ranges[1].y = (value >> 24) as u8..(value >> 16) as u8;
             }
             0x48 => {
                 self.set_window_control(0, WindowControl(value as u8));

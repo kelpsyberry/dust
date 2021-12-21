@@ -231,52 +231,10 @@ bitfield_debug! {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct WindowRanges {
-    x_range: [u8; 2],
-    y_range: [u8; 2],
-}
-
-impl WindowRanges {
-    #[inline]
-    pub fn x_range(self) -> Range<u8> {
-        self.x_range[0]..self.x_range[1]
-    }
-
-    #[inline]
-    pub fn set_x_range(&mut self, value: Range<u8>) {
-        self.x_range = [value.start, value.end];
-    }
-
-    #[inline]
-    pub fn set_x_start(&mut self, value: u8) {
-        self.x_range[0] = value;
-    }
-
-    #[inline]
-    pub fn set_x_end(&mut self, value: u8) {
-        self.x_range[1] = value;
-    }
-
-    #[inline]
-    pub fn y_range(self) -> Range<u8> {
-        self.y_range[0]..self.y_range[1]
-    }
-
-    #[inline]
-    pub fn set_y_range(&mut self, value: Range<u8>) {
-        self.y_range = [value.start, value.end];
-    }
-
-    #[inline]
-    pub fn set_y_start(&mut self, value: u8) {
-        self.y_range[0] = value;
-    }
-
-    #[inline]
-    pub fn set_y_end(&mut self, value: u8) {
-        self.x_range[1] = value;
-    }
+    pub x: Range<u8>,
+    pub y: Range<u8>,
 }
 
 bitfield_debug! {
@@ -359,10 +317,10 @@ impl<R: Role> Engine2d<R> {
                 params: [0; 4],
                 pos: [0; 2],
             }; 2],
-            window_ranges: [WindowRanges {
-                x_range: [0; 2],
-                y_range: [0; 2],
-            }; 2],
+            window_ranges: [
+                WindowRanges { x: 0..0, y: 0..0 },
+                WindowRanges { x: 0..0, y: 0..0 },
+            ],
             window_control: [
                 WindowControl(0),
                 WindowControl(0),

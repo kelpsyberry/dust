@@ -91,9 +91,9 @@ impl<R: Role> Engine2d<R> {
                 continue;
             }
 
-            let y_range = &self.window_ranges[i].y_range;
-            let y_start = y_range[0];
-            let mut y_end = y_range[1];
+            let y_range = &self.window_ranges[i].y;
+            let y_start = y_range.start;
+            let mut y_end = y_range.end;
             if y_end < y_start {
                 y_end = 192;
             }
@@ -147,14 +147,14 @@ impl<R: Role> Engine2d<R> {
                     }
                 }
 
-                for i in 0..2 {
+                for i in (0..2).rev() {
                     if !self.windows_active[i] {
                         continue;
                     }
 
-                    let x_range = &self.window_ranges[i].x_range;
-                    let x_start = x_range[0] as usize;
-                    let mut x_end = x_range[1] as usize;
+                    let x_range = &self.window_ranges[i].x;
+                    let x_start = x_range.start as usize;
+                    let mut x_end = x_range.end as usize;
                     if x_end < x_start {
                         x_end = 256;
                     }
@@ -477,11 +477,9 @@ impl<R: Role> Engine2d<R> {
                 }
                 let color_index = pixels.wrapping_shr(x << 3) as u8;
                 if color_index != 0 && self.window.0[i].0 & bg_mask != 0 {
-                    unsafe {
-                        let color = palette.add(pal_base | color_index as usize).read();
-                        self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
-                            | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
-                    }
+                    let color = unsafe { palette.add(pal_base | color_index as usize).read() };
+                    self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
+                        | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
                 }
                 x += 1;
             }
@@ -523,13 +521,13 @@ impl<R: Role> Engine2d<R> {
                 }
                 let color_index = pixels.wrapping_shr(x << 2) & 0xF;
                 if color_index != 0 && self.window.0[i].0 & bg_mask != 0 {
-                    unsafe {
-                        let color = vram.banks.palette.read_le_aligned_unchecked::<u16>(
+                    let color = unsafe {
+                        vram.banks.palette.read_le_aligned_unchecked::<u16>(
                             (!R::IS_A as usize) << 10 | pal_base | (color_index as usize) << 1,
-                        );
-                        self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
-                            | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
-                    }
+                        )
+                    };
+                    self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
+                        | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
                 }
                 x += 1;
             }
@@ -587,13 +585,13 @@ impl<R: Role> Engine2d<R> {
                     vram.read_b_bg::<u8>(pixel_addr)
                 };
                 if color_index != 0 {
-                    unsafe {
-                        let color = vram.banks.palette.read_le_aligned_unchecked::<u16>(
+                    let color = unsafe {
+                        vram.banks.palette.read_le_aligned_unchecked::<u16>(
                             (!R::IS_A as usize) << 10 | (color_index as usize) << 1,
-                        );
-                        self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
-                            | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
-                    }
+                        )
+                    };
+                    self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
+                        | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
                 }
             }
 
@@ -677,14 +675,13 @@ impl<R: Role> Engine2d<R> {
                             vram.read_b_bg::<u8>(pixel_addr)
                         };
                         if color_index != 0 {
-                            unsafe {
-                                let color = vram.banks.palette.read_le_aligned_unchecked::<u16>(
+                            let color = unsafe {
+                                vram.banks.palette.read_le_aligned_unchecked::<u16>(
                                     (!R::IS_A as usize) << 10 | (color_index as usize) << 1,
-                                );
-                                self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64)
-                                    << 32
-                                    | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
-                            }
+                                )
+                            };
+                            self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
+                                | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
                         }
                     }
 
@@ -758,11 +755,9 @@ impl<R: Role> Engine2d<R> {
 
                     if color_index != 0 {
                         let pal_base = ((tile >> 12 & pal_base_mask) << 8) as usize;
-                        unsafe {
-                            let color = palette.add(pal_base | color_index as usize).read();
-                            self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
-                                | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
-                        }
+                        let color = unsafe { palette.add(pal_base | color_index as usize).read() };
+                        self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
+                            | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
                     }
                 }
 
@@ -813,13 +808,13 @@ impl<R: Role> Engine2d<R> {
                     vram.read_b_bg::<u8>(pixel_addr)
                 };
                 if color_index != 0 {
-                    unsafe {
-                        let color = vram.banks.palette.read_le_aligned_unchecked::<u16>(
+                    let color = unsafe {
+                        vram.banks.palette.read_le_aligned_unchecked::<u16>(
                             (!R::IS_A as usize) << 10 | (color_index as usize) << 1,
-                        );
-                        self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
-                            | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
-                    }
+                        )
+                    };
+                    self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
+                        | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
                 }
             }
 
@@ -853,20 +848,50 @@ impl<R: Role> Engine2d<R> {
         }
         for priority in (0..4).rev() {
             for obj_i in (0..128).rev() {
-                let oam_start = if R::IS_A { 0 } else { 0x400 } | obj_i << 3;
+                let oam_start = (!R::IS_A as usize) << 10 | obj_i << 3;
                 let attrs = unsafe {
-                    let attr_2 = OamAttr2(vram.banks.oam.read_le_aligned_unchecked(oam_start | 4));
+                    let attr_2 = OamAttr2(
+                        vram.banks
+                            .oam
+                            .read_le_aligned_unchecked::<u16>(oam_start | 4),
+                    );
                     if attr_2.bg_priority() != priority {
                         continue;
                     }
                     (
-                        OamAttr0(vram.banks.oam.read_le_aligned_unchecked(oam_start)),
-                        OamAttr1(vram.banks.oam.read_le_aligned_unchecked(oam_start | 2)),
+                        OamAttr0(vram.banks.oam.read_le_aligned_unchecked::<u16>(oam_start)),
+                        OamAttr1(
+                            vram.banks
+                                .oam
+                                .read_le_aligned_unchecked::<u16>(oam_start | 2),
+                        ),
                         attr_2,
                     )
                 };
                 if attrs.0.rot_scale() {
-                    // TODO
+                    let (width_shift, height_shift) = obj_size_shift(attrs.0, attrs.1);
+                    let y_in_obj = (scanline as u8).wrapping_sub(attrs.0.y_start()) as u32;
+                    let (bounds_width_shift, bounds_height_shift) = if attrs.0.double_size() {
+                        (width_shift + 1, height_shift + 1)
+                    } else {
+                        (width_shift, height_shift)
+                    };
+                    if y_in_obj as u32 >= 8 << bounds_height_shift {
+                        continue;
+                    }
+                    let x_start = attrs.1.x_start() as i32;
+                    if x_start <= -(8 << bounds_width_shift) {
+                        continue;
+                    }
+                    self.prerender_sprite_rot_scale(
+                        attrs,
+                        x_start,
+                        y_in_obj as i32 - (4 << bounds_height_shift),
+                        width_shift,
+                        height_shift,
+                        bounds_width_shift,
+                        vram,
+                    );
                 } else {
                     if attrs.0.disabled() {
                         continue;
@@ -886,15 +911,9 @@ impl<R: Role> Engine2d<R> {
                         y_in_obj
                     };
                     (if attrs.1.x_flip() {
-                        if attrs.0.mode() == 2 {
-                            Self::render_sprite_normal::<true, true>
-                        } else {
-                            Self::render_sprite_normal::<true, false>
-                        }
-                    } else if attrs.0.mode() == 2 {
-                        Self::render_sprite_normal::<false, true>
+                        Self::prerender_sprite_normal::<true>
                     } else {
-                        Self::render_sprite_normal::<false, false>
+                        Self::prerender_sprite_normal::<false>
                     })(
                         self,
                         (attrs.0, (), attrs.2),
@@ -908,7 +927,207 @@ impl<R: Role> Engine2d<R> {
         }
     }
 
-    fn render_sprite_normal<const X_FLIP: bool, const WINDOW: bool>(
+    #[allow(clippy::similar_names, clippy::too_many_arguments)]
+    fn prerender_sprite_rot_scale(
+        &mut self,
+        attrs: (OamAttr0, OamAttr1, OamAttr2),
+        bounds_x_start: i32,
+        rel_y_in_square_obj: i32,
+        width_shift: u8,
+        height_shift: u8,
+        bounds_width_shift: u8,
+        vram: &Vram,
+    ) {
+        let (start_x, end_x, start_rel_x_in_square_obj) = {
+            let bounds_width = 8 << bounds_width_shift;
+            if bounds_x_start < 0 {
+                (
+                    0,
+                    (bounds_x_start + bounds_width) as usize,
+                    -(bounds_width >> 1) - bounds_x_start,
+                )
+            } else {
+                (
+                    bounds_x_start as usize,
+                    (bounds_x_start + bounds_width).min(256) as usize,
+                    -(bounds_width >> 1),
+                )
+            }
+        };
+
+        let params = unsafe {
+            let start =
+                (!R::IS_A as usize) << 10 | (attrs.1.rot_scale_params_index() as usize) << 5;
+            [
+                vram.banks
+                    .oam
+                    .read_le_aligned_unchecked::<i16>(start | 0x06),
+                vram.banks
+                    .oam
+                    .read_le_aligned_unchecked::<i16>(start | 0x0E),
+                vram.banks
+                    .oam
+                    .read_le_aligned_unchecked::<i16>(start | 0x16),
+                vram.banks
+                    .oam
+                    .read_le_aligned_unchecked::<i16>(start | 0x1E),
+            ]
+        };
+
+        let mut pos = [
+            (0x400 << width_shift)
+                + start_rel_x_in_square_obj * params[0] as i32
+                + rel_y_in_square_obj * params[1] as i32,
+            (0x400 << height_shift)
+                + start_rel_x_in_square_obj * params[2] as i32
+                + rel_y_in_square_obj * params[3] as i32,
+        ];
+
+        if attrs.0.mode() == 3 {
+            // TODO: Bitmap sprites
+        } else {
+            let tile_base = if R::IS_A {
+                self.control.a_tile_base()
+            } else {
+                0
+            } + {
+                let tile_number = attrs.2.tile_number() as u32;
+                if self.control.obj_tile_1d_mapping() {
+                    tile_number << (5 + self.control.obj_tile_1d_boundary())
+                } else {
+                    tile_number << 5
+                }
+            };
+
+            let mut pixel_attrs = ObjPixel(0)
+                .with_priority(attrs.2.bg_priority())
+                .with_force_blending(attrs.0.mode() == 1)
+                .with_use_raw_color(false);
+
+            let obj_x_outside_mask = !((0x800 << width_shift) - 1);
+            let obj_y_outside_mask = !((0x800 << height_shift) - 1);
+
+            if attrs.0.use_256_colors() {
+                let pal_base = if self.control.obj_ext_pal_enabled() {
+                    pixel_attrs.set_use_ext_pal(true);
+                    (attrs.2.palette_number() as u16) << 8
+                } else {
+                    0
+                };
+
+                macro_rules! render {
+                    ($window: expr, $y_off: expr) => {
+                        for x in start_x..end_x {
+                            if (pos[0] & obj_x_outside_mask) | (pos[1] & obj_y_outside_mask) == 0 {
+                                let pixel_addr = {
+                                    let x_off =
+                                        (pos[0] as u32 >> 11 << 6) | (pos[0] as u32 >> 8 & 7);
+                                    tile_base + ($y_off | x_off)
+                                };
+                                let color_index = if R::IS_A {
+                                    vram.read_a_obj::<u8>(pixel_addr)
+                                } else {
+                                    vram.read_b_obj::<u8>(pixel_addr)
+                                };
+                                if color_index != 0 {
+                                    if $window {
+                                        self.obj_window[x >> 3] |= 1 << (x & 7);
+                                    } else {
+                                        unsafe {
+                                            *self.obj_scanline.0.get_unchecked_mut(x) = pixel_attrs
+                                                .with_pal_color(pal_base | color_index as u16);
+                                        }
+                                    }
+                                }
+                            }
+
+                            pos[0] = pos[0].wrapping_add(params[0] as i32);
+                            pos[1] = pos[1].wrapping_add(params[2] as i32);
+                        }
+                    };
+                    ($window: expr) => {
+                        if self.control.obj_tile_1d_mapping() {
+                            render!(
+                                $window,
+                                (pos[1] as u32 >> 11 << (width_shift + 3)
+                                    | (pos[1] as u32 >> 8 & 7))
+                                    << 3
+                            );
+                        } else {
+                            render!(
+                                $window,
+                                (pos[1] as u32 >> 11 << 10) | (pos[1] as u32 >> 8 & 7) << 3
+                            );
+                        }
+                    };
+                }
+
+                if attrs.0.mode() == 2 {
+                    render!(true);
+                } else {
+                    render!(false);
+                }
+            } else {
+                let pal_base = (attrs.2.palette_number() as u16) << 4;
+
+                macro_rules! render {
+                    ($window: expr, $y_off: expr) => {
+                        for x in start_x..end_x {
+                            if (pos[0] & obj_x_outside_mask) | (pos[1] & obj_y_outside_mask) == 0 {
+                                let pixel_addr = {
+                                    let x_off =
+                                        (pos[0] as u32 >> 11 << 5) | (pos[0] as u32 >> 9 & 3);
+                                    tile_base + ($y_off | x_off)
+                                };
+                                let color_index = if R::IS_A {
+                                    vram.read_a_obj::<u8>(pixel_addr)
+                                } else {
+                                    vram.read_b_obj::<u8>(pixel_addr)
+                                } >> (pos[0] as u32 >> 6 & 4)
+                                    & 0xF;
+                                if color_index != 0 {
+                                    if $window {
+                                        self.obj_window[x >> 3] |= 1 << (x & 7);
+                                    } else {
+                                        unsafe {
+                                            *self.obj_scanline.0.get_unchecked_mut(x) = pixel_attrs
+                                                .with_pal_color(pal_base | color_index as u16);
+                                        }
+                                    }
+                                }
+                            }
+
+                            pos[0] = pos[0].wrapping_add(params[0] as i32);
+                            pos[1] = pos[1].wrapping_add(params[2] as i32);
+                        }
+                    };
+                    ($window: expr) => {
+                        if self.control.obj_tile_1d_mapping() {
+                            render!(
+                                $window,
+                                (pos[1] as u32 >> 11 << (width_shift + 3)
+                                    | (pos[1] as u32 >> 8 & 7))
+                                    << 2
+                            );
+                        } else {
+                            render!(
+                                $window,
+                                (pos[1] as u32 >> 11 << 10) | (pos[1] as u32 >> 8 & 7) << 2
+                            );
+                        }
+                    };
+                }
+
+                if attrs.0.mode() == 2 {
+                    render!(true);
+                } else {
+                    render!(false);
+                }
+            }
+        }
+    }
+
+    fn prerender_sprite_normal<const X_FLIP: bool>(
         &mut self,
         attrs: (OamAttr0, (), OamAttr2),
         x_start: i32,
@@ -916,15 +1135,23 @@ impl<R: Role> Engine2d<R> {
         width_shift: u8,
         vram: &Vram,
     ) {
-        let (mut x, x_in_obj, x_in_obj_end) = {
+        let (start_x, end_x, mut x_in_obj, x_in_obj_incr) = {
             let width = 8 << width_shift;
-            if x_start < 0 {
-                (0, -x_start as u32, width)
+            let (start_x, end_x, mut x_in_obj) = if x_start < 0 {
+                (0, (width + x_start) as usize, -x_start as u32)
             } else {
-                (x_start as usize, 0, width.min(256 - x_start as u32))
-            }
+                (x_start as usize, (x_start + width).min(256) as usize, 0)
+            };
+            let x_in_obj_incr = if X_FLIP {
+                x_in_obj = width as u32 - 1 - x_in_obj;
+                -1_i32
+            } else {
+                1
+            };
+            (start_x, end_x, x_in_obj, x_in_obj_incr)
         };
-        if !WINDOW && attrs.0.mode() == 3 {
+
+        if attrs.0.mode() == 3 {
             // TODO: Bitmap sprites
         } else {
             let mut tile_base = if R::IS_A {
@@ -941,7 +1168,7 @@ impl<R: Role> Engine2d<R> {
                 } else {
                     let tile_number_off = tile_number << 5;
                     let y_off = (y_in_obj >> 3 << 10)
-                        + ((y_in_obj & 7) << (2 | attrs.0.use_256_colors() as u8));
+                        | ((y_in_obj & 7) << (2 | attrs.0.use_256_colors() as u8));
                     tile_number_off + y_off
                 }
             };
@@ -951,6 +1178,8 @@ impl<R: Role> Engine2d<R> {
                 .with_force_blending(attrs.0.mode() == 1)
                 .with_use_raw_color(false);
 
+            let x_in_obj_new_tile_compare = if X_FLIP { 7 } else { 0 };
+
             if attrs.0.use_256_colors() {
                 let pal_base = if self.control.obj_ext_pal_enabled() {
                     pixel_attrs.set_use_ext_pal(true);
@@ -959,24 +1188,7 @@ impl<R: Role> Engine2d<R> {
                     0
                 };
 
-                let max_x_in_obj = (8 << width_shift) - 1;
-                let (
-                    mut x_in_obj,
-                    x_in_obj_end,
-                    x_in_obj_incr,
-                    x_in_obj_new_tile_compare,
-                    tile_base_incr,
-                ) = if X_FLIP {
-                    (
-                        max_x_in_obj - x_in_obj,
-                        max_x_in_obj as i32 - x_in_obj_end as i32,
-                        -1_i32,
-                        7,
-                        -64_i32,
-                    )
-                } else {
-                    (x_in_obj, x_in_obj_end as i32, 1, 0, 64)
-                };
+                let tile_base_incr = if X_FLIP { -64_i32 } else { 64 };
                 tile_base += x_in_obj >> 3 << 6;
                 let mut pixels = 0;
 
@@ -994,44 +1206,37 @@ impl<R: Role> Engine2d<R> {
                 if x_in_obj & 7 != x_in_obj_new_tile_compare {
                     read_pixels!();
                 }
-                while x_in_obj as i32 != x_in_obj_end {
-                    if x_in_obj & 7 == x_in_obj_new_tile_compare {
-                        read_pixels!();
-                    }
-                    let color_index = pixels.wrapping_shr(x_in_obj << 3) as u16 & 0xFF;
-                    if color_index != 0 {
-                        if WINDOW {
-                            self.obj_window[x >> 3] |= 1 << (x & 7);
-                        } else {
-                            unsafe {
-                                *self.obj_scanline.0.get_unchecked_mut(x) =
-                                    pixel_attrs.with_pal_color(pal_base | color_index);
+
+                macro_rules! render {
+                    ($window: expr) => {
+                        for x in start_x..end_x {
+                            if x_in_obj & 7 == x_in_obj_new_tile_compare {
+                                read_pixels!();
                             }
+                            let color_index = pixels.wrapping_shr(x_in_obj << 3) as u16 & 0xFF;
+                            if color_index != 0 {
+                                if $window {
+                                    self.obj_window[x >> 3] |= 1 << (x & 7);
+                                } else {
+                                    unsafe {
+                                        *self.obj_scanline.0.get_unchecked_mut(x) =
+                                            pixel_attrs.with_pal_color(pal_base | color_index);
+                                    }
+                                }
+                            }
+                            x_in_obj = x_in_obj.wrapping_add(x_in_obj_incr as u32);
                         }
-                    }
-                    x_in_obj = x_in_obj.wrapping_add(x_in_obj_incr as u32);
-                    x += 1;
+                    };
+                }
+
+                if attrs.0.mode() == 2 {
+                    render!(true);
+                } else {
+                    render!(false);
                 }
             } else {
                 let pal_base = (attrs.2.palette_number() as u16) << 4;
-                let max_x_in_obj = (8 << width_shift) - 1;
-                let (
-                    mut x_in_obj,
-                    x_in_obj_end,
-                    x_in_obj_incr,
-                    x_in_obj_new_tile_compare,
-                    tile_base_incr,
-                ) = if X_FLIP {
-                    (
-                        max_x_in_obj - x_in_obj,
-                        max_x_in_obj as i32 - x_in_obj_end as i32,
-                        -1_i32,
-                        7,
-                        -32_i32,
-                    )
-                } else {
-                    (x_in_obj, x_in_obj_end as i32, 1, 0, 32)
-                };
+                let tile_base_incr = if X_FLIP { -32_i32 } else { 32 };
                 tile_base += x_in_obj >> 3 << 5;
                 let mut pixels = 0;
 
@@ -1049,23 +1254,33 @@ impl<R: Role> Engine2d<R> {
                 if x_in_obj & 7 != x_in_obj_new_tile_compare {
                     read_pixels!();
                 }
-                while x_in_obj as i32 != x_in_obj_end {
-                    if x_in_obj & 7 == x_in_obj_new_tile_compare {
-                        read_pixels!();
-                    }
-                    let color_index = pixels.wrapping_shr(x_in_obj << 2) as u16 & 0xF;
-                    if color_index != 0 {
-                        if WINDOW {
-                            self.obj_window[x >> 3] |= 1 << (x & 7);
-                        } else {
-                            unsafe {
-                                *self.obj_scanline.0.get_unchecked_mut(x) =
-                                    pixel_attrs.with_pal_color(pal_base | color_index);
+
+                macro_rules! render {
+                    ($window: expr) => {
+                        for x in start_x..end_x {
+                            if x_in_obj & 7 == x_in_obj_new_tile_compare {
+                                read_pixels!();
                             }
+                            let color_index = pixels.wrapping_shr(x_in_obj << 2) as u16 & 0xF;
+                            if color_index != 0 {
+                                if $window {
+                                    self.obj_window[x >> 3] |= 1 << (x & 7);
+                                } else {
+                                    unsafe {
+                                        *self.obj_scanline.0.get_unchecked_mut(x) =
+                                            pixel_attrs.with_pal_color(pal_base | color_index);
+                                    }
+                                }
+                            }
+                            x_in_obj = x_in_obj.wrapping_add(x_in_obj_incr as u32);
                         }
-                    }
-                    x_in_obj = x_in_obj.wrapping_add(x_in_obj_incr as u32);
-                    x += 1;
+                    };
+                }
+
+                if attrs.0.mode() == 2 {
+                    render!(true);
+                } else {
+                    render!(false);
                 }
             }
         }
