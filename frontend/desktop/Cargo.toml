@@ -42,6 +42,7 @@ rfd = "0.6"
 home = "0.5"
 parking_lot = "0.11"
 cpal = "0.13"
+chrono = { version = "0.4", features = ["serde"] }
 discord-rpc = { git = "https://github.com/Kelpsy/discord-rpc", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]

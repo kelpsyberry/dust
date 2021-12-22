@@ -1,3 +1,5 @@
+mod rtc;
+
 #[cfg(feature = "debug-views")]
 use super::debug_views;
 use super::{audio, config::CommonLaunchConfig, input, triple_buffer, FrameData};
@@ -165,6 +167,7 @@ pub(super) fn main(
             Some(data) => Box::new(audio::Sender::new(data, sync_to_audio)),
             None => Box::new(DummyAudioBackend),
         },
+        Box::new(rtc::Backend::new(config.rtc_time_offset_seconds.value)),
         #[cfg(feature = "log")]
         logger.clone(),
     );
@@ -285,6 +288,7 @@ pub(super) fn main(
                             DsSlotSpi::Flash(device) => DsSlotSpi::Flash(device.reset()),
                         },
                         emu.audio.backend,
+                        emu.rtc.backend,
                         #[cfg(feature = "log")]
                         logger.clone(),
                     );

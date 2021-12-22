@@ -1,5 +1,7 @@
 use crate::utils::{bitfield_debug, bounded_int};
 
+// TODO: Implement INT1 and INT2 (and also expose them)
+
 bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     pub struct Control(pub u16) {
@@ -46,11 +48,61 @@ bitfield_debug! {
     }
 }
 
-// TODO: Implement INT1 and INT2 (and also expose them)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct Time {
+    pub hour: u8,
+    pub minute: u8,
+    pub second: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Date {
+    pub years_since_2000: u8,
+    pub month: u8,
+    pub day: u8,
+    pub days_from_sunday: u8,
+}
+
+impl Default for Date {
+    #[inline]
+    fn default() -> Self {
+        Date {
+            years_since_2000: 5,
+            month: 1,
+            day: 1,
+            days_from_sunday: 6,
+        }
+    }
+}
+
+pub trait Backend {
+    fn get_time(&mut self) -> Time;
+    fn get_date_time(&mut self) -> (Date, Time);
+    fn set_date_time(&mut self, value: (Date, Time));
+}
+
+pub struct DummyBackend;
+
+impl Backend for DummyBackend {
+    fn get_time(&mut self) -> Time {
+        Time::default()
+    }
+
+    fn get_date_time(&mut self) -> (Date, Time) {
+        (Date::default(), Time::default())
+    }
+
+    fn set_date_time(&mut self, _: (Date, Time)) {}
+}
 
 pub struct Rtc {
     #[cfg(feature = "log")]
     logger: slog::Logger,
+    pub backend: Box<dyn Backend>,
+    latched_date_time: [u8; 7],
+    date_written: bool,
+    time_written: bool,
+    last_date_time_write_index: u8,
     control: Control,
     data: u8,
     data_pos: u8,
@@ -65,11 +117,28 @@ pub struct Rtc {
     pub free_reg: u8,
 }
 
+fn from_bcd(value: u8) -> u8 {
+    (value >> 4) * 10 + (value & 0xF)
+}
+
+fn to_bcd(value: u8) -> u8 {
+    (value / 10) << 4 | (value % 10)
+}
+
 impl Rtc {
-    pub(crate) fn new(first_launch: bool, #[cfg(feature = "log")] logger: slog::Logger) -> Self {
+    pub(crate) fn new(
+        backend: Box<dyn Backend>,
+        first_launch: bool,
+        #[cfg(feature = "log")] logger: slog::Logger,
+    ) -> Self {
         Rtc {
             #[cfg(feature = "log")]
             logger,
+            backend,
+            latched_date_time: [0; 7],
+            date_written: false,
+            time_written: false,
+            last_date_time_write_index: 0,
             control: Control(0),
             data: 0,
             data_pos: 0,
@@ -161,6 +230,59 @@ impl Rtc {
         self.status2 = value;
     }
 
+    fn latch_date(&mut self, date: Date) {
+        self.latched_date_time[0] = to_bcd(date.years_since_2000);
+        self.latched_date_time[1] = to_bcd(date.month);
+        self.latched_date_time[2] = to_bcd(date.day);
+        self.latched_date_time[3] = date.days_from_sunday;
+    }
+
+    fn latch_time(&mut self, time: Time) {
+        self.latched_date_time[4] = ((time.hour >= 12) as u8) << 6
+            | to_bcd(if self.status1.is_in_24_hour_mode() || time.hour < 12 {
+                time.hour
+            } else {
+                time.hour - 12
+            });
+        self.latched_date_time[5] = to_bcd(time.minute);
+        self.latched_date_time[6] = to_bcd(time.second);
+    }
+
+    fn flush_date_time_changes(&mut self) {
+        let (mut date, mut time) = self.backend.get_date_time();
+        if self.time_written {
+            self.time_written = false;
+            if self.last_date_time_write_index >= 4 {
+                time.hour = from_bcd(self.latched_date_time[4] & 0x3F)
+                    + if self.status1.is_in_24_hour_mode() {
+                        0
+                    } else {
+                        12 * (self.latched_date_time[4] >> 6 & 1)
+                    };
+            }
+            if self.last_date_time_write_index >= 5 {
+                time.minute = from_bcd(self.latched_date_time[5] & 0x7F);
+            }
+            if self.last_date_time_write_index >= 6 {
+                time.second = from_bcd(self.latched_date_time[6] & 0x7F);
+            }
+            if self.date_written {
+                self.date_written = false;
+                date.years_since_2000 = from_bcd(self.latched_date_time[0]);
+                if self.last_date_time_write_index >= 1 {
+                    date.month = from_bcd(self.latched_date_time[1] & 0x1F);
+                }
+                if self.last_date_time_write_index >= 2 {
+                    date.day = from_bcd(self.latched_date_time[2] & 0x3F);
+                }
+                if self.last_date_time_write_index >= 3 {
+                    date.days_from_sunday = from_bcd(self.latched_date_time[3] & 7);
+                }
+            }
+            self.backend.set_date_time((date, time));
+        }
+    }
+
     fn read_byte(&mut self) -> u8 {
         // TODO: What happens when reading beyond the end of registers? Right now 0 is returned.
         if self.data_pos == 0 {
@@ -169,6 +291,7 @@ impl Rtc {
             slog::warn!(self.logger, "Started a transfer with a byte read");
             return 0;
         }
+
         match self.cur_reg {
             RegIndex::STATUS1 => {
                 if self.data_pos == 1 {
@@ -185,17 +308,23 @@ impl Rtc {
             }
 
             RegIndex::DATE_TIME => {
-                // TODO: respond with real data
                 if self.data_pos <= 7 {
-                    return [0x00, 0x01, 0x01, 0x06, 0x00, 0x00, 0x00]
-                        [(self.data_pos - 1) as usize];
+                    if self.data_pos == 1 {
+                        let (date, time) = self.backend.get_date_time();
+                        self.latch_date(date);
+                        self.latch_time(time);
+                    }
+                    return self.latched_date_time[(self.data_pos - 1) as usize];
                 }
             }
 
             RegIndex::TIME => {
-                // TODO: respond with real data
                 if self.data_pos <= 3 {
-                    return [0x00, 0x00, 0x00][(self.data_pos - 1) as usize];
+                    if self.data_pos == 1 {
+                        let time = self.backend.get_time();
+                        self.latch_time(time);
+                    }
+                    return self.latched_date_time[(self.data_pos + 3) as usize];
                 }
             }
 
@@ -227,6 +356,7 @@ impl Rtc {
 
             _ => unreachable!(),
         }
+
         #[cfg(feature = "log")]
         slog::warn!(
             self.logger,
@@ -261,6 +391,7 @@ impl Rtc {
             }
             return;
         }
+
         match self.cur_reg {
             RegIndex::STATUS1 => {
                 if self.data_pos == 1 {
@@ -275,11 +406,22 @@ impl Rtc {
             }
 
             RegIndex::DATE_TIME => {
-                // TODO: Write date & time
+                self.date_written = true;
+                self.time_written = true;
+                if self.data_pos <= 7 {
+                    self.last_date_time_write_index = self.data_pos - 1;
+                    return self.latched_date_time[self.last_date_time_write_index as usize] =
+                        value;
+                }
             }
 
             RegIndex::TIME => {
-                // TODO: Write time
+                self.time_written = true;
+                if self.data_pos <= 3 {
+                    self.last_date_time_write_index = self.data_pos + 3;
+                    return self.latched_date_time[self.last_date_time_write_index as usize] =
+                        value;
+                }
             }
 
             RegIndex::INT1 => {
@@ -320,6 +462,7 @@ impl Rtc {
 
             _ => unreachable!(),
         }
+
         #[cfg(feature = "log")]
         slog::warn!(
             self.logger,
@@ -349,6 +492,7 @@ impl Rtc {
                 }
                 self.data = 0;
                 self.data_pos = 0;
+                self.flush_date_time_changes();
                 self.data_bit = 0;
             } else if clock_falling_edge {
                 if value.data_write() {

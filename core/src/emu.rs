@@ -17,7 +17,7 @@ use crate::{
     flash::Flash,
     gpu::{self, Gpu},
     ipc::Ipc,
-    rtc::Rtc,
+    rtc::{self, Rtc},
     spi,
     utils::{
         bitfield_debug, schedule::RawTimestamp, BoxedByteSlice, ByteMutSlice, Bytes,
@@ -74,6 +74,7 @@ pub struct Builder {
     pub ds_rom: ds_slot::rom::Rom,
     pub ds_spi: ds_slot::spi::Spi,
     pub audio_backend: Box<dyn audio::Backend>,
+    pub rtc_backend: Box<dyn rtc::Backend>,
     #[cfg(feature = "log")]
     logger: slog::Logger,
 
@@ -90,6 +91,7 @@ pub struct Builder {
 
 impl Builder {
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         arm7_bios: Box<Bytes<{ arm7::BIOS_SIZE }>>,
         arm9_bios: Box<Bytes<{ arm9::BIOS_BUFFER_SIZE }>>,
@@ -97,6 +99,7 @@ impl Builder {
         ds_rom: ds_slot::rom::Rom,
         ds_spi: ds_slot::spi::Spi,
         audio_backend: Box<dyn audio::Backend>,
+        rtc_backend: Box<dyn rtc::Backend>,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Self {
         Builder {
@@ -106,6 +109,7 @@ impl Builder {
             ds_rom,
             ds_spi,
             audio_backend,
+            rtc_backend,
             #[cfg(feature = "log")]
             logger,
 
@@ -157,6 +161,7 @@ impl Builder {
                 self.logger.new(slog::o!("spi" => "")),
             ),
             rtc: Rtc::new(
+                self.rtc_backend,
                 self.first_launch,
                 #[cfg(feature = "log")]
                 self.logger.new(slog::o!("rtc" => "")),

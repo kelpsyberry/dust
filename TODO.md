@@ -88,11 +88,8 @@
 - IO register unused bit behavior
 
 # Missing functionality
-- DS slot AUXSPI devices
 - Wi-Fi
-- RTC:
-    - Alarms
-    - Real date/time data
+- RTC alarms
 - KEYCNT
 - More accurate direct boot
 - ARM7 regular open bus (the ARM9 seems to always return 0)

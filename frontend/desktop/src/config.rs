@@ -63,6 +63,7 @@ pub struct Global {
     pub audio_interp_method: audio::InterpMethod,
     pub pause_on_launch: bool,
     pub autosave_interval_ms: f32,
+    pub rtc_time_offset_seconds: i64,
 
     pub save_dir_path: PathBuf,
 
@@ -92,6 +93,7 @@ impl Default for Global {
             audio_xq_interp_method: AudioXqInterpMethod::Nearest,
             pause_on_launch: false,
             autosave_interval_ms: 1000.0,
+            rtc_time_offset_seconds: 0,
 
             save_dir_path: data_base.join("saves"),
 
@@ -121,6 +123,7 @@ pub struct Game {
     pub audio_xq_interp_method: Option<AudioXqInterpMethod>,
     pub pause_on_launch: Option<bool>,
     pub autosave_interval_ms: Option<f32>,
+    pub rtc_time_offset_seconds: Option<i64>,
 
     pub save_path: Option<SavePathConfig>,
 }
@@ -141,6 +144,7 @@ impl Default for Game {
             audio_xq_interp_method: None,
             pause_on_launch: None,
             autosave_interval_ms: None,
+            rtc_time_offset_seconds: None,
 
             save_path: Some(SavePathConfig::GlobalSingle),
         }
@@ -383,6 +387,7 @@ pub struct CommonLaunchConfig {
     pub audio_xq_interp_method: RuntimeModifiable<AudioXqInterpMethod>,
     pub pause_on_launch: bool,
     pub autosave_interval_ms: RuntimeModifiable<f32>,
+    pub rtc_time_offset_seconds: RuntimeModifiable<i64>,
 }
 
 pub struct GameLaunchConfig {
@@ -555,6 +560,7 @@ fn common_launch_config(
     let audio_xq_interp_method = runtime_modifiable!(audio_xq_interp_method);
     let pause_on_launch = plain_setting!(pause_on_launch);
     let autosave_interval_ms = runtime_modifiable!(autosave_interval_ms);
+    let rtc_time_offset_seconds = runtime_modifiable!(rtc_time_offset_seconds);
 
     Ok((
         CommonLaunchConfig {
@@ -571,6 +577,7 @@ fn common_launch_config(
             audio_xq_interp_method,
             pause_on_launch,
             autosave_interval_ms,
+            rtc_time_offset_seconds,
         },
         warnings,
     ))
