@@ -55,6 +55,7 @@ pub struct Global {
     pub skip_firmware: bool,
     pub model: ModelConfig,
     pub limit_framerate: bool,
+    pub screen_rotation: i16,
     pub sync_to_audio: bool,
     #[cfg(feature = "xq-audio")]
     pub audio_xq_sample_rate_shift: u8,
@@ -85,6 +86,7 @@ impl Default for Global {
             skip_firmware: true,
             model: ModelConfig::Auto,
             limit_framerate: true,
+            screen_rotation: 0,
             sync_to_audio: true,
             audio_interp_method: audio::InterpMethod::Nearest,
             #[cfg(feature = "xq-audio")]
@@ -115,6 +117,7 @@ pub struct Game {
     pub skip_firmware: Option<bool>,
     pub model: Option<ModelConfig>,
     pub limit_framerate: Option<bool>,
+    pub screen_rotation: Option<i16>,
     pub sync_to_audio: Option<bool>,
     pub audio_interp_method: Option<audio::InterpMethod>,
     #[cfg(feature = "xq-audio")]
@@ -136,6 +139,7 @@ impl Default for Game {
             skip_firmware: None,
             model: None,
             limit_framerate: None,
+            screen_rotation: None,
             sync_to_audio: None,
             audio_interp_method: None,
             #[cfg(feature = "xq-audio")]
@@ -378,6 +382,7 @@ pub struct CommonLaunchConfig {
     pub skip_firmware: bool,
     pub model: Model,
     pub limit_framerate: RuntimeModifiable<bool>,
+    pub screen_rotation: RuntimeModifiable<i16>,
     pub sync_to_audio: RuntimeModifiable<bool>,
     pub audio_interp_method: RuntimeModifiable<audio::InterpMethod>,
     pub audio_sample_chunk_size: u32,
@@ -552,6 +557,7 @@ fn common_launch_config(
 
     let skip_firmware = plain_setting!(skip_firmware);
     let limit_framerate = runtime_modifiable!(limit_framerate);
+    let screen_rotation = runtime_modifiable!(screen_rotation);
     let sync_to_audio = runtime_modifiable!(sync_to_audio);
     let audio_interp_method = runtime_modifiable!(audio_interp_method);
     #[cfg(feature = "xq-audio")]
@@ -568,6 +574,7 @@ fn common_launch_config(
             skip_firmware,
             model: model.unwrap(),
             limit_framerate,
+            screen_rotation,
             sync_to_audio,
             audio_interp_method,
             audio_sample_chunk_size: global_config.audio_sample_chunk_size,

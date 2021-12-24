@@ -61,15 +61,37 @@ macro_rules! config_error {
     };
 }
 
-pub fn scale_to_fit(aspect_ratio: f32, frame_size: [f32; 2]) -> ([f32; 2], [f32; 2]) {
-    let width = (frame_size[1] * aspect_ratio).min(frame_size[0]);
-    let height = width / aspect_ratio;
+pub fn scale_to_fit_rotated(
+    aspect_ratio: f32,
+    rot: f32,
+    frame_size: [f32; 2],
+) -> ([f32; 2], [[f32; 2]; 4]) {
+    let half_size = frame_size.map(|v| v * 0.5);
+    let (sin, cos) = rot.sin_cos();
+    let mut scale = f32::INFINITY;
+    let rotate_and_get_scale = |[x, y]: [f32; 2]| {
+        let rot_x = x * cos - y * sin;
+        let rot_y = x * sin + y * cos;
+        scale = scale
+            .min(half_size[0] / rot_x.abs())
+            .min(half_size[1] / rot_y.abs());
+        [rot_x, rot_y]
+    };
     (
+        half_size,
         [
-            (frame_size[0] - width) * 0.5,
-            (frame_size[1] - height) * 0.5,
-        ],
-        [width, height],
+            [-aspect_ratio, -1.0],
+            [aspect_ratio, -1.0],
+            [aspect_ratio, 1.0],
+            [-aspect_ratio, 1.0],
+        ]
+        .map(rotate_and_get_scale)
+        .map(|point| {
+            [
+                point[0] * scale + half_size[0],
+                point[1] * scale + half_size[1],
+            ]
+        }),
     )
 }
 

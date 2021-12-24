@@ -12,7 +12,7 @@ use super::{
     audio,
     config::{self, CommonLaunchConfig, Config},
     emu, input, triple_buffer,
-    utils::{config_base, scale_to_fit},
+    utils::{config_base, scale_to_fit_rotated},
     FrameData,
 };
 #[cfg(feature = "xq-audio")]
@@ -81,6 +81,7 @@ struct UiState {
 
     playing: bool,
     limit_framerate: config::RuntimeModifiable<bool>,
+    screen_rotation: config::RuntimeModifiable<i16>,
 
     show_menu_bar: bool,
 
@@ -92,10 +93,10 @@ struct UiState {
     audio_volume: f32,
     audio_sample_chunk_size: u32,
     #[cfg(feature = "xq-audio")]
-    audio_xq_sample_rate_shift: u8,
+    audio_xq_sample_rate_shift: config::RuntimeModifiable<u8>,
     #[cfg(feature = "xq-audio")]
-    audio_xq_interp_method: AudioXqInterpMethod,
-    audio_interp_method: audio::InterpMethod,
+    audio_xq_interp_method: config::RuntimeModifiable<AudioXqInterpMethod>,
+    audio_interp_method: config::RuntimeModifiable<audio::InterpMethod>,
     sync_to_audio: config::RuntimeModifiable<bool>,
 
     #[cfg(feature = "log")]
@@ -313,19 +314,33 @@ impl UiState {
         self.playing = false;
     }
 
-    fn set_touchscreen_bounds(&mut self, start: [f32; 2], end: [f32; 2], window: &window::Window) {
-        self.input.set_touchscreen_bounds((
+    fn set_touchscreen_bounds(
+        &mut self,
+        center: [f32; 2],
+        points: &[[f32; 2]; 4],
+        rot: f32,
+        window: &window::Window,
+    ) {
+        fn distance(a: [f32; 2], b: [f32; 2]) -> f32 {
+            let x = b[0] - a[0];
+            let y = b[1] - a[1];
+            (x * x + y * y).sqrt()
+        }
+        let screen_center = center.map(|v| v as f64 * window.scale_factor);
+        let touchscreen_size = [
+            distance(points[0], points[1]) as f64 * window.scale_factor,
+            (distance(points[1], points[2]) * 0.5) as f64 * window.scale_factor,
+        ];
+        self.input.set_touchscreen_bounds(
+            screen_center.into(),
             (
-                start[0] as f64 * window.scale_factor,
-                start[1] as f64 * window.scale_factor,
+                screen_center[0],
+                screen_center[1] + touchscreen_size[1] * 0.5,
             )
                 .into(),
-            (
-                end[0] as f64 * window.scale_factor,
-                end[1] as f64 * window.scale_factor,
-            )
-                .into(),
-        ));
+            touchscreen_size.into(),
+            rot as f64,
+        );
     }
 
     #[cfg(feature = "discord-presence")]
@@ -447,6 +462,7 @@ pub fn main() {
 
         playing: false,
         limit_framerate: config::RuntimeModifiable::global(global_config.contents.limit_framerate),
+        screen_rotation: config::RuntimeModifiable::global(global_config.contents.screen_rotation),
 
         screen_focused: true,
         input: input::State::new(keymap),
@@ -456,10 +472,16 @@ pub fn main() {
         audio_volume: global_config.contents.audio_volume,
         audio_sample_chunk_size: global_config.contents.audio_sample_chunk_size,
         #[cfg(feature = "xq-audio")]
-        audio_xq_sample_rate_shift: global_config.contents.audio_xq_sample_rate_shift,
+        audio_xq_sample_rate_shift: config::RuntimeModifiable::global(
+            global_config.contents.audio_xq_sample_rate_shift,
+        ),
         #[cfg(feature = "xq-audio")]
-        audio_xq_interp_method: global_config.contents.audio_xq_interp_method,
-        audio_interp_method: global_config.contents.audio_interp_method,
+        audio_xq_interp_method: config::RuntimeModifiable::global(
+            global_config.contents.audio_xq_interp_method,
+        ),
+        audio_interp_method: config::RuntimeModifiable::global(
+            global_config.contents.audio_interp_method,
+        ),
         sync_to_audio: config::RuntimeModifiable::global(global_config.contents.sync_to_audio),
 
         show_menu_bar: true,
@@ -669,22 +691,31 @@ pub fn main() {
                             if imgui::Slider::new("Sample rate multiplier", 0, 10)
                                 .display_format(&format!(
                                     "{}x",
-                                    1 << state.audio_xq_sample_rate_shift
+                                    1 << state.audio_xq_sample_rate_shift.value
                                 ))
-                                .build(ui, &mut state.audio_xq_sample_rate_shift)
+                                .build(ui, &mut state.audio_xq_sample_rate_shift.value)
                             {
                                 if let Some(audio_channel) = state.audio_channel.as_mut() {
-                                    audio_channel
-                                        .set_xq_sample_rate_shift(state.audio_xq_sample_rate_shift);
+                                    audio_channel.set_xq_sample_rate_shift(
+                                        state.audio_xq_sample_rate_shift.value,
+                                    );
                                 }
                                 state
                                     .message_tx
                                     .send(emu::Message::UpdateAudioXqSampleRateShift(
-                                        state.audio_xq_sample_rate_shift,
+                                        state.audio_xq_sample_rate_shift.value,
                                     ))
                                     .expect("Couldn't send UI message");
+                                if state.audio_xq_sample_rate_shift.origin
+                                    == config::SettingOrigin::Game
+                                {
+                                    let game_config = state.game_config.as_mut().unwrap();
+                                    game_config.contents.audio_xq_sample_rate_shift =
+                                        Some(state.audio_xq_sample_rate_shift.value);
+                                    game_config.dirty = true;
+                                }
                                 state.global_config.contents.audio_xq_sample_rate_shift =
-                                    state.audio_xq_sample_rate_shift;
+                                    state.audio_xq_sample_rate_shift.value;
                                 state.global_config.dirty = true;
                             }
 
@@ -692,7 +723,7 @@ pub fn main() {
                                 [AudioXqInterpMethod::Nearest, AudioXqInterpMethod::Cubic];
                             let mut i = INTERP_METHODS
                                 .iter()
-                                .position(|&m| m == state.audio_xq_interp_method)
+                                .position(|&m| m == state.audio_xq_interp_method.value)
                                 .unwrap();
                             let updated = ui.combo(
                                 "Interpolation method",
@@ -707,15 +738,23 @@ pub fn main() {
                                 },
                             );
                             if updated {
-                                state.audio_xq_interp_method = INTERP_METHODS[i];
+                                state.audio_xq_interp_method.value = INTERP_METHODS[i];
                                 state
                                     .message_tx
                                     .send(emu::Message::UpdateAudioXqInterpMethod(
-                                        state.audio_xq_interp_method,
+                                        state.audio_xq_interp_method.value,
                                     ))
                                     .expect("Couldn't send UI message");
+                                if state.audio_xq_interp_method.origin
+                                    == config::SettingOrigin::Game
+                                {
+                                    let game_config = state.game_config.as_mut().unwrap();
+                                    game_config.contents.audio_xq_interp_method =
+                                        Some(state.audio_xq_interp_method.value);
+                                    game_config.dirty = true;
+                                }
                                 state.global_config.contents.audio_xq_interp_method =
-                                    state.audio_xq_interp_method;
+                                    state.audio_xq_interp_method.value;
                                 state.global_config.dirty = true;
                             }
                         });
@@ -725,7 +764,7 @@ pub fn main() {
                                 [audio::InterpMethod::Nearest, audio::InterpMethod::Cubic];
                             let mut i = INTERP_METHODS
                                 .iter()
-                                .position(|&m| m == state.audio_interp_method)
+                                .position(|&m| m == state.audio_interp_method.value)
                                 .unwrap();
                             let updated = ui.combo("", &mut i, &INTERP_METHODS, |interp_method| {
                                 match interp_method {
@@ -735,14 +774,20 @@ pub fn main() {
                                 .into()
                             });
                             if updated {
-                                state.audio_interp_method = INTERP_METHODS[i];
+                                state.audio_interp_method.value = INTERP_METHODS[i];
                                 if let Some(audio_channel) = state.audio_channel.as_mut() {
-                                    audio_channel
-                                        .output_stream
-                                        .set_interp(state.audio_interp_method.create_interp());
+                                    audio_channel.output_stream.set_interp(
+                                        state.audio_interp_method.value.create_interp(),
+                                    );
+                                }
+                                if state.audio_interp_method.origin == config::SettingOrigin::Game {
+                                    let game_config = state.game_config.as_mut().unwrap();
+                                    game_config.contents.audio_interp_method =
+                                        Some(state.audio_interp_method.value);
+                                    game_config.dirty = true;
                                 }
                                 state.global_config.contents.audio_interp_method =
-                                    state.audio_interp_method;
+                                    state.audio_interp_method.value;
                                 state.global_config.dirty = true;
                             }
                         });
@@ -750,6 +795,11 @@ pub fn main() {
                         if imgui::MenuItem::new("Limit framerate")
                             .build_with_ref(ui, &mut state.limit_framerate.value)
                         {
+                            if let Some(shared_state) = &state.emu_shared_state {
+                                shared_state
+                                    .limit_framerate
+                                    .store(state.limit_framerate.value, Ordering::Relaxed);
+                            }
                             if state.limit_framerate.origin == config::SettingOrigin::Game {
                                 let game_config = state.game_config.as_mut().unwrap();
                                 game_config.contents.limit_framerate =
@@ -759,16 +809,49 @@ pub fn main() {
                             state.global_config.contents.limit_framerate =
                                 state.limit_framerate.value;
                             state.global_config.dirty = true;
-                            if let Some(shared_state) = &state.emu_shared_state {
-                                shared_state
-                                    .limit_framerate
-                                    .store(state.limit_framerate.value, Ordering::Relaxed);
-                            }
                         }
+
+                        ui.menu("Screen rotation", || {
+                            let mut screen_rot = state.screen_rotation.value as i32;
+                            if imgui::InputInt::new(ui, "", &mut screen_rot)
+                                .step(1)
+                                .build()
+                            {
+                                screen_rot = screen_rot.clamp(0, 359);
+                            }
+                            macro_rules! buttons {
+                                ($($value: expr),*) => {
+                                    $(
+                                        if ui.button(stringify!($value)) {
+                                            screen_rot = $value;
+                                        }
+                                        ui.same_line();
+                                    )*
+                                    ui.new_line();
+                                };
+                            }
+                            buttons!(0, 90, 180, 270);
+                            if screen_rot != state.screen_rotation.value as i32 {
+                                state.screen_rotation.value = screen_rot as i16;
+                                if state.screen_rotation.origin == config::SettingOrigin::Game {
+                                    let game_config = state.game_config.as_mut().unwrap();
+                                    game_config.contents.screen_rotation =
+                                        Some(state.screen_rotation.value);
+                                    game_config.dirty = true;
+                                }
+                                state.global_config.contents.screen_rotation =
+                                    state.screen_rotation.value;
+                                state.global_config.dirty = true;
+                            }
+                        });
 
                         if imgui::MenuItem::new("Sync to audio")
                             .build_with_ref(ui, &mut state.sync_to_audio.value)
                         {
+                            state
+                                .message_tx
+                                .send(emu::Message::UpdateAudioSync(state.sync_to_audio.value))
+                                .expect("Couldn't send UI message");
                             if state.sync_to_audio.origin == config::SettingOrigin::Game {
                                 let game_config = state.game_config.as_mut().unwrap();
                                 game_config.contents.sync_to_audio =
@@ -777,10 +860,6 @@ pub fn main() {
                             }
                             state.global_config.contents.sync_to_audio = state.sync_to_audio.value;
                             state.global_config.dirty = true;
-                            state
-                                .message_tx
-                                .send(emu::Message::UpdateAudioSync(state.sync_to_audio.value))
-                                .expect("Couldn't send UI message");
                         }
 
                         if imgui::MenuItem::new("Fullscreen render")
@@ -850,28 +929,28 @@ pub fn main() {
 
             let window_size = window.window.inner_size();
             const ASPECT_RATIO: f32 = SCREEN_WIDTH as f32 / (2 * SCREEN_HEIGHT) as f32;
+            let screen_rot = (state.screen_rotation.value as f32).to_radians();
             if state.global_config.contents.fullscreen_render {
-                let ([x_base, y_base], [width, height]) = scale_to_fit(
+                let (center, points) = scale_to_fit_rotated(
                     ASPECT_RATIO,
+                    screen_rot,
                     [
                         (window_size.width as f64 / window.scale_factor) as f32,
                         (window_size.height as f64 / window.scale_factor) as f32,
                     ],
                 );
                 ui.get_background_draw_list()
-                    .add_image(
+                    .add_image_quad(
                         state.fb_texture_id,
-                        [x_base, y_base],
-                        [x_base + width, y_base + height],
+                        points[0],
+                        points[1],
+                        points[2],
+                        points[3],
                     )
                     .build();
                 state.screen_focused =
                     !ui.is_window_focused_with_flags(imgui::WindowFocusedFlags::ANY_WINDOW);
-                state.set_touchscreen_bounds(
-                    [x_base, y_base + height * 0.5],
-                    [x_base + width, y_base + height],
-                    window,
-                );
+                state.set_touchscreen_bounds(center, &points, screen_rot, window);
             } else {
                 let style = ui.clone_style();
                 let _window_padding = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0; 2]));
@@ -895,16 +974,43 @@ pub fn main() {
                     )
                     .position_pivot([0.5; 2])
                     .build(ui, || {
-                        let ([x_base, y_base], [width, height]) =
-                            scale_to_fit(ASPECT_RATIO, ui.content_region_avail());
-                        ui.set_cursor_pos([x_base, titlebar_height + y_base]);
-                        imgui::Image::new(state.fb_texture_id, [width, height]).build(ui);
-                        state.screen_focused = ui.is_window_focused();
+                        let (center, points) = scale_to_fit_rotated(
+                            ASPECT_RATIO,
+                            screen_rot,
+                            ui.content_region_avail(),
+                        );
+                        let mut min = [f32::INFINITY; 2];
+                        for point in &points {
+                            min[0] = min[0].min(point[0]);
+                            min[1] = min[1].min(point[1]);
+                        }
+                        ui.dummy([0, 1].map(|i| {
+                            (points[0][i] - points[2][i])
+                                .abs()
+                                .max((points[1][i] - points[3][i]).abs())
+                        }));
                         let window_pos = ui.window_pos();
-                        let abs_base = [x_base + window_pos[0], y_base + window_pos[1]];
+                        let content_region_min = ui.window_content_region_min();
+                        let upper_left = [
+                            window_pos[0] + content_region_min[0],
+                            window_pos[1] + content_region_min[1],
+                        ];
+                        let abs_points =
+                            points.map(|[x, y]| [x + upper_left[0], y + upper_left[1]]);
+                        ui.get_window_draw_list()
+                            .add_image_quad(
+                                state.fb_texture_id,
+                                abs_points[0],
+                                abs_points[1],
+                                abs_points[2],
+                                abs_points[3],
+                            )
+                            .build();
+                        state.screen_focused = ui.is_window_focused();
                         state.set_touchscreen_bounds(
-                            [abs_base[0], abs_base[1] + height * 0.5],
-                            [abs_base[0] + width, abs_base[1] + height],
+                            [center[0] + upper_left[0], center[1] + upper_left[1]],
+                            &abs_points,
+                            screen_rot,
                             window,
                         );
                     });

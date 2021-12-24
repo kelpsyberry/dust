@@ -23,9 +23,11 @@ type PressedKey = (Option<VirtualKeyCode>, ScanCode);
 pub struct State {
     pressed_keys: Vec<PressedKey>,
     pub keymap: Config<Keymap>,
-    touchscreen_bounds: (PhysicalPosition<f64>, PhysicalPosition<f64>),
     touchscreen_center: PhysicalPosition<f64>,
+    touchscreen_size: PhysicalSize<f64>,
     touchscreen_half_size: PhysicalSize<f64>,
+    touchscreen_rot: (f64, f64),
+    touchscreen_rot_center: PhysicalPosition<f64>,
     mouse_pos: PhysicalPosition<f64>,
     touch_pos: Option<[u16; 2]>,
     prev_touch_pos: Option<[u16; 2]>,
@@ -37,9 +39,11 @@ impl State {
         State {
             pressed_keys: vec![],
             keymap,
-            touchscreen_bounds: Default::default(),
+            touchscreen_size: Default::default(),
             touchscreen_center: Default::default(),
             touchscreen_half_size: Default::default(),
+            touchscreen_rot: (0.0, 1.0),
+            touchscreen_rot_center: Default::default(),
             mouse_pos: Default::default(),
             touch_pos: None,
             prev_touch_pos: None,
@@ -49,35 +53,47 @@ impl State {
 
     pub fn set_touchscreen_bounds(
         &mut self,
-        bounds: (PhysicalPosition<f64>, PhysicalPosition<f64>),
+        rot_center: PhysicalPosition<f64>,
+        center: PhysicalPosition<f64>,
+        size: PhysicalSize<f64>,
+        rot: f64,
     ) {
-        self.touchscreen_bounds = bounds;
-        self.touchscreen_center = (
-            (bounds.0.x + bounds.1.x) * 0.5,
-            (bounds.0.y + bounds.1.y) * 0.5,
-        )
-            .into();
-        self.touchscreen_half_size = (
-            (bounds.1.x - bounds.0.x) * 0.5,
-            (bounds.1.y - bounds.0.y) * 0.5,
-        )
-            .into();
+        self.touchscreen_center = center;
+        self.touchscreen_size = size;
+        self.touchscreen_half_size = (size.width * 0.5, size.height * 0.5).into();
+        self.touchscreen_rot = rot.sin_cos();
+        self.touchscreen_rot_center = rot_center;
     }
 
-    fn recalculate_touch_pos(&mut self) {
-        let diff = (
-            self.mouse_pos.x - self.touchscreen_center.x,
-            self.mouse_pos.y - self.touchscreen_center.y,
-        );
-        let scale = (self.touchscreen_half_size.width / diff.0)
-            .abs()
-            .min((self.touchscreen_half_size.height / diff.1).abs())
-            .min(1.0);
+    fn recalculate_touch_pos<const CLAMP: bool>(&mut self) {
+        let mut diff = [
+            self.mouse_pos.x - self.touchscreen_rot_center.x,
+            self.mouse_pos.y - self.touchscreen_rot_center.y,
+        ];
+        diff = [
+            self.touchscreen_rot_center.x
+                + diff[0] * self.touchscreen_rot.1
+                + diff[1] * self.touchscreen_rot.0
+                - self.touchscreen_center.x,
+            self.touchscreen_rot_center.y - diff[0] * self.touchscreen_rot.0
+                + diff[1] * self.touchscreen_rot.1
+                - self.touchscreen_center.y,
+        ];
+        if CLAMP {
+            let scale = (self.touchscreen_half_size.width / diff[0])
+                .abs()
+                .min((self.touchscreen_half_size.height / diff[1]).abs())
+                .min(1.0);
+            diff = diff.map(|v| v * scale);
+        } else if diff[0].abs() >= self.touchscreen_half_size.width
+            || diff[1].abs() >= self.touchscreen_half_size.height
+        {
+            return;
+        }
         self.touch_pos = Some([
-            (((diff.0 * scale) / self.touchscreen_half_size.width + 1.0) * 2048.0)
-                .clamp(0.0, 4095.0) as u16,
-            (((diff.1 * scale) / self.touchscreen_half_size.height + 1.0) * 2048.0)
-                .clamp(0.0, 4095.0) as u16,
+            ((diff[0] / self.touchscreen_half_size.width + 1.0) * 2048.0).clamp(0.0, 4095.0) as u16,
+            ((diff[1] / self.touchscreen_half_size.height + 1.0) * 2048.0).clamp(0.0, 4095.0)
+                as u16,
         ]);
     }
 
@@ -102,7 +118,7 @@ impl State {
                 WindowEvent::CursorMoved { position, .. } => {
                     self.mouse_pos = *position;
                     if self.touch_pos.is_some() {
-                        self.recalculate_touch_pos();
+                        self.recalculate_touch_pos::<true>();
                     }
                 }
 
@@ -112,13 +128,8 @@ impl State {
                     ..
                 } => {
                     if *state == ElementState::Pressed {
-                        if catch_new
-                            && (self.touchscreen_bounds.0.x..self.touchscreen_bounds.1.x)
-                                .contains(&self.mouse_pos.x)
-                            && (self.touchscreen_bounds.0.y..self.touchscreen_bounds.1.y)
-                                .contains(&self.mouse_pos.y)
-                        {
-                            self.recalculate_touch_pos();
+                        if catch_new {
+                            self.recalculate_touch_pos::<false>();
                         }
                     } else {
                         self.touch_pos = None;
