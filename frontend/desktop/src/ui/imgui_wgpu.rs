@@ -335,7 +335,7 @@ impl Renderer {
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: None,
-                clamp_depth: false,
+                unclipped_depth: false,
                 polygon_mode: wgpu::PolygonMode::Fill,
                 conservative: false,
             },
@@ -361,6 +361,7 @@ impl Renderer {
                     write_mask: wgpu::ColorWrites::all(),
                 }],
             }),
+            multiview: None,
         })
     }
 
@@ -410,10 +411,7 @@ impl Renderer {
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler {
-                            filtering: true,
-                            comparison: false,
-                        },
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
