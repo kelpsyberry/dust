@@ -4,13 +4,13 @@ use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct TextureRange {
-    pub mip_level: u8,
+    pub mip_level: u32,
     pub x: u32,
     pub y: u32,
     pub z: u32,
-    pub width: Option<NonZeroU32>,
-    pub height: Option<NonZeroU32>,
-    pub depth_or_array_layers: Option<NonZeroU32>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub depth_or_array_layers: Option<u32>,
     pub offset: u64,
 }
 
@@ -236,7 +236,7 @@ impl Texture {
         queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &self.texture,
-                mip_level: 0,
+                mip_level: range.mip_level,
                 origin: wgpu::Origin3d {
                     x: range.x,
                     y: range.y,
@@ -251,18 +251,11 @@ impl Texture {
                 rows_per_image: self.rows_per_image,
             },
             wgpu::Extent3d {
-                width: match range.width {
-                    Some(value) => value.get(),
-                    None => self.texture_desc.size.width,
-                },
-                height: match range.height {
-                    Some(value) => value.get(),
-                    None => self.texture_desc.size.height,
-                },
-                depth_or_array_layers: match range.depth_or_array_layers {
-                    Some(value) => value.get(),
-                    None => self.texture_desc.size.depth_or_array_layers,
-                },
+                width: range.width.unwrap_or(self.texture_desc.size.width),
+                height: range.height.unwrap_or(self.texture_desc.size.height),
+                depth_or_array_layers: range
+                    .depth_or_array_layers
+                    .unwrap_or(self.texture_desc.size.depth_or_array_layers),
             },
         );
     }

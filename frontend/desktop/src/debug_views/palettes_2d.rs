@@ -1,4 +1,4 @@
-use super::{FrameDataSlot, View};
+use super::{common::rgb_5_to_rgba_f32, FrameDataSlot, View};
 use crate::ui::window::Window;
 use dust_core::{
     cpu::Engine,
@@ -6,22 +6,6 @@ use dust_core::{
     utils::{zeroed_box, ByteMutSlice, ByteSlice, Bytes},
 };
 use imgui::{sys as imgui_sys, ColorButton, StyleVar, Ui};
-
-pub struct PaletteData {
-    standard: Box<Bytes<0x800>>,
-    ext_bg: [Box<Bytes<0x8000>>; 2],
-    ext_obj: [Box<Bytes<0x2000>>; 2],
-}
-
-impl Default for PaletteData {
-    fn default() -> Self {
-        PaletteData {
-            standard: zeroed_box(),
-            ext_bg: [zeroed_box(), zeroed_box()],
-            ext_obj: [zeroed_box(), zeroed_box()],
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Engine2d {
@@ -43,24 +27,46 @@ pub struct Selection {
     palette: Palette,
 }
 
+impl Default for Selection {
+    fn default() -> Self {
+        Selection {
+            engine: Engine2d::A,
+            palette: Palette::Bg,
+        }
+    }
+}
+
 impl Selection {
     const fn new(engine: Engine2d, palette: Palette) -> Self {
         Selection { engine, palette }
+    }
+
+    fn data_len(&self) -> usize {
+        match self.palette {
+            Palette::Bg | Palette::Obj => 0x200,
+            Palette::ExtBg => 0x8000,
+            Palette::ExtObj => 0x2000,
+        }
+    }
+}
+
+pub struct PaletteData {
+    selection: Selection,
+    data: Box<Bytes<0x8000>>,
+}
+
+impl Default for PaletteData {
+    fn default() -> Self {
+        PaletteData {
+            selection: Selection::default(),
+            data: zeroed_box(),
+        }
     }
 }
 
 pub struct Palettes2D {
     cur_selection: Selection,
     data: PaletteData,
-}
-
-fn rgb_5_to_rgba_f32(color: u16) -> [f32; 4] {
-    [
-        (color & 0x1F) as f32 / 31.0,
-        (color >> 5 & 0x1F) as f32 / 31.0,
-        (color >> 10 & 0x1F) as f32 / 31.0,
-        1.0,
-    ]
 }
 
 impl View for Palettes2D {
@@ -72,10 +78,7 @@ impl View for Palettes2D {
     #[inline]
     fn new(_window: &mut Window) -> Self {
         Palettes2D {
-            cur_selection: Selection {
-                engine: Engine2d::A,
-                palette: Palette::Bg,
-            },
+            cur_selection: Selection::default(),
             data: PaletteData::default(),
         }
     }
@@ -95,17 +98,18 @@ impl View for Palettes2D {
         frame_data: S,
     ) {
         let palette_data = frame_data.get_or_insert_with(Default::default);
+        palette_data.selection = *emu_state;
         match emu_state.palette {
             Palette::Bg => {
                 let base = ((emu_state.engine == Engine2d::B) as usize) << 10;
-                palette_data.standard[base..base + 0x200].copy_from_slice(unsafe {
+                palette_data.data[..0x200].copy_from_slice(unsafe {
                     &emu.gpu.vram.banks.palette.as_byte_slice()[base..base + 0x200]
                 });
             }
 
             Palette::Obj => {
                 let base = ((emu_state.engine == Engine2d::B) as usize) << 10 | 0x200;
-                palette_data.standard[base..base + 0x200].copy_from_slice(unsafe {
+                palette_data.data[..0x200].copy_from_slice(unsafe {
                     &emu.gpu.vram.banks.palette.as_byte_slice()[base..base + 0x200]
                 });
             }
@@ -114,18 +118,17 @@ impl View for Palettes2D {
                 Engine2d::A => unsafe {
                     emu.gpu.vram.read_a_bg_ext_pal_slice::<usize>(
                         0,
-                        ByteMutSlice::new(&mut palette_data.ext_bg[0][..0x4000]),
+                        ByteMutSlice::new(&mut palette_data.data[..0x4000]),
                     );
                     emu.gpu.vram.read_a_bg_ext_pal_slice::<usize>(
                         0x4000,
-                        ByteMutSlice::new(&mut palette_data.ext_bg[0][0x4000..]),
+                        ByteMutSlice::new(&mut palette_data.data[0x4000..]),
                     );
                 },
                 Engine2d::B => unsafe {
-                    emu.gpu.vram.read_b_bg_ext_pal_slice::<usize>(
-                        0,
-                        palette_data.ext_bg[1].as_byte_mut_slice(),
-                    );
+                    emu.gpu
+                        .vram
+                        .read_b_bg_ext_pal_slice::<usize>(0, palette_data.data.as_byte_mut_slice());
                 },
             },
 
@@ -133,13 +136,13 @@ impl View for Palettes2D {
                 Engine2d::A => unsafe {
                     emu.gpu.vram.read_a_obj_ext_pal_slice::<usize>(
                         0,
-                        palette_data.ext_obj[0].as_byte_mut_slice(),
+                        ByteMutSlice::new(&mut palette_data.data[..0x2000]),
                     );
                 },
                 Engine2d::B => unsafe {
-                    emu.gpu.vram.read_a_obj_ext_pal_slice::<usize>(
+                    emu.gpu.vram.read_b_obj_ext_pal_slice::<usize>(
                         0,
-                        palette_data.ext_obj[1].as_byte_mut_slice(),
+                        ByteMutSlice::new(&mut palette_data.data[..0x2000]),
                     );
                 },
             },
@@ -148,29 +151,9 @@ impl View for Palettes2D {
 
     #[inline]
     fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, _window: &mut Window) {
-        match self.cur_selection.palette {
-            Palette::Bg => {
-                let base = ((self.cur_selection.engine == Engine2d::B) as usize) << 10;
-                self.data.standard[base..base + 0x200]
-                    .copy_from_slice(&frame_data.standard[base..base + 0x200]);
-            }
-
-            Palette::Obj => {
-                let base = ((self.cur_selection.engine == Engine2d::B) as usize) << 10 | 0x200;
-                self.data.standard[base..base + 0x200]
-                    .copy_from_slice(&frame_data.standard[base..base + 0x200]);
-            }
-
-            Palette::ExtBg => {
-                let i = (self.cur_selection.engine == Engine2d::B) as usize;
-                self.data.ext_bg[i].copy_from_slice(&frame_data.ext_bg[i][..]);
-            }
-
-            Palette::ExtObj => {
-                let i = (self.cur_selection.engine == Engine2d::B) as usize;
-                self.data.ext_obj[i].copy_from_slice(&frame_data.ext_obj[i][..]);
-            }
-        }
+        self.data.selection = frame_data.selection;
+        let data_len = frame_data.selection.data_len();
+        self.data.data[..data_len].copy_from_slice(&frame_data.data[..data_len]);
     }
 
     fn customize_window<'a, T: AsRef<str>>(
@@ -224,6 +207,10 @@ impl View for Palettes2D {
             None
         };
 
+        if self.data.selection != self.cur_selection {
+            return new_state;
+        }
+
         let _frame_rounding = ui.push_style_var(StyleVar::FrameRounding(1.0));
 
         unsafe {
@@ -256,21 +243,9 @@ impl View for Palettes2D {
         }
 
         match self.cur_selection.palette {
-            Palette::ExtBg => color_table(
-                ui,
-                self.data.ext_bg[(self.cur_selection.engine == Engine2d::B) as usize]
-                    .as_byte_slice(),
-            ),
-            Palette::ExtObj => color_table(
-                ui,
-                self.data.ext_obj[(self.cur_selection.engine == Engine2d::B) as usize]
-                    .as_byte_slice(),
-            ),
-            _ => {
-                let base = ((self.cur_selection.engine == Engine2d::B) as usize) << 10
-                    | ((self.cur_selection.palette == Palette::Obj) as usize) << 9;
-                color_table(ui, ByteSlice::new(&self.data.standard[base..base + 0x200]));
-            }
+            Palette::ExtBg => color_table(ui, self.data.data.as_byte_slice()),
+            Palette::ExtObj => color_table(ui, ByteSlice::new(&self.data.data[..0x2000])),
+            _ => color_table(ui, ByteSlice::new(&self.data.data[..0x200])),
         }
         unsafe {
             imgui_sys::igPopStyleVar(1);

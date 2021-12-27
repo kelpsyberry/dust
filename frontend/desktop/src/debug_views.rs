@@ -10,6 +10,8 @@ mod arm9_memory;
 use arm9_memory::Arm9Memory;
 mod palettes_2d;
 use palettes_2d::Palettes2D;
+mod bg_maps_2d;
+use bg_maps_2d::BgMaps2d;
 #[allow(dead_code)]
 mod common;
 
@@ -412,4 +414,5 @@ declare_structs!(
     instanceable arm9_memory, Arm9Memory, ToggleArm9Memory, UpdateArm9Memory;
     instanceable arm9_disasm, CpuDisasm<true>, ToggleArm9Disasm, UpdateArm9Disasm;
     instanceable palettes_2d, Palettes2D, TogglePalettes2D, UpdatePalettes2D;
+    instanceable bg_maps_2d, BgMaps2d, ToggleBgMaps2d, UpdateBgMaps2d;
 );
