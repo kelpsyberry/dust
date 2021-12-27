@@ -400,7 +400,7 @@ impl Channel {
             }
             return;
         }
-        if (channel.cur_sample_index as u32) >= channel.total_samples {
+        if channel.cur_sample_index as u32 >= channel.total_samples {
             match channel.repeat_mode {
                 RepeatMode::Manual => {}
                 RepeatMode::LoopInfinite => {
@@ -432,7 +432,7 @@ impl Channel {
             }
             return;
         }
-        if (channel.cur_sample_index as u32) >= channel.total_samples {
+        if channel.cur_sample_index as u32 >= channel.total_samples {
             match channel.repeat_mode {
                 RepeatMode::Manual => {}
                 RepeatMode::LoopInfinite => {
@@ -474,7 +474,7 @@ impl Channel {
             }
             return;
         }
-        if (channel.cur_sample_index as u32) >= channel.total_samples {
+        if channel.cur_sample_index as u32 >= channel.total_samples {
             match channel.repeat_mode {
                 RepeatMode::Manual => {}
                 RepeatMode::LoopInfinite => {

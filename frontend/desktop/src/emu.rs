@@ -120,18 +120,18 @@ pub(super) fn main(
                         .expect("Couldn't create FLASH DS slot SPI device")
                         .into(),
                     ),
-                    len => {
+                    _len => {
                         #[cfg(feature = "log")]
-                        slog::error!(logger, "Unrecognized save file size: {} B.", len);
+                        slog::error!(logger, "Unrecognized save file size: {} B.", _len);
                         None
                     }
                 }
             }
             Err(err) => match err.kind() {
                 io::ErrorKind::NotFound => None,
-                err => {
+                _err => {
                     #[cfg(feature = "log")]
-                    slog::error!(logger, "Couldn't read save file: {:?}.", err);
+                    slog::error!(logger, "Couldn't read save file: {:?}.", _err);
                     None
                 }
             },

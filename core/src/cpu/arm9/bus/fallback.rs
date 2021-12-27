@@ -460,6 +460,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
 }
 
 #[inline(never)]
+#[allow(clippy::single_match)]
 pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8) {
     match addr >> 24 {
         #[cfg(feature = "bft-w")]

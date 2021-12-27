@@ -503,6 +503,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
 }
 
 #[inline(never)]
+#[allow(clippy::single_match)]
 pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8) {
     emu.arm7.engine_data.invalidate_word(addr);
     #[cfg(feature = "debug-hooks")]
@@ -654,6 +655,7 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
 }
 
 #[inline(never)]
+#[allow(clippy::single_match)]
 pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value: u16) {
     addr &= !1;
     emu.arm7.engine_data.invalidate_word(addr);
@@ -918,6 +920,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
 }
 
 #[inline(never)]
+#[allow(clippy::single_match)]
 pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value: u32) {
     addr &= !3;
     emu.arm7.engine_data.invalidate_word(addr);
