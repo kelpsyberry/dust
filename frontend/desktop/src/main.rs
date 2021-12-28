@@ -16,6 +16,7 @@ mod audio;
 mod config;
 #[cfg(feature = "debug-views")]
 mod debug_views;
+mod game_db;
 pub mod input;
 mod triple_buffer;
 

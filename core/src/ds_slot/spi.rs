@@ -15,7 +15,7 @@ trait SpiDevice {
 
 #[derive(Clone)]
 pub enum Spi {
-    Eeprom4K(eeprom_4k::Eeprom4K),
+    Eeprom4k(eeprom_4k::Eeprom4k),
     EepromFram(eeprom_fram::EepromFram),
     Flash(flash::Flash),
     Empty(Empty),
@@ -25,7 +25,7 @@ impl Spi {
     pub fn contents(&self) -> ByteSlice {
         handle_variants!(
             Spi;
-            Eeprom4K, EepromFram, Flash, Empty;
+            Eeprom4k, EepromFram, Flash, Empty;
             self, contents()
         )
     }
@@ -33,7 +33,7 @@ impl Spi {
     pub fn contents_dirty(&self) -> bool {
         handle_variants!(
             Spi;
-            Eeprom4K, EepromFram, Flash, Empty;
+            Eeprom4k, EepromFram, Flash, Empty;
             self, contents_dirty()
         )
     }
@@ -41,7 +41,7 @@ impl Spi {
     pub fn mark_contents_flushed(&mut self) {
         handle_variants!(
             Spi;
-            Eeprom4K, EepromFram, Flash, Empty;
+            Eeprom4k, EepromFram, Flash, Empty;
             self, mark_contents_flushed()
         );
     }
@@ -49,7 +49,7 @@ impl Spi {
     pub fn write_data(&mut self, data: u8, first: bool, last: bool) -> u8 {
         handle_variants!(
             Spi;
-            Eeprom4K, EepromFram, Flash, Empty;
+            Eeprom4k, EepromFram, Flash, Empty;
             self, write_data(data, first, last)
         )
     }
@@ -57,6 +57,6 @@ impl Spi {
 
 impl_from_variants!(
     Spi;
-    Eeprom4K, EepromFram, Flash, Empty;
-    eeprom_4k::Eeprom4K, eeprom_fram::EepromFram, flash::Flash, Empty
+    Eeprom4k, EepromFram, Flash, Empty;
+    eeprom_4k::Eeprom4k, eeprom_fram::EepromFram, flash::Flash, Empty
 );

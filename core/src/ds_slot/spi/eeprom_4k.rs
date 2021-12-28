@@ -20,7 +20,7 @@ bitfield_debug! {
 }
 
 #[derive(Clone)]
-pub struct Eeprom4K {
+pub struct Eeprom4k {
     #[cfg(feature = "log")]
     logger: slog::Logger,
 
@@ -40,7 +40,7 @@ pub enum CreationError {
     IncorrectSize,
 }
 
-impl Eeprom4K {
+impl Eeprom4k {
     pub fn new(
         contents: SaveContents,
         saved_status: Option<SavedStatus>,
@@ -49,7 +49,7 @@ impl Eeprom4K {
         if contents.len() != 512 {
             return Err(CreationError::IncorrectSize);
         }
-        let mut result = Eeprom4K {
+        let mut result = Eeprom4k {
             #[cfg(feature = "log")]
             logger,
 
@@ -73,7 +73,7 @@ impl Eeprom4K {
 
     #[must_use]
     pub fn reset(self) -> Self {
-        Eeprom4K {
+        Eeprom4k {
             status: Status(0xF0 | self.saved_status().0),
 
             cur_command: 0,
@@ -121,7 +121,7 @@ impl Eeprom4K {
     }
 }
 
-impl super::SpiDevice for Eeprom4K {
+impl super::SpiDevice for Eeprom4k {
     fn contents(&self) -> ByteSlice {
         self.contents.as_byte_slice()
     }

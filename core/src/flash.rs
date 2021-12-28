@@ -26,8 +26,8 @@ pub struct Flash {
     powered_down: bool,
 
     write_buffer: Box<[u8; 256]>,
-    write_buffer_start: u8,
     write_buffer_end: u8,
+    write_buffer_len: u16,
 
     cur_command: u8,
     cur_command_pos: u8,
@@ -67,8 +67,8 @@ impl Flash {
             powered_down: false,
 
             write_buffer: zeroed_box(),
-            write_buffer_start: 0,
             write_buffer_end: 0,
+            write_buffer_len: 0,
 
             cur_command: 0,
             cur_command_pos: 0,
@@ -82,8 +82,8 @@ impl Flash {
             status: Status(0),
             powered_down: false,
 
-            write_buffer_start: 0,
             write_buffer_end: 0,
+            write_buffer_len: 0,
 
             cur_command: 0,
             cur_command_pos: 0,
@@ -246,46 +246,51 @@ impl Flash {
 
                 0x0A => {
                     // Write
-                    match self.cur_command_pos {
-                        0 => {
-                            self.cur_addr = 0;
-                            self.write_buffer_start = 0;
-                            self.write_buffer_end = 0;
-                            self.cur_command_pos += 1;
-                        }
-                        1..=3 => {
-                            self.cur_addr =
-                                ((self.cur_addr << 8) | value as u32) & self.contents_len_mask;
-                            self.cur_command_pos += 1;
-                        }
-                        _ => {
-                            self.write_buffer[self.write_buffer_end as usize] = value;
-                            if self.write_buffer_end == self.write_buffer_start {
-                                // Drop oldest bytes
-                                self.write_buffer_start = self.write_buffer_start.wrapping_add(1);
+                    if self.status.write_enabled() {
+                        match self.cur_command_pos {
+                            0 => {
+                                self.cur_addr = 0;
+                                self.write_buffer_end = 0;
+                                self.write_buffer_len = 0;
+                                self.cur_command_pos += 1;
                             }
-                            self.write_buffer_end = self.write_buffer_end.wrapping_add(1);
-                            if last {
-                                // TODO: When more than 256 bytes are written, should the address be
-                                // advanced even for the unwritten ones or should the write start at
-                                // the original address, completely ignoring the skipped leading
-                                // bytes? Right now, the former is assumed
-                                let mut addr = self.cur_addr;
-                                let page_base_addr = addr & !0xFF;
-                                addr = page_base_addr
-                                    | (addr as u8).wrapping_add(self.write_buffer_start) as u32;
-                                let mut i = self.write_buffer_start;
-                                while i != self.write_buffer_end {
-                                    unsafe {
-                                        self.contents.write_unchecked(
-                                            addr as usize,
-                                            self.write_buffer[i as usize],
-                                        );
+                            1..=3 => {
+                                self.cur_addr =
+                                    ((self.cur_addr << 8) | value as u32) & self.contents_len_mask;
+                                self.cur_command_pos += 1;
+                            }
+                            _ => {
+                                self.write_buffer[self.write_buffer_end as usize] = value;
+                                self.write_buffer_end = self.write_buffer_end.wrapping_add(1);
+                                self.write_buffer_len = (self.write_buffer_len + 1).min(256);
+                                if last {
+                                    // TODO: When more than 256 bytes are written, should the
+                                    // address be advanced even for the unwritten ones or should the
+                                    // write start at the original address, completely ignoring the
+                                    // skipped leading bytes? Right now, the former is assumed.
+                                    let mut addr = self.cur_addr;
+                                    let page_base_addr = addr & !0xFF;
+                                    let write_buffer_start = self
+                                        .write_buffer_end
+                                        .wrapping_sub(self.write_buffer_len as u8);
+                                    addr = page_base_addr
+                                        | (addr as u8).wrapping_add(write_buffer_start) as u32;
+                                    let mut i = write_buffer_start;
+                                    loop {
+                                        unsafe {
+                                            self.contents.write_unchecked(
+                                                addr as usize,
+                                                self.write_buffer[i as usize],
+                                            );
+                                        }
+                                        addr = page_base_addr | (addr as u8).wrapping_add(1) as u32;
+                                        i = i.wrapping_add(1);
+                                        if i == self.write_buffer_end {
+                                            break;
+                                        }
                                     }
-                                    addr = page_base_addr | (addr as u8).wrapping_add(1) as u32;
-                                    i = i.wrapping_add(1);
+                                    self.contents_dirty = true;
                                 }
-                                self.contents_dirty = true;
                             }
                         }
                     }
@@ -294,40 +299,46 @@ impl Flash {
 
                 0x02 => {
                     // Program
-                    match self.cur_command_pos {
-                        0 => {
-                            self.cur_command_pos += 1;
-                            self.write_buffer_start = 0;
-                            self.write_buffer_end = 0;
-                        }
-                        1..=3 => {
-                            self.cur_addr =
-                                ((self.cur_addr << 8) | value as u32) & self.contents_len_mask;
-                            self.cur_command_pos += 1;
-                        }
-                        _ => {
-                            self.write_buffer[self.write_buffer_end as usize] = value;
-                            if self.write_buffer_end == self.write_buffer_start {
-                                // Drop oldest bytes
-                                self.write_buffer_start = self.write_buffer_start.wrapping_add(1);
+                    if self.status.write_enabled() {
+                        match self.cur_command_pos {
+                            0 => {
+                                self.cur_addr = 0;
+                                self.write_buffer_end = 0;
+                                self.write_buffer_len = 0;
+                                self.cur_command_pos += 1;
                             }
-                            self.write_buffer_end = self.write_buffer_end.wrapping_add(1);
-                            if last {
-                                // TODO: See note for write command
-                                let mut addr = self.cur_addr;
-                                let page_base_addr = addr & !0xFF;
-                                addr = page_base_addr
-                                    | (addr as u8).wrapping_add(self.write_buffer_start) as u32;
-                                let mut i = self.write_buffer_start;
-                                while i != self.write_buffer_end {
-                                    unsafe {
-                                        *self.contents.get_unchecked_mut(addr as usize) &=
-                                            self.write_buffer[i as usize];
+                            1..=3 => {
+                                self.cur_addr =
+                                    ((self.cur_addr << 8) | value as u32) & self.contents_len_mask;
+                                self.cur_command_pos += 1;
+                            }
+                            _ => {
+                                self.write_buffer[self.write_buffer_end as usize] = value;
+                                self.write_buffer_end = self.write_buffer_end.wrapping_add(1);
+                                self.write_buffer_len = (self.write_buffer_len + 1).min(256);
+                                if last {
+                                    // TODO: See note for write command
+                                    let mut addr = self.cur_addr;
+                                    let page_base_addr = addr & !0xFF;
+                                    let write_buffer_start = self
+                                        .write_buffer_end
+                                        .wrapping_sub(self.write_buffer_len as u8);
+                                    addr = page_base_addr
+                                        | (addr as u8).wrapping_add(write_buffer_start) as u32;
+                                    let mut i = write_buffer_start;
+                                    loop {
+                                        unsafe {
+                                            *self.contents.get_unchecked_mut(addr as usize) &=
+                                                self.write_buffer[i as usize];
+                                        }
+                                        addr = page_base_addr | (addr as u8).wrapping_add(1) as u32;
+                                        i = i.wrapping_add(1);
+                                        if i == self.write_buffer_end {
+                                            break;
+                                        }
                                     }
-                                    addr = page_base_addr | (addr as u8).wrapping_add(1) as u32;
-                                    i = i.wrapping_add(1);
+                                    self.contents_dirty = true;
                                 }
-                                self.contents_dirty = true;
                             }
                         }
                     }
@@ -336,26 +347,29 @@ impl Flash {
 
                 0xDB => {
                     // Erase page (256 B)
-                    match self.cur_command_pos {
-                        0 => {
-                            self.cur_command_pos += 1;
-                        }
-                        1..=3 => {
-                            self.cur_addr =
-                                ((self.cur_addr << 8) | value as u32) & self.contents_len_mask;
-                            self.cur_command_pos += 1;
-                        }
-                        _ => {
-                            self.cur_addr &= !0xFF;
-                            if last {
-                                unsafe {
-                                    self.contents
-                                        .get_unchecked_mut(
-                                            self.cur_addr as usize..self.cur_addr as usize + 0x100,
-                                        )
-                                        .fill(0xFF);
+                    if self.status.write_enabled() {
+                        match self.cur_command_pos {
+                            0 => {
+                                self.cur_command_pos += 1;
+                            }
+                            1..=3 => {
+                                self.cur_addr =
+                                    ((self.cur_addr << 8) | value as u32) & self.contents_len_mask;
+                                self.cur_command_pos += 1;
+                            }
+                            _ => {
+                                self.cur_addr &= !0xFF;
+                                if last {
+                                    unsafe {
+                                        self.contents
+                                            .get_unchecked_mut(
+                                                self.cur_addr as usize
+                                                    ..self.cur_addr as usize + 0x100,
+                                            )
+                                            .fill(0xFF);
+                                    }
+                                    self.contents_dirty = true;
                                 }
-                                self.contents_dirty = true;
                             }
                         }
                     }
@@ -364,27 +378,29 @@ impl Flash {
 
                 0xD8 => {
                     // Erase sector (64 KiB)
-                    match self.cur_command_pos {
-                        0 => {
-                            self.cur_command_pos += 1;
-                        }
-                        1..=3 => {
-                            self.cur_addr =
-                                ((self.cur_addr << 8) | value as u32) & self.contents_len_mask;
-                            self.cur_command_pos += 1;
-                        }
-                        _ => {
-                            self.cur_addr &= !0xFFFF;
-                            if last {
-                                unsafe {
-                                    self.contents
-                                        .get_unchecked_mut(
-                                            self.cur_addr as usize
-                                                ..self.cur_addr as usize + 0x1_0000,
-                                        )
-                                        .fill(0xFF);
+                    if self.status.write_enabled() {
+                        match self.cur_command_pos {
+                            0 => {
+                                self.cur_command_pos += 1;
+                            }
+                            1..=3 => {
+                                self.cur_addr =
+                                    ((self.cur_addr << 8) | value as u32) & self.contents_len_mask;
+                                self.cur_command_pos += 1;
+                            }
+                            _ => {
+                                self.cur_addr &= !0xFFFF;
+                                if last {
+                                    unsafe {
+                                        self.contents
+                                            .get_unchecked_mut(
+                                                self.cur_addr as usize
+                                                    ..self.cur_addr as usize + 0x1_0000,
+                                            )
+                                            .fill(0xFF);
+                                    }
+                                    self.contents_dirty = true;
                                 }
-                                self.contents_dirty = true;
                             }
                         }
                     }
@@ -393,7 +409,7 @@ impl Flash {
 
                 0xC7 => {
                     // Erase entire chip
-                    if last {
+                    if self.status.write_enabled() && last {
                         self.contents.fill(0xFF);
                         self.contents_dirty = true;
                     }

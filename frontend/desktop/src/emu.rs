@@ -2,7 +2,9 @@ mod rtc;
 
 #[cfg(feature = "debug-views")]
 use super::debug_views;
-use super::{audio, config::CommonLaunchConfig, input, triple_buffer, FrameData};
+use super::{
+    audio, config::CommonLaunchConfig, game_db::SaveType, input, triple_buffer, FrameData,
+};
 use dust_core::{
     audio::DummyBackend as DummyAudioBackend,
     cpu::{arm9, interpreter::Interpreter},
@@ -51,6 +53,7 @@ pub(super) fn main(
     config: CommonLaunchConfig,
     mut cur_save_path: Option<PathBuf>,
     ds_slot_rom: Option<BoxedByteSlice>,
+    ds_slot_save_type: Option<SaveType>,
     audio_tx_data: Option<audio::SenderData>,
     mut frame_tx: triple_buffer::Sender<FrameData>,
     message_rx: crossbeam_channel::Receiver<Message>,
@@ -76,8 +79,9 @@ pub(super) fn main(
         )
         .into()
     };
-    let spi_device = if let Some(path) = cur_save_path.as_deref() {
-        match File::open(path) {
+    let save_contents = cur_save_path
+        .as_deref()
+        .and_then(|path| match File::open(path) {
             Ok(mut save_file) => {
                 let save_len = save_file
                     .metadata()
@@ -88,44 +92,7 @@ pub(super) fn main(
                 save_file
                     .read_exact(&mut save[..])
                     .expect("Couldn't read save file");
-                let save_contents = SaveContents::Existing(save);
-                match save_len {
-                    0x200 => Some(
-                        ds_slot::spi::eeprom_4k::Eeprom4K::new(
-                            save_contents,
-                            None,
-                            #[cfg(feature = "log")]
-                            logger.new(slog::o!("ds_spi" => "eeprom_4k")),
-                        )
-                        .expect("Couldn't create 4 Kib EEPROM DS slot SPI device")
-                        .into(),
-                    ),
-                    0x2000 | 0x8000 | 0x1_0000 | 0x2_0000 => Some(
-                        ds_slot::spi::eeprom_fram::EepromFram::new(
-                            save_contents,
-                            None,
-                            #[cfg(feature = "log")]
-                            logger.new(slog::o!("ds_spi" => "eeprom_fram")),
-                        )
-                        .expect("Couldn't create EEPROM/FRAM DS slot SPI device")
-                        .into(),
-                    ),
-                    0x4_0000 | 0x8_0000 | 0x10_0000 | 0x80_0000 => Some(
-                        ds_slot::spi::flash::Flash::new(
-                            save_contents,
-                            [0; 20],
-                            #[cfg(feature = "log")]
-                            logger.new(slog::o!("ds_spi" => "flash")),
-                        )
-                        .expect("Couldn't create FLASH DS slot SPI device")
-                        .into(),
-                    ),
-                    _len => {
-                        #[cfg(feature = "log")]
-                        slog::error!(logger, "Unrecognized save file size: {} B.", _len);
-                        None
-                    }
-                }
+                Some(save)
             }
             Err(err) => match err.kind() {
                 io::ErrorKind::NotFound => None,
@@ -135,18 +102,122 @@ pub(super) fn main(
                     None
                 }
             },
+        });
+    let save_type = if let Some(save_contents) = &save_contents {
+        if let Some(save_type) = ds_slot_save_type {
+            let expected_len = save_type.expected_len();
+            if expected_len != Some(save_contents.len()) {
+                let (chosen_save_type, message) = if let Some(detected_save_type) =
+                    SaveType::from_save_len(save_contents.len())
+                {
+                    (detected_save_type, "existing save file")
+                } else {
+                    (save_type, "database entry")
+                };
+                #[cfg(feature = "log")]
+                slog::error!(
+                    logger,
+                    "Unexpected save file size: expected {}, got {} B; respecting {}.",
+                    if let Some(expected_len) = expected_len {
+                        format!("{} B", expected_len)
+                    } else {
+                        "no file".to_string()
+                    },
+                    save_contents.len(),
+                    message,
+                );
+                chosen_save_type
+            } else {
+                save_type
+            }
+        } else {
+            SaveType::from_save_len(save_contents.len()).unwrap_or_else(|| {
+                #[cfg(feature = "log")]
+                slog::error!(
+                    logger,
+                    concat!(
+                        "Unrecognized save file size ({} B) and no database entry found, ",
+                        "defaulting to an empty save.",
+                    ),
+                    save_contents.len()
+                );
+                SaveType::None
+            })
         }
     } else {
-        None
-    }
-    .unwrap_or_else(|| {
-        // TODO: Use a game database to detect the required device and save file size
+        ds_slot_save_type.unwrap_or_else(|| {
+            #[cfg(feature = "log")]
+            slog::error!(
+                logger,
+                concat!(
+                    "No existing save file present and no database entry found, defaulting to an",
+                    "empty save.",
+                )
+            );
+            SaveType::None
+        })
+    };
+    let spi_device = if save_type == SaveType::None {
         ds_slot::spi::Empty::new(
             #[cfg(feature = "log")]
             logger.new(slog::o!("ds_spi" => "empty")),
         )
         .into()
-    });
+    } else {
+        let expected_len = save_type.expected_len().unwrap();
+        let save_contents = match save_contents {
+            Some(save_contents) => SaveContents::Existing(if save_contents.len() == expected_len {
+                let mut new_contents = BoxedByteSlice::new_zeroed(expected_len);
+                new_contents[..save_contents.len()].copy_from_slice(&save_contents);
+                drop(save_contents);
+                new_contents
+            } else {
+                save_contents
+            }),
+            None => SaveContents::New(expected_len),
+        };
+        match save_type {
+            SaveType::None => unreachable!(),
+            SaveType::Eeprom4k => ds_slot::spi::eeprom_4k::Eeprom4k::new(
+                save_contents,
+                None,
+                #[cfg(feature = "log")]
+                logger.new(slog::o!("ds_spi" => "eeprom_4k")),
+            )
+            .expect("Couldn't create 4 Kib EEPROM DS slot SPI device")
+            .into(),
+            SaveType::EepromFram64k | SaveType::EepromFram512k | SaveType::EepromFram1m => {
+                ds_slot::spi::eeprom_fram::EepromFram::new(
+                    save_contents,
+                    None,
+                    #[cfg(feature = "log")]
+                    logger.new(slog::o!("ds_spi" => "eeprom_fram")),
+                )
+                .expect("Couldn't create EEPROM/FRAM DS slot SPI device")
+                .into()
+            }
+            SaveType::Flash2m | SaveType::Flash4m | SaveType::Flash8m => {
+                ds_slot::spi::flash::Flash::new(
+                    save_contents,
+                    [0; 20],
+                    #[cfg(feature = "log")]
+                    logger.new(slog::o!("ds_spi" => "flash")),
+                )
+                .expect("Couldn't create FLASH DS slot SPI device")
+                .into()
+            }
+            SaveType::Nand64m | SaveType::Nand128m | SaveType::Nand256m => {
+                #[cfg(feature = "log")]
+                slog::error!(logger, "TODO: NAND saves");
+                ds_slot::spi::Empty::new(
+                    #[cfg(feature = "log")]
+                    logger.new(slog::o!("ds_spi" => "nand_todo")),
+                )
+                .into()
+            }
+        }
+    };
+
     let mut emu_builder = dust_core::emu::Builder::new(
         config.sys_files.arm7_bios,
         {
@@ -283,7 +354,7 @@ pub(super) fn main(
                         },
                         match emu.ds_slot.spi {
                             DsSlotSpi::Empty(device) => DsSlotSpi::Empty(device.reset()),
-                            DsSlotSpi::Eeprom4K(device) => DsSlotSpi::Eeprom4K(device.reset()),
+                            DsSlotSpi::Eeprom4k(device) => DsSlotSpi::Eeprom4k(device.reset()),
                             DsSlotSpi::EepromFram(device) => DsSlotSpi::EepromFram(device.reset()),
                             DsSlotSpi::Flash(device) => DsSlotSpi::Flash(device.reset()),
                         },

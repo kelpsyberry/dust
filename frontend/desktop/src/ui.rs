@@ -11,7 +11,7 @@ use super::debug_views;
 use super::{
     audio,
     config::{self, CommonLaunchConfig, Config},
-    emu, input, triple_buffer,
+    emu, game_db, input, triple_buffer,
     utils::{config_base, scale_to_fit_rotated},
     FrameData,
 };
@@ -78,6 +78,7 @@ struct UiState {
     global_config: Config<config::Global>,
     game_title: Option<String>,
     game_config: Option<Config<config::Game>>,
+    game_db: Option<game_db::Database>,
 
     playing: bool,
     limit_framerate: config::RuntimeModifiable<bool>,
@@ -246,6 +247,25 @@ impl UiState {
         #[cfg(feature = "log")]
         let logger = self.logger.clone();
 
+        let ds_slot_save_type = ds_slot_rom.as_ref().and_then(|rom| {
+            let game_code = rom.read_le::<u32>(0xC);
+            self.game_db
+                .as_ref()
+                .and_then(|db| db.lookup(game_code))
+                .map(|entry| {
+                    if entry.rom_size as usize != rom.len() {
+                        #[cfg(feature = "log")]
+                        slog::error!(
+                            logger,
+                            "Unexpected ROM size: expected {} B, got {} B",
+                            entry.rom_size,
+                            rom.len()
+                        );
+                    }
+                    entry.save_type
+                })
+        });
+
         let frame_tx = self.frame_tx.take().unwrap();
         let message_rx = self.message_rx.clone();
         let audio_tx_data = self
@@ -270,6 +290,7 @@ impl UiState {
                         config,
                         cur_save_path,
                         ds_slot_rom,
+                        ds_slot_save_type,
                         audio_tx_data,
                         frame_tx,
                         message_rx,
@@ -393,6 +414,51 @@ pub fn main() {
         "keymap.json",
     );
 
+    let game_db = global_config
+        .contents
+        .game_db_path
+        .as_deref()
+        .and_then(|path| {
+            let path_str = path.to_str();
+            let location_str = || {
+                if let Some(path_str) = path_str {
+                    format!(" at `{}`", path_str)
+                } else {
+                    "".to_string()
+                }
+            };
+            match game_db::Database::read_from_file(path) {
+                Ok(db) => {
+                    if db.is_none() {
+                        warning!(
+                            "Missing game database",
+                            "The game database was not found{}.",
+                            location_str()
+                        );
+                    }
+                    db
+                }
+                Err(err) => match err {
+                    game_db::Error::Io(err) => {
+                        config_error!(
+                            concat!("Couldn't read game database{}: {}",),
+                            location_str(),
+                            err,
+                        );
+                        None
+                    }
+                    game_db::Error::Json(err) => {
+                        config_error!(
+                            concat!("Couldn't load game database{}: {}",),
+                            location_str(),
+                            err,
+                        );
+                        None
+                    }
+                },
+            }
+        });
+
     #[cfg(feature = "log")]
     let mut imgui_log = None;
     #[cfg(feature = "log")]
@@ -459,6 +525,7 @@ pub fn main() {
     let mut state = UiState {
         game_title: None,
         game_config: None,
+        game_db,
 
         playing: false,
         limit_framerate: config::RuntimeModifiable::global(global_config.contents.limit_framerate),

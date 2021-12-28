@@ -20,7 +20,7 @@ impl Flash {
         id: [u8; 20],
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Result<Self, CreationError> {
-        if !matches!(contents.len(), 0x4_0000 | 0x8_0000 | 0x10_0000 | 0x80_0000) {
+        if !matches!(contents.len(), 0x4_0000 | 0x8_0000 | 0x10_0000) {
             return Err(CreationError::IncorrectSize);
         }
         Ok(Flash {
