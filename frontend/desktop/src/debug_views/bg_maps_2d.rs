@@ -376,55 +376,19 @@ impl View for BgMaps2d {
             let data_base = bg.control().map_base() << 3;
             let pixels_len = data.cur_bg.size[0] as usize * data.cur_bg.size[1] as usize;
 
-            match data.cur_bg.display_mode {
-                BgDisplayMode::Text16 => {
+            let (base_addr, data_len) = match data.cur_bg.display_mode {
+                BgDisplayMode::Text16 => (tile_base, 0x400 << 5),
+                BgDisplayMode::Text256 | BgDisplayMode::ExtendedMap => (tile_base, 0x400 << 6),
+                BgDisplayMode::Affine => (tile_base, 0x100 << 6),
+                BgDisplayMode::ExtendedBitmap256 => (data_base, pixels_len),
+                BgDisplayMode::ExtendedBitmapDirect => (data_base, pixels_len * 2),
+                BgDisplayMode::LargeBitmap => (0, pixels_len),
+            };
                     read_bg_slice_wrapping(
                         vram,
-                        tile_base,
-                        ByteMutSlice::new(&mut data.tile_bitmap_data[..0x400 << 5]),
+                base_addr,
+                ByteMutSlice::new(&mut data.tile_bitmap_data[..data_len]),
                     );
-                }
-
-                BgDisplayMode::Text256 | BgDisplayMode::ExtendedMap => {
-                    read_bg_slice_wrapping(
-                        vram,
-                        tile_base,
-                        ByteMutSlice::new(&mut data.tile_bitmap_data[..0x400 << 6]),
-                    );
-                }
-
-                BgDisplayMode::Affine => {
-                    read_bg_slice_wrapping(
-                        vram,
-                        tile_base,
-                        ByteMutSlice::new(&mut data.tile_bitmap_data[..0x100 << 6]),
-                    );
-                }
-
-                BgDisplayMode::ExtendedBitmap256 => {
-                    read_bg_slice_wrapping(
-                        vram,
-                        data_base,
-                        ByteMutSlice::new(&mut data.tile_bitmap_data[..pixels_len]),
-                    );
-                }
-
-                BgDisplayMode::ExtendedBitmapDirect => {
-                    read_bg_slice_wrapping(
-                        vram,
-                        data_base,
-                        ByteMutSlice::new(&mut data.tile_bitmap_data[..pixels_len * 2]),
-                    );
-                }
-
-                BgDisplayMode::LargeBitmap => {
-                    read_bg_slice_wrapping(
-                        vram,
-                        0,
-                        ByteMutSlice::new(&mut data.tile_bitmap_data[..pixels_len]),
-                    );
-                }
-            }
 
             if data.cur_bg.display_mode != BgDisplayMode::ExtendedBitmapDirect {
                 if data.cur_bg.uses_ext_palettes {

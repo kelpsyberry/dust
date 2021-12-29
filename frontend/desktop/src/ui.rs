@@ -28,7 +28,7 @@ use std::time::SystemTime;
 use std::{
     env,
     fs::{self, File},
-    io::Read,
+    io::{self, Read},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -428,34 +428,34 @@ pub fn main() {
                 }
             };
             match game_db::Database::read_from_file(path) {
-                Ok(db) => {
-                    if db.is_none() {
-                        warning!(
-                            "Missing game database",
-                            "The game database was not found{}.",
-                            location_str()
-                        );
+                Ok(db) => Some(db),
+                Err(err) => {
+                    match err {
+                        game_db::Error::Io(err) => {
+                            if err.kind() == io::ErrorKind::NotFound {
+                                warning!(
+                                    "Missing game database",
+                                    "The game database was not found{}.",
+                                    location_str()
+                                );
+                            } else {
+                                config_error!(
+                                    concat!("Couldn't read game database{}: {}",),
+                                    location_str(),
+                                    err,
+                                );
+                            }
+                        }
+                        game_db::Error::Json(err) => {
+                            config_error!(
+                                concat!("Couldn't load game database{}: {}",),
+                                location_str(),
+                                err,
+                            );
+                        }
                     }
-                    db
+                    None
                 }
-                Err(err) => match err {
-                    game_db::Error::Io(err) => {
-                        config_error!(
-                            concat!("Couldn't read game database{}: {}",),
-                            location_str(),
-                            err,
-                        );
-                        None
-                    }
-                    game_db::Error::Json(err) => {
-                        config_error!(
-                            concat!("Couldn't load game database{}: {}",),
-                            location_str(),
-                            err,
-                        );
-                        None
-                    }
-                },
             }
         });
 

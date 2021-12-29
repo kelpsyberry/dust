@@ -79,21 +79,9 @@ pub enum Error {
 }
 
 impl Database {
-    pub fn read_from_file(path: &Path) -> Result<Option<Self>, Error> {
-        let content = match fs::read_to_string(&path) {
-            Ok(content) => content,
-            Err(err) => {
-                if err.kind() == io::ErrorKind::NotFound {
-                    return Ok(None);
-                } else {
-                    return Err(Error::Io(err));
-                }
-            }
-        };
-        match serde_json::from_str(&content) {
-            Ok(result) => Ok(Some(result)),
-            Err(err) => Err(Error::Json(err)),
-        }
+    pub fn read_from_file(path: &Path) -> Result<Self, Error> {
+        let content = fs::read_to_string(&path).map_err(Error::Io)?;
+        serde_json::from_str(&content).map_err(Error::Json)
     }
 
     pub fn lookup(&self, game_code: u32) -> Option<Entry> {
