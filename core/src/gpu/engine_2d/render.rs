@@ -3,7 +3,7 @@ use super::{
     AffineBgIndex, BgIndex, BgObjPixel, Engine2d, OamAttr0, OamAttr1, OamAttr2, ObjPixel, Role,
     WindowPixel,
 };
-use crate::utils::{fill_8, make_zero, ByteMutSlice, ByteSlice, Bytes};
+use crate::utils::{make_zero, ByteMutSlice, ByteSlice, Bytes};
 
 const fn rgb_15_to_18(value: u32) -> u32 {
     (value << 1 & 0x3E) | (value << 2 & 0xF80) | (value << 3 & 0x3_E000)
@@ -115,7 +115,7 @@ impl<R: Role> Engine2d<R> {
         // According to melonDS, if vcount falls outside the drawing range or 2D engine B is
         // disabled, the scanline is filled with pure white.
         if vcount >= SCREEN_HEIGHT as u16 || (!R::IS_A && !self.enabled) {
-            fill_8(&mut scanline_buffer.0, 0xFF);
+            scanline_buffer.0.fill(0xFFFF_FFFF);
             return;
         }
 
@@ -125,7 +125,7 @@ impl<R: Role> Engine2d<R> {
             self.control.display_mode_b()
         } {
             0 => {
-                fill_8(&mut scanline_buffer.0, 0xFF);
+                scanline_buffer.0.fill(0xFFFF_FFFF);
                 return;
             }
 
@@ -160,6 +160,15 @@ impl<R: Role> Engine2d<R> {
                     }
                     self.window.0[x_start..x_end].fill(WindowPixel(self.window_control[i].0));
                 }
+
+                let backdrop = BgObjPixel(rgb_15_to_18(
+                    vram.palette.read_le::<u16>((!R::IS_A as usize) << 10) as u32,
+                ))
+                .with_color_effects_mask(1 << 5)
+                .0;
+                self.bg_obj_scanline
+                    .0
+                    .fill(backdrop as u64 | (backdrop as u64) << 32);
 
                 [
                     Self::render_scanline_bgs_and_objs::<0>,
@@ -198,7 +207,7 @@ impl<R: Role> Engine2d<R> {
                         *pixel = rgb_15_to_18(src as u32);
                     }
                 } else {
-                    fill_8(&mut scanline_buffer.0, 0);
+                    scanline_buffer.0.fill(0);
                 }
             }
 
@@ -242,17 +251,6 @@ impl<R: Role> Engine2d<R> {
     }
 
     fn render_scanline_bgs_and_objs<const BG_MODE: u8>(&mut self, line: u16, vram: &Vram) {
-        self.load_obj_ext_pal_cache(vram);
-
-        let backdrop = BgObjPixel(rgb_15_to_18(
-            vram.banks.palette.read_le::<u16>((!R::IS_A as usize) << 10) as u32,
-        ))
-        .with_color_effects_mask(1 << 5)
-        .0;
-        self.bg_obj_scanline
-            .0
-            .fill(backdrop as u64 | (backdrop as u64) << 32);
-
         let render_affine = [
             Self::render_scanline_bg_affine::<false>,
             Self::render_scanline_bg_affine::<true>,
@@ -342,11 +340,15 @@ impl<R: Role> Engine2d<R> {
                         rgb_15_to_18(if obj_pixel.use_raw_color() {
                             obj_pixel.raw_color()
                         } else if obj_pixel.use_ext_pal() {
-                            self.obj_ext_pal_cache.read_le_aligned_unchecked::<u16>(
-                                (obj_pixel.pal_color() as usize) << 1,
-                            )
+                            (if R::IS_A {
+                                vram.a_obj_ext_pal.as_ptr()
+                            } else {
+                                vram.b_obj_ext_pal_ptr
+                            } as *const u16)
+                                .add(obj_pixel.pal_color() as usize)
+                                .read()
                         } else {
-                            vram.banks.palette.read_le_aligned_unchecked::<u16>(
+                            vram.palette.read_le_aligned_unchecked::<u16>(
                                 (!R::IS_A as usize) << 10
                                     | 0x200
                                     | (obj_pixel.pal_color() as usize) << 1,
@@ -431,12 +433,20 @@ impl<R: Role> Engine2d<R> {
                     } else {
                         0
                     };
-                (self.bg_ext_pal_ptr(slot, vram), 0xF)
-            } else {
                 (
                     unsafe {
-                        vram.banks.palette.as_ptr().add((!R::IS_A as usize) << 10) as *const u16
+                        if R::IS_A {
+                            vram.a_bg_ext_pal.as_ptr()
+                        } else {
+                            vram.b_bg_ext_pal_ptr
+                        }
+                        .add((slot as usize) << 13) as *const u16
                     },
+                    0xF,
+                )
+            } else {
+                (
+                    unsafe { vram.palette.as_ptr().add((!R::IS_A as usize) << 10) as *const u16 },
                     0,
                 )
             };
@@ -522,7 +532,7 @@ impl<R: Role> Engine2d<R> {
                 let color_index = pixels.wrapping_shr(x << 2) & 0xF;
                 if color_index != 0 && self.window.0[i].0 & bg_mask != 0 {
                     let color = unsafe {
-                        vram.banks.palette.read_le_aligned_unchecked::<u16>(
+                        vram.palette.read_le_aligned_unchecked::<u16>(
                             (!R::IS_A as usize) << 10 | pal_base | (color_index as usize) << 1,
                         )
                     };
@@ -586,7 +596,7 @@ impl<R: Role> Engine2d<R> {
                 };
                 if color_index != 0 {
                     let color = unsafe {
-                        vram.banks.palette.read_le_aligned_unchecked::<u16>(
+                        vram.palette.read_le_aligned_unchecked::<u16>(
                             (!R::IS_A as usize) << 10 | (color_index as usize) << 1,
                         )
                     };
@@ -676,7 +686,7 @@ impl<R: Role> Engine2d<R> {
                         };
                         if color_index != 0 {
                             let color = unsafe {
-                                vram.banks.palette.read_le_aligned_unchecked::<u16>(
+                                vram.palette.read_le_aligned_unchecked::<u16>(
                                     (!R::IS_A as usize) << 10 | (color_index as usize) << 1,
                                 )
                             };
@@ -708,12 +718,21 @@ impl<R: Role> Engine2d<R> {
             let pos_y_to_map_y_shift = 10 - map_row_shift;
 
             let (palette, pal_base_mask) = if self.control.bg_ext_pal_enabled() {
-                (self.bg_ext_pal_ptr(bg_index.get() | 2, vram), 0xF)
-            } else {
                 (
                     unsafe {
-                        vram.banks.palette.as_ptr().add((!R::IS_A as usize) << 10) as *const u16
+                        if R::IS_A {
+                            vram.a_bg_ext_pal.as_ptr()
+                        } else {
+                            vram.b_bg_ext_pal_ptr
+                        }
+                        .add((bg_index.get() as usize | 2) << 13)
+                            as *const u16
                     },
+                    0xF,
+                )
+            } else {
+                (
+                    unsafe { vram.palette.as_ptr().add((!R::IS_A as usize) << 10) as *const u16 },
                     0,
                 )
             };
@@ -809,7 +828,7 @@ impl<R: Role> Engine2d<R> {
                 };
                 if color_index != 0 {
                     let color = unsafe {
-                        vram.banks.palette.read_le_aligned_unchecked::<u16>(
+                        vram.palette.read_le_aligned_unchecked::<u16>(
                             (!R::IS_A as usize) << 10 | (color_index as usize) << 1,
                         )
                     };
@@ -850,21 +869,13 @@ impl<R: Role> Engine2d<R> {
             for obj_i in (0..128).rev() {
                 let oam_start = (!R::IS_A as usize) << 10 | obj_i << 3;
                 let attrs = unsafe {
-                    let attr_2 = OamAttr2(
-                        vram.banks
-                            .oam
-                            .read_le_aligned_unchecked::<u16>(oam_start | 4),
-                    );
+                    let attr_2 = OamAttr2(vram.oam.read_le_aligned_unchecked::<u16>(oam_start | 4));
                     if attr_2.bg_priority() != priority {
                         continue;
                     }
                     (
-                        OamAttr0(vram.banks.oam.read_le_aligned_unchecked::<u16>(oam_start)),
-                        OamAttr1(
-                            vram.banks
-                                .oam
-                                .read_le_aligned_unchecked::<u16>(oam_start | 2),
-                        ),
+                        OamAttr0(vram.oam.read_le_aligned_unchecked::<u16>(oam_start)),
+                        OamAttr1(vram.oam.read_le_aligned_unchecked::<u16>(oam_start | 2)),
                         attr_2,
                     )
                 };
@@ -959,18 +970,10 @@ impl<R: Role> Engine2d<R> {
             let start =
                 (!R::IS_A as usize) << 10 | (attrs.1.rot_scale_params_index() as usize) << 5;
             [
-                vram.banks
-                    .oam
-                    .read_le_aligned_unchecked::<i16>(start | 0x06),
-                vram.banks
-                    .oam
-                    .read_le_aligned_unchecked::<i16>(start | 0x0E),
-                vram.banks
-                    .oam
-                    .read_le_aligned_unchecked::<i16>(start | 0x16),
-                vram.banks
-                    .oam
-                    .read_le_aligned_unchecked::<i16>(start | 0x1E),
+                vram.oam.read_le_aligned_unchecked::<i16>(start | 0x06),
+                vram.oam.read_le_aligned_unchecked::<i16>(start | 0x0E),
+                vram.oam.read_le_aligned_unchecked::<i16>(start | 0x16),
+                vram.oam.read_le_aligned_unchecked::<i16>(start | 0x1E),
             ]
         };
 

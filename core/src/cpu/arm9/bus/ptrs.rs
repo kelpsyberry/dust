@@ -63,7 +63,7 @@ cfg_if! {
 }
 
 #[repr(C)]
-pub(in super::super) struct Ptrs {
+pub struct Ptrs {
     ptrs: [*mut u8; Self::ENTRIES],
     attrs: [Attrs; Self::ENTRIES],
     #[cfg(all(feature = "bft-r", feature = "bft-w"))]
@@ -243,6 +243,9 @@ impl Ptrs {
                         #[cfg(not(feature = "bft-r"))]
                         true
                     };
+                    if r_not_disabled {
+                        attrs = (attrs & !mask::R) | read_mask_attrs;
+                    }
                     let w_not_disabled = {
                         #[cfg(feature = "bft-w")]
                         {
@@ -251,9 +254,6 @@ impl Ptrs {
                         #[cfg(not(feature = "bft-w"))]
                         true
                     };
-                    if r_not_disabled {
-                        attrs = (attrs & !mask::R) | read_mask_attrs;
-                    }
                     if w_not_disabled {
                         attrs = (attrs & !mask::W) | write_mask_attrs;
                     }
@@ -301,6 +301,7 @@ impl Ptrs {
                 0x40_0000,
                 (0x0200_0000, 0x02FF_FFFF),
             );
+            emu.gpu.vram.setup_arm9_bus_ptrs(&mut emu.arm9.bus_ptrs);
             emu.arm9.bus_ptrs.map_range(
                 mask::R,
                 emu.arm9.bios.as_ptr(),

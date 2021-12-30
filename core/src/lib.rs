@@ -1,5 +1,6 @@
 #![feature(
     core_intrinsics,
+    generic_const_exprs,
     // rustc_attrs,
     adt_const_params,
     doc_cfg,

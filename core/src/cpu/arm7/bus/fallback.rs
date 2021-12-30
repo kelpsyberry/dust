@@ -636,7 +636,6 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
             }
         }
 
-        #[cfg(feature = "bft-w")]
         0x06 => emu.gpu.vram.write_arm7(addr, value),
 
         _ =>
@@ -901,7 +900,6 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
             }
         }
 
-        #[cfg(feature = "bft-w")]
         0x06 => emu.gpu.vram.write_arm7(addr, value),
 
         _ =>
@@ -1096,7 +1094,6 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
             }
         }
 
-        #[cfg(feature = "bft-w")]
         0x06 => emu.gpu.vram.write_arm7(addr, value),
 
         _ =>

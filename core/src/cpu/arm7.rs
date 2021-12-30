@@ -26,7 +26,7 @@ pub struct Arm7<E: Engine> {
     bios: OwnedBytesCellPtr<BIOS_SIZE>,
     pub wram: OwnedBytesCellPtr<0x1_0000>,
     pub schedule: Schedule,
-    pub(super) bus_ptrs: Box<bus::Ptrs>,
+    pub(super) bus_ptrs: Box<bus::ptrs::Ptrs>,
     pub(super) bus_timings: Box<bus::timings::Timings>,
     pub irqs: Irqs,
     pub timers: Timers<Schedule>,
@@ -56,7 +56,7 @@ impl<E: Engine> Arm7<E> {
             bios,
             wram: OwnedBytesCellPtr::new_zeroed(),
             schedule,
-            bus_ptrs: bus::Ptrs::new_boxed(),
+            bus_ptrs: bus::ptrs::Ptrs::new_boxed(),
             bus_timings: bus::timings::Timings::new_boxed(),
             irqs,
             timers,
@@ -99,7 +99,7 @@ impl<E: Engine> Arm7<E> {
     }
 
     pub(crate) fn setup(emu: &mut Emu<E>) {
-        bus::Ptrs::setup(emu);
+        bus::ptrs::Ptrs::setup(emu);
         emu.arm7.bus_timings.setup();
     }
 
@@ -245,11 +245,12 @@ impl<E: Engine> Arm7<E> {
     #[inline]
     pub(crate) unsafe fn map_bus_ptr_range(
         &mut self,
+        mask: bus::ptrs::Mask,
         start_ptr: *mut u8,
         mem_size: usize,
         bounds: (u32, u32),
     ) {
-        self.bus_ptrs.map_range(start_ptr, mem_size, bounds);
+        self.bus_ptrs.map_range(mask, start_ptr, mem_size, bounds);
         self.invalidate_word_range(bounds);
     }
 
@@ -265,6 +266,7 @@ impl<E: Engine> Arm7<E> {
             match swram.control().layout() {
                 0 => {
                     self.map_bus_ptr_range(
+                        bus::ptrs::mask::ALL,
                         self.wram.as_ptr(),
                         0x1_0000,
                         (0x0300_0000, 0x037F_FFFF),
@@ -272,6 +274,7 @@ impl<E: Engine> Arm7<E> {
                 }
                 1 => {
                     self.map_bus_ptr_range(
+                        bus::ptrs::mask::ALL,
                         swram.contents().as_ptr(),
                         0x4000,
                         (0x0300_0000, 0x037F_FFFF),
@@ -279,6 +282,7 @@ impl<E: Engine> Arm7<E> {
                 }
                 2 => {
                     self.map_bus_ptr_range(
+                        bus::ptrs::mask::ALL,
                         swram.contents().as_ptr().add(0x4000),
                         0x4000,
                         (0x0300_0000, 0x037F_FFFF),
@@ -286,6 +290,7 @@ impl<E: Engine> Arm7<E> {
                 }
                 _ => {
                     self.map_bus_ptr_range(
+                        bus::ptrs::mask::ALL,
                         swram.contents().as_ptr(),
                         0x8000,
                         (0x0300_0000, 0x037F_FFFF),

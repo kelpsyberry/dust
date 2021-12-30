@@ -1,8 +1,8 @@
 mod io;
 mod render;
 
-use super::{vram::Vram, Scanline, SCREEN_WIDTH};
-use crate::utils::{bitfield_debug, zeroed_box, ByteMutSlice, Bytes};
+use super::{Scanline, SCREEN_WIDTH};
+use crate::utils::bitfield_debug;
 use core::{marker::PhantomData, ops::Range};
 
 pub trait Role {
@@ -291,10 +291,6 @@ pub struct Engine2d<R: Role> {
     window: Scanline<WindowPixel>,
     bg_obj_scanline: Scanline<u64>,
     obj_scanline: Scanline<ObjPixel>,
-    bg_ext_pal_dirty: u8,
-    obj_ext_pal_dirty: bool,
-    bg_ext_pal_cache: Box<Bytes<0x8000>>,
-    obj_ext_pal_cache: Box<Bytes<0x2000>>,
 }
 
 impl<R: Role> Engine2d<R> {
@@ -336,10 +332,6 @@ impl<R: Role> Engine2d<R> {
             window: Scanline([WindowPixel(0); SCREEN_WIDTH]),
             bg_obj_scanline: Scanline([0; SCREEN_WIDTH]),
             obj_scanline: Scanline([ObjPixel(0); SCREEN_WIDTH]),
-            bg_ext_pal_dirty: 0,
-            obj_ext_pal_dirty: false,
-            bg_ext_pal_cache: zeroed_box(),
-            obj_ext_pal_cache: zeroed_box(),
         }
     }
 
@@ -447,55 +439,6 @@ impl<R: Role> Engine2d<R> {
     #[inline]
     pub fn set_brightness_coeff(&mut self, value: u8) {
         self.brightness_coeff = (value & 0x1F).min(value);
-    }
-
-    #[inline]
-    pub fn invalidate_bg_ext_pal_cache(&mut self, slot: u8) {
-        self.bg_ext_pal_dirty |= 1 << slot;
-    }
-
-    fn bg_ext_pal_ptr(&mut self, slot: u8, vram: &Vram) -> *const u16 {
-        unsafe {
-            if slot & 2 == 0 {
-                if self.bg_ext_pal_dirty & 1 != 0 {
-                    let slice = ByteMutSlice::new(&mut self.bg_ext_pal_cache[..0x4000]);
-                    if R::IS_A {
-                        vram.read_a_bg_ext_pal_slice::<usize>(0, slice);
-                    } else {
-                        vram.read_b_bg_ext_pal_slice::<usize>(0, slice);
-                    }
-                    self.bg_ext_pal_dirty &= !1;
-                }
-            } else if self.bg_ext_pal_dirty & 2 != 0 {
-                let slice = ByteMutSlice::new(&mut self.bg_ext_pal_cache[0x4000..]);
-                if R::IS_A {
-                    vram.read_a_bg_ext_pal_slice::<usize>(0x4000, slice);
-                } else {
-                    vram.read_b_bg_ext_pal_slice::<usize>(0x4000, slice);
-                }
-                self.bg_ext_pal_dirty &= !2;
-            }
-            self.bg_ext_pal_cache.as_ptr().add((slot as usize) << 13) as *const u16
-        }
-    }
-
-    #[inline]
-    pub fn invalidate_obj_ext_pal_cache(&mut self) {
-        self.obj_ext_pal_dirty = true;
-    }
-
-    fn load_obj_ext_pal_cache(&mut self, vram: &Vram) {
-        if self.obj_ext_pal_dirty {
-            unsafe {
-                let slice = self.obj_ext_pal_cache.as_byte_mut_slice();
-                if R::IS_A {
-                    vram.read_a_obj_ext_pal_slice::<usize>(0, slice);
-                } else {
-                    vram.read_b_obj_ext_pal_slice::<usize>(0, slice);
-                }
-            }
-            self.obj_ext_pal_dirty = false;
-        }
     }
 
     pub(super) fn end_vblank(&mut self) {

@@ -1,60 +1,331 @@
-use super::{
-    super::engine_2d::{Engine2d, EngineA, EngineB},
-    BankControl, Vram,
+use super::{BankControl, Vram};
+use crate::cpu::{
+    self,
+    arm9::{bus::ptrs::mask as ptr_mask, Arm9},
 };
-use crate::{
-    cpu::{
-        self,
-        arm7::Arm7,
-        arm9::{bus::ptrs::mask as ptr_mask, Arm9},
-    },
-    utils::make_zero,
-};
-use core::ptr;
+use core::{iter::once, mem::size_of};
 
 // TODO: Find out what happens with invalid VRAM bank MST values.
 
-macro_rules! large_bank_ptrs {
-    ($self: expr, $ptr_region: expr, $name: ident, $mask: expr) => {{
-        let offset = $ptr_region << 14 & $mask;
-        (
-            $self.banks.$name.as_ptr().add(offset),
-            $self.banks.$name.as_ptr().add(offset),
+macro_rules! unmap_regions {
+    (
+        no_wb
+        $self: expr,
+        $bank: ident,
+        $usage: ident,
+        $bank_bit: expr,
+        $region_shift: expr,
+        $regions: expr;
+        $($bit: literal => $mappable_bank: ident),*$(,)?
+    ) => {{
+        for region in $regions {
+            let new = $self.map.$usage[region] & !(1 << $bank_bit);
+            $self.map.$usage[region] = new;
+            let usage_addr_range = region << $region_shift..(region + 1) << $region_shift;
+            if new == 0 {
+                $self.$usage.as_byte_mut_slice()
+                    [usage_addr_range]
+                    .fill(0);
+            } else {
+                for usage_addr in usage_addr_range.step_by(size_of::<usize>()) {
+                    let mut value = 0_usize;
+                    $(
+                        if new & 1 << $bit != 0 {
+                            value |= $self
+                                .banks
+                                .$mappable_bank
+                                .read_ne_aligned_unchecked::<usize>(
+                                    usage_addr & ($self.banks.$mappable_bank.len() - 1),
+                                );
+                        }
+                    )*
+                    $self.$usage.write_ne_aligned_unchecked(usage_addr, value);
+                }
+            }
+        }
+    }};
+    (
+        wb
+        $self: expr,
+        $bank: ident,
+        $usage: ident,
+        $bank_bit: expr,
+        $region_shift: expr,
+        $regions: expr;
+        $($bit: literal => $mappable_bank: ident),*$(,)?
+    ) => {{
+        for region in $regions {
+            let new = $self.map.$usage[region] & !(1 << $bank_bit);
+            $self.map.$usage[region] = new;
+            let usage_addr_range = region << $region_shift..(region + 1) << $region_shift;
+            let bank_addr_range = usage_addr_range.start & ($self.banks.$bank.len() - 1)
+                ..=(usage_addr_range.end - 1) & ($self.banks.$bank.len() - 1);
+            if new == 0 {
+                $self.banks.$bank.as_byte_mut_slice()[bank_addr_range]
+                    .copy_from_slice(&$self.$usage.as_byte_slice()[usage_addr_range.clone()]);
+                $self.$usage.as_byte_mut_slice()[usage_addr_range].fill(0);
+            } else {
+                for (usage_addr, bank_addr) in usage_addr_range.zip(bank_addr_range) {
+                    if $self.writeback.$usage[usage_addr / usize::BITS as usize]
+                        & 1 << (usage_addr & (usize::BITS - 1) as usize)
+                        == 0
+                    {
+                        let mut value = 0;
+                        $(
+                            if new & 1 << $bit != 0 {
+                                value |= $self.banks.$mappable_bank.read_unchecked(
+                                    usage_addr & ($self.banks.$mappable_bank.len() - 1),
+                                );
+                            }
+                        )*
+                        $self.$usage.write(usage_addr, value);
+                    } else {
+                        $self
+                            .banks
+                            .$bank
+                            .write(bank_addr, $self.$usage.read(usage_addr));
+                    }
+                }
+            }
+        }
+    }};
+    (a_bg $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        unmap_regions!(
+            wb
+            $self, $bank, a_bg, $bank_bit, 14, $regions;
+            0 => a,
+            1 => b,
+            2 => c,
+            3 => d,
+            4 => e,
+            5 => f,
+            6 => g,
+        )
+    };
+    (a_obj $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        unmap_regions!(
+            wb
+            $self, $bank, a_obj, $bank_bit, 14, $regions;
+            0 => a,
+            1 => b,
+            2 => e,
+            3 => f,
+            4 => g,
+        )
+    };
+    (a_bg_ext_pal $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        unmap_regions!(
+            no_wb
+            $self, $bank, a_bg_ext_pal, $bank_bit, 14, $regions;
+            0 => e,
+            1 => f,
+            2 => g,
+        )
+    };
+    (a_obj_ext_pal $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        unmap_regions!(
+            no_wb
+            $self, $bank, a_obj_ext_pal, $bank_bit, 13, $regions;
+            0 => f,
+            1 => g,
+        )
+    };
+    (b_bg $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {{
+        unmap_regions!(
+            wb
+            $self, $bank, b_bg, $bank_bit, 15, $regions;
+            0 => c,
+            1 => h,
+            2 => i,
         )
     }};
+    (b_obj $self: expr, d, $bank_bit: expr) => {{
+        unmap_regions!(
+            wb
+            $self, d, b_obj, $bank_bit, 17, once(0);
+            0 => d,
+            1 => i,
+        )
+    }};
+    (texture $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        unmap_regions!(
+            no_wb
+            $self, $bank, texture, $bank_bit, 17, $regions;
+            0 => a,
+            1 => b,
+            2 => c,
+            3 => d,
+        )
+    };
+    (tex_pal $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        unmap_regions!(
+            no_wb
+            $self, $bank, tex_pal, $bank_bit, 14, $regions;
+            0 => e,
+            1 => f,
+            2 => g,
+        )
+    };
+    (arm7 $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        unmap_regions!(
+            wb
+            $self, $bank, arm7, $bank_bit, 17, $regions;
+            0 => c,
+            1 => d,
+        )
+    };
+}
+
+macro_rules! map_regions {
+    (
+        no_wb
+        $self: expr,
+        $bank: ident,
+        $usage: ident,
+        $bank_bit: expr,
+        $region_shift: expr,
+        $regions: expr
+    ) => {{
+        for region in $regions {
+            let prev = $self.map.$usage[region];
+            $self.map.$usage[region] = prev | 1 << $bank_bit;
+            let usage_addr_range = region << $region_shift..(region + 1) << $region_shift;
+            let bank_addr_range = usage_addr_range.start & ($self.banks.$bank.len() - 1)
+                ..=(usage_addr_range.end - 1) & ($self.banks.$bank.len() - 1);
+            let addr_iter = bank_addr_range.zip(usage_addr_range).step_by(size_of::<usize>());
+            if prev == 0 {
+                for (bank_addr, usage_addr) in addr_iter {
+                    $self.$usage.write_ne_aligned_unchecked(
+                        usage_addr,
+                        $self.banks.$bank.read_ne_aligned_unchecked::<usize>(bank_addr),
+                    );
+                }
+            } else {
+                for (bank_addr, usage_addr) in addr_iter {
+                    $self.$usage.write_ne_aligned_unchecked(
+                        usage_addr,
+                        $self.$usage.read_ne_aligned_unchecked::<usize>(usage_addr)
+                            | $self
+                                .banks
+                                .$bank
+                                .read_ne_aligned_unchecked::<usize>(bank_addr),
+                    );
+                }
+            }
+        }
+    }};
+    (
+        wb
+        $self: expr,
+        $bank: ident,
+        $usage: ident,
+        $bank_bit: expr,
+        $region_shift: expr,
+        $regions: expr;
+        $($bit: literal => $mappable_bank: ident),*$(,)?
+    ) => {{
+        for region in $regions {
+            let prev = $self.map.$usage[region];
+            $self.map.$usage[region] = prev | 1 << $bank_bit;
+            let usage_addr_range = region << $region_shift..(region + 1) << $region_shift;
+            let bank_addr_range = usage_addr_range.start & ($self.banks.$bank.len() - 1)
+                ..=(usage_addr_range.end - 1) & ($self.banks.$bank.len() - 1);
+            let addr_iter = bank_addr_range.zip(usage_addr_range.clone());
+            if prev == 0 {
+                for (bank_addr, usage_addr) in addr_iter.step_by(size_of::<usize>()) {
+                    $self.$usage.write_ne_aligned_unchecked(
+                        usage_addr,
+                        $self.banks.$bank.read_ne_aligned_unchecked::<usize>(bank_addr),
+                    );
+                }
+            } else {
+                for (bank_addr, usage_addr) in addr_iter {
+                    let prev_value = $self.$usage.read(usage_addr);
+                    if $self.writeback.$usage[usage_addr / usize::BITS as usize]
+                        & 1 << (usage_addr & (usize::BITS - 1) as usize)
+                        != 0
+                    {
+                        $(
+                            if prev & 1 << $bit != 0 {
+                                $self.banks.$mappable_bank.write_unchecked(
+                                    usage_addr & ($self.banks.$mappable_bank.len() - 1),
+                                    prev_value,
+                                );
+                            }
+                        )*
+                    }
+                    $self.$usage.write(usage_addr, prev_value | $self.banks.$bank.read(bank_addr));
+                }
+            }
+            $self.writeback.$usage[usage_addr_range.start / usize::BITS as usize
+                ..usage_addr_range.end / usize::BITS as usize]
+                .fill(0);
+        }
+    }};
+    (a_bg $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        map_regions!(
+            wb
+            $self, $bank, a_bg, $bank_bit, 14, $regions;
+            0 => a,
+            1 => b,
+            2 => c,
+            3 => d,
+            4 => e,
+            5 => f,
+            6 => g,
+        )
+    };
+    (a_obj $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        map_regions!(
+            wb
+            $self, $bank, a_obj, $bank_bit, 14, $regions;
+            0 => a,
+            1 => b,
+            2 => e,
+            3 => f,
+            4 => g,
+        )
+    };
+    (a_bg_ext_pal $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        map_regions!(no_wb $self, $bank, a_bg_ext_pal, $bank_bit, 14, $regions)
+    };
+    (a_obj_ext_pal $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        map_regions!(no_wb $self, $bank, a_obj_ext_pal, $bank_bit, 13, $regions)
+    };
+    (b_bg $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {{
+        map_regions!(
+            wb
+            $self, $bank, b_bg, $bank_bit, 15, $regions;
+            0 => c,
+            1 => h,
+            2 => i,
+        )
+    }};
+    (b_obj $self: expr, d, $bank_bit: expr) => {{
+        map_regions!(
+            wb
+            $self, d, b_obj, $bank_bit, 17, once(0);
+            0 => d,
+            1 => i,
+        )
+    }};
+    (texture $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        map_regions!(no_wb $self, $bank, texture, $bank_bit, 17, $regions)
+    };
+    (tex_pal $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        map_regions!(no_wb $self, $bank, tex_pal, $bank_bit, 14, $regions)
+    };
+    (arm7 $self: expr, $bank: ident, $bank_bit: expr, $regions: expr) => {
+        map_regions!(
+            wb
+            $self, $bank, arm7, $bank_bit, 17, $regions;
+            0 => c,
+            1 => d,
+        )
+    }
 }
 
 impl Vram {
-    fn bank_ptrs_a_bg(&mut self, mask: u8, ptr_region: usize) -> (*const u8, *mut u8) {
-        unsafe {
-            match mask {
-                0x00 => (self.banks.zero.as_ptr(), self.banks.ignore.as_ptr()),
-                0x01 => large_bank_ptrs!(self, ptr_region, a, 0x1_C000),
-                0x02 => large_bank_ptrs!(self, ptr_region, b, 0x1_C000),
-                0x04 => large_bank_ptrs!(self, ptr_region, c, 0x1_C000),
-                0x08 => large_bank_ptrs!(self, ptr_region, d, 0x1_C000),
-                0x10 => large_bank_ptrs!(self, ptr_region, e, 0xC000),
-                0x20 => (self.banks.f.as_ptr(), self.banks.f.as_ptr()),
-                0x40 => (self.banks.g.as_ptr(), self.banks.g.as_ptr()),
-                _ => (ptr::null(), ptr::null_mut()),
-            }
-        }
-    }
-
-    fn bank_ptrs_a_obj(&mut self, mask: u8, ptr_region: usize) -> (*const u8, *mut u8) {
-        unsafe {
-            match mask {
-                0x00 => (self.banks.zero.as_ptr(), self.banks.ignore.as_ptr()),
-                0x01 => large_bank_ptrs!(self, ptr_region, a, 0x1_C000),
-                0x02 => large_bank_ptrs!(self, ptr_region, b, 0x1_C000),
-                0x04 => large_bank_ptrs!(self, ptr_region, e, 0xC000),
-                0x08 => (self.banks.f.as_ptr(), self.banks.f.as_ptr()),
-                0x10 => (self.banks.g.as_ptr(), self.banks.g.as_ptr()),
-                _ => (ptr::null(), ptr::null_mut()),
-            }
-        }
-    }
-
     unsafe fn map_lcdc<E: cpu::Engine>(
         &mut self,
         arm9: &mut Arm9<E>,
@@ -65,8 +336,8 @@ impl Vram {
         {
             let mut ptr = ptr;
             for region in regions_lower_bound..=regions_upper_bound {
-                self.map.lcdc_r_ptrs[region] = ptr;
-                self.map.lcdc_w_ptrs[region] = ptr;
+                self.lcdc_r_ptrs[region] = ptr;
+                self.lcdc_w_ptrs[region] = ptr;
                 ptr = ptr.add(0x4000);
             }
         }
@@ -92,325 +363,65 @@ impl Vram {
         let lower_bound = 0x0680_0000 | (regions_lower_bound as u32) << 14;
         let upper_bound = 0x0680_0000 | (regions_upper_bound as u32) << 14 | 0x3FFF;
         for region in regions_lower_bound..=regions_upper_bound {
-            self.map.lcdc_r_ptrs[region] = self.banks.zero.as_ptr();
-            self.map.lcdc_w_ptrs[region] = self.banks.ignore.as_ptr();
+            self.lcdc_r_ptrs[region] = self.zero_buffer.as_ptr();
+            self.lcdc_w_ptrs[region] = self.ignore_buffer.as_ptr();
         }
         for mirror_base in (0..0x80_0000).step_by(0x10_0000) {
             arm9.unmap_sys_bus_ptr_range((mirror_base | lower_bound, mirror_base | upper_bound));
-        }
-    }
-
-    fn set_range_b_bg<E: cpu::Engine>(
-        &mut self,
-        arm9: &mut Arm9<E>,
-        apply_mask: impl Fn(u8) -> u8,
-        range: impl IntoIterator<Item = usize>,
-    ) {
-        for region in range {
-            let mask = apply_mask(self.map.b_bg[region]);
-            self.map.b_bg[region] = mask;
-            for ptr_region in [region << 1, region << 1 | 1] {
-                unsafe {
-                    let (r_ptr, w_ptr) = match mask {
-                        0x00 => (self.banks.zero.as_ptr(), self.banks.ignore.as_ptr()),
-                        0x01 => large_bank_ptrs!(self, ptr_region, c, 0x1_C000),
-                        0x02 => large_bank_ptrs!(self, ptr_region, h, 0x4000),
-                        0x04 => (self.banks.i.as_ptr(), self.banks.i.as_ptr()),
-                        _ => (ptr::null_mut(), ptr::null_mut()),
-                    };
-                    self.map.b_bg_r_ptrs[ptr_region] = r_ptr;
-                    self.map.b_bg_w_ptrs[ptr_region] = w_ptr;
-                    let lower_bound = 0x0620_0000 | (ptr_region as u32) << 14;
-                    let upper_bound = lower_bound | 0x3FFF;
-                    if r_ptr != w_ptr || r_ptr.is_null() {
-                        for mirror_base in (0..0x20_0000).step_by(0x2_0000) {
-                            arm9.unmap_sys_bus_ptr_range((
-                                mirror_base | lower_bound,
-                                mirror_base | upper_bound,
-                            ));
-                        }
-                    } else {
-                        for mirror_base in (0..0x20_0000).step_by(0x2_0000) {
-                            arm9.map_sys_bus_ptr_range(
-                                ptr_mask::ALL & !ptr_mask::W_8,
-                                w_ptr,
-                                0x4000,
-                                (mirror_base | lower_bound, mirror_base | upper_bound),
-                            );
-                        }
-                    }
-                }
+            unsafe {
+                arm9.map_sys_bus_ptr_range(
+                    ptr_mask::R,
+                    self.zero_buffer.as_ptr(),
+                    0x8000,
+                    (mirror_base | lower_bound, mirror_base | upper_bound),
+                );
             }
         }
     }
 
-    fn set_b_obj<E: cpu::Engine>(&mut self, arm9: &mut Arm9<E>, apply_mask: impl Fn(u8) -> u8) {
-        let mask = apply_mask(self.map.b_obj);
-        self.map.b_obj = mask;
-        unsafe {
-            match mask {
-                0x00 => {
-                    self.map.b_obj_r_ptrs.fill(self.banks.zero.as_ptr());
-                    self.map.b_obj_w_ptrs.fill(self.banks.ignore.as_ptr());
-                    arm9.unmap_sys_bus_ptr_range((0x0660_0000, 0x067F_FFFF));
-                }
-                0x01 => {
-                    let mut ptr = self.banks.d.as_ptr();
-                    for ptr_region in 0..8 {
-                        self.map.b_obj_r_ptrs[ptr_region] = ptr;
-                        self.map.b_obj_w_ptrs[ptr_region] = ptr;
-                        ptr = ptr.add(0x4000);
-                    }
-                    arm9.map_sys_bus_ptr_range(
-                        ptr_mask::ALL & !ptr_mask::W_8,
-                        self.banks.d.as_ptr(),
-                        0x2_0000,
-                        (0x0660_0000, 0x067F_FFFF),
-                    );
-                }
-                0x02 => {
-                    self.map.b_obj_r_ptrs.fill(self.banks.i.as_ptr());
-                    self.map.b_obj_w_ptrs.fill(self.banks.i.as_ptr());
-                    arm9.map_sys_bus_ptr_range(
-                        ptr_mask::ALL & !ptr_mask::W_8,
-                        self.banks.i.as_ptr(),
-                        0x4000,
-                        (0x0660_0000, 0x067F_FFFF),
-                    );
-                }
-                _ => {
-                    make_zero(&mut self.map.b_obj_r_ptrs);
-                    make_zero(&mut self.map.b_obj_w_ptrs);
-                    arm9.unmap_sys_bus_ptr_range((0x0660_0000, 0x067F_FFFF));
-                }
-            }
-        }
-    }
-
-    fn set_region_texture(&mut self, apply_mask: impl Fn(u8) -> u8, region: usize) {
-        let mask = apply_mask(self.map.texture[region]);
-        self.map.texture[region] = mask;
-        self.map.texture_ptrs[region] = match mask {
-            0x00 => self.banks.zero.as_ptr(),
-            0x01 => self.banks.a.as_ptr(),
-            0x02 => self.banks.b.as_ptr(),
-            0x04 => self.banks.c.as_ptr(),
-            0x08 => self.banks.d.as_ptr(),
-            _ => ptr::null(),
-        };
-    }
-
-    fn set_range_tex_pal(
-        &mut self,
-        apply_mask: impl Fn(u8) -> u8,
-        range: impl IntoIterator<Item = usize>,
-    ) {
-        for region in range {
-            let mask = apply_mask(self.map.tex_pal[region]);
-            self.map.tex_pal[region] = mask;
-            self.map.tex_pal_ptrs[region] = match mask {
-                0x00 => self.banks.zero.as_ptr(),
-                0x01 => unsafe { self.banks.e.as_ptr().add(region << 14 & 0xC000) },
-                0x02 => self.banks.f.as_ptr(),
-                0x04 => self.banks.g.as_ptr(),
-                _ => ptr::null(),
-            };
-        }
-    }
-
-    fn set_range_a_bg_ext_pal(
-        &mut self,
-        apply_mask: impl Fn(u8) -> u8,
-        range: impl IntoIterator<Item = usize>,
-    ) {
-        for region in range {
-            let mask = apply_mask(self.map.a_bg_ext_pal[region]);
-            self.map.a_bg_ext_pal[region] = mask;
-            self.map.a_bg_ext_pal_ptrs[region] = match mask {
-                0x00 => self.banks.zero.as_ptr(),
-                0x01 => unsafe { self.banks.e.as_ptr().add(region << 14 & 0x4000) },
-                0x02 => self.banks.f.as_ptr(),
-                0x04 => self.banks.g.as_ptr(),
-                _ => ptr::null(),
-            };
-        }
-    }
-
-    fn set_a_obj_ext_pal(&mut self, apply_mask: impl Fn(u8) -> u8) {
-        let mask = apply_mask(self.map.a_obj_ext_pal);
-        self.map.a_obj_ext_pal = mask;
-        self.map.a_obj_ext_pal_ptr = match mask {
-            0x00 => self.banks.zero.as_ptr(),
-            0x01 => self.banks.f.as_ptr(),
-            0x02 => self.banks.g.as_ptr(),
-            _ => ptr::null(),
-        };
-    }
-
-    fn set_region_arm7<E: cpu::Engine>(
-        &mut self,
-        arm7: &mut Arm7<E>,
-        apply_mask: impl Fn(u8) -> u8,
-        region: usize,
-    ) {
-        let mask = apply_mask(self.map.arm7[region]);
-        self.map.arm7[region] = mask;
-        let (r_ptr, w_ptr) = match mask {
-            0x00 => (self.banks.zero.as_ptr(), self.banks.ignore.as_ptr()),
-            0x01 => (self.banks.c.as_ptr(), self.banks.c.as_ptr()),
-            0x02 => (self.banks.d.as_ptr(), self.banks.d.as_ptr()),
-            _ => (ptr::null_mut(), ptr::null_mut()),
-        };
-        self.map.arm7_r_ptrs[region] = r_ptr;
-        self.map.arm7_w_ptrs[region] = w_ptr;
-        let lower_bound = 0x0600_0000 | (region as u32) << 17;
-        let upper_bound = lower_bound | 0x1_FFFF;
-        if r_ptr != w_ptr || r_ptr.is_null() {
-            for mirror_base in (0..0x100_0000).step_by(0x4_0000) {
-                arm7.unmap_bus_ptr_range((mirror_base | lower_bound, mirror_base | upper_bound));
-            }
-        } else {
-            for mirror_base in (0..0x100_0000).step_by(0x4_0000) {
-                unsafe {
-                    arm7.map_bus_ptr_range(
-                        w_ptr,
-                        0x2_0000,
-                        (mirror_base | lower_bound, mirror_base | upper_bound),
-                    );
-                }
-            }
-        }
-    }
-}
-
-macro_rules! set_range_a_bg_obj {
-    (
-        $self: expr,
-        $arm9: expr,
-        ($ptrs_fn: ident, $arr: ident, $ptr_arr_r: ident, $ptr_arr_w: ident),
-        |$prev_mask_ident: ident| $apply_mask: expr,
-        $range: expr,
-        $bus_ptrs_base: expr,
-        $mirror_stride: expr$(,)?
-    ) => {
-        for region in $range {
-            let mask = {
-                let $prev_mask_ident = $self.map.$arr[region];
-                $apply_mask
-            };
-            $self.map.$arr[region] = mask;
-            let (r_ptr, w_ptr) = $self.$ptrs_fn(mask, region);
-            $self.map.$ptr_arr_r[region] = r_ptr;
-            $self.map.$ptr_arr_w[region] = w_ptr;
-            let lower_bound = $bus_ptrs_base | ((region as u32) << 14);
-            let upper_bound = lower_bound | 0x3FFF;
-            if r_ptr != w_ptr || r_ptr.is_null() {
-                // Separate read and write pointers can't be represented by the pointer LUTs, so
-                // that will fallback to the slow handlers as if the pointers were null.
-                for mirror_base in (0..0x20_0000).step_by($mirror_stride) {
-                    $arm9.unmap_sys_bus_ptr_range((
-                        mirror_base | lower_bound,
-                        mirror_base | upper_bound,
-                    ));
-                }
-            } else {
-                for mirror_base in (0..0x20_0000).step_by($mirror_stride) {
-                    unsafe {
-                        $arm9.map_sys_bus_ptr_range(
-                            ptr_mask::ALL & !ptr_mask::W_8,
-                            w_ptr,
-                            0x4000,
-                            (mirror_base | lower_bound, mirror_base | upper_bound),
-                        );
-                    }
-                }
-            }
-        }
-    };
-}
-
-impl Vram {
     pub fn set_bank_control_a<E: cpu::Engine>(
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
     ) {
         value.0 &= 0x9B;
-        {
-            let prev_value = self.bank_control[0];
-            if value == prev_value {
-                return;
-            }
-            self.bank_control[0] = value;
+        let prev_value = self.bank_control[0];
+        if value == prev_value {
+            return;
+        }
+        self.bank_control[0] = value;
+        unsafe {
             if prev_value.enabled() {
                 match prev_value.mst() & 3 {
-                    0 => {
-                        self.unmap_lcdc(arm9, 0, 7);
-                    }
+                    0 => self.unmap_lcdc(arm9, 0, 7),
                     1 => {
                         let base_region = (prev_value.offset() as usize) << 3;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m & !0x01,
-                            base_region..=base_region | 7,
-                            0x0600_0000,
-                            0x8_0000,
-                        );
+                        unmap_regions!(a_bg self, a, 0, base_region..base_region + 8);
                     }
                     2 => {
                         let base_region = (prev_value.offset() as usize & 1) << 3;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_obj, a_obj, a_obj_r_ptrs, a_obj_w_ptrs),
-                            |m| m & !0x01,
-                            base_region..=base_region | 7,
-                            0x0640_0000,
-                            0x4_0000,
-                        );
+                        unmap_regions!(a_obj self, a, 0, base_region..base_region + 8);
                     }
                     _ => {
                         let region = prev_value.offset() as usize;
-                        self.set_region_texture(|m| m & !0x01, region);
+                        unmap_regions!(texture self, a, 0, once(region));
                     }
                 }
             }
-        }
-        {
             if value.enabled() {
                 match value.mst() & 3 {
-                    0 => unsafe {
-                        self.map_lcdc(arm9, 0, 7, self.banks.a.as_ptr());
-                    },
+                    0 => self.map_lcdc(arm9, 0, 7, self.banks.a.as_ptr()),
                     1 => {
                         let base_region = (value.offset() as usize) << 3;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m | 0x01,
-                            base_region..=base_region | 7,
-                            0x0600_0000,
-                            0x8_0000,
-                        );
+                        map_regions!(a_bg self, a, 0, base_region..base_region + 8);
                     }
                     2 => {
                         let base_region = (value.offset() as usize & 1) << 3;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_obj, a_obj, a_obj_r_ptrs, a_obj_w_ptrs),
-                            |m| m | 0x01,
-                            base_region..=base_region | 7,
-                            0x0640_0000,
-                            0x4_0000,
-                        );
+                        map_regions!(a_obj self, a, 0, base_region..base_region + 8);
                     }
                     _ => {
                         let region = value.offset() as usize;
-                        self.set_region_texture(|m| m | 0x01, region);
+                        map_regions!(texture self, a, 0, once(region));
                     }
                 }
             }
@@ -423,81 +434,43 @@ impl Vram {
         arm9: &mut Arm9<E>,
     ) {
         value.0 &= 0x9B;
-        {
-            let prev_value = self.bank_control[1];
-            if value == prev_value {
-                return;
-            }
-            self.bank_control[1] = value;
+        let prev_value = self.bank_control[1];
+        if value == prev_value {
+            return;
+        }
+        self.bank_control[1] = value;
+        unsafe {
             if prev_value.enabled() {
                 match prev_value.mst() & 3 {
-                    0 => {
-                        self.unmap_lcdc(arm9, 8, 0xF);
-                    }
+                    0 => self.unmap_lcdc(arm9, 8, 0xF),
                     1 => {
                         let base_region = (prev_value.offset() as usize) << 3;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m & !0x02,
-                            base_region..=base_region | 7,
-                            0x0600_0000,
-                            0x8_0000,
-                        );
+                        unmap_regions!(a_bg self, b, 1, base_region..base_region + 8);
                     }
                     2 => {
                         let base_region = (prev_value.offset() as usize & 1) << 3;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_obj, a_obj, a_obj_r_ptrs, a_obj_w_ptrs),
-                            |m| m & !0x02,
-                            base_region..=base_region | 7,
-                            0x0640_0000,
-                            0x4_0000,
-                        );
+                        unmap_regions!(a_obj self, b, 1, base_region..base_region + 8);
                     }
                     _ => {
                         let region = prev_value.offset() as usize;
-                        self.set_region_texture(|m| m & !0x02, region);
+                        unmap_regions!(texture self, b, 1, once(region));
                     }
                 }
             }
-        }
-        {
             if value.enabled() {
                 match value.mst() & 3 {
-                    0 => unsafe {
-                        self.map_lcdc(arm9, 8, 0xF, self.banks.b.as_ptr());
-                    },
+                    0 => self.map_lcdc(arm9, 8, 0xF, self.banks.b.as_ptr()),
                     1 => {
                         let base_region = (value.offset() as usize) << 3;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m | 0x02,
-                            base_region..=base_region | 7,
-                            0x0600_0000,
-                            0x8_0000,
-                        );
+                        map_regions!(a_bg self, b, 1, base_region..base_region + 8);
                     }
                     2 => {
                         let base_region = (value.offset() as usize & 1) << 3;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_obj, a_obj, a_obj_r_ptrs, a_obj_w_ptrs),
-                            |m| m | 0x02,
-                            base_region..=base_region | 7,
-                            0x0640_0000,
-                            0x4_0000,
-                        );
+                        map_regions!(a_obj self, b, 1, base_region..base_region + 8);
                     }
                     _ => {
                         let region = value.offset() as usize;
-                        self.set_region_texture(|m| m | 0x02, region);
+                        map_regions!(texture self, b, 1, once(region));
                     }
                 }
             }
@@ -507,16 +480,15 @@ impl Vram {
     pub fn set_bank_control_c<E: cpu::Engine>(
         &mut self,
         mut value: BankControl,
-        arm7: &mut Arm7<E>,
         arm9: &mut Arm9<E>,
     ) {
         value.0 &= 0x9F;
-        {
-            let prev_value = self.bank_control[2];
-            if value == prev_value {
-                return;
-            }
-            self.bank_control[2] = value;
+        let prev_value = self.bank_control[2];
+        if value == prev_value {
+            return;
+        }
+        self.bank_control[2] = value;
+        unsafe {
             if prev_value.enabled() {
                 match prev_value.mst() {
                     0 => {
@@ -524,64 +496,42 @@ impl Vram {
                     }
                     1 => {
                         let base_region = (prev_value.offset() as usize) << 3;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m & !0x04,
-                            base_region..=base_region | 7,
-                            0x0600_0000,
-                            0x8_0000,
-                        );
+                        unmap_regions!(a_bg self, c, 2, base_region..base_region + 8);
                     }
                     2 => {
                         let region = prev_value.offset() as usize & 1;
-                        self.set_region_arm7(arm7, |m| m & !0x01, region);
+                        unmap_regions!(arm7 self, c, 0, once(region));
                         self.arm7_status.set_c_used_as_arm7(false);
                     }
                     3 => {
                         let region = prev_value.offset() as usize;
-                        self.set_region_texture(|m| m & !0x04, region);
+                        unmap_regions!(texture self, c, 2, once(region));
                     }
-                    4 => {
-                        self.set_range_b_bg(arm9, |m| m & !0x01, 0..=3);
-                    }
+                    4 => unmap_regions!(b_bg self, c, 0, 0..4),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank C: {}", prev_value.mst())
                     }
                 }
             }
-        }
-        {
             if value.enabled() {
                 match value.mst() {
-                    0 => unsafe {
+                    0 => {
                         self.map_lcdc(arm9, 0x10, 0x17, self.banks.c.as_ptr());
-                    },
+                    }
                     1 => {
                         let base_region = (value.offset() as usize) << 3;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m | 0x04,
-                            base_region..=base_region | 7,
-                            0x0600_0000,
-                            0x8_0000,
-                        );
+                        map_regions!(a_bg self, c, 2, base_region..base_region + 8);
                     }
                     2 => {
                         let region = value.offset() as usize & 1;
-                        self.set_region_arm7(arm7, |m| m | 0x01, region);
+                        map_regions!(arm7 self, c, 0, once(region));
                         self.arm7_status.set_c_used_as_arm7(true);
                     }
                     3 => {
                         let region = value.offset() as usize;
-                        self.set_region_texture(|m| m | 0x04, region);
+                        map_regions!(texture self, c, 2, once(region));
                     }
-                    4 => {
-                        self.set_range_b_bg(arm9, |m| m | 0x01, 0..=3);
-                    }
+                    4 => map_regions!(b_bg self, c, 0, 0..4),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank C: {}", value.mst())
                     }
@@ -593,11 +543,10 @@ impl Vram {
     pub fn set_bank_control_d<E: cpu::Engine>(
         &mut self,
         mut value: BankControl,
-        arm7: &mut Arm7<E>,
         arm9: &mut Arm9<E>,
     ) {
         value.0 &= 0x9F;
-        {
+        unsafe {
             let prev_value = self.bank_control[3];
             if value == prev_value {
                 return;
@@ -610,64 +559,40 @@ impl Vram {
                     }
                     1 => {
                         let base_region = (prev_value.offset() as usize) << 3;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m & !0x08,
-                            base_region..=base_region | 7,
-                            0x0600_0000,
-                            0x8_0000,
-                        );
+                        unmap_regions!(a_bg self, d, 3, base_region..base_region + 8);
                     }
                     2 => {
                         let region = prev_value.offset() as usize & 1;
-                        self.set_region_arm7(arm7, |m| m & !0x02, region);
+                        unmap_regions!(arm7 self, d, 1, once(region));
                         self.arm7_status.set_d_used_as_arm7(false);
                     }
                     3 => {
                         let region = prev_value.offset() as usize;
-                        self.set_region_texture(|m| m & !0x08, region);
+                        unmap_regions!(texture self, d, 3, once(region));
                     }
-                    4 => {
-                        self.set_b_obj(arm9, |m| m & !0x01);
-                    }
+                    4 => unmap_regions!(b_obj self, d, 0),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank D: {}", prev_value.mst())
                     }
                 }
             }
-        }
-        {
             if value.enabled() {
                 match value.mst() {
-                    0 => unsafe {
-                        self.map_lcdc(arm9, 0x18, 0x1F, self.banks.d.as_ptr());
-                    },
+                    0 => self.map_lcdc(arm9, 0x18, 0x1F, self.banks.d.as_ptr()),
                     1 => {
                         let base_region = (value.offset() as usize) << 3;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m | 0x08,
-                            base_region..=base_region | 7,
-                            0x0600_0000,
-                            0x8_0000,
-                        );
+                        map_regions!(a_bg self, d, 3, base_region..base_region + 8);
                     }
                     2 => {
                         let region = value.offset() as usize & 1;
-                        self.set_region_arm7(arm7, |m| m | 0x02, region);
+                        map_regions!(arm7 self, d, 1, once(region));
                         self.arm7_status.set_d_used_as_arm7(true);
                     }
                     3 => {
                         let region = value.offset() as usize;
-                        self.set_region_texture(|m| m | 0x08, region);
+                        map_regions!(texture self, d, 3, once(region));
                     }
-                    4 => {
-                        self.set_b_obj(arm9, |m| m | 0x01);
-                    }
+                    4 => map_regions!(b_obj self, d, 0),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank D: {}", value.mst())
                     }
@@ -680,10 +605,9 @@ impl Vram {
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
-        engine_2d_a: &mut Engine2d<EngineA>,
     ) {
         value.0 &= 0x87;
-        {
+        unsafe {
             let prev_value = self.bank_control[4];
             if value == prev_value {
                 return;
@@ -691,81 +615,23 @@ impl Vram {
             self.bank_control[4] = value;
             if prev_value.enabled() {
                 match prev_value.mst() {
-                    0 => {
-                        self.unmap_lcdc(arm9, 0x20, 0x23);
-                    }
-                    1 => {
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m & !0x10,
-                            0..=3,
-                            0x0600_0000,
-                            0x8_0000,
-                        );
-                    }
-                    2 => {
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_obj, a_obj, a_obj_r_ptrs, a_obj_w_ptrs),
-                            |m| m & !0x04,
-                            0..=3,
-                            0x0640_0000,
-                            0x4_0000,
-                        );
-                    }
-                    3 => {
-                        self.set_range_tex_pal(|m| m & !0x01, 0..=3);
-                    }
-                    4 => {
-                        self.set_range_a_bg_ext_pal(|m| m & !0x01, 0..=1);
-                        engine_2d_a.invalidate_bg_ext_pal_cache(0);
-                        engine_2d_a.invalidate_bg_ext_pal_cache(1);
-                    }
+                    0 => self.unmap_lcdc(arm9, 0x20, 0x23),
+                    1 => unmap_regions!(a_bg self, e, 4, 0..4),
+                    2 => unmap_regions!(a_obj self, e, 2, 0..4),
+                    3 => unmap_regions!(tex_pal self, e, 0, 0..4),
+                    4 => unmap_regions!(a_bg_ext_pal self, e, 0, 0..2),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank E: {}", prev_value.mst())
                     }
                 }
             }
-        }
-        {
             if value.enabled() {
                 match value.mst() {
-                    0 => unsafe {
-                        self.map_lcdc(arm9, 0x20, 0x23, self.banks.e.as_ptr());
-                    },
-                    1 => {
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m | 0x10,
-                            0..=3,
-                            0x0600_0000,
-                            0x8_0000,
-                        );
-                    }
-                    2 => {
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_obj, a_obj, a_obj_r_ptrs, a_obj_w_ptrs),
-                            |m| m | 0x04,
-                            0..=3,
-                            0x0640_0000,
-                            0x4_0000,
-                        );
-                    }
-                    3 => {
-                        self.set_range_tex_pal(|m| m | 0x01, 0..=3);
-                    }
-                    4 => {
-                        self.set_range_a_bg_ext_pal(|m| m | 0x01, 0..=1);
-                        engine_2d_a.invalidate_bg_ext_pal_cache(0);
-                        engine_2d_a.invalidate_bg_ext_pal_cache(1);
-                    }
+                    0 => self.map_lcdc(arm9, 0x20, 0x23, self.banks.e.as_ptr()),
+                    1 => map_regions!(a_bg self, e, 4, 0..4),
+                    2 => map_regions!(a_obj self, e, 2, 0..4),
+                    3 => map_regions!(tex_pal self, e, 0, 0..4),
+                    4 => map_regions!(a_bg_ext_pal self, e, 0, 0..2),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank E: {}", value.mst())
                     }
@@ -778,10 +644,9 @@ impl Vram {
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
-        engine_2d_a: &mut Engine2d<EngineA>,
     ) {
         value.0 &= 0x9F;
-        {
+        unsafe {
             let prev_value = self.bank_control[5];
             if value == prev_value {
                 return;
@@ -795,100 +660,50 @@ impl Vram {
                     1 => {
                         let base_region =
                             ((prev_value.offset() & 1) | (prev_value.offset() & 2) << 1) as usize;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m & !0x20,
-                            [base_region, base_region | 2],
-                            0x0600_0000,
-                            0x8_0000,
-                        );
+                        unmap_regions!(a_bg self, f, 5, [base_region, base_region | 2]);
                     }
                     2 => {
                         let base_region =
                             ((prev_value.offset() & 1) | (prev_value.offset() & 2) << 1) as usize;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_obj, a_obj, a_obj_r_ptrs, a_obj_w_ptrs),
-                            |m| m & !0x08,
-                            [base_region, base_region | 2],
-                            0x0640_0000,
-                            0x4_0000,
-                        );
+                        unmap_regions!(a_obj self, f, 3, [base_region, base_region | 2]);
                     }
                     3 => {
                         let region =
                             ((prev_value.offset() & 1) | (prev_value.offset() & 2) << 1) as usize;
-                        self.set_range_tex_pal(|m| m & !0x02, core::iter::once(region));
+                        unmap_regions!(tex_pal self, f, 1, once(region));
                     }
                     4 => {
-                        let region = prev_value.offset() & 1;
-                        self.set_range_a_bg_ext_pal(
-                            |m| m & !0x02,
-                            core::iter::once(region as usize),
-                        );
-                        engine_2d_a.invalidate_bg_ext_pal_cache(region);
+                        let region = prev_value.offset() as usize & 1;
+                        unmap_regions!(a_bg_ext_pal self, f, 1, once(region));
                     }
-                    5 => {
-                        self.set_a_obj_ext_pal(|m| m & !0x01);
-                        engine_2d_a.invalidate_obj_ext_pal_cache();
-                    }
+                    5 => unmap_regions!(a_obj_ext_pal self, f, 0, 0..1),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank F: {}", prev_value.mst())
                     }
                 }
             }
-        }
-        {
             if value.enabled() {
                 match value.mst() {
-                    0 => unsafe {
-                        self.map_lcdc(arm9, 0x24, 0x24, self.banks.f.as_ptr());
-                    },
+                    0 => self.map_lcdc(arm9, 0x24, 0x24, self.banks.f.as_ptr()),
                     1 => {
                         let base_region =
                             ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m | 0x20,
-                            [base_region, base_region | 2],
-                            0x0600_0000,
-                            0x8_0000,
-                        );
+                        map_regions!(a_bg self, f, 5, [base_region, base_region | 2]);
                     }
                     2 => {
                         let base_region =
                             ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_obj, a_obj, a_obj_r_ptrs, a_obj_w_ptrs),
-                            |m| m | 0x08,
-                            [base_region, base_region | 2],
-                            0x0640_0000,
-                            0x4_0000,
-                        );
+                        map_regions!(a_obj self, f, 3, [base_region, base_region | 2]);
                     }
                     3 => {
                         let region = ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
-                        self.set_range_tex_pal(|m| m | 0x02, core::iter::once(region));
+                        map_regions!(tex_pal self, f, 1, once(region));
                     }
                     4 => {
-                        let region = value.offset() & 1;
-                        self.set_range_a_bg_ext_pal(
-                            |m| m | 0x02,
-                            core::iter::once(region as usize),
-                        );
-                        engine_2d_a.invalidate_bg_ext_pal_cache(region);
+                        let region = value.offset() as usize & 1;
+                        map_regions!(a_bg_ext_pal self, f, 1, once(region));
                     }
-                    5 => {
-                        self.set_a_obj_ext_pal(|m| m | 0x01);
-                        engine_2d_a.invalidate_obj_ext_pal_cache();
-                    }
+                    5 => map_regions!(a_obj_ext_pal self, f, 0, 0..1),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank F: {}", value.mst())
                     }
@@ -901,10 +716,9 @@ impl Vram {
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
-        engine_2d_a: &mut Engine2d<EngineA>,
     ) {
         value.0 &= 0x9F;
-        {
+        unsafe {
             let prev_value = self.bank_control[6];
             if value == prev_value {
                 return;
@@ -918,100 +732,50 @@ impl Vram {
                     1 => {
                         let base_region =
                             ((prev_value.offset() & 1) | (prev_value.offset() & 2) << 1) as usize;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m & !0x40,
-                            [base_region, base_region | 2],
-                            0x0600_0000,
-                            0x8_0000,
-                        );
+                        unmap_regions!(a_bg self, g, 6, [base_region, base_region | 2]);
                     }
                     2 => {
                         let base_region =
                             ((prev_value.offset() & 1) | (prev_value.offset() & 2) << 1) as usize;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_obj, a_obj, a_obj_r_ptrs, a_obj_w_ptrs),
-                            |m| m & !0x10,
-                            [base_region, base_region | 2],
-                            0x0640_0000,
-                            0x4_0000,
-                        );
+                        unmap_regions!(a_obj self, g, 4, [base_region, base_region | 2]);
                     }
                     3 => {
                         let region =
                             ((prev_value.offset() & 1) | (prev_value.offset() & 2) << 1) as usize;
-                        self.set_range_tex_pal(|m| m & !0x04, core::iter::once(region));
+                        unmap_regions!(tex_pal self, g, 2, once(region));
                     }
                     4 => {
-                        let region = prev_value.offset() & 1;
-                        self.set_range_a_bg_ext_pal(
-                            |m| m & !0x04,
-                            core::iter::once(region as usize),
-                        );
-                        engine_2d_a.invalidate_bg_ext_pal_cache(region);
+                        let region = prev_value.offset() as usize & 1;
+                        unmap_regions!(a_bg_ext_pal self, g, 2, once(region));
                     }
-                    5 => {
-                        self.set_a_obj_ext_pal(|m| m & !0x02);
-                        engine_2d_a.invalidate_obj_ext_pal_cache();
-                    }
+                    5 => unmap_regions!(a_obj_ext_pal self, g, 1, 0..1),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank G: {}", prev_value.mst())
                     }
                 }
             }
-        }
-        {
             if value.enabled() {
                 match value.mst() {
-                    0 => unsafe {
-                        self.map_lcdc(arm9, 0x25, 0x25, self.banks.g.as_ptr());
-                    },
+                    0 => self.map_lcdc(arm9, 0x25, 0x25, self.banks.g.as_ptr()),
                     1 => {
                         let base_region =
                             ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_bg, a_bg, a_bg_r_ptrs, a_bg_w_ptrs),
-                            |m| m | 0x40,
-                            [base_region, base_region | 2],
-                            0x0600_0000,
-                            0x8_0000,
-                        );
+                        map_regions!(a_bg self, g, 6, [base_region, base_region | 2]);
                     }
                     2 => {
                         let base_region =
                             ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
-                        set_range_a_bg_obj!(
-                            self,
-                            arm9,
-                            (bank_ptrs_a_obj, a_obj, a_obj_r_ptrs, a_obj_w_ptrs),
-                            |m| m | 0x10,
-                            [base_region, base_region | 2],
-                            0x0640_0000,
-                            0x4_0000,
-                        );
+                        map_regions!(a_obj self, g, 4, [base_region, base_region | 2]);
                     }
                     3 => {
                         let region = ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
-                        self.set_range_tex_pal(|m| m | 0x04, core::iter::once(region));
+                        map_regions!(tex_pal self, g, 2, once(region));
                     }
                     4 => {
-                        let region = value.offset() & 1;
-                        self.set_range_a_bg_ext_pal(
-                            |m| m | 0x04,
-                            core::iter::once(region as usize),
-                        );
-                        engine_2d_a.invalidate_bg_ext_pal_cache(region);
+                        let region = value.offset() as usize & 1;
+                        map_regions!(a_bg_ext_pal self, g, 2, once(region));
                     }
-                    5 => {
-                        self.set_a_obj_ext_pal(|m| m | 0x02);
-                        engine_2d_a.invalidate_obj_ext_pal_cache();
-                    }
+                    5 => map_regions!(a_obj_ext_pal self, g, 1, 0..1),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank G: {}", value.mst())
                     }
@@ -1024,10 +788,9 @@ impl Vram {
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
-        engine_2d_b: &mut Engine2d<EngineB>,
     ) {
         value.0 &= 0x83;
-        {
+        unsafe {
             let prev_value = self.bank_control[7];
             if value == prev_value {
                 return;
@@ -1038,36 +801,18 @@ impl Vram {
                     0 => {
                         self.unmap_lcdc(arm9, 0x26, 0x27);
                     }
-                    1 => {
-                        self.set_range_b_bg(arm9, |m| m & !0x02, core::iter::once(0));
-                        self.set_range_b_bg(arm9, |m| m & !0x02, core::iter::once(2));
-                    }
-                    2 => {
-                        self.map.b_bg_ext_pal_ptr = self.banks.zero.as_ptr();
-                        engine_2d_b.invalidate_bg_ext_pal_cache(0);
-                        engine_2d_b.invalidate_bg_ext_pal_cache(1);
-                    }
+                    1 => unmap_regions!(b_bg self, h, 1, [0, 2]),
+                    2 => self.b_bg_ext_pal_ptr = self.zero_buffer.as_ptr(),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank H: {}", prev_value.mst())
                     }
                 }
             }
-        }
-        {
             if value.enabled() {
                 match value.mst() & 3 {
-                    0 => unsafe {
-                        self.map_lcdc(arm9, 0x26, 0x27, self.banks.h.as_ptr());
-                    },
-                    1 => {
-                        self.set_range_b_bg(arm9, |m| m | 0x02, core::iter::once(0));
-                        self.set_range_b_bg(arm9, |m| m | 0x02, core::iter::once(2));
-                    }
-                    2 => {
-                        self.map.b_bg_ext_pal_ptr = self.banks.h.as_ptr();
-                        engine_2d_b.invalidate_bg_ext_pal_cache(0);
-                        engine_2d_b.invalidate_bg_ext_pal_cache(1);
-                    }
+                    0 => self.map_lcdc(arm9, 0x26, 0x27, self.banks.h.as_ptr()),
+                    1 => map_regions!(b_bg self, h, 1, [0, 2]),
+                    2 => self.b_bg_ext_pal_ptr = self.banks.h.as_ptr(),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank H: {}", value.mst())
                     }
@@ -1080,10 +825,11 @@ impl Vram {
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
-        engine_2d_b: &mut Engine2d<EngineB>,
     ) {
+        // Bank I requires special code for mapping/unmapping, as it gets mirrored inside what is
+        // considered a single region by other code.
         value.0 &= 0x83;
-        {
+        unsafe {
             let prev_value = self.bank_control[8];
             if value == prev_value {
                 return;
@@ -1095,36 +841,125 @@ impl Vram {
                         self.unmap_lcdc(arm9, 0x28, 0x28);
                     }
                     1 => {
-                        self.set_range_b_bg(arm9, |m| m & !0x04, core::iter::once(1));
-                        self.set_range_b_bg(arm9, |m| m & !0x04, core::iter::once(3));
+                        if self.map.b_bg[1] == 1 << 2 {
+                            self.map.b_bg[1] = 0;
+                            self.map.b_bg[3] = 0;
+                            let mut b_bg = self.b_bg.as_byte_mut_slice();
+                            self.banks
+                                .i
+                                .as_byte_mut_slice()
+                                .copy_from_slice(&b_bg[0x8000..0xC000]);
+                            b_bg[0x8000..0x1_0000].fill(0);
+                            b_bg[0x1_8000..0x2_0000].fill(0);
+                        } else {
+                            for region in [1, 3] {
+                                self.map.b_bg[region] = 1;
+                                for usage_addr in region << 15..(region + 1) << 15 {
+                                    if self.writeback.b_bg[usage_addr / usize::BITS as usize]
+                                        & 1 << (usage_addr & (usize::BITS - 1) as usize)
+                                        == 0
+                                    {
+                                        self.b_bg.write(
+                                            usage_addr,
+                                            self.banks.c.read_unchecked(usage_addr),
+                                        );
+                                    } else {
+                                        self.banks
+                                            .i
+                                            .write(usage_addr & 0x3FFF, self.b_bg.read(usage_addr));
+                                    }
+                                }
+                            }
+                        }
                     }
                     2 => {
-                        self.set_b_obj(arm9, |m| m & !0x02);
+                        let new = self.map.b_obj[0] & !(1 << 1);
+                        self.map.b_obj[0] = new;
+                        if new == 0 {
+                            self.banks
+                                .i
+                                .as_byte_mut_slice()
+                                .copy_from_slice(&self.b_obj.as_byte_slice()[..0x4000]);
+                            self.b_obj.as_byte_mut_slice().fill(0);
+                        } else {
+                            for (usage_addr, byte) in
+                                self.b_obj.as_byte_mut_slice().iter_mut().enumerate()
+                            {
+                                if self.writeback.b_obj[usage_addr / usize::BITS as usize]
+                                    & 1 << (usage_addr & (usize::BITS - 1) as usize)
+                                    == 0
+                                {
+                                    *byte = self.banks.d.read_unchecked(usage_addr);
+                                } else {
+                                    self.banks.i.write(usage_addr & 0x3FFF, *byte);
+                                }
+                            }
+                        }
                     }
-                    _ => {
-                        self.map.b_obj_ext_pal_ptr = self.banks.zero.as_ptr();
-                        engine_2d_b.invalidate_obj_ext_pal_cache();
-                    }
+                    _ => self.b_obj_ext_pal_ptr = self.zero_buffer.as_ptr(),
                 }
             }
-        }
-        {
             if value.enabled() {
                 match value.mst() & 3 {
-                    0 => unsafe {
-                        self.map_lcdc(arm9, 0x28, 0x28, self.banks.i.as_ptr());
-                    },
+                    0 => self.map_lcdc(arm9, 0x28, 0x28, self.banks.i.as_ptr()),
                     1 => {
-                        self.set_range_b_bg(arm9, |m| m | 0x04, core::iter::once(1));
-                        self.set_range_b_bg(arm9, |m| m | 0x04, core::iter::once(3));
+                        if self.map.b_bg[1] == 0 {
+                            self.map.b_bg[1] = 1 << 2;
+                            self.map.b_bg[3] = 1 << 2;
+                            for base_usage_addr in [0x8000, 0xC000, 0x1_8000, 0x1_C000] {
+                                self.b_bg.as_byte_mut_slice()
+                                    [base_usage_addr..base_usage_addr + 0x4000]
+                                    .copy_from_slice(&self.banks.i.as_byte_slice());
+                            }
+                        } else {
+                            self.map.b_bg[1] = 5;
+                            self.map.b_bg[3] = 5;
+                            for usage_addr in (0x8000..0x1_0000).chain(0x1_8000..0x2_0000) {
+                                let prev_value = self.b_bg.read(usage_addr);
+                                if self.writeback.b_bg[usage_addr / usize::BITS as usize]
+                                    & 1 << (usage_addr & (usize::BITS - 1) as usize)
+                                    != 0
+                                {
+                                    self.banks.c.write_unchecked(usage_addr, prev_value);
+                                }
+                                self.b_bg.write(
+                                    usage_addr,
+                                    prev_value | self.banks.i.read(usage_addr & 0x3FFF),
+                                );
+                            }
+                        }
+                        self.writeback.b_bg
+                            [0x8000 / usize::BITS as usize..0x1_0000 / usize::BITS as usize]
+                            .fill(0);
+                        self.writeback.b_bg
+                            [0x1_8000 / usize::BITS as usize..0x2_0000 / usize::BITS as usize]
+                            .fill(0);
                     }
                     2 => {
-                        self.set_b_obj(arm9, |m| m | 0x02);
+                        let prev = self.map.b_obj[0];
+                        self.map.b_obj[0] = prev | 1 << 1;
+                        if prev == 0 {
+                            for base_usage_addr in (0..0x2_0000).step_by(0x4000) {
+                                self.b_obj.as_byte_mut_slice()
+                                    [base_usage_addr..base_usage_addr + 0x4000]
+                                    .copy_from_slice(&self.banks.i.as_byte_slice());
+                            }
+                        } else {
+                            for (usage_addr, byte) in
+                                self.b_obj.as_byte_mut_slice().iter_mut().enumerate()
+                            {
+                                if self.writeback.b_obj[usage_addr / usize::BITS as usize]
+                                    & 1 << (usage_addr & (usize::BITS - 1) as usize)
+                                    != 0
+                                {
+                                    self.banks.d.write_unchecked(usage_addr, *byte);
+                                }
+                                *byte |= self.banks.i.read(usage_addr & 0x3FFF);
+                            }
+                        }
+                        self.writeback.b_obj.fill(0);
                     }
-                    _ => {
-                        self.map.b_obj_ext_pal_ptr = self.banks.i.as_ptr();
-                        engine_2d_b.invalidate_obj_ext_pal_cache();
-                    }
+                    _ => self.b_obj_ext_pal_ptr = self.banks.i.as_ptr(),
                 }
             }
         }

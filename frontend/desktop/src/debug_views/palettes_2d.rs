@@ -103,27 +103,22 @@ impl View for Palettes2D {
             Palette::Bg => {
                 let base = ((emu_state.engine == Engine2d::B) as usize) << 10;
                 palette_data.data[..0x200].copy_from_slice(unsafe {
-                    &emu.gpu.vram.banks.palette.as_byte_slice()[base..base + 0x200]
+                    &emu.gpu.vram.palette.as_byte_slice()[base..base + 0x200]
                 });
             }
 
             Palette::Obj => {
                 let base = ((emu_state.engine == Engine2d::B) as usize) << 10 | 0x200;
                 palette_data.data[..0x200].copy_from_slice(unsafe {
-                    &emu.gpu.vram.banks.palette.as_byte_slice()[base..base + 0x200]
+                    &emu.gpu.vram.palette.as_byte_slice()[base..base + 0x200]
                 });
             }
 
             Palette::ExtBg => match emu_state.engine {
                 Engine2d::A => unsafe {
-                    emu.gpu.vram.read_a_bg_ext_pal_slice::<usize>(
-                        0,
-                        ByteMutSlice::new(&mut palette_data.data[..0x4000]),
-                    );
-                    emu.gpu.vram.read_a_bg_ext_pal_slice::<usize>(
-                        0x4000,
-                        ByteMutSlice::new(&mut palette_data.data[0x4000..]),
-                    );
+                    emu.gpu
+                        .vram
+                        .read_a_bg_ext_pal_slice::<usize>(0, palette_data.data.as_byte_mut_slice());
                 },
                 Engine2d::B => unsafe {
                     emu.gpu

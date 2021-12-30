@@ -289,7 +289,7 @@ impl View for BgMaps2d {
             let read_bg_slice_wrapping = |vram, mut addr, mut result: ByteMutSlice| {
                 let mut dst_base = 0;
                 while dst_base != result.len() {
-                    let len = (0x4000 - (addr as usize & 0x3FFF)).min(result.len() - dst_base);
+                    let len = ((R::BG_VRAM_MASK + 1 - addr) as usize).min(result.len() - dst_base);
                     unsafe {
                         read_bg_slice(
                             vram,
@@ -298,7 +298,7 @@ impl View for BgMaps2d {
                         );
                     }
                     dst_base += len;
-                    addr = (addr + len as u32) & R::BG_VRAM_MASK;
+                    addr = 0;
                 }
             };
 
@@ -384,11 +384,11 @@ impl View for BgMaps2d {
                 BgDisplayMode::ExtendedBitmapDirect => (data_base, pixels_len * 2),
                 BgDisplayMode::LargeBitmap => (0, pixels_len),
             };
-                    read_bg_slice_wrapping(
-                        vram,
+            read_bg_slice_wrapping(
+                vram,
                 base_addr,
                 ByteMutSlice::new(&mut data.tile_bitmap_data[..data_len]),
-                    );
+            );
 
             if data.cur_bg.display_mode != BgDisplayMode::ExtendedBitmapDirect {
                 if data.cur_bg.uses_ext_palettes {
@@ -414,7 +414,7 @@ impl View for BgMaps2d {
                 } else {
                     let pal_base = (!R::IS_A as usize) << 10;
                     data.palette[..0x200].copy_from_slice(unsafe {
-                        &vram.banks.palette.as_byte_slice()[pal_base..pal_base + 0x200]
+                        &vram.palette.as_byte_slice()[pal_base..pal_base + 0x200]
                     });
                 }
             }
