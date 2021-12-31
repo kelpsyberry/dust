@@ -532,14 +532,16 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
                 .gpu
                 .vram
                 .set_bank_control_b(gpu::vram::BankControl(value), &mut emu.arm9),
-            0x242 => emu
-                .gpu
-                .vram
-                .set_bank_control_c(gpu::vram::BankControl(value), &mut emu.arm9),
-            0x243 => emu
-                .gpu
-                .vram
-                .set_bank_control_d(gpu::vram::BankControl(value), &mut emu.arm9),
+            0x242 => emu.gpu.vram.set_bank_control_c(
+                gpu::vram::BankControl(value),
+                &mut emu.arm7,
+                &mut emu.arm9,
+            ),
+            0x243 => emu.gpu.vram.set_bank_control_d(
+                gpu::vram::BankControl(value),
+                &mut emu.arm7,
+                &mut emu.arm9,
+            ),
             0x244 => emu
                 .gpu
                 .vram
@@ -805,11 +807,14 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     );
                 }
                 0x242 => {
-                    emu.gpu
-                        .vram
-                        .set_bank_control_c(gpu::vram::BankControl(value as u8), &mut emu.arm9);
+                    emu.gpu.vram.set_bank_control_c(
+                        gpu::vram::BankControl(value as u8),
+                        &mut emu.arm7,
+                        &mut emu.arm9,
+                    );
                     emu.gpu.vram.set_bank_control_d(
                         gpu::vram::BankControl((value >> 8) as u8),
+                        &mut emu.arm7,
                         &mut emu.arm9,
                     );
                 }
@@ -1053,10 +1058,12 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     );
                     emu.gpu.vram.set_bank_control_c(
                         gpu::vram::BankControl((value >> 16) as u8),
+                        &mut emu.arm7,
                         &mut emu.arm9,
                     );
                     emu.gpu.vram.set_bank_control_d(
                         gpu::vram::BankControl((value >> 24) as u8),
+                        &mut emu.arm7,
                         &mut emu.arm9,
                     );
                 }

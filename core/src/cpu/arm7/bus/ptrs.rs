@@ -187,21 +187,6 @@ impl Ptrs {
         }
     }
 
-    pub fn unmap_range(&mut self, (lower_bound, upper_bound): (u32, u32)) {
-        debug_assert!(lower_bound & Self::PAGE_MASK == 0);
-        debug_assert!(upper_bound & Self::PAGE_MASK == Self::PAGE_MASK);
-
-        let lower_bound = (lower_bound >> Self::PAGE_SHIFT) as usize;
-        let upper_bound = (upper_bound >> Self::PAGE_SHIFT) as usize;
-
-        #[cfg(any(feature = "bft-r", feature = "bft-w"))]
-        for attrs in &mut self.attrs[lower_bound..=upper_bound] {
-            *attrs &= !(attrs::BAK_MASK_ALL | mask::ALL);
-        }
-        #[cfg(not(any(feature = "bft-r", feature = "bft-w")))]
-        self.attrs[lower_bound..=upper_bound].fill(0);
-    }
-
     pub fn setup<E: Engine>(emu: &mut Emu<E>) {
         unsafe {
             emu.arm7.bus_ptrs.map_range(

@@ -67,7 +67,7 @@ impl super::RomDevice for Normal {
     fn read(&self, mut addr: u32, mut output: ByteMutSlice) {
         addr &= self.rom_mask & !3;
         for i in (0..output.len()).step_by(4) {
-            output.write_le::<u32>(i, self.rom.read_le(addr as usize));
+            output.write_ne::<u32>(i, self.rom.read_ne(addr as usize));
             addr = addr.wrapping_add(4) & self.rom_mask;
         }
     }

@@ -65,7 +65,7 @@ impl View for Arm9Memory {
         frame_data
             .data
             .reserve(((emu_state.visible_addrs.end - emu_state.visible_addrs.start) >> 2) as usize);
-        for addr in emu_state.visible_addrs {
+        for addr in emu_state.visible_addrs.into_iter().step_by(4) {
             frame_data
                 .data
                 .push(arm9_bus::read_32::<bus::DebugCpuAccess, E, false>(

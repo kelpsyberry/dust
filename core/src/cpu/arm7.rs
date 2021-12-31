@@ -243,7 +243,7 @@ impl<E: Engine> Arm7<E> {
     }
 
     #[inline]
-    pub(crate) unsafe fn map_bus_ptr_range(
+    pub(crate) unsafe fn map_sys_bus_ptr_range(
         &mut self,
         mask: bus::ptrs::Mask,
         start_ptr: *mut u8,
@@ -255,17 +255,11 @@ impl<E: Engine> Arm7<E> {
     }
 
     #[inline]
-    pub(crate) fn unmap_bus_ptr_range(&mut self, bounds: (u32, u32)) {
-        self.bus_ptrs.unmap_range(bounds);
-        self.invalidate_word_range(bounds);
-    }
-
-    #[inline]
     pub(crate) fn recalc_swram(&mut self, swram: &Swram) {
         unsafe {
             match swram.control().layout() {
                 0 => {
-                    self.map_bus_ptr_range(
+                    self.map_sys_bus_ptr_range(
                         bus::ptrs::mask::ALL,
                         self.wram.as_ptr(),
                         0x1_0000,
@@ -273,7 +267,7 @@ impl<E: Engine> Arm7<E> {
                     );
                 }
                 1 => {
-                    self.map_bus_ptr_range(
+                    self.map_sys_bus_ptr_range(
                         bus::ptrs::mask::ALL,
                         swram.contents().as_ptr(),
                         0x4000,
@@ -281,7 +275,7 @@ impl<E: Engine> Arm7<E> {
                     );
                 }
                 2 => {
-                    self.map_bus_ptr_range(
+                    self.map_sys_bus_ptr_range(
                         bus::ptrs::mask::ALL,
                         swram.contents().as_ptr().add(0x4000),
                         0x4000,
@@ -289,7 +283,7 @@ impl<E: Engine> Arm7<E> {
                     );
                 }
                 _ => {
-                    self.map_bus_ptr_range(
+                    self.map_sys_bus_ptr_range(
                         bus::ptrs::mask::ALL,
                         swram.contents().as_ptr(),
                         0x8000,

@@ -435,6 +435,31 @@ impl Ptrs {
                     cur_ptr = start_ptr;
                 }
             }
+        } else {
+            for i in lower_bound..=upper_bound {
+                let map_attrs = self.map_attrs[i];
+
+                if map_attrs & map_mask::R_CODE == 0 {
+                    #[cfg(not(feature = "bft-r"))]
+                    {
+                        self.attrs[i] &= !mask::R_CODE;
+                    }
+                    #[cfg(feature = "bft-r")]
+                    {
+                        self.attrs[i] &= !(mask::R_CODE | attrs::BAK_MASK_R_CODE);
+                    }
+                }
+                if map_attrs & map_mask::R_DATA == 0 {
+                    #[cfg(not(feature = "bft-r"))]
+                    {
+                        self.attrs[i] &= !mask::R_DATA;
+                    }
+                    #[cfg(feature = "bft-r")]
+                    {
+                        self.attrs[i] &= !(mask::R_DATA | attrs::BAK_MASK_R_DATA);
+                    }
+                }
+            }
         }
 
         if sys_bus_mask & sys_bus_mask::W_ALL != 0 {
@@ -465,6 +490,21 @@ impl Ptrs {
                 cur_ptr = cur_ptr.add(Self::PAGE_SIZE);
                 if cur_ptr >= end_ptr {
                     cur_ptr = start_ptr;
+                }
+            }
+        } else {
+            for i in lower_bound..=upper_bound {
+                let map_attrs = self.map_attrs[i];
+
+                if map_attrs & map_mask::W == 0 {
+                    #[cfg(not(feature = "bft-w"))]
+                    {
+                        self.attrs[i] &= !mask::W_ALL;
+                    }
+                    #[cfg(feature = "bft-w")]
+                    {
+                        self.attrs[i] &= !(mask::W_ALL | attrs::BAK_MASK_W);
+                    }
                 }
             }
         }
