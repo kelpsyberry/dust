@@ -120,7 +120,6 @@ impl<E: Engine> Arm7<E> {
 
     cfg_if! {
         if #[cfg(any(feature = "debug-hooks", doc))] {
-
             #[doc(cfg(feature = "debug-hooks"))]
             #[inline]
             pub fn branch_breakpoint_hooks(&self) -> &Option<(debug::BranchHook, debug::BreakpointHook)> {

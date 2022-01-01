@@ -5,6 +5,7 @@ use crate::{
     cpu::{arm7, arm9},
     utils::{bitfield_debug, zero, zeroed_box, OwnedBytesCellPtr, Zero},
 };
+use core::cell::{Cell, UnsafeCell};
 
 bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -38,28 +39,31 @@ pub struct Banks {
 
 #[repr(C)]
 struct Map {
-    a_bg: [u8; 0x20],
-    a_obj: [u8; 0x10],
-    a_bg_ext_pal: [u8; 2],
-    a_obj_ext_pal: [u8; 1],
-    b_bg: [u8; 4],
-    b_obj: [u8; 1],
-    b_bg_ext_pal: [u8; 2],
+    // NOTE: The cells are an ugly hack to avoid macros but also work around simultaneous mutable
+    // and immutable borrows
+    a_bg: [Cell<u8>; 0x20],
+    a_obj: [Cell<u8>; 0x10],
+    a_bg_ext_pal: [Cell<u8>; 2],
+    a_obj_ext_pal: [Cell<u8>; 1],
+    b_bg: [Cell<u8>; 4],
+    b_obj: [Cell<u8>; 1],
+    b_bg_ext_pal: [Cell<u8>; 2],
     b_obj_ext_pal: u8,
-    texture: [u8; 4],
-    tex_pal: [u8; 6],
-    arm7: [u8; 2],
+    texture: [Cell<u8>; 4],
+    tex_pal: [Cell<u8>; 6],
+    arm7: [Cell<u8>; 2],
 }
 
 unsafe impl Zero for Map {}
 
 #[repr(C)]
 struct Modified {
-    a_bg: [usize; 0x8_0000 / usize::BITS as usize],
-    a_obj: [usize; 0x4_0000 / usize::BITS as usize],
-    b_bg: [usize; 0x2_0000 / usize::BITS as usize],
-    b_obj: [usize; 0x2_0000 / usize::BITS as usize],
-    arm7: [usize; 0x4_0000 / usize::BITS as usize],
+    // NOTE: Same as `Map`
+    a_bg: UnsafeCell<[usize; 0x8_0000 / usize::BITS as usize]>,
+    a_obj: UnsafeCell<[usize; 0x4_0000 / usize::BITS as usize]>,
+    b_bg: UnsafeCell<[usize; 0x2_0000 / usize::BITS as usize]>,
+    b_obj: UnsafeCell<[usize; 0x2_0000 / usize::BITS as usize]>,
+    arm7: UnsafeCell<[usize; 0x4_0000 / usize::BITS as usize]>,
 }
 
 unsafe impl Zero for Modified {}
@@ -74,17 +78,17 @@ pub struct Vram {
 
     lcdc_r_ptrs: [*const u8; 0x40],
     lcdc_w_ptrs: [*mut u8; 0x40],
-    pub(crate) a_bg: OwnedBytesCellPtr<0x8_0000>,
-    pub(crate) a_obj: OwnedBytesCellPtr<0x4_0000>,
+    a_bg: OwnedBytesCellPtr<0x8_0000>,
+    a_obj: OwnedBytesCellPtr<0x4_0000>,
     pub(super) a_bg_ext_pal: OwnedBytesCellPtr<0x8000>,
     pub(super) a_obj_ext_pal: OwnedBytesCellPtr<0x2000>,
-    pub(crate) b_bg: OwnedBytesCellPtr<0x2_0000>,
-    pub(crate) b_obj: OwnedBytesCellPtr<0x2_0000>,
+    b_bg: OwnedBytesCellPtr<0x2_0000>,
+    b_obj: OwnedBytesCellPtr<0x2_0000>,
     pub(super) b_bg_ext_pal_ptr: *const u8,
     pub(super) b_obj_ext_pal_ptr: *const u8,
     texture: OwnedBytesCellPtr<0x8_0000>,
     tex_pal: OwnedBytesCellPtr<0x1_8000>,
-    pub(crate) arm7: OwnedBytesCellPtr<0x4_0000>,
+    arm7: OwnedBytesCellPtr<0x4_0000>,
 
     pub palette: OwnedBytesCellPtr<0x800>,
     pub oam: OwnedBytesCellPtr<0x800>,

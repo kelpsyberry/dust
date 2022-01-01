@@ -1,11 +1,13 @@
 #![feature(
     core_intrinsics,
     generic_const_exprs,
+    generic_arg_infer,
     // rustc_attrs,
     adt_const_params,
     doc_cfg,
     step_trait,
     maybe_uninit_uninit_array,
+    label_break_value,
 )]
 #![warn(clippy::pedantic)]
 #![allow(

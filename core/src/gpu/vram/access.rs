@@ -8,14 +8,14 @@ use core::{
 
 macro_rules! set_writeback {
     ($arr: expr, $addr: expr, $T: ty) => {
-        $arr[$addr / usize::BITS as usize] |=
+        *$arr.get_unchecked_mut($addr / usize::BITS as usize) |=
             ((1 << mem::size_of::<$T>()) - 1) << ($addr & (usize::BITS as usize - 1));
     };
 }
 
 macro_rules! clear_writeback {
     ($arr: expr, $addr: expr, $T: ty) => {
-        $arr[$addr / usize::BITS as usize] &=
+        *$arr.get_unchecked_mut($addr / usize::BITS as usize) &=
             !(((1 << mem::size_of::<$T>()) - 1) << ($addr & (usize::BITS as usize - 1)));
     };
 }
@@ -26,8 +26,10 @@ macro_rules! handle_mirroring {
         $usage: ident, $value: ident, $T: ty, $mirror_addr: ident, $mirror_mapped: expr;
         $($bit: literal => $bank: ident),*$(,)?
     ) => {
-        let writeback = $self.writeback.$usage[$mirror_addr / usize::BITS as usize]
-            >> ($mirror_addr & (usize::BITS as usize - 1));
+        let writeback = unsafe {
+            *$self.writeback.$usage.get_mut().get_unchecked($mirror_addr / usize::BITS as usize)
+                >> ($mirror_addr & (usize::BITS as usize - 1))
+        };
         let writeback_mask = (1 << mem::size_of::<T>()) - 1;
         if writeback & writeback_mask == writeback_mask {
             unsafe {
@@ -85,7 +87,9 @@ macro_rules! handle_mirroring {
                 }
             }
         }
-        clear_writeback!($self.writeback.$usage, $mirror_addr, $T);
+        unsafe {
+            clear_writeback!($self.writeback.$usage.get_mut(), $mirror_addr, $T);
+        }
     };
 }
 
@@ -165,14 +169,13 @@ impl Vram {
         [(); mem::size_of::<T>()]: Sized,
     {
         let region = addr as usize >> 14 & 0x1F;
-        let mapped = self.map.a_bg[region];
-        #[cfg(feature = "bft-w")]
+        let mapped = self.map.a_bg[region].get();
         if mapped == 0 {
             return;
         }
         let addr = addr as usize & (0x7_FFFF & !(mem::align_of::<T>() - 1));
-        set_writeback!(self.writeback.a_bg, addr, T);
         unsafe {
+            set_writeback!(self.writeback.a_bg.get_mut(), addr, T);
             self.a_bg.write_le_aligned_unchecked(addr, value);
         }
         if mapped & 0x60 != 0 {
@@ -180,8 +183,8 @@ impl Vram {
             if mapped & !0x60 == 0 {
                 unsafe {
                     self.a_bg.write_le_aligned_unchecked(mirror_addr, value);
+                    clear_writeback!(self.writeback.a_bg.get_mut(), mirror_addr, T);
                 }
-                clear_writeback!(self.writeback.a_bg, mirror_addr, T);
             } else {
                 self.handle_a_bg_mirroring(mirror_addr, mapped, value);
             }
@@ -222,13 +225,13 @@ impl Vram {
         [(); mem::size_of::<T>()]: Sized,
     {
         let region = addr as usize >> 14 & 0xF;
-        let mapped = self.map.a_obj[region];
+        let mapped = self.map.a_obj[region].get();
         if mapped == 0 {
             return;
         }
         let addr = addr as usize & (0x3_FFFF & !(mem::align_of::<T>() - 1));
-        set_writeback!(self.writeback.a_obj, addr, T);
         unsafe {
+            set_writeback!(self.writeback.a_obj.get_mut(), addr, T);
             self.a_obj.write_le_aligned_unchecked(addr, value);
         }
         if mapped & 0x18 != 0 {
@@ -236,8 +239,8 @@ impl Vram {
             if mapped & !0x18 == 0 {
                 unsafe {
                     self.a_obj.write_le_aligned_unchecked(mirror_addr, value);
+                    clear_writeback!(self.writeback.a_obj.get_mut(), mirror_addr, T);
                 }
-                clear_writeback!(self.writeback.a_obj, mirror_addr, T);
             } else {
                 self.handle_a_obj_mirroring(mirror_addr, mapped, value);
             }
@@ -287,13 +290,13 @@ impl Vram {
         [(); mem::size_of::<T>()]: Sized,
     {
         let region = addr as usize >> 15 & 3;
-        let mapped = self.map.b_bg[region];
+        let mapped = self.map.b_bg[region].get();
         if mapped == 0 {
             return;
         }
         let addr = addr as usize & (0x1_FFFF & !(mem::align_of::<T>() - 1));
-        set_writeback!(self.writeback.b_bg, addr, T);
         unsafe {
+            set_writeback!(self.writeback.b_bg.get_mut(), addr, T);
             self.b_bg.write_le_aligned_unchecked(addr, value);
         }
         if mapped & 6 != 0 {
@@ -301,8 +304,8 @@ impl Vram {
                 for mirror_addr in [addr ^ 0x4000, addr ^ 0x1_0000, addr ^ 0x1_4000] {
                     unsafe {
                         self.b_bg.write_le_aligned_unchecked(mirror_addr, value);
+                        clear_writeback!(self.writeback.b_bg.get_mut(), mirror_addr, T);
                     }
-                    clear_writeback!(self.writeback.b_bg, mirror_addr, T);
                 }
             } else {
                 self.handle_b_bg_mirroring(addr, value);
@@ -350,16 +353,17 @@ impl Vram {
     ) where
         [(); mem::size_of::<T>()]: Sized,
     {
-        if self.map.b_obj[0] == 0 {
+        let mapped = self.map.b_obj[0].get();
+        if mapped == 0 {
             return;
         }
         let addr = addr as usize & (0x1_FFFF & !(mem::align_of::<T>() - 1));
-        set_writeback!(self.writeback.b_obj, addr, T);
         unsafe {
+            set_writeback!(self.writeback.b_obj.get_mut(), addr, T);
             self.b_obj.write_le_aligned_unchecked(addr, value);
         }
-        if self.map.b_obj[0] & 2 != 0 {
-            if self.map.b_obj[0] & !2 == 0 {
+        if mapped & 2 != 0 {
+            if mapped & !2 == 0 {
                 for mirror_addr in [
                     addr ^ 0x4000,
                     addr ^ 0x8000,
@@ -371,8 +375,8 @@ impl Vram {
                 ] {
                     unsafe {
                         self.b_obj.write_le_aligned_unchecked(mirror_addr, value);
+                        clear_writeback!(self.writeback.b_obj.get_mut(), mirror_addr, T);
                     }
-                    clear_writeback!(self.writeback.b_obj, mirror_addr, T);
                 }
             } else {
                 self.handle_b_obj_mirroring(addr, value);
@@ -519,12 +523,12 @@ impl Vram {
     #[inline]
     pub fn write_arm7<T: MemValue>(&mut self, addr: u32, value: T) {
         let region = addr as usize >> 17 & 1;
-        if self.map.arm7[region] == 0 {
+        if self.map.arm7[region].get() == 0 {
             return;
         }
         let addr = addr as usize & (0x3_FFFF & !(mem::align_of::<T>() - 1));
-        set_writeback!(self.writeback.arm7, addr, T);
         unsafe {
+            set_writeback!(self.writeback.arm7.get_mut(), addr, T);
             self.arm7.write_le_aligned_unchecked(addr, value);
         }
     }
