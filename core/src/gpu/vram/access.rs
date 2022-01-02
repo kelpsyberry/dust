@@ -1,5 +1,5 @@
 use super::Vram;
-use crate::utils::{zero, ByteMutSlice, MemValue};
+use crate::utils::{zero, MemValue};
 use core::{
     mem,
     ops::{BitOr, BitOrAssign},
@@ -136,11 +136,11 @@ impl Vram {
     /// - `addr` must be aligned to a `T` boundary
     /// - `addr + result.len()` must be less than or equal to `0x8_0000`
     #[inline]
-    pub unsafe fn read_a_bg_slice<T: MemValue>(&self, addr: u32, mut result: ByteMutSlice) {
+    pub unsafe fn read_a_bg_slice<T: MemValue>(&self, addr: u32, len: usize, result: *mut T) {
         ptr::copy_nonoverlapping(
             self.a_bg.as_ptr().add(addr as usize) as *const T,
-            result.as_mut_ptr() as *mut T,
-            result.len() / mem::size_of::<T>(),
+            result,
+            len / mem::size_of::<T>(),
         );
     }
 
@@ -260,11 +260,11 @@ impl Vram {
     /// - `addr` must be aligned to a `T` boundary
     /// - `addr + result.len()` must be less than or equal to `0x2_0000`
     #[inline]
-    pub unsafe fn read_b_bg_slice<T: MemValue>(&self, addr: u32, mut result: ByteMutSlice) {
+    pub unsafe fn read_b_bg_slice<T: MemValue>(&self, addr: u32, len: usize, result: *mut T) {
         ptr::copy_nonoverlapping(
             self.b_bg.as_ptr().add(addr as usize) as *const T,
-            result.as_mut_ptr() as *mut T,
-            result.len() / mem::size_of::<T>(),
+            result,
+            len / mem::size_of::<T>(),
         );
     }
 
@@ -397,11 +397,16 @@ impl Vram {
     /// - `addr` must be aligned to a `T` boundary
     /// - `addr + result.len()` must be less than or equal to `0x8000`
     #[inline]
-    pub unsafe fn read_a_bg_ext_pal_slice<T: MemValue>(&self, addr: u32, mut result: ByteMutSlice) {
+    pub unsafe fn read_a_bg_ext_pal_slice<T: MemValue>(
+        &self,
+        addr: u32,
+        len: usize,
+        result: *mut T,
+    ) {
         ptr::copy_nonoverlapping(
             self.a_bg_ext_pal.as_ptr().add(addr as usize) as *const T,
-            result.as_mut_ptr() as *mut T,
-            result.len() / mem::size_of::<T>(),
+            result,
+            len / mem::size_of::<T>(),
         );
     }
 
@@ -421,12 +426,13 @@ impl Vram {
     pub unsafe fn read_a_obj_ext_pal_slice<T: MemValue>(
         &self,
         addr: u32,
-        mut result: ByteMutSlice,
+        len: usize,
+        result: *mut T,
     ) {
         ptr::copy_nonoverlapping(
             self.a_obj_ext_pal.as_ptr().add(addr as usize) as *const T,
-            result.as_mut_ptr() as *mut T,
-            result.len() / mem::size_of::<T>(),
+            result,
+            len / mem::size_of::<T>(),
         );
     }
 
@@ -447,12 +453,17 @@ impl Vram {
     /// - `addr` must be aligned to a `T` boundary
     /// - `addr + result.len()` must be less than or equal to `0x8000`
     #[inline]
-    pub unsafe fn read_b_bg_ext_pal_slice<T: MemValue>(&self, addr: u32, mut result: ByteMutSlice) {
+    pub unsafe fn read_b_bg_ext_pal_slice<T: MemValue>(
+        &self,
+        addr: u32,
+        len: usize,
+        result: *mut T,
+    ) {
         // NOTE: As for LCDC, the pointer will never be null
         ptr::copy_nonoverlapping(
             self.b_bg_ext_pal_ptr.add(addr as usize) as *const T,
-            result.as_mut_ptr() as *mut T,
-            result.len() / mem::size_of::<T>(),
+            result,
+            len / mem::size_of::<T>(),
         );
     }
 
@@ -476,13 +487,14 @@ impl Vram {
     pub unsafe fn read_b_obj_ext_pal_slice<T: MemValue>(
         &self,
         addr: u32,
-        mut result: ByteMutSlice,
+        len: usize,
+        result: *mut T,
     ) {
         // NOTE: As for LCDC, the pointer will never be null
         ptr::copy_nonoverlapping(
             self.b_obj_ext_pal_ptr.add(addr as usize) as *const T,
-            result.as_mut_ptr() as *mut T,
-            result.len() / mem::size_of::<T>(),
+            result,
+            len / mem::size_of::<T>(),
         );
     }
 
@@ -491,11 +503,11 @@ impl Vram {
     /// - `addr` must be aligned to a `T` boundary
     /// - `addr + result.len()` must be less than or equal to `0x8_0000`
     #[inline]
-    pub unsafe fn read_texture_slice<T: MemValue>(&self, addr: u32, mut result: ByteMutSlice) {
+    pub unsafe fn read_texture_slice<T: MemValue>(&self, addr: u32, len: usize, result: *mut T) {
         ptr::copy_nonoverlapping(
             self.texture.as_ptr().add(addr as usize) as *const T,
-            result.as_mut_ptr() as *mut T,
-            result.len() / mem::size_of::<T>(),
+            result,
+            len / mem::size_of::<T>(),
         );
     }
 
@@ -504,11 +516,11 @@ impl Vram {
     /// - `addr` must be aligned to a `T` boundary
     /// - `addr + result.len()` must be less than or equal to `0x1_8000`
     #[inline]
-    pub unsafe fn read_tex_pal_slice<T: MemValue>(&self, addr: u32, mut result: ByteMutSlice) {
+    pub unsafe fn read_tex_pal_slice<T: MemValue>(&self, addr: u32, len: usize, result: *mut T) {
         ptr::copy_nonoverlapping(
             self.tex_pal.as_ptr().add(addr as usize) as *const T,
-            result.as_mut_ptr() as *mut T,
-            result.len() / mem::size_of::<T>(),
+            result,
+            len / mem::size_of::<T>(),
         );
     }
 

@@ -57,9 +57,9 @@ const DOT_CYCLES: RawTimestamp = 6;
 const HDRAW_DURATION: Timestamp = Timestamp(SCREEN_WIDTH as RawTimestamp * DOT_CYCLES);
 const HBLANK_DURATION: Timestamp = Timestamp(99 * DOT_CYCLES);
 
-#[repr(C, align(32))]
+#[repr(C, align(64))]
 #[derive(Clone, Copy)]
-struct Scanline<T>(pub [T; SCREEN_WIDTH]);
+struct Scanline<T, const LEN: usize = SCREEN_WIDTH>(pub [T; LEN]);
 
 #[repr(C, align(32))]
 #[derive(Clone)]

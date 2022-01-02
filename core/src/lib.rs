@@ -7,6 +7,7 @@
     doc_cfg,
     step_trait,
     maybe_uninit_uninit_array,
+    maybe_uninit_slice,
     label_break_value,
 )]
 #![warn(clippy::pedantic)]

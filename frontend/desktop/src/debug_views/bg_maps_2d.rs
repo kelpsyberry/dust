@@ -294,7 +294,8 @@ impl View for BgMaps2d {
                         read_bg_slice(
                             vram,
                             addr,
-                            ByteMutSlice::new(&mut result[dst_base..dst_base + len]),
+                            len,
+                            result.as_mut_ptr().add(dst_base) as *mut usize,
                         );
                     }
                     dst_base += len;
@@ -312,9 +313,8 @@ impl View for BgMaps2d {
                                 read_bg_slice(
                                     vram,
                                     src_base,
-                                    ByteMutSlice::new(
-                                        &mut data.tiles[dst_base..dst_base + 2 * 32 * 32],
-                                    ),
+                                    2 * 32 * 32,
+                                    data.tiles.as_mut_ptr().add(dst_base) as *mut usize,
                                 );
                             }
                             src_base = (src_base + 0x800) & R::BG_VRAM_MASK;
@@ -329,16 +329,15 @@ impl View for BgMaps2d {
                                     read_bg_slice(
                                         vram,
                                         src_base,
-                                        ByteMutSlice::new(
-                                            &mut data.tiles[dst_base..dst_base + 2 * 32],
-                                        ),
+                                        2 * 32,
+                                        data.tiles.as_mut_ptr().add(dst_base) as *mut usize,
                                     );
                                     read_bg_slice(
                                         vram,
                                         (src_base + 0x800) & R::BG_VRAM_MASK,
-                                        ByteMutSlice::new(
-                                            &mut data.tiles[dst_base + 2 * 32..dst_base + 2 * 64],
-                                        ),
+                                        2 * 32,
+                                        data.tiles.as_mut_ptr().add(dst_base + 2 * 32)
+                                            as *mut usize,
                                     );
                                 }
                                 src_base += 2 * 32;
@@ -400,14 +399,16 @@ impl View for BgMaps2d {
                         };
                     unsafe {
                         if R::IS_A {
-                            vram.read_a_bg_ext_pal_slice::<usize>(
+                            vram.read_a_bg_ext_pal_slice(
                                 (slot as u32) << 13,
-                                data.palette.as_byte_mut_slice(),
+                                0x2000,
+                                data.palette.as_mut_ptr() as *mut usize,
                             );
                         } else {
-                            vram.read_b_bg_ext_pal_slice::<usize>(
+                            vram.read_b_bg_ext_pal_slice(
                                 (slot as u32) << 13,
-                                data.palette.as_byte_mut_slice(),
+                                0x2000,
+                                data.palette.as_mut_ptr() as *mut usize,
                             );
                         }
                     }

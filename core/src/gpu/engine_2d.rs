@@ -274,6 +274,7 @@ pub struct Engine2d<R: Role> {
     #[cfg(feature = "log")]
     logger: slog::Logger,
     _role: PhantomData<R>,
+    render_fns: render::FnPtrs<R>,
     pub(super) enabled: bool,
     control: Control,
     master_brightness_control: BrightnessControl,
@@ -288,9 +289,10 @@ pub struct Engine2d<R: Role> {
     brightness_coeff: u8,
     windows_active: [bool; 2],
     obj_window: [u8; SCREEN_WIDTH / 8],
-    window: Scanline<WindowPixel>,
     bg_obj_scanline: Scanline<u64>,
     obj_scanline: Scanline<ObjPixel>,
+    // Allow for slightly out-of-bounds SIMD accesses
+    window: Scanline<WindowPixel, { SCREEN_WIDTH + 7 }>,
 }
 
 impl<R: Role> Engine2d<R> {
@@ -299,6 +301,7 @@ impl<R: Role> Engine2d<R> {
             #[cfg(feature = "log")]
             logger,
             _role: PhantomData,
+            render_fns: render::FnPtrs::new(),
             enabled: true,
             control: Control(0),
             master_brightness_control: BrightnessControl(0),
@@ -329,9 +332,9 @@ impl<R: Role> Engine2d<R> {
             brightness_coeff: 0,
             windows_active: [false; 2],
             obj_window: [0; SCREEN_WIDTH / 8],
-            window: Scanline([WindowPixel(0); SCREEN_WIDTH]),
             bg_obj_scanline: Scanline([0; SCREEN_WIDTH]),
             obj_scanline: Scanline([ObjPixel(0); SCREEN_WIDTH]),
+            window: Scanline([WindowPixel(0); SCREEN_WIDTH + 7]),
         }
     }
 

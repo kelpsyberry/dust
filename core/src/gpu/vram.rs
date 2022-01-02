@@ -90,7 +90,8 @@ pub struct Vram {
     tex_pal: OwnedBytesCellPtr<0x1_8000>,
     arm7: OwnedBytesCellPtr<0x4_0000>,
 
-    pub palette: OwnedBytesCellPtr<0x800>,
+    // Six bytes need to be added to allow for 64-bit loads from the last color
+    pub palette: OwnedBytesCellPtr<0x806>,
     pub oam: OwnedBytesCellPtr<0x800>,
 
     zero_buffer: OwnedBytesCellPtr<0x8000>, // Used to return zero for reads

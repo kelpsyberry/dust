@@ -1,9 +1,37 @@
+mod all;
+#[cfg(target_arch = "x86_64")]
+mod avx2;
+
 use super::{
     super::{vram::Vram, Scanline, SCREEN_HEIGHT, SCREEN_WIDTH},
     AffineBgIndex, BgIndex, BgObjPixel, Engine2d, OamAttr0, OamAttr1, OamAttr2, ObjPixel, Role,
     WindowPixel,
 };
-use crate::utils::{make_zero, ByteMutSlice, ByteSlice, Bytes};
+use crate::utils::make_zero;
+use core::mem::MaybeUninit;
+
+pub struct FnPtrs<R: Role> {
+    render_scanline_bg_text: fn(&mut Engine2d<R>, bg_index: BgIndex, line: u16, vram: &Vram),
+}
+
+impl<R: Role> FnPtrs<R> {
+    pub fn new() -> Self {
+        macro_rules! fn_ptr {
+            ($ident: ident $($generics: tt)*) => {
+                'get_fn_ptr: {
+                    #[cfg(target_arch = "x86_64")]
+                    if is_x86_feature_detected!("avx2") {
+                        break 'get_fn_ptr avx2::$ident$($generics)*;
+                    }
+                    all::$ident$($generics)*
+                }
+            }
+        }
+        FnPtrs {
+            render_scanline_bg_text: fn_ptr!(render_scanline_bg_text::<R>),
+        }
+    }
+}
 
 const fn rgb_15_to_18(value: u32) -> u32 {
     (value << 1 & 0x3E) | (value << 2 & 0xF80) | (value << 3 & 0x3_E000)
@@ -130,17 +158,17 @@ impl<R: Role> Engine2d<R> {
             }
 
             1 => {
-                self.window
-                    .0
-                    .fill(WindowPixel(if self.control.wins_enabled() == 0 {
+                self.window.0[..SCREEN_WIDTH].fill(WindowPixel(
+                    if self.control.wins_enabled() == 0 {
                         0x3F
                     } else {
                         self.window_control[2].0
-                    }));
+                    },
+                ));
 
                 if self.control.obj_win_enabled() {
                     let obj_window_pixel = WindowPixel(self.window_control[3].0);
-                    for (i, window_pixel) in self.window.0.iter_mut().enumerate() {
+                    for (i, window_pixel) in self.window.0[..SCREEN_WIDTH].iter_mut().enumerate() {
                         if self.obj_window[i >> 3] & 1 << (i & 7) != 0 {
                             *window_pixel = obj_window_pixel;
                         }
@@ -265,7 +293,12 @@ impl<R: Role> Engine2d<R> {
             if self.bgs[3].priority == priority {
                 match BG_MODE {
                     0 => {
-                        self.render_scanline_bg_text(BgIndex::new(3), line, vram);
+                        (self.render_fns.render_scanline_bg_text)(
+                            self,
+                            BgIndex::new(3),
+                            line,
+                            vram,
+                        );
                     }
                     1..=2 => {
                         render_affine[self.bgs[3].control.affine_display_area_overflow() as usize](
@@ -288,7 +321,12 @@ impl<R: Role> Engine2d<R> {
             if self.bgs[2].priority == priority {
                 match BG_MODE {
                     0..=1 | 3 => {
-                        self.render_scanline_bg_text(BgIndex::new(2), line, vram);
+                        (self.render_fns.render_scanline_bg_text)(
+                            self,
+                            BgIndex::new(2),
+                            line,
+                            vram,
+                        );
                     }
                     2 | 4 => {
                         render_affine[self.bgs[2].control.affine_display_area_overflow() as usize](
@@ -316,13 +354,13 @@ impl<R: Role> Engine2d<R> {
                 }
             }
             if self.bgs[1].priority == priority && BG_MODE != 6 {
-                self.render_scanline_bg_text(BgIndex::new(1), line, vram);
+                (self.render_fns.render_scanline_bg_text)(self, BgIndex::new(1), line, vram);
             }
             if self.bgs[0].priority == priority {
                 if self.control.bg0_3d() {
                     // TODO: 3D
                 } else {
-                    self.render_scanline_bg_text(BgIndex::new(0), line, vram);
+                    (self.render_fns.render_scanline_bg_text)(self, BgIndex::new(0), line, vram);
                 }
             }
 
@@ -358,188 +396,6 @@ impl<R: Role> Engine2d<R> {
                     self.bg_obj_scanline.0[i] =
                         self.bg_obj_scanline.0[i] << 32 | (color | pixel_attrs) as u64;
                 }
-            }
-        }
-    }
-
-    fn render_scanline_bg_text(&mut self, bg_index: BgIndex, line: u16, vram: &Vram) {
-        let bg = &self.bgs[bg_index.get() as usize];
-        let y = bg.scroll[1] as u32 + line as u32;
-        let tile_base = if R::IS_A {
-            self.control.a_tile_base() + bg.control.tile_base()
-        } else {
-            bg.control.tile_base()
-        };
-        let map_base = {
-            let mut map_base = if R::IS_A {
-                self.control.a_map_base() | bg.control.map_base()
-            } else {
-                bg.control.map_base()
-            };
-            match bg.control.size_key() {
-                0 | 1 => {
-                    map_base |= (y & 0xF8) << 3;
-                }
-                2 => {
-                    map_base += (y & 0x1F8) << 3;
-                    if R::IS_A {
-                        map_base &= R::BG_VRAM_MASK;
-                    }
-                }
-                _ => {
-                    map_base |= (y & 0xF8) << 3;
-                    map_base += (y & 0x100) << 4;
-                    if R::IS_A {
-                        map_base &= R::BG_VRAM_MASK;
-                    }
-                }
-            }
-            map_base
-        };
-        let x_start = bg.scroll[0] as u32;
-        let mut tiles = Bytes::<128>::new([0; 128]);
-        let tiles = unsafe {
-            if R::IS_A {
-                vram.read_a_bg_slice::<usize>(map_base, ByteMutSlice::new(&mut tiles[..64]));
-            } else {
-                vram.read_b_bg_slice::<usize>(map_base, ByteMutSlice::new(&mut tiles[..64]));
-            }
-            if bg.control.size_key() & 1 == 0 {
-                ByteSlice::new(&tiles[..64])
-            } else {
-                if R::IS_A {
-                    vram.read_a_bg_slice::<usize>(
-                        (map_base + 0x800) & R::BG_VRAM_MASK,
-                        ByteMutSlice::new(&mut tiles[64..]),
-                    );
-                } else {
-                    vram.read_b_bg_slice::<usize>(
-                        (map_base + 0x800) & R::BG_VRAM_MASK,
-                        ByteMutSlice::new(&mut tiles[64..]),
-                    );
-                }
-                tiles.as_byte_slice()
-            }
-        };
-        let bg_mask = 1 << bg_index.get();
-        let pixel_attrs = BgObjPixel(0).with_color_effects_mask(bg_mask);
-        let tile_off_mask = tiles.len() - 2;
-        let y_in_tile = y & 7;
-        if bg.control.use_256_colors() {
-            let (palette, pal_base_mask) = if self.control.bg_ext_pal_enabled() {
-                let slot = bg_index.get()
-                    | if bg_index.get() < 2 {
-                        bg.control.bg01_ext_pal_slot() << 1
-                    } else {
-                        0
-                    };
-                (
-                    unsafe {
-                        if R::IS_A {
-                            vram.a_bg_ext_pal.as_ptr()
-                        } else {
-                            vram.b_bg_ext_pal_ptr
-                        }
-                        .add((slot as usize) << 13) as *const u16
-                    },
-                    0xF,
-                )
-            } else {
-                (
-                    unsafe { vram.palette.as_ptr().add((!R::IS_A as usize) << 10) as *const u16 },
-                    0,
-                )
-            };
-
-            let mut pal_base = 0;
-            let mut pixels = 0;
-            let mut x = x_start;
-
-            macro_rules! read_pixels {
-                () => {
-                    let tile = unsafe {
-                        tiles.read_le_aligned_unchecked::<u16>(x as usize >> 2 & tile_off_mask)
-                    };
-                    let y_in_tile = if tile & 1 << 11 == 0 {
-                        y_in_tile
-                    } else {
-                        7 ^ y_in_tile
-                    };
-                    let tile_base = tile_base + ((tile as u32 & 0x3FF) << 6 | y_in_tile << 3);
-                    pal_base = ((tile >> 12 & pal_base_mask) << 8) as usize;
-                    pixels = if R::IS_A {
-                        vram.read_a_bg::<u64>(tile_base)
-                    } else {
-                        vram.read_b_bg::<u64>(tile_base)
-                    };
-                    if tile & 1 << 10 != 0 {
-                        pixels = pixels.swap_bytes();
-                    }
-                };
-            }
-
-            if x & 7 != 0 {
-                read_pixels!();
-            }
-            for i in 0..SCREEN_WIDTH {
-                if x & 7 == 0 {
-                    read_pixels!();
-                }
-                let color_index = pixels.wrapping_shr(x << 3) as u8;
-                if color_index != 0 && self.window.0[i].0 & bg_mask != 0 {
-                    let color = unsafe { palette.add(pal_base | color_index as usize).read() };
-                    self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
-                        | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
-                }
-                x += 1;
-            }
-        } else {
-            let mut pal_base = 0;
-            let mut pixels = 0;
-            let mut x = x_start;
-
-            macro_rules! read_pixels {
-                () => {
-                    let tile = unsafe {
-                        tiles.read_le_aligned_unchecked::<u16>(x as usize >> 2 & tile_off_mask)
-                    };
-                    let y_in_tile = if tile & 1 << 11 == 0 {
-                        y_in_tile
-                    } else {
-                        7 ^ y_in_tile
-                    };
-                    let tile_base = tile_base + ((tile as u32 & 0x3FF) << 5 | y_in_tile << 2);
-                    pal_base = tile as usize >> 12 << 5;
-                    pixels = if R::IS_A {
-                        vram.read_a_bg::<u32>(tile_base)
-                    } else {
-                        vram.read_b_bg::<u32>(tile_base)
-                    };
-                    if tile & 1 << 10 != 0 {
-                        pixels = pixels.swap_bytes();
-                        pixels = (pixels >> 4 & 0x0F0F_0F0F) | (pixels << 4 & 0xF0F0_F0F0);
-                    }
-                };
-            }
-
-            if x & 7 != 0 {
-                read_pixels!();
-            }
-            for i in 0..SCREEN_WIDTH {
-                if x & 7 == 0 {
-                    read_pixels!();
-                }
-                let color_index = pixels.wrapping_shr(x << 2) & 0xF;
-                if color_index != 0 && self.window.0[i].0 & bg_mask != 0 {
-                    let color = unsafe {
-                        vram.palette.read_le_aligned_unchecked::<u16>(
-                            (!R::IS_A as usize) << 10 | pal_base | (color_index as usize) << 1,
-                        )
-                    };
-                    self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64) << 32
-                        | (rgb_15_to_18(color as u32) | pixel_attrs.0) as u64;
-                }
-                x += 1;
             }
         }
     }

@@ -116,28 +116,34 @@ impl View for Palettes2D {
 
             Palette::ExtBg => match emu_state.engine {
                 Engine2d::A => unsafe {
-                    emu.gpu
-                        .vram
-                        .read_a_bg_ext_pal_slice::<usize>(0, palette_data.data.as_byte_mut_slice());
+                    emu.gpu.vram.read_a_bg_ext_pal_slice(
+                        0,
+                        0x8000,
+                        palette_data.data.as_mut_ptr() as *mut usize,
+                    );
                 },
                 Engine2d::B => unsafe {
-                    emu.gpu
-                        .vram
-                        .read_b_bg_ext_pal_slice::<usize>(0, palette_data.data.as_byte_mut_slice());
+                    emu.gpu.vram.read_b_bg_ext_pal_slice(
+                        0,
+                        0x8000,
+                        palette_data.data.as_mut_ptr() as *mut usize,
+                    );
                 },
             },
 
             Palette::ExtObj => match emu_state.engine {
                 Engine2d::A => unsafe {
-                    emu.gpu.vram.read_a_obj_ext_pal_slice::<usize>(
+                    emu.gpu.vram.read_a_obj_ext_pal_slice(
                         0,
-                        ByteMutSlice::new(&mut palette_data.data[..0x2000]),
+                        0x2000,
+                        palette_data.data.as_mut_ptr() as *mut usize,
                     );
                 },
                 Engine2d::B => unsafe {
-                    emu.gpu.vram.read_b_obj_ext_pal_slice::<usize>(
+                    emu.gpu.vram.read_b_obj_ext_pal_slice(
                         0,
-                        ByteMutSlice::new(&mut palette_data.data[..0x2000]),
+                        0x2000,
+                        palette_data.data.as_mut_ptr() as *mut usize,
                     );
                 },
             },
