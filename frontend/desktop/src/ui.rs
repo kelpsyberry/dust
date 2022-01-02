@@ -676,18 +676,20 @@ pub fn main() {
             if state.show_menu_bar {
                 ui.main_menu_bar(|| {
                     ui.menu("Emulation", || {
-                        if imgui::MenuItem::new(if state.playing { "Pause" } else { "Play" })
+                        if ui
+                            .menu_item_config(if state.playing { "Pause" } else { "Play" })
                             .enabled(state.emu_thread.is_some())
-                            .build(ui)
+                            .build()
                         {
                             let shared_state = state.emu_shared_state.as_mut().unwrap();
                             state.playing = !state.playing;
                             shared_state.playing.store(state.playing, Ordering::Relaxed);
                         }
 
-                        if imgui::MenuItem::new("Reset")
+                        if ui
+                            .menu_item_config("Reset")
                             .enabled(state.emu_thread.is_some())
-                            .build(ui)
+                            .build()
                         {
                             state
                                 .message_tx
@@ -695,15 +697,16 @@ pub fn main() {
                                 .expect("Couldn't send UI message");
                         }
 
-                        if imgui::MenuItem::new("Stop")
+                        if ui
+                            .menu_item_config("Stop")
                             .enabled(state.emu_thread.is_some())
-                            .build(ui)
+                            .build()
                         {
                             state.stop();
                             clear_fb_texture(state.fb_texture_id, window);
                         }
 
-                        if imgui::MenuItem::new("Load game...").build(ui) {
+                        if ui.menu_item("Load game...") {
                             if let Some(path) = FileDialog::new()
                                 .add_filter("NDS ROM file", ALLOWED_ROM_EXTENSIONS)
                                 .pick_file()
@@ -712,7 +715,7 @@ pub fn main() {
                             }
                         }
 
-                        if imgui::MenuItem::new("Load firmware").build(ui) {
+                        if ui.menu_item("Load firmware") {
                             state.load_firmware();
                         }
                     });
@@ -736,7 +739,8 @@ pub fn main() {
 
                         ui.menu("Audio sample chunk size", || {
                             let mut sample_chunk_size = state.audio_sample_chunk_size as i32;
-                            if imgui::InputInt::new(ui, "", &mut sample_chunk_size)
+                            if ui
+                                .input_int("", &mut sample_chunk_size)
                                 .enter_returns_true(true)
                                 .build()
                             {
@@ -859,8 +863,9 @@ pub fn main() {
                             }
                         });
 
-                        if imgui::MenuItem::new("Limit framerate")
-                            .build_with_ref(ui, &mut state.limit_framerate.value)
+                        if ui
+                            .menu_item_config("Limit framerate")
+                            .build_with_ref(&mut state.limit_framerate.value)
                         {
                             if let Some(shared_state) = &state.emu_shared_state {
                                 shared_state
@@ -880,10 +885,7 @@ pub fn main() {
 
                         ui.menu("Screen rotation", || {
                             let mut screen_rot = state.screen_rotation.value as i32;
-                            if imgui::InputInt::new(ui, "", &mut screen_rot)
-                                .step(1)
-                                .build()
-                            {
+                            if ui.input_int("", &mut screen_rot).step(1).build() {
                                 screen_rot = screen_rot.clamp(0, 359);
                             }
                             macro_rules! buttons {
@@ -912,8 +914,9 @@ pub fn main() {
                             }
                         });
 
-                        if imgui::MenuItem::new("Sync to audio")
-                            .build_with_ref(ui, &mut state.sync_to_audio.value)
+                        if ui
+                            .menu_item_config("Sync to audio")
+                            .build_with_ref(&mut state.sync_to_audio.value)
                         {
                             state
                                 .message_tx
@@ -929,15 +932,16 @@ pub fn main() {
                             state.global_config.dirty = true;
                         }
 
-                        if imgui::MenuItem::new("Fullscreen render")
-                            .build_with_ref(ui, &mut state.global_config.contents.fullscreen_render)
+                        if ui
+                            .menu_item_config("Fullscreen render")
+                            .build_with_ref(&mut state.global_config.contents.fullscreen_render)
                         {
                             state.global_config.dirty = true;
                             state.show_menu_bar = !state.global_config.contents.fullscreen_render;
                         }
 
                         let mut show_input = state.input_editor.is_some();
-                        if imgui::MenuItem::new("Input").build_with_ref(ui, &mut show_input) {
+                        if ui.menu_item_config("Input").build_with_ref(&mut show_input) {
                             state.input_editor = if show_input {
                                 Some(input::Editor::new())
                             } else {
@@ -954,7 +958,7 @@ pub fn main() {
                         ui.menu("Debug", || {
                             #[cfg(feature = "log")]
                             if let Some((_, _, console_visible)) = &mut state.imgui_log {
-                                imgui::MenuItem::new("Log").build_with_ref(ui, console_visible);
+                                ui.menu_item_config("Log").build_with_ref(console_visible);
                             }
                             #[cfg(feature = "debug-views")]
                             {
@@ -1024,7 +1028,7 @@ pub fn main() {
                 let titlebar_height = style.frame_padding[1] * 2.0 + ui.current_font_size();
                 const DEFAULT_SCALE: f32 = 2.0;
                 state.screen_focused = false;
-                imgui::Window::new("Screen")
+                ui.window("Screen")
                     .size(
                         [
                             SCREEN_WIDTH as f32 * DEFAULT_SCALE,
@@ -1040,7 +1044,7 @@ pub fn main() {
                         imgui::Condition::FirstUseEver,
                     )
                     .position_pivot([0.5; 2])
-                    .build(ui, || {
+                    .build(|| {
                         let (center, points) = scale_to_fit_rotated(
                             ASPECT_RATIO,
                             screen_rot,

@@ -520,7 +520,7 @@ impl Renderer {
         if font_tex_id.id() != 0 {
             self.textures.remove(&font_tex_id);
         }
-        let mut fonts = imgui.fonts();
+        let fonts = imgui.fonts();
         let font_atlas = fonts.build_rgba32_texture();
         let mut font_texture = self.create_texture(
             device,

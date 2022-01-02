@@ -82,11 +82,11 @@ impl View for Arm9Memory {
         self.mem_contents.visible_addrs = frame_data.visible_addrs;
     }
 
-    fn customize_window<'a, T: AsRef<str>>(
+    fn customize_window<'ui, 'a, T: AsRef<str>>(
         &mut self,
         ui: &imgui::Ui,
-        window: imgui::Window<'a, T>,
-    ) -> imgui::Window<'a, T> {
+        window: imgui::Window<'ui, 'a, T>,
+    ) -> imgui::Window<'ui, 'a, T> {
         let width = self.editor.window_width(ui);
         window.size_constraints([width, 0.0], [width, f32::INFINITY])
     }

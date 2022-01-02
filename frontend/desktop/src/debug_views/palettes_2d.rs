@@ -3,9 +3,9 @@ use crate::ui::window::Window;
 use dust_core::{
     cpu::Engine,
     emu::Emu,
-    utils::{zeroed_box, ByteMutSlice, ByteSlice, Bytes},
+    utils::{zeroed_box, ByteSlice, Bytes},
 };
-use imgui::{sys as imgui_sys, ColorButton, StyleVar, Ui};
+use imgui::{sys as imgui_sys, ColorButton, StyleVar, TableFlags, Ui};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Engine2d {
@@ -157,11 +157,11 @@ impl View for Palettes2D {
         self.data.data[..data_len].copy_from_slice(&frame_data.data[..data_len]);
     }
 
-    fn customize_window<'a, T: AsRef<str>>(
+    fn customize_window<'ui, 'a, T: AsRef<str>>(
         &mut self,
         _ui: &imgui::Ui,
-        window: imgui::Window<'a, T>,
-    ) -> imgui::Window<'a, T> {
+        window: imgui::Window<'ui, 'a, T>,
+    ) -> imgui::Window<'ui, 'a, T> {
         window
     }
 
@@ -213,44 +213,32 @@ impl View for Palettes2D {
         }
 
         let _frame_rounding = ui.push_style_var(StyleVar::FrameRounding(1.0));
+        let _cell_padding = ui.push_style_var(StyleVar::CellPadding([1.0; 2]));
 
-        unsafe {
-            imgui_sys::igPushStyleVar_Vec2(
-                imgui_sys::ImGuiStyleVar_CellPadding as imgui_sys::ImGuiStyleVar,
-                imgui_sys::ImVec2 { x: 1.0, y: 1.0 },
-            );
-            imgui_sys::igBeginTable(
-                b"palette columns\0" as *const _ as *const imgui_sys::cty::c_char,
-                16,
-                (imgui_sys::ImGuiTableFlags_NoClip | imgui_sys::ImGuiTableFlags_SizingFixedFit)
-                    as imgui_sys::ImGuiTableFlags,
-                imgui_sys::ImVec2::default(),
-                0.0,
-            );
-        }
-
-        fn color_table(ui: &Ui, colors: ByteSlice) {
-            for i in 0..colors.len() >> 1 {
-                unsafe {
-                    imgui_sys::igTableNextColumn();
+        if let Some(_token) = ui.begin_table_with_flags(
+            "palette columns",
+            16,
+            TableFlags::NO_CLIP | TableFlags::SIZING_FIXED_FIT,
+        ) {
+            fn color_table(ui: &Ui, colors: ByteSlice) {
+                for i in 0..colors.len() >> 1 {
+                    unsafe {
+                        imgui_sys::igTableNextColumn();
+                    }
+                    let color = colors.read_le::<u16>(i << 1);
+                    ColorButton::new(&format!("Color {:#05X}", i), rgb_5_to_rgba_f32(color))
+                        .border(false)
+                        .alpha(false)
+                        .size([16.0, 16.0])
+                        .build(ui);
                 }
-                let color = colors.read_le::<u16>(i << 1);
-                ColorButton::new(&format!("Color {:#05X}", i), rgb_5_to_rgba_f32(color))
-                    .border(false)
-                    .alpha(false)
-                    .size([16.0, 16.0])
-                    .build(ui);
             }
-        }
 
-        match self.cur_selection.palette {
-            Palette::ExtBg => color_table(ui, self.data.data.as_byte_slice()),
-            Palette::ExtObj => color_table(ui, ByteSlice::new(&self.data.data[..0x2000])),
-            _ => color_table(ui, ByteSlice::new(&self.data.data[..0x200])),
-        }
-        unsafe {
-            imgui_sys::igPopStyleVar(1);
-            imgui_sys::igEndTable();
+            match self.cur_selection.palette {
+                Palette::ExtBg => color_table(ui, self.data.data.as_byte_slice()),
+                Palette::ExtObj => color_table(ui, ByteSlice::new(&self.data.data[..0x2000])),
+                _ => color_table(ui, ByteSlice::new(&self.data.data[..0x200])),
+            }
         }
 
         new_state

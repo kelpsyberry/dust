@@ -18,7 +18,6 @@ mod common;
 use super::ui::window::Window;
 use dust_core::{cpu, emu::Emu};
 use fxhash::FxHashMap;
-use imgui::MenuItem;
 use std::collections::hash_map::Entry;
 
 pub type ViewKey = u32;
@@ -70,11 +69,11 @@ pub trait View {
     );
 
     fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, window: &mut Window);
-    fn customize_window<'a, T: AsRef<str>>(
+    fn customize_window<'ui, 'a, T: AsRef<str>>(
         &mut self,
         ui: &imgui::Ui,
-        window: imgui::Window<'a, T>,
-    ) -> imgui::Window<'a, T>;
+        window: imgui::Window<'ui, 'a, T>,
+    ) -> imgui::Window<'ui, 'a, T>;
     fn render(
         &mut self,
         ui: &imgui::Ui,
@@ -292,9 +291,9 @@ macro_rules! declare_structs {
 
             pub fn render_menu(&mut self, ui: &imgui::Ui, window: &mut Window) {
                 $(
-                    if MenuItem::new(<$s_view_ty>::NAME)
+                    if ui.menu_item_config(<$s_view_ty>::NAME)
                         .selected(self.$s_view_ident.is_some())
-                        .build(ui) {
+                        .build() {
                         if let Some(view) = self.$s_view_ident.take() {
                             self.messages.push(Message::$s_update_emu_state_message_ident(
                                 None,
@@ -312,7 +311,7 @@ macro_rules! declare_structs {
                 )*
                 ui.separator();
                 $(
-                    if MenuItem::new(<$i_view_ty>::NAME).build(ui) {
+                    if ui.menu_item(<$i_view_ty>::NAME) {
                         let mut key = 1;
                         while self.$i_view_ident.contains_key(&key) {
                             key += 1;
@@ -341,8 +340,8 @@ macro_rules! declare_structs {
                         let mut new_emu_state = None;
                         view.customize_window(
                             ui,
-                            imgui::Window::new(<$s_view_ty>::NAME).opened(&mut opened)
-                        ).build(ui, || {
+                            ui.window(<$s_view_ty>::NAME).opened(&mut opened)
+                        ).build(|| {
                             *visible = true;
                             new_emu_state = view.render(ui, window, emu_running);
                         });
@@ -370,9 +369,9 @@ macro_rules! declare_structs {
                             let mut new_emu_state = None;
                             view.customize_window(
                                 ui,
-                                imgui::Window::new(&format!("{} {}", <$i_view_ty>::NAME, *key))
+                                ui.window(&format!("{} {}", <$i_view_ty>::NAME, *key))
                                     .opened(&mut opened),
-                            ).build(ui, || {
+                            ).build(|| {
                                 *visible = true;
                                 new_emu_state = view.render(ui, window, emu_running);
                             });

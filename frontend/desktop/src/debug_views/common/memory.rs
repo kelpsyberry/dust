@@ -3,10 +3,7 @@ use super::{
     RangeInclusive, Scrollbar,
 };
 use core::{fmt::Write, num::NonZeroU8};
-use imgui::{
-    ChildWindow, Drag, Key, MouseButton, Style, StyleColor, StyleVar, Ui, Window,
-    WindowFocusedFlags,
-};
+use imgui::{Drag, Key, MouseButton, Style, StyleColor, StyleVar, Ui, WindowFocusedFlags};
 
 // TODO:
 // - Add an `access_rights` callback that returns whether a given address's access rights are
@@ -446,9 +443,10 @@ impl MemoryEditor {
 
         let window_token = if let Some(window_title) = window_title {
             let layout = self.layout.as_ref().unwrap();
-            let token = if let Some(token) = Window::new(window_title)
+            let token = if let Some(token) = ui
+                .window(window_title)
                 .size_constraints([layout.win_width, -1.0], [layout.win_width, -1.0])
-                .begin(ui)
+                .begin()
             {
                 token
             } else {
@@ -466,7 +464,7 @@ impl MemoryEditor {
         let frame_padding = ui.push_style_var(StyleVar::FramePadding([0.0; 2]));
         let item_spacing = ui.push_style_var(StyleVar::ItemSpacing([0.0; 2]));
 
-        ChildWindow::new("##memory")
+        ui.child_window("##memory")
             .movable(false)
             .no_nav()
             .scroll_bar(false)
@@ -475,7 +473,7 @@ impl MemoryEditor {
                 layout.win_width,
                 ui.content_region_avail()[1] - layout.footer_height,
             ])
-            .build(ui, || {
+            .build(|| {
                 let layout = self.layout.as_ref().unwrap();
 
                 let win_height_int = YPos::from(ui.window_size()[1]);

@@ -205,9 +205,11 @@ impl Builder {
         let mut imgui = imgui::Context::create();
 
         imgui.set_ini_filename(imgui_config_path);
-        imgui.io_mut().config_windows_move_from_title_bar_only = true;
+        let imgui_io = imgui.io_mut();
+        imgui_io.config_windows_move_from_title_bar_only = true;
+        imgui_io.config_flags |= imgui::ConfigFlags::IS_SRGB | imgui::ConfigFlags::DOCKING_ENABLE;
 
-        imgui.io_mut().font_global_scale = (1.0 / scale_factor) as f32;
+        imgui_io.font_global_scale = (1.0 / scale_factor) as f32;
         let normal_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
             data: include_bytes!("../../fonts/OpenSans-Regular.ttf"),
             size_pixels: (16.0 * scale_factor) as f32,
@@ -306,14 +308,16 @@ impl Builder {
                         .expect("Couldn't prepare imgui frame");
 
                     let ui = self.imgui.frame();
-                    if run_frame(window, &ui, &mut state) == ControlFlow::Exit {
+                    if run_frame(window, ui, &mut state) == ControlFlow::Exit {
                         *control_flow = WinitControlFlow::Exit;
                     }
 
                     window
                         .imgui_winit_platform
-                        .prepare_render(&ui, &window.window);
-                    window.gfx.redraw(ui.render(), window.window.inner_size());
+                        .prepare_render(ui, &window.window);
+                    window
+                        .gfx
+                        .redraw(self.imgui.render(), window.window.inner_size());
                     window.gfx.device_state.device.poll(wgpu::Maintain::Poll);
                 }
 

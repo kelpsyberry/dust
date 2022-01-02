@@ -1,6 +1,6 @@
 use super::{trigger::Trigger, PressedKey, State as InputState};
 use dust_core::emu::input::Keys;
-use imgui::{StyleColor, Ui, Window};
+use imgui::{StyleColor, Ui};
 use winit::event::{ElementState, Event, WindowEvent};
 
 #[derive(Default)]
@@ -31,7 +31,7 @@ impl Editor {
     }
 
     pub fn draw(&mut self, ui: &Ui, input_state: &mut InputState, opened: &mut bool) {
-        Window::new("Keymap").opened(opened).build(ui, || {
+        ui.window("Keymap").opened(opened).build(|| {
             if !ui.is_window_focused() {
                 self.pressed_keys.clear();
             }

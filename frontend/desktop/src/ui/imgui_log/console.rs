@@ -290,7 +290,7 @@ impl Console {
     }
 
     pub fn render_window(&mut self, ui: &Ui, font: Option<imgui::FontId>, opened: &mut bool) {
-        imgui::Window::new("Log").opened(opened).build(ui, || {
+        ui.window("Log").opened(opened).build(|| {
             let style = ui.clone_style();
 
             ui.checkbox("Lock", &mut self.lock_to_bottom);
@@ -335,7 +335,7 @@ impl Console {
             ui.separator();
             ui.dummy([0.0, 6.0]);
 
-            imgui::ChildWindow::new("log_contents").build(ui, || {
+            ui.child_window("log_contents").build(|| {
                 let _font_token = font.map(|font| ui.push_font(font));
                 self.render(ui);
             });

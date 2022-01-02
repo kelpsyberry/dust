@@ -3,9 +3,7 @@ use super::{
     RangeInclusive, Scrollbar,
 };
 use core::{fmt::Write, num::NonZeroU8};
-use imgui::{
-    ChildWindow, Key, MouseButton, Style, StyleColor, StyleVar, Ui, Window, WindowFocusedFlags,
-};
+use imgui::{Key, MouseButton, Style, StyleColor, StyleVar, Ui, WindowFocusedFlags};
 
 bitflags::bitflags! {
     pub struct Flags: u8 {
@@ -185,7 +183,7 @@ impl DisassemblyView {
         let v_spacer_width = style.item_spacing[0].max(ui.calc_text_size("0")[0]);
 
         let opcodes_start_win_x = addr_width + v_spacer_width;
-        let win_width = ui.window_content_region_width();
+        let win_width = ui.window_content_region_max()[0] - ui.window_content_region_min()[0];
         let scrollbar_start_win_x = win_width - style.scrollbar_size;
 
         let mut x_remaining = win_width;
@@ -310,7 +308,7 @@ impl DisassemblyView {
         mut read: impl FnMut(&Ui, &mut T, Addr),
     ) {
         let window_token = if let Some(window_title) = window_title {
-            let token = if let Some(token) = Window::new(window_title).begin(ui) {
+            let token = if let Some(token) = ui.window(window_title).begin() {
                 token
             } else {
                 return;
@@ -335,7 +333,7 @@ impl DisassemblyView {
 
         let layout = self.layout.as_ref().unwrap();
 
-        ChildWindow::new("##disasm")
+        ui.child_window("##disasm")
             .movable(false)
             .no_nav()
             .scroll_bar(false)
@@ -344,7 +342,7 @@ impl DisassemblyView {
                 win_content_size[0],
                 win_content_size[1] - layout.footer_height,
             ])
-            .build(ui, || {
+            .build(|| {
                 let layout = self.layout.as_ref().unwrap();
 
                 let win_height_int = YPos::from(ui.window_size()[1]);

@@ -120,11 +120,11 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
             .extend_from_slice(&frame_data.instrs);
     }
 
-    fn customize_window<'a, T: AsRef<str>>(
+    fn customize_window<'ui, 'a, T: AsRef<str>>(
         &mut self,
         _ui: &imgui::Ui,
-        window: imgui::Window<'a, T>,
-    ) -> imgui::Window<'a, T> {
+        window: imgui::Window<'ui, 'a, T>,
+    ) -> imgui::Window<'ui, 'a, T> {
         window
     }
 

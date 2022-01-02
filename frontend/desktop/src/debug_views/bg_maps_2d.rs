@@ -104,6 +104,7 @@ pub struct BgMaps2d {
     cur_selection: Selection,
     tex_id: TextureId,
     show_transparency_checkerboard: bool,
+    show_grid_lines: bool,
     palette_buffer: Box<[u32; 0x1000]>,
     pixel_buffer: Box<[u32; 1024 * 1024]>,
     data: BgMapData,
@@ -148,6 +149,7 @@ impl View for BgMaps2d {
             cur_selection: Selection::default(),
             tex_id,
             show_transparency_checkerboard: true,
+            show_grid_lines: true,
             palette_buffer: zeroed_box(),
             pixel_buffer: zeroed_box(),
             data: BgMapData::default(),
@@ -451,11 +453,11 @@ impl View for BgMaps2d {
         self.data.palette[..palette_len].copy_from_slice(&frame_data.palette[..palette_len]);
     }
 
-    fn customize_window<'a, T: AsRef<str>>(
+    fn customize_window<'ui, 'a, T: AsRef<str>>(
         &mut self,
         _ui: &imgui::Ui,
-        window: imgui::Window<'a, T>,
-    ) -> imgui::Window<'a, T> {
+        window: imgui::Window<'ui, 'a, T>,
+    ) -> imgui::Window<'ui, 'a, T> {
         window
     }
 
@@ -592,6 +594,10 @@ impl View for BgMaps2d {
             &mut self.show_transparency_checkerboard,
         );
 
+        ui.same_line();
+
+        ui.checkbox("Show grid lines", &mut self.show_grid_lines);
+
         ui.text(&format!(
             "Size: {}x{}",
             self.data.cur_bg.size[0], self.data.cur_bg.size[1]
@@ -634,29 +640,33 @@ impl View for BgMaps2d {
                 image_size[0] / tiles[0] as f32,
                 image_size[1] / tiles[1] as f32,
             ];
-            let draw_list = ui.get_window_draw_list();
-            let image_abs_end_pos = [0, 1].map(|i| image_abs_pos[i] + image_size[i]);
             let border_color = ui.style_color(StyleColor::Border);
-            for x in 0..=tiles[0] {
-                let x_pos = image_abs_pos[0] + x as f32 * tile_size[0];
-                draw_list
-                    .add_line(
-                        [x_pos, image_abs_pos[1]],
-                        [x_pos, image_abs_end_pos[1]],
-                        border_color,
-                    )
-                    .build();
+
+            if self.show_grid_lines {
+                let draw_list = ui.get_window_draw_list();
+                let image_abs_end_pos = [0, 1].map(|i| image_abs_pos[i] + image_size[i]);
+                for x in 0..=tiles[0] {
+                    let x_pos = image_abs_pos[0] + x as f32 * tile_size[0];
+                    draw_list
+                        .add_line(
+                            [x_pos, image_abs_pos[1]],
+                            [x_pos, image_abs_end_pos[1]],
+                            border_color,
+                        )
+                        .build();
+                }
+                for y in 0..=tiles[1] {
+                    let y_pos = image_abs_pos[1] + y as f32 * tile_size[1];
+                    draw_list
+                        .add_line(
+                            [image_abs_pos[0], y_pos],
+                            [image_abs_end_pos[0], y_pos],
+                            border_color,
+                        )
+                        .build();
+                }
             }
-            for y in 0..=tiles[1] {
-                let y_pos = image_abs_pos[1] + y as f32 * tile_size[1];
-                draw_list
-                    .add_line(
-                        [image_abs_pos[0], y_pos],
-                        [image_abs_end_pos[0], y_pos],
-                        border_color,
-                    )
-                    .build();
-            }
+
             if ui.is_item_hovered() {
                 ui.tooltip(|| {
                     let font_size = ui.current_font_size();

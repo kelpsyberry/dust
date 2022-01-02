@@ -43,11 +43,11 @@ impl View for Arm9State {
         self.reg_values = Some(frame_data.clone());
     }
 
-    fn customize_window<'a, T: AsRef<str>>(
+    fn customize_window<'ui, 'a, T: AsRef<str>>(
         &mut self,
         _ui: &imgui::Ui,
-        window: imgui::Window<'a, T>,
-    ) -> imgui::Window<'a, T> {
+        window: imgui::Window<'ui, 'a, T>,
+    ) -> imgui::Window<'ui, 'a, T> {
         window.always_auto_resize(true)
     }
 
