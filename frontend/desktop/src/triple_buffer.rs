@@ -47,9 +47,8 @@ impl<T> Receiver<T> {
 }
 
 pub fn init<T>(frame_data: [T; 3]) -> (Sender<T>, Receiver<T>) {
-    let [a, b, c] = frame_data;
     let buffers = Arc::new(Buffers {
-        frame_data: [UnsafeCell::new(a), UnsafeCell::new(b), UnsafeCell::new(c)],
+        frame_data: frame_data.map(UnsafeCell::new),
         next: AtomicU8::new(1),
     });
     (
@@ -59,4 +58,15 @@ pub fn init<T>(frame_data: [T; 3]) -> (Sender<T>, Receiver<T>) {
         },
         Receiver { buffers, i: 2 },
     )
+}
+
+pub fn reset<T>(
+    (sender, _receiver): (&mut Sender<T>, &mut Receiver<T>),
+    reset: impl FnOnce(&mut [T; 3]),
+) {
+    unsafe {
+        reset(&mut *UnsafeCell::raw_get(
+            sender.buffers.frame_data.as_ptr() as *const UnsafeCell<[T; 3]>,
+        ));
+    }
 }

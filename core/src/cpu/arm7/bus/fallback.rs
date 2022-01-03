@@ -2,7 +2,7 @@ use super::super::{IrqFlags, BIOS_SIZE};
 #[cfg(any(feature = "bft-r", feature = "bft-w"))]
 use crate::utils::MemValue;
 use crate::{
-    cpu::{bus::AccessType, dma, timers, Arm7Data, CoreData, Engine},
+    cpu::{bus::AccessType, dma, timers, CoreData, Engine},
     ds_slot,
     emu::{Emu, LocalExMemControl},
     gpu, ipc, rtc, spi,

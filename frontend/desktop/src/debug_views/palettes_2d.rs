@@ -27,15 +27,6 @@ pub struct Selection {
     palette: Palette,
 }
 
-impl Default for Selection {
-    fn default() -> Self {
-        Selection {
-            engine: Engine2d::A,
-            palette: Palette::Bg,
-        }
-    }
-}
-
 impl Selection {
     const fn new(engine: Engine2d, palette: Palette) -> Self {
         Selection { engine, palette }
@@ -51,14 +42,14 @@ impl Selection {
 }
 
 pub struct PaletteData {
-    selection: Selection,
+    selection: Option<Selection>,
     data: Box<Bytes<0x8000>>,
 }
 
 impl Default for PaletteData {
     fn default() -> Self {
         PaletteData {
-            selection: Selection::default(),
+            selection: None,
             data: zeroed_box(),
         }
     }
@@ -75,30 +66,29 @@ impl View for Palettes2D {
     type FrameData = PaletteData;
     type EmuState = Selection;
 
-    #[inline]
     fn new(_window: &mut Window) -> Self {
         Palettes2D {
-            cur_selection: Selection::default(),
+            cur_selection: Selection {
+                engine: Engine2d::A,
+                palette: Palette::Bg,
+            },
             data: PaletteData::default(),
         }
     }
 
-    #[inline]
     fn destroy(self, _window: &mut Window) {}
 
-    #[inline]
     fn emu_state(&self) -> Self::EmuState {
         self.cur_selection
     }
 
-    #[inline]
     fn prepare_frame_data<'a, E: Engine, S: FrameDataSlot<'a, Self::FrameData>>(
         emu_state: &Self::EmuState,
         emu: &mut Emu<E>,
         frame_data: S,
     ) {
         let palette_data = frame_data.get_or_insert_with(Default::default);
-        palette_data.selection = *emu_state;
+        palette_data.selection = Some(*emu_state);
         match emu_state.palette {
             Palette::Bg => {
                 let base = ((emu_state.engine == Engine2d::B) as usize) << 10;
@@ -150,10 +140,13 @@ impl View for Palettes2D {
         }
     }
 
-    #[inline]
+    fn clear_frame_data(&mut self) {
+        self.data.selection = None;
+    }
+
     fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, _window: &mut Window) {
         self.data.selection = frame_data.selection;
-        let data_len = frame_data.selection.data_len();
+        let data_len = frame_data.selection.unwrap().data_len();
         self.data.data[..data_len].copy_from_slice(&frame_data.data[..data_len]);
     }
 
@@ -208,7 +201,7 @@ impl View for Palettes2D {
             None
         };
 
-        if self.data.selection != self.cur_selection {
+        if self.data.selection != Some(self.cur_selection) {
             return new_state;
         }
 

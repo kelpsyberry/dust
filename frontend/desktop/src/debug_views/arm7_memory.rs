@@ -79,6 +79,10 @@ impl View for Arm7Memory {
         frame_data.visible_addrs = emu_state.visible_addrs;
     }
 
+    fn clear_frame_data(&mut self) {
+        self.mem_contents.data.clear();
+    }
+
     fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, _window: &mut Window) {
         self.mem_contents.data.clear();
         self.mem_contents.data.extend_from_slice(&frame_data.data);

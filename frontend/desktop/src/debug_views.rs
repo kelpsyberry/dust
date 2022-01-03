@@ -1,13 +1,11 @@
-mod arm7_state;
-use arm7_state::Arm7State;
+mod cpu_state;
+use cpu_state::CpuState;
 mod arm7_memory;
 use arm7_memory::Arm7Memory;
-mod cpu_disasm;
-use cpu_disasm::CpuDisasm;
-mod arm9_state;
-use arm9_state::Arm9State;
 mod arm9_memory;
 use arm9_memory::Arm9Memory;
+mod cpu_disasm;
+use cpu_disasm::CpuDisasm;
 mod palettes_2d;
 use palettes_2d::Palettes2D;
 mod bg_maps_2d;
@@ -68,6 +66,7 @@ pub trait View {
         frame_data: S,
     );
 
+    fn clear_frame_data(&mut self);
     fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, window: &mut Window);
     fn customize_window<'ui, 'a, T: AsRef<str>>(
         &mut self,
@@ -209,7 +208,6 @@ macro_rules! declare_structs {
 
         impl FrameData {
             #[inline]
-            #[must_use]
             pub fn new() -> Self {
                 FrameData {
                     $(
@@ -219,6 +217,15 @@ macro_rules! declare_structs {
                         $i_view_ident: FxHashMap::default(),
                     )*
                 }
+            }
+
+            pub fn clear(&mut self) {
+                $(
+                    self.$s_view_ident = None;
+                )*
+                $(
+                    self.$i_view_ident.clear();
+                )*
             }
         }
 
@@ -234,7 +241,6 @@ macro_rules! declare_structs {
 
         impl UiState {
             #[inline]
-            #[must_use]
             pub fn new() -> Self {
                 UiState {
                     messages: Vec::new(),
@@ -265,6 +271,19 @@ macro_rules! declare_structs {
                         if let Some(frame_data) = frame_data.$i_view_ident.get(key) {
                             view.update_from_frame_data(frame_data, window);
                         }
+                    }
+                )*
+            }
+
+            pub fn clear_frame_data(&mut self) {
+                $(
+                    if let Some((view, _)) = &mut self.$s_view_ident {
+                        view.clear_frame_data();
+                    }
+                )*
+                $(
+                    for (view, _) in self.$i_view_ident.values_mut() {
+                        view.clear_frame_data();
                     }
                 )*
             }
@@ -406,11 +425,11 @@ macro_rules! declare_structs {
 }
 
 declare_structs!(
-    singleton arm7_state, Arm7State, ToggleArm7State, UpdateArm7State;
-    singleton arm9_state, Arm9State, ToggleArm9State, UpdateArm9State;
+    singleton arm7_state, CpuState<false>, ToggleArm7State, UpdateArm7State;
+    singleton arm9_state, CpuState<true>, ToggleArm9State, UpdateArm9State;
     instanceable arm7_memory, Arm7Memory, ToggleArm7Memory, UpdateArm7Memory;
-    instanceable arm7_disasm, CpuDisasm<false>, ToggleArm7Disasm, UpdateArm7Disasm;
     instanceable arm9_memory, Arm9Memory, ToggleArm9Memory, UpdateArm9Memory;
+    instanceable arm7_disasm, CpuDisasm<false>, ToggleArm7Disasm, UpdateArm7Disasm;
     instanceable arm9_disasm, CpuDisasm<true>, ToggleArm9Disasm, UpdateArm9Disasm;
     instanceable palettes_2d, Palettes2D, TogglePalettes2D, UpdatePalettes2D;
     instanceable bg_maps_2d, BgMaps2d, ToggleBgMaps2d, UpdateBgMaps2d;

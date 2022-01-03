@@ -1,5 +1,8 @@
 use super::{
-    common::{memory::MemoryEditor, RangeInclusive},
+    common::{
+        memory::{Addr, MemoryEditor},
+        RangeInclusive,
+    },
     FrameDataSlot, View,
 };
 use crate::ui::window::Window;
@@ -10,18 +13,18 @@ use dust_core::{
 
 pub struct Arm9Memory {
     editor: MemoryEditor,
-    last_visible_addrs: RangeInclusive<u64>,
+    last_visible_addrs: RangeInclusive<Addr>,
     mem_contents: MemContents,
 }
 
 #[derive(Clone)]
 pub struct EmuState {
-    visible_addrs: RangeInclusive<u64>,
+    visible_addrs: RangeInclusive<Addr>,
 }
 
 #[derive(Clone)]
 pub struct MemContents {
-    visible_addrs: RangeInclusive<u64>,
+    visible_addrs: RangeInclusive<Addr>,
     data: Vec<u32>,
 }
 
@@ -74,6 +77,10 @@ impl View for Arm9Memory {
                 ));
         }
         frame_data.visible_addrs = emu_state.visible_addrs;
+    }
+
+    fn clear_frame_data(&mut self) {
+        self.mem_contents.data.clear();
     }
 
     fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, _window: &mut Window) {

@@ -40,17 +40,6 @@ pub struct Selection {
     display_mode: Option<BgDisplayMode>,
 }
 
-impl Default for Selection {
-    fn default() -> Self {
-        Selection {
-            engine: Engine2d::A,
-            bg_index: BgIndex::new(0),
-            use_ext_palettes: None,
-            display_mode: None,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 struct BgData {
     display_mode: BgDisplayMode,
@@ -60,7 +49,7 @@ struct BgData {
 
 pub struct BgMapData {
     bgs: [[BgData; 4]; 2],
-    selection: Selection,
+    selection: Option<Selection>,
     cur_bg: BgData,
     tiles: Box<Bytes<{ 2 * 128 * 128 }>>,
     tile_bitmap_data: Box<Bytes<{ 1024 * 512 }>>,
@@ -77,17 +66,21 @@ impl BgMapData {
             0x100
         }
     }
+
+    fn default_bgs() -> [[BgData; 4]; 2] {
+        [[BgData {
+            display_mode: BgDisplayMode::Text16,
+            uses_ext_palettes: false,
+            size: [128; 2],
+        }; 4]; 2]
+    }
 }
 
 impl Default for BgMapData {
     fn default() -> Self {
         BgMapData {
-            bgs: [[BgData {
-                display_mode: BgDisplayMode::Text16,
-                uses_ext_palettes: false,
-                size: [128; 2],
-            }; 4]; 2],
-            selection: Selection::default(),
+            bgs: Self::default_bgs(),
+            selection: None,
             cur_bg: BgData {
                 display_mode: BgDisplayMode::Text16,
                 uses_ext_palettes: false,
@@ -116,7 +109,6 @@ impl View for BgMaps2d {
     type FrameData = BgMapData;
     type EmuState = Selection;
 
-    #[inline]
     fn new(window: &mut Window) -> Self {
         let tex_id = {
             let texture = window.gfx.imgui.create_texture(
@@ -146,7 +138,12 @@ impl View for BgMaps2d {
             window.gfx.imgui.add_texture(texture)
         };
         BgMaps2d {
-            cur_selection: Selection::default(),
+            cur_selection: Selection {
+                engine: Engine2d::A,
+                bg_index: BgIndex::new(0),
+                use_ext_palettes: None,
+                display_mode: None,
+            },
             tex_id,
             show_transparency_checkerboard: true,
             show_grid_lines: true,
@@ -156,17 +153,14 @@ impl View for BgMaps2d {
         }
     }
 
-    #[inline]
     fn destroy(self, window: &mut Window) {
         window.gfx.imgui.remove_texture(self.tex_id);
     }
 
-    #[inline]
     fn emu_state(&self) -> Self::EmuState {
         self.cur_selection
     }
 
-    #[inline]
     fn prepare_frame_data<'a, E: Engine, S: FrameDataSlot<'a, Self::FrameData>>(
         emu_state: &Self::EmuState,
         emu: &mut Emu<E>,
@@ -251,18 +245,17 @@ impl View for BgMaps2d {
         fn copy_bg_render_data<R: Role>(
             engine: &engine_2d::Engine2d<R>,
             vram: &Vram,
+            selection: &Selection,
             data: &mut BgMapData,
         ) {
-            let bg = &engine.bgs[data.selection.bg_index.get() as usize];
+            let bg = &engine.bgs[selection.bg_index.get() as usize];
             data.cur_bg = {
-                let orig = data.bgs[data.selection.engine as usize]
-                    [data.selection.bg_index.get() as usize];
-                let (display_mode, size) = match data.selection.display_mode {
+                let orig = data.bgs[selection.engine as usize][selection.bg_index.get() as usize];
+                let (display_mode, size) = match selection.display_mode {
                     Some(display_mode) => (display_mode, bg_size(bg, display_mode)),
                     None => (orig.display_mode, orig.size),
                 };
-                let uses_ext_palettes = data
-                    .selection
+                let uses_ext_palettes = selection
                     .use_ext_palettes
                     .unwrap_or_else(|| engine.control().bg_ext_pal_enabled())
                     && matches!(
@@ -393,8 +386,8 @@ impl View for BgMaps2d {
 
             if data.cur_bg.display_mode != BgDisplayMode::ExtendedBitmapDirect {
                 if data.cur_bg.uses_ext_palettes {
-                    let slot = data.selection.bg_index.get()
-                        | if data.selection.bg_index.get() < 2 {
+                    let slot = selection.bg_index.get()
+                        | if selection.bg_index.get() < 2 {
                             bg.control().bg01_ext_pal_slot() << 1
                         } else {
                             0
@@ -426,14 +419,22 @@ impl View for BgMaps2d {
         let frame_data = frame_data.get_or_insert_with(Default::default);
         frame_data.bgs[0] = get_bgs_data(&emu.gpu.engine_2d_a);
         frame_data.bgs[1] = get_bgs_data(&emu.gpu.engine_2d_b);
-        frame_data.selection = *emu_state;
+        frame_data.selection = Some(*emu_state);
         match emu_state.engine {
-            Engine2d::A => copy_bg_render_data(&emu.gpu.engine_2d_a, &emu.gpu.vram, frame_data),
-            Engine2d::B => copy_bg_render_data(&emu.gpu.engine_2d_b, &emu.gpu.vram, frame_data),
+            Engine2d::A => {
+                copy_bg_render_data(&emu.gpu.engine_2d_a, &emu.gpu.vram, emu_state, frame_data)
+            }
+            Engine2d::B => {
+                copy_bg_render_data(&emu.gpu.engine_2d_b, &emu.gpu.vram, emu_state, frame_data)
+            }
         }
     }
 
-    #[inline]
+    fn clear_frame_data(&mut self) {
+        self.data.bgs = BgMapData::default_bgs();
+        self.data.selection = None;
+    }
+
     fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, _window: &mut Window) {
         self.data.bgs = frame_data.bgs;
         self.data.selection = frame_data.selection;
@@ -468,7 +469,7 @@ impl View for BgMaps2d {
         _emu_running: bool,
     ) -> Option<Self::EmuState> {
         let mut selection_updated = false;
-        let style = ui.clone_style();
+        let style = unsafe { ui.style() };
 
         let content_width = ui.content_region_avail()[0];
         let two_widgets_total_width = content_width - style.item_spacing[0];
@@ -598,20 +599,20 @@ impl View for BgMaps2d {
 
         ui.checkbox("Show grid lines", &mut self.show_grid_lines);
 
-        ui.text(&format!(
-            "Size: {}x{}",
-            self.data.cur_bg.size[0], self.data.cur_bg.size[1]
-        ));
-
         let new_state = if selection_updated {
             Some(self.cur_selection)
         } else {
             None
         };
 
-        if self.data.selection != self.cur_selection {
+        if self.data.selection != Some(self.cur_selection) {
             return new_state;
         }
+
+        ui.text(&format!(
+            "Size: {}x{}",
+            self.data.cur_bg.size[0], self.data.cur_bg.size[1]
+        ));
 
         let (mut image_pos, image_size) = scale_to_fit(
             self.data.cur_bg.size[0] as f32 / self.data.cur_bg.size[1] as f32,

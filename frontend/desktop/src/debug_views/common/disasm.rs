@@ -3,7 +3,7 @@ use super::{
     RangeInclusive, Scrollbar,
 };
 use core::{fmt::Write, num::NonZeroU8};
-use imgui::{Key, MouseButton, Style, StyleColor, StyleVar, Ui, WindowFocusedFlags};
+use imgui::{Key, MouseButton, StyleColor, StyleVar, Ui, WindowFocusedFlags};
 
 bitflags::bitflags! {
     pub struct Flags: u8 {
@@ -160,10 +160,12 @@ impl DisassemblyView {
             .into()
     }
 
-    fn compute_layout(&mut self, ui: &Ui, style: &Style) {
+    fn compute_layout(&mut self, ui: &Ui) {
         if self.layout.is_some() {
             return;
         }
+
+        let style = unsafe { ui.style() };
 
         let disasm_line_height = ui.text_line_height();
         let disasm_line_height_with_spacing_int: YPos =
@@ -326,7 +328,7 @@ impl DisassemblyView {
             self.layout = None;
         }
 
-        self.compute_layout(ui, &ui.clone_style());
+        self.compute_layout(ui);
 
         let frame_padding = ui.push_style_var(StyleVar::FramePadding([0.0; 2]));
         let item_spacing = ui.push_style_var(StyleVar::ItemSpacing([0.0; 2]));

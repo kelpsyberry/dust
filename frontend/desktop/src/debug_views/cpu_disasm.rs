@@ -88,13 +88,13 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
             thumb: false,
             instrs: Vec::new(),
         });
-        let (regs, cpsr) = if ARM9 {
-            emu.arm9.regs()
+        let (r15, cpsr) = if ARM9 {
+            (emu.arm9.r15(), emu.arm9.cpsr())
         } else {
-            emu.arm7.regs()
+            (emu.arm7.r15(), emu.arm7.cpsr())
         };
         frame_data.visible_addrs = emu_state.visible_addrs;
-        frame_data.cpu_pc = regs[15];
+        frame_data.cpu_pc = r15;
         frame_data.cpu_thumb = cpsr.thumb_state();
         frame_data.thumb = emu_state.thumb;
         frame_data.instrs.clear();
@@ -107,6 +107,12 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
             emu_state.thumb,
             &mut frame_data.instrs,
         );
+    }
+
+    fn clear_frame_data(&mut self) {
+        self.disasm_results.cpu_pc = 0;
+        self.disasm_results.cpu_thumb = false;
+        self.disasm_results.instrs.clear();
     }
 
     fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, _window: &mut Window) {

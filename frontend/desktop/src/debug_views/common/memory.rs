@@ -3,7 +3,7 @@ use super::{
     RangeInclusive, Scrollbar,
 };
 use core::{fmt::Write, num::NonZeroU8};
-use imgui::{Drag, Key, MouseButton, Style, StyleColor, StyleVar, Ui, WindowFocusedFlags};
+use imgui::{Drag, Key, MouseButton, StyleColor, StyleVar, Ui, WindowFocusedFlags};
 
 // TODO:
 // - Add an `access_rights` callback that returns whether a given address's access rights are
@@ -233,10 +233,12 @@ impl MemoryEditor {
             .into()
     }
 
-    fn compute_layout(&mut self, ui: &Ui, style: &Style) {
+    fn compute_layout(&mut self, ui: &Ui) {
         if self.layout.is_some() {
             return;
         }
+
+        let style = unsafe { ui.style() };
 
         let data_row_height = ui.text_line_height();
         let data_row_height_with_spacing_int: YPos =
@@ -373,12 +375,11 @@ impl MemoryEditor {
 
     #[inline]
     pub fn window_width(&mut self, ui: &Ui) -> f32 {
-        let style = ui.clone_style();
-        self.compute_layout(ui, &style);
+        self.compute_layout(ui);
         let layout = self.layout.as_ref().unwrap();
         layout.ascii_end_scrollbar_start_win_x
             + layout.scrollbar_size
-            + style.window_padding[0] * 2.0
+            + unsafe { ui.style().window_padding[0] } * 2.0
     }
 
     fn focus_on_selected_addr(&mut self, ui: &Ui) {
@@ -439,7 +440,7 @@ impl MemoryEditor {
         mut read: impl FnMut(&mut T, Addr) -> Option<u8>,
         // mut write: impl FnMut(&mut T, Addr, u8),
     ) {
-        self.compute_layout(ui, &ui.clone_style());
+        self.compute_layout(ui);
 
         let window_token = if let Some(window_title) = window_title {
             let layout = self.layout.as_ref().unwrap();

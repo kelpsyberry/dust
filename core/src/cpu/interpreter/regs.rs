@@ -1,3 +1,4 @@
+use super::super::Regs as EngineRegs;
 use crate::cpu::psr::{Cpsr, Mode, Spsr};
 
 #[repr(C)]
@@ -42,6 +43,47 @@ impl Regs {
         spsr_abt: Spsr::from_raw::<false>(0),
         spsr_und: Spsr::from_raw::<false>(0),
     };
+
+    pub(super) fn to_engine_regs(&self) -> EngineRegs {
+        EngineRegs {
+            gprs: self.cur,
+            cpsr: self.cpsr,
+            spsr: self.spsr,
+            r8_14_fiq: self.r8_14_fiq,
+            r8_12_other: self.r8_12_other,
+            r13_14_irq: self.r13_14_irq,
+            r13_14_svc: self.r13_14_svc,
+            r13_14_abt: self.r13_14_abt,
+            r13_14_und: self.r13_14_und,
+            r13_14_user: self.r13_14_user,
+            spsr_fiq: self.spsr_fiq,
+            spsr_irq: self.spsr_irq,
+            spsr_svc: self.spsr_svc,
+            spsr_abt: self.spsr_abt,
+            spsr_und: self.spsr_und,
+        }
+    }
+
+    pub(super) fn set_from_engine_regs(&mut self, regs: &EngineRegs) {
+        self.cur = regs.gprs;
+        self.cpsr = regs.cpsr;
+        let mode = self.cpsr.mode();
+        self.is_in_priv_mode = mode.is_privileged();
+        self.is_in_exc_mode = mode.is_exception();
+        self.spsr = regs.spsr;
+        self.r8_14_fiq = regs.r8_14_fiq;
+        self.r8_12_other = regs.r8_12_other;
+        self.r13_14_irq = regs.r13_14_irq;
+        self.r13_14_svc = regs.r13_14_svc;
+        self.r13_14_abt = regs.r13_14_abt;
+        self.r13_14_und = regs.r13_14_und;
+        self.r13_14_user = regs.r13_14_user;
+        self.spsr_fiq = regs.spsr_fiq;
+        self.spsr_irq = regs.spsr_irq;
+        self.spsr_svc = regs.spsr_svc;
+        self.spsr_abt = regs.spsr_abt;
+        self.spsr_und = regs.spsr_und;
+    }
 
     #[inline]
     pub const fn cpsr(&self) -> Cpsr {

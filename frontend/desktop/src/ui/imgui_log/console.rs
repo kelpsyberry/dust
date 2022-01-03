@@ -291,12 +291,11 @@ impl Console {
 
     pub fn render_window(&mut self, ui: &Ui, font: Option<imgui::FontId>, opened: &mut bool) {
         ui.window("Log").opened(opened).build(|| {
-            let style = ui.clone_style();
-
             ui.checkbox("Lock", &mut self.lock_to_bottom);
 
             ui.same_line_with_spacing(0.0, 16.0);
-            let clear_button_width = ui.calc_text_size("Clear")[0] + style.frame_padding[0] * 2.0;
+            let clear_button_width =
+                ui.calc_text_size("Clear")[0] + unsafe { ui.style().frame_padding[0] } * 2.0;
             ui.set_next_item_width(ui.content_region_avail()[0] - clear_button_width - 16.0);
 
             let prev_filter = self.filter.clone();
@@ -390,13 +389,13 @@ impl Console {
         let start_i = ((ui.scroll_y() / line_height).floor() as usize).min(history.len());
         let end_i = (((ui.scroll_y() + ui.window_size()[1]) / line_height).ceil() as usize)
             .min(history.len());
-        let style = ui.clone_style();
+        let indent_spacing = unsafe { ui.style().indent_spacing };
         ui.dummy([0.0, start_i as f32 * line_height]);
         let mut last_indent = 0.0;
         for (indent, node) in &history[start_i..end_i] {
             let off = *indent - last_indent;
             if off != 0.0 {
-                ui.indent_by(off * style.indent_spacing);
+                ui.indent_by(off * indent_spacing);
             }
             last_indent = *indent;
             match node {

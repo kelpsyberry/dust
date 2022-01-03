@@ -325,6 +325,23 @@ impl UiState {
                 .store(true, Ordering::Relaxed);
             self.frame_tx = Some(emu_thread.join().expect("Couldn't join emulation thread"));
         }
+
+        #[cfg(feature = "debug-views")]
+        self.debug_views.clear_frame_data();
+        triple_buffer::reset(
+            (self.frame_tx.as_mut().unwrap(), &mut self.frame_rx),
+            |frame_data| {
+                for data in frame_data {
+                    for fb in &mut data.fb.0 {
+                        fb.fill(0);
+                    }
+                    data.fps = 0.0;
+                    #[cfg(feature = "debug-views")]
+                    data.debug.clear();
+                }
+            },
+        );
+
         if let Some(mut game_config) = self.game_config.take() {
             if let Some(dir_path) = game_config.path.as_ref().and_then(|p| p.parent()) {
                 let _ = fs::create_dir_all(dir_path);
@@ -1023,9 +1040,9 @@ pub fn main() {
                     !ui.is_window_focused_with_flags(imgui::WindowFocusedFlags::ANY_WINDOW);
                 state.set_touchscreen_bounds(center, &points, screen_rot, window);
             } else {
-                let style = ui.clone_style();
                 let _window_padding = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0; 2]));
-                let titlebar_height = style.frame_padding[1] * 2.0 + ui.current_font_size();
+                let titlebar_height =
+                    unsafe { ui.style().frame_padding[1] } * 2.0 + ui.current_font_size();
                 const DEFAULT_SCALE: f32 = 2.0;
                 state.screen_focused = false;
                 ui.window("Screen")

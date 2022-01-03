@@ -20,7 +20,7 @@ pub mod timers;
 
 use crate::{emu::Emu, utils::ByteSlice};
 use cfg_if::cfg_if;
-use psr::Cpsr;
+use psr::{Cpsr, Spsr};
 
 pub trait Engine: Sized {
     type GlobalData;
@@ -28,6 +28,25 @@ pub trait Engine: Sized {
     type Arm9Data: Arm9Data + CoreData<Engine = Self>;
 
     fn into_data(self) -> (Self::GlobalData, Self::Arm7Data, Self::Arm9Data);
+}
+
+#[derive(Clone, Debug)]
+pub struct Regs {
+    pub gprs: [u32; 16],
+    pub cpsr: Cpsr,
+    pub spsr: Spsr,
+    pub r8_14_fiq: [u32; 7],
+    pub r8_12_other: [u32; 5],
+    pub r13_14_irq: [u32; 2],
+    pub r13_14_svc: [u32; 2],
+    pub r13_14_abt: [u32; 2],
+    pub r13_14_und: [u32; 2],
+    pub r13_14_user: [u32; 2],
+    pub spsr_fiq: Spsr,
+    pub spsr_irq: Spsr,
+    pub spsr_svc: Spsr,
+    pub spsr_abt: Spsr,
+    pub spsr_und: Spsr,
 }
 
 pub trait CoreData {
@@ -44,8 +63,10 @@ pub trait CoreData {
     fn invalidate_word_range(&mut self, bounds: (u32, u32));
 
     fn jump(emu: &mut Emu<Self::Engine>, addr: u32);
-    fn regs(&self) -> ([u32; 16], Cpsr);
-    fn set_regs(&mut self, values: ([u32; 16], Cpsr));
+    fn r15(&self) -> u32;
+    fn cpsr(&self) -> Cpsr;
+    fn regs(&self) -> Regs;
+    fn set_regs(&mut self, values: &Regs);
 
     cfg_if! {
         if #[cfg(any(feature = "debug-hooks", doc))] {
@@ -62,8 +83,6 @@ pub trait CoreData {
 }
 
 pub trait Arm7Data: CoreData {
-    fn r15(&self) -> u32;
-
     fn run_until(emu: &mut Emu<Self::Engine>, end_time: arm7::Timestamp);
 }
 

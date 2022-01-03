@@ -3,7 +3,7 @@ mod thumb;
 
 #[cfg(feature = "interp-pipeline")]
 use super::common::{thumb_pipeline_entry, PipelineEntry};
-use super::{common::StateSource, Engine, Regs};
+use super::{super::Regs as EngineRegs, common::StateSource, Engine, Regs};
 #[cfg(feature = "debug-hooks")]
 use crate::cpu::debug;
 use crate::{
@@ -280,14 +280,23 @@ impl CoreData for EngineData {
     }
 
     #[inline]
-    fn regs(&self) -> ([u32; 16], Cpsr) {
-        (self.regs.cur, self.regs.cpsr)
+    fn r15(&self) -> u32 {
+        self.regs.cur[15]
     }
 
     #[inline]
-    fn set_regs(&mut self, values: ([u32; 16], Cpsr)) {
-        self.regs.cur = values.0;
-        self.regs.cpsr = values.1;
+    fn cpsr(&self) -> Cpsr {
+        self.regs.cpsr
+    }
+
+    #[inline]
+    fn regs(&self) -> EngineRegs {
+        self.regs.to_engine_regs()
+    }
+
+    #[inline]
+    fn set_regs(&mut self, regs: &EngineRegs) {
+        self.regs.set_from_engine_regs(regs);
         todo!("Update registers externally");
     }
 
@@ -331,11 +340,6 @@ impl CoreData for EngineData {
 }
 
 impl Arm7Data for EngineData {
-    #[inline]
-    fn r15(&self) -> u32 {
-        self.regs.cur[15]
-    }
-
     #[inline]
     fn run_until(emu: &mut Emu<Engine>, end_time: Timestamp) {
         while emu.arm7.schedule.cur_time() < end_time {
