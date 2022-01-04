@@ -62,6 +62,7 @@ pub(super) fn main(
 ) -> triple_buffer::Sender<FrameData> {
     let direct_boot = config.skip_firmware && ds_slot_rom.is_some();
     let mut sync_to_audio = config.sync_to_audio.value;
+    let ds_slot_rom_present = ds_slot_rom.is_some();
 
     let ds_slot_rom = if let Some(rom) = ds_slot_rom {
         ds_slot::rom::normal::Normal::new(
@@ -107,7 +108,7 @@ pub(super) fn main(
         if let Some(save_type) = ds_slot_save_type {
             let expected_len = save_type.expected_len();
             if expected_len != Some(save_contents.len()) {
-                let (chosen_save_type, message) = if let Some(detected_save_type) =
+                let (chosen_save_type, _message) = if let Some(detected_save_type) =
                     SaveType::from_save_len(save_contents.len())
                 {
                     (detected_save_type, "existing save file")
@@ -124,13 +125,14 @@ pub(super) fn main(
                         "no file".to_string()
                     },
                     save_contents.len(),
-                    message,
+                    _message,
                 );
                 chosen_save_type
             } else {
                 save_type
             }
         } else {
+            #[allow(clippy::unnecessary_lazy_evaluations)]
             SaveType::from_save_len(save_contents.len()).unwrap_or_else(|| {
                 #[cfg(feature = "log")]
                 slog::error!(
@@ -144,7 +146,8 @@ pub(super) fn main(
                 SaveType::None
             })
         }
-    } else {
+    } else if ds_slot_rom_present {
+        #[allow(clippy::unnecessary_lazy_evaluations)]
         ds_slot_save_type.unwrap_or_else(|| {
             #[cfg(feature = "log")]
             slog::error!(
@@ -156,8 +159,10 @@ pub(super) fn main(
             );
             SaveType::None
         })
+    } else {
+        SaveType::None
     };
-    let spi_device = if save_type == SaveType::None {
+    let ds_slot_spi = if save_type == SaveType::None {
         ds_slot::spi::Empty::new(
             #[cfg(feature = "log")]
             logger.new(slog::o!("ds_spi" => "empty")),
@@ -233,7 +238,7 @@ pub(super) fn main(
         )
         .expect("Couldn't build firmware"),
         ds_slot_rom,
-        spi_device,
+        ds_slot_spi,
         match &audio_tx_data {
             Some(data) => Box::new(audio::Sender::new(data, sync_to_audio)),
             None => Box::new(DummyAudioBackend),

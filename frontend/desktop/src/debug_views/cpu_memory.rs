@@ -7,11 +7,11 @@ use super::{
 };
 use crate::ui::window::Window;
 use dust_core::{
-    cpu::{self, arm7::bus as arm7_bus, bus},
+    cpu::{self, arm7, arm9, bus},
     emu::Emu,
 };
 
-pub struct Arm7Memory {
+pub struct CpuMemory<const ARM9: bool> {
     editor: MemoryEditor,
     last_visible_addrs: RangeInclusive<Addr>,
     mem_contents: MemContents,
@@ -28,14 +28,14 @@ pub struct MemContents {
     data: Vec<u32>,
 }
 
-impl View for Arm7Memory {
-    const NAME: &'static str = "ARM7 memory";
+impl<const ARM9: bool> View for CpuMemory<ARM9> {
+    const NAME: &'static str = if ARM9 { "ARM9 memory" } else { "ARM7 memory" };
 
     type FrameData = MemContents;
     type EmuState = EmuState;
 
     fn new(_window: &mut Window) -> Self {
-        Arm7Memory {
+        CpuMemory {
             editor: MemoryEditor::new()
                 .show_range(false)
                 .addr_range((0, 0xFFFF_FFFF).into()),
@@ -69,12 +69,11 @@ impl View for Arm7Memory {
             .data
             .reserve(((emu_state.visible_addrs.end - emu_state.visible_addrs.start) >> 2) as usize);
         for addr in emu_state.visible_addrs.into_iter().step_by(4) {
-            frame_data
-                .data
-                .push(arm7_bus::read_32::<bus::DebugCpuAccess, E>(
-                    emu,
-                    addr as u32,
-                ));
+            frame_data.data.push(if ARM9 {
+                arm9::bus::read_32::<bus::DebugCpuAccess, E, false>(emu, addr as u32)
+            } else {
+                arm7::bus::read_32::<bus::DebugCpuAccess, E>(emu, addr as u32)
+            });
         }
         frame_data.visible_addrs = emu_state.visible_addrs;
     }

@@ -299,19 +299,17 @@ impl View for BgMaps2d {
             };
 
             match data.cur_bg.display_mode {
-                BgDisplayMode::Text16 | BgDisplayMode::Text256 => {
+                BgDisplayMode::Text16 | BgDisplayMode::Text256 => unsafe {
                     if bg.control().size_key() & 1 == 0 {
                         let mut src_base = map_base;
                         let mut dst_base = 0;
                         for _ in 0..1 + (bg.control().size_key() >> 1) {
-                            unsafe {
-                                read_bg_slice(
-                                    vram,
-                                    src_base,
-                                    2 * 32 * 32,
-                                    data.tiles.as_mut_ptr().add(dst_base) as *mut usize,
-                                );
-                            }
+                            read_bg_slice(
+                                vram,
+                                src_base,
+                                2 * 32 * 32,
+                                data.tiles.as_mut_ptr().add(dst_base) as *mut usize,
+                            );
                             src_base = (src_base + 0x800) & R::BG_VRAM_MASK;
                             dst_base += 2 * 32 * 32;
                         }
@@ -320,28 +318,25 @@ impl View for BgMaps2d {
                         let mut dst_base = 0;
                         for _ in 0..1 + (bg.control().size_key() >> 1) {
                             for _ in 0..32 {
-                                unsafe {
-                                    read_bg_slice(
-                                        vram,
-                                        src_base,
-                                        2 * 32,
-                                        data.tiles.as_mut_ptr().add(dst_base) as *mut usize,
-                                    );
-                                    read_bg_slice(
-                                        vram,
-                                        (src_base + 0x800) & R::BG_VRAM_MASK,
-                                        2 * 32,
-                                        data.tiles.as_mut_ptr().add(dst_base + 2 * 32)
-                                            as *mut usize,
-                                    );
-                                }
+                                read_bg_slice(
+                                    vram,
+                                    src_base,
+                                    2 * 32,
+                                    data.tiles.as_mut_ptr().add(dst_base) as *mut usize,
+                                );
+                                read_bg_slice(
+                                    vram,
+                                    (src_base + 0x800) & R::BG_VRAM_MASK,
+                                    2 * 32,
+                                    data.tiles.as_mut_ptr().add(dst_base + 2 * 32) as *mut usize,
+                                );
                                 src_base += 2 * 32;
                                 dst_base += 2 * 64;
                             }
                             src_base += 2 * 32 * 32;
                         }
                     }
-                }
+                },
 
                 BgDisplayMode::Affine | BgDisplayMode::ExtendedMap => {
                     let tiles_len = (data.cur_bg.size[0] as usize * data.cur_bg.size[1] as usize)
@@ -385,14 +380,14 @@ impl View for BgMaps2d {
             );
 
             if data.cur_bg.display_mode != BgDisplayMode::ExtendedBitmapDirect {
-                if data.cur_bg.uses_ext_palettes {
-                    let slot = selection.bg_index.get()
-                        | if selection.bg_index.get() < 2 {
-                            bg.control().bg01_ext_pal_slot() << 1
-                        } else {
-                            0
-                        };
-                    unsafe {
+                unsafe {
+                    if data.cur_bg.uses_ext_palettes {
+                        let slot = selection.bg_index.get()
+                            | if selection.bg_index.get() < 2 {
+                                bg.control().bg01_ext_pal_slot() << 1
+                            } else {
+                                0
+                            };
                         if R::IS_A {
                             vram.read_a_bg_ext_pal_slice(
                                 (slot as u32) << 13,
@@ -406,12 +401,12 @@ impl View for BgMaps2d {
                                 data.palette.as_mut_ptr() as *mut usize,
                             );
                         }
+                    } else {
+                        let pal_base = (!R::IS_A as usize) << 10;
+                        data.palette[..0x200].copy_from_slice(
+                            &vram.palette.as_byte_slice()[pal_base..pal_base + 0x200],
+                        );
                     }
-                } else {
-                    let pal_base = (!R::IS_A as usize) << 10;
-                    data.palette[..0x200].copy_from_slice(unsafe {
-                        &vram.palette.as_byte_slice()[pal_base..pal_base + 0x200]
-                    });
                 }
             }
         }
@@ -720,26 +715,26 @@ impl View for BgMaps2d {
             0
         };
 
-        match self.data.cur_bg.display_mode {
-            BgDisplayMode::Text16 => {
-                let tile_x_shift = x_shift - 3;
-                let tile_i_x_mask = (1 << tile_x_shift) - 1;
-                for tile_i in 0..pixels_len / 64 {
-                    let tile = unsafe {
-                        self.data
+        unsafe {
+            match self.data.cur_bg.display_mode {
+                BgDisplayMode::Text16 => {
+                    let tile_x_shift = x_shift - 3;
+                    let tile_i_x_mask = (1 << tile_x_shift) - 1;
+                    for tile_i in 0..pixels_len / 64 {
+                        let tile = self
+                            .data
                             .tiles
                             .read_le_aligned_unchecked::<u16>(tile_i << 1)
-                            as usize
-                    };
-                    let src_base = (tile & 0x3FF) << 5;
-                    let dst_base = (tile_i >> tile_x_shift << 10 | (tile_i & tile_i_x_mask)) << 3;
-                    let pal_base = tile as usize >> 8 & 0xF0;
-                    let src_x_xor_mask = if tile & 0x400 != 0 { 7 } else { 0 };
-                    let src_y_xor_mask = if tile & 0x800 != 0 { 7 } else { 0 };
-                    for y in 0..8 {
-                        let src_base = src_base | (y ^ src_y_xor_mask) << 2;
-                        let dst_base = dst_base | y << 10;
-                        unsafe {
+                            as usize;
+                        let src_base = (tile & 0x3FF) << 5;
+                        let dst_base =
+                            (tile_i >> tile_x_shift << 10 | (tile_i & tile_i_x_mask)) << 3;
+                        let pal_base = tile as usize >> 8 & 0xF0;
+                        let src_x_xor_mask = if tile & 0x400 != 0 { 7 } else { 0 };
+                        let src_y_xor_mask = if tile & 0x800 != 0 { 7 } else { 0 };
+                        for y in 0..8 {
+                            let src_base = src_base | (y ^ src_y_xor_mask) << 2;
+                            let dst_base = dst_base | y << 10;
                             for x in 0..8 {
                                 let src_x = x ^ src_x_xor_mask;
                                 let color_index = *self
@@ -758,30 +753,29 @@ impl View for BgMaps2d {
                         }
                     }
                 }
-            }
-            BgDisplayMode::Text256 | BgDisplayMode::ExtendedMap => {
-                let tile_x_shift = x_shift - 3;
-                let tile_i_x_mask = (1 << tile_x_shift) - 1;
-                for tile_i in 0..pixels_len / 64 {
-                    let tile = unsafe {
-                        self.data
+
+                BgDisplayMode::Text256 | BgDisplayMode::ExtendedMap => {
+                    let tile_x_shift = x_shift - 3;
+                    let tile_i_x_mask = (1 << tile_x_shift) - 1;
+                    for tile_i in 0..pixels_len / 64 {
+                        let tile = self
+                            .data
                             .tiles
                             .read_le_aligned_unchecked::<u16>(tile_i << 1)
-                            as usize
-                    };
-                    let src_base = (tile & 0x3FF) << 6;
-                    let dst_base = (tile_i >> tile_x_shift << 10 | (tile_i & tile_i_x_mask)) << 3;
-                    let pal_base = if self.data.cur_bg.uses_ext_palettes {
-                        tile as usize >> 4 & 0xF00
-                    } else {
-                        0
-                    };
-                    let src_x_xor_mask = if tile & 0x400 != 0 { 7 } else { 0 };
-                    let src_y_xor_mask = if tile & 0x800 != 0 { 7 } else { 0 };
-                    for y in 0..8 {
-                        let src_base = src_base | (y ^ src_y_xor_mask) << 3;
-                        let dst_base = dst_base | y << 10;
-                        unsafe {
+                            as usize;
+                        let src_base = (tile & 0x3FF) << 6;
+                        let dst_base =
+                            (tile_i >> tile_x_shift << 10 | (tile_i & tile_i_x_mask)) << 3;
+                        let pal_base = if self.data.cur_bg.uses_ext_palettes {
+                            tile as usize >> 4 & 0xF00
+                        } else {
+                            0
+                        };
+                        let src_x_xor_mask = if tile & 0x400 != 0 { 7 } else { 0 };
+                        let src_y_xor_mask = if tile & 0x800 != 0 { 7 } else { 0 };
+                        for y in 0..8 {
+                            let src_base = src_base | (y ^ src_y_xor_mask) << 3;
+                            let dst_base = dst_base | y << 10;
                             for x in 0..8 {
                                 let color_index = *self
                                     .data
@@ -797,17 +791,17 @@ impl View for BgMaps2d {
                         }
                     }
                 }
-            }
-            BgDisplayMode::Affine => {
-                let tile_x_shift = x_shift - 3;
-                let tile_i_x_mask = (1 << tile_x_shift) - 1;
-                for tile_i in 0..pixels_len / 64 {
-                    let src_base = (self.data.tiles[tile_i] as usize) << 6;
-                    let dst_base = (tile_i >> tile_x_shift << 10 | (tile_i & tile_i_x_mask)) << 3;
-                    for y in 0..8 {
-                        let src_base = src_base | y << 3;
-                        let dst_base = dst_base | y << 10;
-                        unsafe {
+
+                BgDisplayMode::Affine => {
+                    let tile_x_shift = x_shift - 3;
+                    let tile_i_x_mask = (1 << tile_x_shift) - 1;
+                    for tile_i in 0..pixels_len / 64 {
+                        let src_base = (self.data.tiles[tile_i] as usize) << 6;
+                        let dst_base =
+                            (tile_i >> tile_x_shift << 10 | (tile_i & tile_i_x_mask)) << 3;
+                        for y in 0..8 {
+                            let src_base = src_base | y << 3;
+                            let dst_base = dst_base | y << 10;
                             for (x, (dst_color, &color_index)) in self
                                 .pixel_buffer
                                 .get_unchecked_mut(dst_base..dst_base + 8)
@@ -828,12 +822,11 @@ impl View for BgMaps2d {
                         }
                     }
                 }
-            }
-            BgDisplayMode::ExtendedBitmap256 | BgDisplayMode::LargeBitmap => {
-                for y in 0..self.data.cur_bg.size[1] as usize {
-                    let src_base = y << x_shift;
-                    let dst_base = y << 10;
-                    unsafe {
+
+                BgDisplayMode::ExtendedBitmap256 | BgDisplayMode::LargeBitmap => {
+                    for y in 0..self.data.cur_bg.size[1] as usize {
+                        let src_base = y << x_shift;
+                        let dst_base = y << 10;
                         for (x, (dst_color, &color_index)) in self
                             .pixel_buffer
                             .get_unchecked_mut(
@@ -853,12 +846,11 @@ impl View for BgMaps2d {
                         }
                     }
                 }
-            }
-            BgDisplayMode::ExtendedBitmapDirect => {
-                for y in 0..self.data.cur_bg.size[1] as usize {
-                    let src_base = y << (x_shift + 1);
-                    let dst_base = y << 10;
-                    unsafe {
+
+                BgDisplayMode::ExtendedBitmapDirect => {
+                    for y in 0..self.data.cur_bg.size[1] as usize {
+                        let src_base = y << (x_shift + 1);
+                        let dst_base = y << 10;
                         for x in 0..self.data.cur_bg.size[0] as usize {
                             let color = self
                                 .data

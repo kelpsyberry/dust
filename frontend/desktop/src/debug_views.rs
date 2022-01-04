@@ -1,9 +1,7 @@
 mod cpu_state;
 use cpu_state::CpuState;
-mod arm7_memory;
-use arm7_memory::Arm7Memory;
-mod arm9_memory;
-use arm9_memory::Arm9Memory;
+mod cpu_memory;
+use cpu_memory::CpuMemory;
 mod cpu_disasm;
 use cpu_disasm::CpuDisasm;
 mod palettes_2d;
@@ -427,8 +425,8 @@ macro_rules! declare_structs {
 declare_structs!(
     singleton arm7_state, CpuState<false>, ToggleArm7State, UpdateArm7State;
     singleton arm9_state, CpuState<true>, ToggleArm9State, UpdateArm9State;
-    instanceable arm7_memory, Arm7Memory, ToggleArm7Memory, UpdateArm7Memory;
-    instanceable arm9_memory, Arm9Memory, ToggleArm9Memory, UpdateArm9Memory;
+    instanceable arm7_memory, CpuMemory<false>, ToggleArm7Memory, UpdateArm7Memory;
+    instanceable arm9_memory, CpuMemory<true>, ToggleArm9Memory, UpdateArm9Memory;
     instanceable arm7_disasm, CpuDisasm<false>, ToggleArm7Disasm, UpdateArm7Disasm;
     instanceable arm9_disasm, CpuDisasm<true>, ToggleArm9Disasm, UpdateArm9Disasm;
     instanceable palettes_2d, Palettes2D, TogglePalettes2D, UpdatePalettes2D;

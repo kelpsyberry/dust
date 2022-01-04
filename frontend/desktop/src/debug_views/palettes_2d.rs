@@ -5,7 +5,7 @@ use dust_core::{
     emu::Emu,
     utils::{zeroed_box, ByteSlice, Bytes},
 };
-use imgui::{sys as imgui_sys, ColorButton, StyleVar, TableFlags, Ui};
+use imgui::{ColorButton, StyleVar, TableFlags, Ui};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Engine2d {
@@ -89,54 +89,46 @@ impl View for Palettes2D {
     ) {
         let palette_data = frame_data.get_or_insert_with(Default::default);
         palette_data.selection = Some(*emu_state);
-        match emu_state.palette {
-            Palette::Bg => {
-                let base = ((emu_state.engine == Engine2d::B) as usize) << 10;
-                palette_data.data[..0x200].copy_from_slice(unsafe {
-                    &emu.gpu.vram.palette.as_byte_slice()[base..base + 0x200]
-                });
-            }
+        unsafe {
+            match emu_state.palette {
+                Palette::Bg => {
+                    let base = ((emu_state.engine == Engine2d::B) as usize) << 10;
+                    palette_data.data[..0x200]
+                        .copy_from_slice(&emu.gpu.vram.palette.as_byte_slice()[base..base + 0x200]);
+                }
 
-            Palette::Obj => {
-                let base = ((emu_state.engine == Engine2d::B) as usize) << 10 | 0x200;
-                palette_data.data[..0x200].copy_from_slice(unsafe {
-                    &emu.gpu.vram.palette.as_byte_slice()[base..base + 0x200]
-                });
-            }
+                Palette::Obj => {
+                    let base = ((emu_state.engine == Engine2d::B) as usize) << 10 | 0x200;
+                    palette_data.data[..0x200]
+                        .copy_from_slice(&emu.gpu.vram.palette.as_byte_slice()[base..base + 0x200]);
+                }
 
-            Palette::ExtBg => match emu_state.engine {
-                Engine2d::A => unsafe {
-                    emu.gpu.vram.read_a_bg_ext_pal_slice(
+                Palette::ExtBg => match emu_state.engine {
+                    Engine2d::A => emu.gpu.vram.read_a_bg_ext_pal_slice(
                         0,
                         0x8000,
                         palette_data.data.as_mut_ptr() as *mut usize,
-                    );
-                },
-                Engine2d::B => unsafe {
-                    emu.gpu.vram.read_b_bg_ext_pal_slice(
+                    ),
+                    Engine2d::B => emu.gpu.vram.read_b_bg_ext_pal_slice(
                         0,
                         0x8000,
                         palette_data.data.as_mut_ptr() as *mut usize,
-                    );
+                    ),
                 },
-            },
 
-            Palette::ExtObj => match emu_state.engine {
-                Engine2d::A => unsafe {
-                    emu.gpu.vram.read_a_obj_ext_pal_slice(
+                Palette::ExtObj => match emu_state.engine {
+                    Engine2d::A => emu.gpu.vram.read_a_obj_ext_pal_slice(
                         0,
                         0x2000,
                         palette_data.data.as_mut_ptr() as *mut usize,
-                    );
-                },
-                Engine2d::B => unsafe {
-                    emu.gpu.vram.read_b_obj_ext_pal_slice(
+                    ),
+                    Engine2d::B => emu.gpu.vram.read_b_obj_ext_pal_slice(
                         0,
                         0x2000,
                         palette_data.data.as_mut_ptr() as *mut usize,
-                    );
+                    ),
                 },
-            },
+            }
         }
     }
 
@@ -215,9 +207,7 @@ impl View for Palettes2D {
         ) {
             fn color_table(ui: &Ui, colors: ByteSlice) {
                 for i in 0..colors.len() >> 1 {
-                    unsafe {
-                        imgui_sys::igTableNextColumn();
-                    }
+                    ui.table_next_column();
                     let color = colors.read_le::<u16>(i << 1);
                     ColorButton::new(&format!("Color {:#05X}", i), rgb_5_to_rgba_f32(color))
                         .border(false)

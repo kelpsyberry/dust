@@ -17,6 +17,7 @@ use scrollbar::Scrollbar;
 mod y_pos;
 
 use dust_core::cpu::psr::Mode;
+use imgui::{StyleColor, StyleVar, Ui};
 
 pub fn rgb_5_to_rgba8(value: u16) -> u32 {
     let value = value as u32;
@@ -43,4 +44,62 @@ pub fn psr_mode_to_str(mode: Mode) -> &'static str {
         Mode::Undefined => "Undefined",
         Mode::System => "System",
     }
+}
+
+pub fn separator_with_width(ui: &Ui, width: f32) {
+    let color = ui.style_color(StyleColor::Separator);
+    let prev_cursor_pos = ui.cursor_pos();
+    let window_pos = ui.window_pos();
+    let left = [
+        window_pos[0] + prev_cursor_pos[0],
+        window_pos[1] + prev_cursor_pos[1] - ui.scroll_y(),
+    ];
+    let right = [
+        left[0]
+            + if width > 0.0 {
+                width
+            } else {
+                ui.content_region_avail()[0] + width
+            },
+        left[1],
+    ];
+    ui.get_window_draw_list()
+        .add_line(left, right, color)
+        .build();
+    ui.dummy([0.0, 0.0]);
+}
+
+pub fn layout_group(ui: &Ui, height: f32, bg_color: Option<[f32; 4]>, f: impl FnOnce(f32)) {
+    let (child_rounding, window_padding) = unsafe {
+        let style = ui.style();
+        (style.child_rounding, style.window_padding)
+    };
+
+    let prev_cursor_pos = ui.cursor_pos();
+    ui.set_cursor_pos([
+        prev_cursor_pos[0] + window_padding[0],
+        prev_cursor_pos[1] + window_padding[1],
+    ]);
+
+    if let Some(bg_color) = bg_color {
+        let window_pos = ui.window_pos();
+        let upper_left = [
+            window_pos[0] + prev_cursor_pos[0],
+            window_pos[1] - ui.scroll_y() + prev_cursor_pos[1],
+        ];
+        let lower_right = [
+            window_pos[0] + ui.content_region_max()[0],
+            upper_left[1] + height + 2.0 * window_padding[1],
+        ];
+        ui.get_window_draw_list()
+            .add_rect(upper_left, lower_right, bg_color)
+            .filled(true)
+            .rounding(child_rounding)
+            .build();
+    }
+
+    ui.group(|| f(window_padding[0]));
+
+    let _item_spacing = ui.push_style_var(StyleVar::ItemSpacing([0.0; 2]));
+    ui.dummy([0.0, window_padding[1]]);
 }

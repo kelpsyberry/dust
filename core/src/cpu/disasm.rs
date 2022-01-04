@@ -4,11 +4,7 @@ mod thumb;
 
 use super::Engine;
 use crate::{
-    cpu::{
-        arm7::bus::{read_16 as arm7_read_16, read_32 as arm7_read_32},
-        arm9::bus::read_32 as arm9_read_32,
-        bus::DebugCpuAccess,
-    },
+    cpu::{arm7, arm9, bus::DebugCpuAccess},
     emu::Emu,
 };
 use core::mem::replace;
@@ -52,16 +48,16 @@ impl Context {
         let end_pc = (end & !(1 | (!self.thumb as u32) << 1)).wrapping_add(8 >> self.thumb as u8);
         loop {
             let raw_instr = if ARM9 {
-                let word = arm9_read_32::<DebugCpuAccess, _, true>(emu, self.next_instr.addr);
+                let word = arm9::bus::read_32::<DebugCpuAccess, _, true>(emu, self.next_instr.addr);
                 if self.thumb {
                     word >> ((self.next_instr.addr & 3) << 3) & 0xFFFF
                 } else {
                     word
                 }
             } else if self.thumb {
-                arm7_read_16::<DebugCpuAccess, _>(emu, self.next_instr.addr) as u32
+                arm7::bus::read_16::<DebugCpuAccess, _>(emu, self.next_instr.addr) as u32
             } else {
-                arm7_read_32::<DebugCpuAccess, _>(emu, self.next_instr.addr)
+                arm7::bus::read_32::<DebugCpuAccess, _>(emu, self.next_instr.addr)
             };
             self.next_instr.raw = raw_instr;
 
@@ -90,16 +86,16 @@ impl Context {
 
     fn disassemble_single<E: Engine, const ARM9: bool>(mut self, emu: &mut Emu<E>) -> Instr {
         let raw_instr = if ARM9 {
-            let word = arm9_read_32::<DebugCpuAccess, _, true>(emu, self.next_instr.addr);
+            let word = arm9::bus::read_32::<DebugCpuAccess, _, true>(emu, self.next_instr.addr);
             if self.thumb {
                 word >> ((self.next_instr.addr & 3) << 3) & 0xFFFF
             } else {
                 word
             }
         } else if self.thumb {
-            arm7_read_16::<DebugCpuAccess, _>(emu, self.next_instr.addr) as u32
+            arm7::bus::read_16::<DebugCpuAccess, _>(emu, self.next_instr.addr) as u32
         } else {
-            arm7_read_32::<DebugCpuAccess, _>(emu, self.next_instr.addr)
+            arm7::bus::read_32::<DebugCpuAccess, _>(emu, self.next_instr.addr)
         };
         self.next_instr.raw = raw_instr;
 

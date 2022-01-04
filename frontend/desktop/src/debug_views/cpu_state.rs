@@ -1,7 +1,8 @@
 use super::{
     common::{
-        psr_mode_to_str,
+        layout_group, psr_mode_to_str,
         regs::{bitfield, regs_32, regs_32_default_label, BitfieldCommand},
+        separator_with_width,
     },
     FrameDataSlot, View,
 };
@@ -226,15 +227,12 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                 }
                 child_bg_color[3] *= 0.33;
 
-                let child_rounding = unsafe { ui.style().child_rounding };
-                let window_padding = unsafe { ui.style().window_padding };
-                let cell_padding = unsafe { ui.style().cell_padding[1] };
-                let item_spacing = unsafe { ui.style().item_spacing[1] };
+                let (cell_padding, item_spacing) = unsafe {
+                    let style = ui.style();
+                    (style.cell_padding[1], style.item_spacing[1])
+                };
 
-                let mut child_height = 2.0 * window_padding[1]
-                    + 2.0 * ui.frame_height()
-                    + 4.0 * cell_padding
-                    + item_spacing;
+                let mut child_height = 3.0 * ui.frame_height_with_spacing() + 2.0 * cell_padding;
                 if reg_bank != RegBank::User {
                     child_height += 2.0 * item_spacing + ui.text_line_height();
                     if reg_bank != cpu_reg_bank {
@@ -243,29 +241,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                     }
                 }
 
-                let prev_cursor_pos = ui.cursor_pos();
-                ui.set_cursor_pos([
-                    ui.window_content_region_min()[0] + window_padding[0],
-                    prev_cursor_pos[1] + window_padding[1],
-                ]);
-
-                let mut window_pos = ui.window_pos();
-                window_pos[1] -= ui.scroll_y();
-                let upper_left = [
-                    window_pos[0] + ui.window_content_region_min()[0],
-                    window_pos[1] + prev_cursor_pos[1],
-                ];
-                let lower_right = [
-                    window_pos[0] + ui.window_content_region_max()[0],
-                    upper_left[1] + child_height,
-                ];
-                ui.get_window_draw_list()
-                    .add_rect(upper_left, lower_right, child_bg_color)
-                    .filled(true)
-                    .rounding(child_rounding)
-                    .build();
-
-                ui.group(|| {
+                layout_group(ui, child_height, Some(child_bg_color), |window_padding_x| {
                     let (bank_str, r8_r12, r13_14, spsr) = match reg_bank {
                         RegBank::User => (
                             "usr",
@@ -306,17 +282,11 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                     };
 
                     if let Some(_table_token) = ui.begin_table_with_flags(
-                        "regs",
-                        4,
+                        "banked_regs",
+                        3,
                         TableFlags::BORDERS_INNER_V
                             | TableFlags::NO_CLIP
-                            | if reg_bank == RegBank::Fiq {
-                                // TODO: Figure out what imgui's issue is with SIZING_FIXED_FIT
-                                // here.
-                                TableFlags::SIZING_STRETCH_SAME
-                            } else {
-                                TableFlags::SIZING_FIXED_FIT
-                            },
+                            | TableFlags::SIZING_STRETCH_PROP,
                     ) {
                         let regs_32_label = |i: usize, max_digits| {
                             format!(
@@ -330,8 +300,8 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                         if reg_bank != RegBank::Fiq && cpu_reg_bank != RegBank::Fiq
                             || reg_bank == cpu_reg_bank
                         {
-                            for i in 8..13 {
-                                if i & 1 == 0 {
+                            for i in 0..5 {
+                                if i % 3 == 0 {
                                     ui.table_next_column();
                                 }
                                 ui.align_text_to_frame_padding();
@@ -346,7 +316,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                             }
                         } else {
                             regs_32(ui, 8, r8_r12, regs_32_label, |i| {
-                                if i & 1 == 0 {
+                                if (i - 8) % 3 == 0 {
                                     ui.table_next_column();
                                 }
                             });
@@ -359,34 +329,22 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                                 ui.same_line();
                                 ui.text("<cur>");
                                 ui.same_line();
-                                ui.dummy([window_padding[0] * 2.0, 0.0]);
+                                ui.dummy([window_padding_x, 0.0]);
                             }
                         } else {
                             regs_32(ui, 13, r13_14, regs_32_label, |i| {
                                 if i == 14 {
                                     ui.same_line();
-                                    ui.dummy([window_padding[0] * 2.0, 0.0]);
+                                    ui.dummy([window_padding_x, 0.0]);
                                 }
                             });
                             ui.same_line();
-                            ui.dummy([window_padding[0] * 2.0, 0.0]);
+                            ui.dummy([window_padding_x, 0.0]);
                         }
                     }
 
                     if let Some(spsr) = spsr {
-                        {
-                            let color = ui.style_color(StyleColor::Separator);
-                            let prev_cursor_pos = ui.cursor_pos();
-                            let left = [0, 1].map(|i| window_pos[i] + prev_cursor_pos[i]);
-                            let right = [
-                                left[0] + ui.content_region_avail()[0] - window_padding[0],
-                                left[1],
-                            ];
-                            ui.dummy([0.0, 0.0]);
-                            ui.get_window_draw_list()
-                                .add_line(left, right, color)
-                                .build();
-                        }
+                        separator_with_width(ui, -window_padding_x);
 
                         ui.text(&format!("SPSR_{}:", bank_str));
                         if reg_bank == cpu_reg_bank {
@@ -404,9 +362,6 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                             ));
                         }
                     }
-
-                    let _item_spacing = ui.push_style_var(StyleVar::ItemSpacing([0.0; 2]));
-                    ui.dummy([0.0, window_padding[1]]);
                 });
             }
         }
