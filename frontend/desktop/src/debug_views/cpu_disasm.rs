@@ -76,6 +76,13 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
         }
     }
 
+    fn handle_emu_state_changed<E: cpu::Engine>(
+        _prev: Option<&Self::EmuState>,
+        _new: Option<&Self::EmuState>,
+        _emu: &mut Emu<E>,
+    ) {
+    }
+
     fn prepare_frame_data<'a, E: cpu::Engine, S: FrameDataSlot<'a, Self::FrameData>>(
         emu_state: &Self::EmuState,
         emu: &mut Emu<E>,

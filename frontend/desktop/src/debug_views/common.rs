@@ -103,3 +103,20 @@ pub fn layout_group(ui: &Ui, height: f32, bg_color: Option<[f32; 4]>, f: impl Fn
     let _item_spacing = ui.push_style_var(StyleVar::ItemSpacing([0.0; 2]));
     ui.dummy([0.0, window_padding[1]]);
 }
+
+macro_rules! selectable_value {
+    ($ui: expr, $name: literal, $width_str: expr, $($fmt: tt)*) => {
+        $ui.align_text_to_frame_padding();
+        $ui.text(concat!($name, ": "));
+        $ui.same_line();
+        $ui.set_next_item_width(
+            unsafe { $ui.style().frame_padding[0] } * 2.0 + $ui.calc_text_size($width_str)[0],
+        );
+        $ui.input_text(
+            concat!("##", $name),
+            &mut format!($($fmt)*),
+        )
+        .read_only(true)
+        .build();
+    }
+}

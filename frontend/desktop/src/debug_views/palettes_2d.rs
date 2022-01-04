@@ -82,6 +82,13 @@ impl View for Palettes2D {
         self.cur_selection
     }
 
+    fn handle_emu_state_changed<E: Engine>(
+        _prev: Option<&Self::EmuState>,
+        _new: Option<&Self::EmuState>,
+        _emu: &mut Emu<E>,
+    ) {
+    }
+
     fn prepare_frame_data<'a, E: Engine, S: FrameDataSlot<'a, Self::FrameData>>(
         emu_state: &Self::EmuState,
         emu: &mut Emu<E>,

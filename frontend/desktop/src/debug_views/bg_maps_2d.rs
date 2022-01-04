@@ -161,6 +161,13 @@ impl View for BgMaps2d {
         self.cur_selection
     }
 
+    fn handle_emu_state_changed<E: Engine>(
+        _prev: Option<&Self::EmuState>,
+        _new: Option<&Self::EmuState>,
+        _emu: &mut Emu<E>,
+    ) {
+    }
+
     fn prepare_frame_data<'a, E: Engine, S: FrameDataSlot<'a, Self::FrameData>>(
         emu_state: &Self::EmuState,
         emu: &mut Emu<E>,
@@ -487,7 +494,7 @@ impl View for BgMaps2d {
         ui.set_next_item_width(two_widgets_total_width * (2.0 / 3.0));
         let mut cur_bg_index = self.cur_selection.bg_index.get();
         selection_updated |= Slider::new("##bg_index", 0_u8, 3)
-            .display_format(&format!("BG{}", cur_bg_index))
+            .display_format("BG%d")
             .flags(SliderFlags::NO_INPUT)
             .build(ui, &mut cur_bg_index);
         self.cur_selection.bg_index = BgIndex::new(cur_bg_index);

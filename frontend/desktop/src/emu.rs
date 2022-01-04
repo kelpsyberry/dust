@@ -340,7 +340,7 @@ pub(super) fn main(
 
                 #[cfg(feature = "debug-views")]
                 Message::DebugViews(message) => {
-                    debug_views.handle_message(message);
+                    debug_views.handle_message(&mut emu, message);
                 }
 
                 Message::Reset => {
@@ -392,9 +392,6 @@ pub(super) fn main(
             shared_state.stopped.store(true, Ordering::Relaxed);
         }
         frame.fb.0.copy_from_slice(&emu.gpu.framebuffer.0);
-
-        #[cfg(feature = "debug-views")]
-        debug_views.prepare_frame_data(&mut emu, &mut frame.debug);
 
         #[cfg(feature = "debug-views")]
         debug_views.prepare_frame_data(&mut emu, &mut frame.debug);

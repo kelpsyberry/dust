@@ -36,6 +36,58 @@ bitfield_debug! {
     }
 }
 
+impl Control {
+    #[inline]
+    pub fn volume(&self) -> u8 {
+        let volume_raw = self.volume_raw();
+        if volume_raw == 127 {
+            128
+        } else {
+            volume_raw
+        }
+    }
+
+    #[inline]
+    pub fn volume_shift(&self) -> u8 {
+        [4, 3, 2, 0][self.volume_shift_raw() as usize]
+    }
+
+    #[inline]
+    pub fn pan(&self) -> u8 {
+        let pan_raw = self.pan_raw();
+        if pan_raw == 127 {
+            128
+        } else {
+            pan_raw
+        }
+    }
+
+    #[inline]
+    pub fn repeat_mode(&self) -> RepeatMode {
+        match self.repeat_mode_raw() {
+            0 => RepeatMode::Manual,
+            2 => RepeatMode::OneShot,
+            // Arisotura documented in the GBATEK addendum that repeat mode 3 behaves the same as 1
+            _ => RepeatMode::LoopInfinite,
+        }
+    }
+
+    #[inline]
+    pub fn format(&self, i: Index) -> Format {
+        match self.format_raw() {
+            0 => Format::Pcm8,
+            1 => Format::Pcm16,
+            2 => Format::Adpcm,
+            _ => match i.get() {
+                8..=13 => Format::PsgWave,
+                14..=15 => Format::PsgNoise,
+                // TODO: What happens?
+                _ => Format::Silence,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RepeatMode {
     Manual,
@@ -110,7 +162,7 @@ pub struct Channel {
     total_samples: u32,
     cur_sample_index: i32,
     cur_src_off: u32,
-    #[cfg(not(feature = "xq-audio"))]
+    #[cfg(any(not(feature = "xq-audio"), feature = "channel-audio-capture"))]
     last_sample: i16,
     fifo_read_pos: FifoReadPos,
     fifo_write_pos: FifoWritePos,
@@ -152,7 +204,7 @@ impl Channel {
             total_samples: 0,
             cur_sample_index: 0,
             cur_src_off: 0,
-            #[cfg(not(feature = "xq-audio"))]
+            #[cfg(any(not(feature = "xq-audio"), feature = "channel-audio-capture"))]
             last_sample: 0,
             fifo_read_pos: FifoReadPos::new(0),
             fifo_write_pos: FifoWritePos::new(0),
@@ -188,17 +240,9 @@ impl Channel {
 
         self.start |= !prev.running();
 
-        self.volume = self.control.volume_raw();
-        if self.volume == 127 {
-            self.volume = 128;
-        }
-
-        self.volume_shift = [4, 3, 2, 0][self.control.volume_shift_raw() as usize];
-
-        self.pan = self.control.pan_raw();
-        if self.pan == 127 {
-            self.pan = 128;
-        }
+        self.volume = self.control.volume();
+        self.volume_shift = self.control.volume_shift();
+        self.pan = self.control.pan();
 
         self.repeat_mode = match self.control.repeat_mode_raw() {
             0 => {
@@ -331,7 +375,7 @@ impl Channel {
             self.hist.copy_within(1.., 0);
             self.hist[3] = sample as InterpSample / 32768.0;
         }
-        #[cfg(not(feature = "xq-audio"))]
+        #[cfg(any(not(feature = "xq-audio"), feature = "channel-audio-capture"))]
         {
             self.last_sample = sample;
         }
@@ -560,6 +604,11 @@ impl Channel {
         emu.audio.channels[i.get() as usize].push_sample(0);
     }
 
+    #[cfg(feature = "channel-audio-capture")]
+    pub(super) fn last_sample(&self) -> i16 {
+        self.last_sample
+    }
+
     #[allow(clippy::many_single_char_names)]
     pub(super) fn run(
         emu: &mut Emu<impl cpu::Engine>,
@@ -620,13 +669,15 @@ impl Channel {
                 f(emu, i);
             }
         } else {
-            channel.push_sample(0);
             #[cfg(feature = "xq-audio")]
-            while timer_counter >> 16 != 0 {
-                channel.last_sample_time = Some(arm7::Timestamp(
-                    time.0 - ((timer_counter - (1 << 16)) << 1) as RawTimestamp,
-                ));
-                timer_counter = timer_counter - (1 << 16) + timer_reload;
+            {
+                channel.push_sample(0);
+                while timer_counter >> 16 != 0 {
+                    channel.last_sample_time = Some(arm7::Timestamp(
+                        time.0 - ((timer_counter - (1 << 16)) << 1) as RawTimestamp,
+                    ));
+                    timer_counter = timer_counter - (1 << 16) + timer_reload;
+                }
             }
         }
         let channel = &mut emu.audio.channels[i.get() as usize];

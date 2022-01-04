@@ -60,6 +60,12 @@ impl Backend for DummyBackend {
     }
 }
 
+#[cfg(feature = "channel-audio-capture")]
+pub struct ChannelAudioCaptureData {
+    pub mask: u16,
+    pub buffers: [Vec<i16>; 16],
+}
+
 pub struct Audio {
     #[cfg(feature = "log")]
     logger: slog::Logger,
@@ -76,6 +82,8 @@ pub struct Audio {
     control: Control,
     bias: u16,
     master_volume: u8,
+    #[cfg(feature = "channel-audio-capture")]
+    pub channel_audio_capture_data: ChannelAudioCaptureData,
 }
 
 impl Audio {
@@ -88,7 +96,7 @@ impl Audio {
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Self {
         macro_rules! channels {
-            ($($i: expr),*$(,)?) => {
+            ($($i: expr),*) => {
                 [$(Channel::new(
                     channel::Index::new($i),
                     #[cfg(feature = "log")] logger.new(slog::o!("channel" => $i)),
@@ -119,6 +127,23 @@ impl Audio {
             control: Control(0),
             bias: 0,
             master_volume: 0,
+            #[cfg(feature = "channel-audio-capture")]
+            channel_audio_capture_data: {
+                macro_rules! buffers {
+                    ($($i: expr),*) => {
+                        [
+                            $({
+                                let _ = $i;
+                                Vec::new()
+                            }),*
+                        ]
+                    };
+                }
+                ChannelAudioCaptureData {
+                    mask: 0,
+                    buffers: buffers!(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15),
+                }
+            },
         }
     }
 
@@ -192,7 +217,7 @@ impl Audio {
                     if cfg!(feature = "xq-audio")
                         || emu.audio.channels[$i].control().running()
                     {
-                        $(let $ident =)* Channel::run(
+                        let sample = Channel::run(
                             emu,
                             channel::Index::new($i as u8),
                             #[cfg(feature = "xq-audio")]
@@ -201,12 +226,27 @@ impl Audio {
                             emu.audio.xq_interp_method,
                             #[cfg(feature = "xq-audio")]
                             time,
-                        )
-                        $(
-                            ;
-                            $code
-                        )*
+                        );
+                        #[cfg(feature = "channel-audio-capture")]
+                        if emu.audio.channel_audio_capture_data.mask & 1 << $i != 0 {
+                            emu.audio.channel_audio_capture_data.buffers[$i].push(
+                                emu.audio.channels[$i].last_sample(),
+                            );
+                        }
+                        #[allow(path_statements)]
+                        {
+                            sample
+                            $(
+                                ;
+                                let $ident = sample;
+                                $code
+                            )*
+                        }
                     } else {
+                        #[cfg(feature = "channel-audio-capture")]
+                        if emu.audio.channel_audio_capture_data.mask & 1 << $i != 0 {
+                            emu.audio.channel_audio_capture_data.buffers[$i].push(0);
+                        }
                         [INTERP_SAMPLE_ZERO; 2]
                         $(
                             ;

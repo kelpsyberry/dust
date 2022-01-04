@@ -23,6 +23,7 @@ interp-r15-write-checks = []
 pu-checks = []
 
 xq-audio = []
+channel-audio-capture = []
 debugger-hooks = ["bft-r", "bft-w"]
 
 [dependencies]

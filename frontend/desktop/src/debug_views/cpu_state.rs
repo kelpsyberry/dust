@@ -45,6 +45,13 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
 
     fn emu_state(&self) -> Self::EmuState {}
 
+    fn handle_emu_state_changed<E: Engine>(
+        _prev: Option<&Self::EmuState>,
+        _new: Option<&Self::EmuState>,
+        _emu: &mut Emu<E>,
+    ) {
+    }
+
     fn prepare_frame_data<'a, E: Engine, S: FrameDataSlot<'a, Self::FrameData>>(
         _emu_state: &Self::EmuState,
         emu: &mut Emu<E>,
@@ -81,7 +88,6 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
     ) -> Option<Self::EmuState> {
         if let Some(reg_values) = self.reg_values.as_mut() {
             let _mono_font_token = ui.push_font(window.mono_font);
-            let _frame_rounding = ui.push_style_var(StyleVar::FrameRounding(0.0));
             let _item_spacing = ui.push_style_var(StyleVar::ItemSpacing([0.0, unsafe {
                 ui.style().item_spacing[1]
             }]));
@@ -134,14 +140,17 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
             };
 
             ui.text("CPSR:");
-            bitfield(
-                ui,
-                2.0,
-                false,
-                true,
-                reg_values.cpsr.raw() as usize,
-                psr_fields,
-            );
+            {
+                let _frame_rounding = ui.push_style_var(StyleVar::FrameRounding(0.0));
+                bitfield(
+                    ui,
+                    2.0,
+                    false,
+                    true,
+                    reg_values.cpsr.raw() as usize,
+                    psr_fields,
+                );
+            }
 
             ui.text(&format!(
                 "Mode: {}",
@@ -152,14 +161,17 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
 
             ui.text("SPSR: ");
             if mode.is_exception() {
-                bitfield(
-                    ui,
-                    2.0,
-                    false,
-                    true,
-                    reg_values.spsr.raw() as usize,
-                    psr_fields,
-                );
+                {
+                    let _frame_rounding = ui.push_style_var(StyleVar::FrameRounding(0.0));
+                    bitfield(
+                        ui,
+                        2.0,
+                        false,
+                        true,
+                        reg_values.spsr.raw() as usize,
+                        psr_fields,
+                    );
+                }
 
                 ui.text(&format!(
                     "Mode: {}",
@@ -351,7 +363,11 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                             ui.same_line();
                             ui.text("<current>");
                         } else {
-                            bitfield(ui, 2.0, false, true, spsr.raw() as usize, psr_fields);
+                            {
+                                let _frame_rounding =
+                                    ui.push_style_var(StyleVar::FrameRounding(0.0));
+                                bitfield(ui, 2.0, false, true, spsr.raw() as usize, psr_fields);
+                            }
 
                             ui.text(&format!(
                                 "Mode: {}",

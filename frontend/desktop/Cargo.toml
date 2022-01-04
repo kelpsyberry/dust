@@ -7,7 +7,7 @@ publish = false
 [features]
 default = ["debug-views", "log", "xq-audio", "discord-presence"]
 
-debug-views = ["bitflags", "dust-core/disasm"]
+debug-views = ["bitflags", "dust-core/disasm", "dust-core/channel-audio-capture"]
 log = ["slog", "slog-term", "slog-async", "dust-core/log"]
 discord-presence = ["discord-rpc"]
 
