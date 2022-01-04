@@ -1,8 +1,10 @@
 use super::super::{
-    super::{common::StateSource, Engine},
     add_bus_cycles, apply_reg_interlock_1, handle_undefined, prefetch_thumb, reload_pipeline,
 };
-use crate::emu::Emu;
+use crate::{
+    cpu::interpreter::{common::StateSource, Engine},
+    emu::Emu,
+};
 use core::intrinsics::unlikely;
 
 pub fn b(emu: &mut Emu<Engine>, instr: u16) {

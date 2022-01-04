@@ -1,9 +1,10 @@
-use super::super::{
-    super::{common::StateSource, Engine},
-    add_cycles, reload_pipeline,
-};
+use super::super::{add_cycles, reload_pipeline};
 use crate::{
-    cpu::{arm7::bus, bus::CpuAccess},
+    cpu::{
+        arm7::bus,
+        bus::CpuAccess,
+        interpreter::{common::StateSource, Engine},
+    },
     emu::Emu,
     utils::schedule::RawTimestamp,
 };

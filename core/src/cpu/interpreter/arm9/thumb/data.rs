@@ -1,13 +1,16 @@
 use super::super::{
-    super::{
+    add_bus_cycles, add_cycles, apply_reg_interlock_1, apply_reg_interlocks_2, prefetch_thumb,
+    reload_pipeline, write_reg_clear_interlock_ab, write_reg_interlock_ab,
+};
+use crate::{
+    cpu::interpreter::{
         alu_utils::{arithmetic, bit_ops, shifts},
         common::{DpOpImm8Ty, DpOpRegTy, ShiftImmTy, StateSource},
         Engine,
     },
-    add_bus_cycles, add_cycles, apply_reg_interlock_1, apply_reg_interlocks_2, prefetch_thumb,
-    reload_pipeline, write_reg_clear_interlock_ab, write_reg_interlock_ab,
+    emu::Emu,
+    utils::schedule::RawTimestamp,
 };
-use crate::{emu::Emu, utils::schedule::RawTimestamp};
 
 // TODO: Check shift by reg timings, they might be different from their equivalent ARM instructions'
 //       ones (at the moment, they're assumed to be the same, which is to say 2 cycles, reading the

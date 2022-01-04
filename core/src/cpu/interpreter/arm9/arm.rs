@@ -7,14 +7,14 @@ use mem::*;
 mod other;
 use other::*;
 
-use super::{
-    super::{
+use super::{add_bus_cycles, prefetch_arm};
+use crate::{
+    cpu::interpreter::{
         common::{DpOpTy, DpOperand, MiscAddressing, ShiftTy, WbAddressing, WbOffTy},
         Engine,
     },
-    add_bus_cycles, prefetch_arm,
+    emu::Emu,
 };
-use crate::emu::Emu;
 
 static INSTR_TABLE_COND: [fn(&mut Emu<Engine>, u32); 0x1000] =
     include!(concat!(env!("OUT_DIR"), "/interp_arm9_arm_cond.rs"));

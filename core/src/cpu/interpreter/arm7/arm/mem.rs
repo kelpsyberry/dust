@@ -1,13 +1,15 @@
-use super::super::{
-    super::{
-        alu_utils::shifts,
-        common::{MiscAddressing, ShiftTy, StateSource, WbAddressing, WbOffTy},
-        Engine,
-    },
-    add_cycles, reload_pipeline, restore_spsr,
-};
+use super::super::{add_cycles, reload_pipeline, restore_spsr};
 use crate::{
-    cpu::{arm7::bus, bus::CpuAccess, psr::Mode},
+    cpu::{
+        arm7::bus,
+        bus::CpuAccess,
+        interpreter::{
+            alu_utils::shifts,
+            common::{MiscAddressing, ShiftTy, StateSource, WbAddressing, WbOffTy},
+            Engine,
+        },
+        psr::Mode,
+    },
     emu::Emu,
     utils::schedule::RawTimestamp,
 };

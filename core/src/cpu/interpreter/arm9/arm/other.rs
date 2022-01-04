@@ -1,10 +1,10 @@
 use super::super::{
-    super::Engine, add_bus_cycles, add_cycles, apply_reg_interlock_1, handle_prefetch_abort,
-    handle_swi, handle_undefined, prefetch_arm, set_cpsr_update_control,
-    write_reg_clear_interlock_ab, write_reg_interlock,
+    add_bus_cycles, add_cycles, apply_reg_interlock_1, handle_prefetch_abort, handle_swi,
+    handle_undefined, prefetch_arm, set_cpsr_update_control, write_reg_clear_interlock_ab,
+    write_reg_interlock,
 };
 use crate::{
-    cpu::{arm9::Arm9, psr::Cpsr},
+    cpu::{arm9::Arm9, interpreter::Engine, psr::Cpsr},
     emu::Emu,
 };
 use core::intrinsics::{likely, unlikely};

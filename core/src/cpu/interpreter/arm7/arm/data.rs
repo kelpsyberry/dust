@@ -1,12 +1,13 @@
-use super::super::{
-    super::{
+use super::super::{add_cycles, multiply_cycles, reload_pipeline, restore_spsr};
+use crate::{
+    cpu::interpreter::{
         alu_utils::{arithmetic, bit_ops, shifts},
         common::{DpOpTy, DpOperand, ShiftTy, StateSource},
         Engine,
     },
-    add_cycles, multiply_cycles, reload_pipeline, restore_spsr,
+    emu::Emu,
+    utils::schedule::RawTimestamp,
 };
-use crate::{emu::Emu, utils::schedule::RawTimestamp};
 use core::intrinsics::unlikely;
 
 pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: bool>(

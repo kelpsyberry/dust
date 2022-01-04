@@ -3,11 +3,13 @@ mod all;
 mod avx2;
 
 use super::{
-    super::{vram::Vram, Scanline, SCREEN_HEIGHT, SCREEN_WIDTH},
     AffineBgIndex, BgIndex, BgObjPixel, Engine2d, OamAttr0, OamAttr1, OamAttr2, ObjPixel, Role,
     WindowPixel,
 };
-use crate::utils::make_zero;
+use crate::{
+    gpu::{vram::Vram, Scanline, SCREEN_HEIGHT, SCREEN_WIDTH},
+    utils::make_zero,
+};
 use core::mem::MaybeUninit;
 
 pub struct FnPtrs<R: Role> {

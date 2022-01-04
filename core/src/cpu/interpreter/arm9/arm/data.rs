@@ -1,14 +1,16 @@
 use super::super::{
-    super::{
-        alu_utils::{arithmetic, bit_ops, shifts},
-        common::{DpOpTy, DpOperand, ShiftTy, StateSource},
-        Engine,
-    },
     add_bus_cycles, add_cycles, apply_reg_interlock_1, apply_reg_interlocks_2,
     apply_reg_interlocks_3, prefetch_arm, reload_pipeline, restore_spsr,
     write_reg_clear_interlock_ab, write_reg_interlock_ab,
 };
-use crate::emu::Emu;
+use crate::{
+    cpu::interpreter::{
+        alu_utils::{arithmetic, bit_ops, shifts},
+        common::{DpOpTy, DpOperand, ShiftTy, StateSource},
+        Engine,
+    },
+    emu::Emu,
+};
 use core::intrinsics::{likely, unlikely};
 
 // TODO: Check timing for r15 writes, the ARM9E-S manual says some operations take 4 bus cycles and

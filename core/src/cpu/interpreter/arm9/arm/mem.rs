@@ -1,15 +1,19 @@
 use super::super::{
-    super::{
-        alu_utils::shifts,
-        common::{MiscAddressing, ShiftTy, StateSource, WbAddressing, WbOffTy},
-        Engine,
-    },
     add_bus_cycles, add_cycles, add_interlock, apply_reg_interlock_1, apply_reg_interlocks_2,
     apply_reg_interlocks_3, can_read, can_write, handle_data_abort, prefetch_arm, reload_pipeline,
     restore_spsr, write_reg_clear_interlock_ab, write_reg_interlock,
 };
 use crate::{
-    cpu::{arm9::bus, bus::CpuAccess, psr::Mode},
+    cpu::{
+        arm9::bus,
+        bus::CpuAccess,
+        interpreter::{
+            alu_utils::shifts,
+            common::{MiscAddressing, ShiftTy, StateSource, WbAddressing, WbOffTy},
+            Engine,
+        },
+        psr::Mode,
+    },
     emu::Emu,
     utils::schedule::RawTimestamp,
 };

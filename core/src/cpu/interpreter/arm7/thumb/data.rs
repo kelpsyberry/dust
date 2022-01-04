@@ -1,12 +1,12 @@
-use super::super::{
-    super::{
+use super::super::{add_cycles, multiply_cycles, reload_pipeline};
+use crate::{
+    cpu::interpreter::{
         alu_utils::{arithmetic, bit_ops, shifts},
         common::{DpOpImm8Ty, DpOpRegTy, ShiftImmTy, StateSource},
         Engine,
     },
-    add_cycles, multiply_cycles, reload_pipeline,
+    emu::Emu,
 };
-use crate::emu::Emu;
 
 pub fn add_sub_reg_imm3<const SUB: bool, const IMM3: bool, const IS_MOV: bool>(
     emu: &mut Emu<Engine>,

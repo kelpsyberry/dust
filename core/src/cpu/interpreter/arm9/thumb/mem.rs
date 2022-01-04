@@ -1,11 +1,14 @@
 use super::super::{
-    super::{common::StateSource, Engine},
     add_bus_cycles, add_cycles, add_interlock, apply_reg_interlock_1, apply_reg_interlocks_2,
     apply_reg_interlocks_3, can_read, can_write, handle_data_abort, prefetch_thumb,
     reload_pipeline, write_reg_interlock,
 };
 use crate::{
-    cpu::{arm9::bus, bus::CpuAccess},
+    cpu::{
+        arm9::bus,
+        bus::CpuAccess,
+        interpreter::{common::StateSource, Engine},
+    },
     emu::Emu,
     utils::schedule::RawTimestamp,
 };

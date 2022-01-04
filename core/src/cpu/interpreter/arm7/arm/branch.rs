@@ -1,8 +1,8 @@
-use super::super::{
-    super::{common::StateSource, Engine},
-    reload_pipeline,
+use super::super::reload_pipeline;
+use crate::{
+    cpu::interpreter::{common::StateSource, Engine},
+    emu::Emu,
 };
-use crate::emu::Emu;
 
 pub fn b<const LINK: bool>(emu: &mut Emu<Engine>, instr: u32) {
     let r15 = reg!(emu.arm7, 15);

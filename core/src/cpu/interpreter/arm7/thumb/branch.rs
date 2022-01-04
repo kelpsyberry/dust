@@ -1,8 +1,8 @@
-use super::super::{
-    super::{common::StateSource, Engine},
-    reload_pipeline,
+use super::super::reload_pipeline;
+use crate::{
+    cpu::interpreter::{common::StateSource, Engine},
+    emu::Emu,
 };
-use crate::emu::Emu;
 
 pub fn b(emu: &mut Emu<Engine>, instr: u16) {
     let branch_addr = reg!(emu.arm7, 15).wrapping_add(((instr as i32) << 21 >> 20) as u32);

@@ -1,8 +1,8 @@
-use super::super::{
-    super::{common::StateSource, Engine},
-    add_bus_cycles, apply_reg_interlock_1, prefetch_arm, reload_pipeline,
+use super::super::{add_bus_cycles, apply_reg_interlock_1, prefetch_arm, reload_pipeline};
+use crate::{
+    cpu::interpreter::{common::StateSource, Engine},
+    emu::Emu,
 };
-use crate::emu::Emu;
 
 // NOTE: When linking, there's no need to clear previous interlocks for r14, as they will never
 // last more than the amount of bus cycles taken by the branch.

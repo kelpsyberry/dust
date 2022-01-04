@@ -1,9 +1,12 @@
-use super::{
-    super::{bus::ptrs::Ptrs as SysBusPtrs, cp15::ptrs::Ptrs, CoreData, Engine},
-    fallback,
+use super::fallback;
+use crate::{
+    cpu::{
+        arm9::{bus::ptrs::Ptrs as SysBusPtrs, cp15::ptrs::Ptrs, CoreData, Engine},
+        bus::AccessType,
+    },
+    emu::Emu,
+    utils::MemValue,
 };
-use crate::utils::MemValue;
-use crate::{cpu::bus::AccessType, emu::Emu};
 
 #[inline]
 pub fn timing_16<E: Engine, const READ: bool>(emu: &Emu<E>, addr: u32) -> u8 {
