@@ -1,3 +1,4 @@
+pub mod capture;
 pub mod channel;
 mod io;
 
@@ -6,6 +7,7 @@ use crate::{
     emu::Emu,
     utils::{bitfield_debug, schedule::RawTimestamp},
 };
+use capture::CaptureUnit;
 use cfg_if::cfg_if;
 use channel::Channel;
 
@@ -79,6 +81,7 @@ pub struct Audio {
     sample_chunk: Vec<[Sample; 2]>,
     pub sample_chunk_size: usize,
     pub channels: [Channel; 16],
+    pub capture: [CaptureUnit; 2],
     control: Control,
     bias: u16,
     master_volume: u8,
@@ -124,6 +127,7 @@ impl Audio {
             sample_chunk: Vec::with_capacity(sample_chunk_size),
             sample_chunk_size,
             channels,
+            capture: [CaptureUnit::new(), CaptureUnit::new()],
             control: Control(0),
             bias: 0,
             master_volume: 0,
@@ -210,8 +214,28 @@ impl Audio {
             emu.audio.xq_last_sample_ready_time = time;
         }
         let output = if emu.audio.control.master_enable() {
-            let mut total_l = INTERP_SAMPLE_ZERO;
-            let mut total_r = INTERP_SAMPLE_ZERO;
+            fn channel_output_to_i16(sample: InterpSample) -> i16 {
+                #[cfg(not(feature = "xq-audio"))]
+                {
+                    (sample >> 11) as i16
+                }
+                #[cfg(feature = "xq-audio")]
+                {
+                    (sample * (1 << 5) as InterpSample) as i16
+                }
+            }
+
+            fn mixer_output_to_i32(sample: InterpSample) -> i32 {
+                #[cfg(not(feature = "xq-audio"))]
+                {
+                    (sample >> 8) as i32
+                }
+                #[cfg(feature = "xq-audio")]
+                {
+                    (sample * (1 << 16) as InterpSample) as i32
+                }
+            }
+
             macro_rules! channel_output {
                 ($i: expr$(, |$ident: ident| $code: block)?) => {
                     if cfg!(feature = "xq-audio")
@@ -230,7 +254,7 @@ impl Audio {
                         #[cfg(feature = "channel-audio-capture")]
                         if emu.audio.channel_audio_capture_data.mask & 1 << $i != 0 {
                             emu.audio.channel_audio_capture_data.buffers[$i].push(
-                                emu.audio.channels[$i].last_sample(),
+                                channel_output_to_i16(sample),
                             );
                         }
                         #[allow(path_statements)]
@@ -247,43 +271,148 @@ impl Audio {
                         if emu.audio.channel_audio_capture_data.mask & 1 << $i != 0 {
                             emu.audio.channel_audio_capture_data.buffers[$i].push(0);
                         }
-                        [INTERP_SAMPLE_ZERO; 2]
-                        $(
-                            ;
-                            let $ident = ();
-                            let _ = $ident;
-                        )*
+                        #[allow(path_statements)]
+                        {
+                            INTERP_SAMPLE_ZERO
+                            $(
+                                ;
+                                let $ident = ();
+                                let _ = $ident;
+                            )*
+                        }
                     }
                 };
             }
-            for i in [0, 2].into_iter().chain(4..16) {
-                channel_output!(i, |output| {
-                    total_l += output[0];
-                    total_r += output[1];
+
+            macro_rules! pan {
+                ($sample: expr, $i: expr) => {{
+                    let r_vol = emu.audio.channels[$i].pan();
+                    let l_vol = (128 - r_vol) as InterpSample;
+                    let r_vol = r_vol as InterpSample;
+                    #[cfg(not(feature = "xq-audio"))]
+                    {
+                        [($sample * l_vol) >> 10, ($sample * r_vol) >> 10]
+                    }
+                    #[cfg(feature = "xq-audio")]
+                    [
+                        ($sample * l_vol) * (1.0 / (1 << 18) as InterpSample),
+                        ($sample * r_vol) * (1.0 / (1 << 18) as InterpSample),
+                    ]
+                }};
+            }
+
+            let mut total_l = INTERP_SAMPLE_ZERO;
+            let mut total_r = INTERP_SAMPLE_ZERO;
+
+            let mut channel_0_output = INTERP_SAMPLE_ZERO;
+            channel_output!(0, |sample| {
+                channel_0_output = sample;
+                let [l, r] = pan!(sample, 0);
+                total_l += l;
+                total_r += r;
+            });
+
+            let channel_1_output = channel_output!(1);
+            let channel_1_panned_output = pan!(channel_1_output, 1);
+
+            if !emu.audio.control.channel_1_mixer_output_disabled()
+                && (!emu.audio.capture[0].addition_enabled()
+                    || emu.audio.channels[0].control().running())
+            {
+                total_l += channel_1_panned_output[0];
+                total_r += channel_1_panned_output[1];
+            }
+
+            let mut channel_2_output = INTERP_SAMPLE_ZERO;
+            channel_output!(2, |sample| {
+                channel_2_output = sample;
+                let [l, r] = pan!(sample, 2);
+                total_l += l;
+                total_r += r;
+            });
+
+            let channel_3_output = channel_output!(3);
+            let channel_3_panned_output = pan!(channel_3_output, 3);
+
+            if !emu.audio.control.channel_3_mixer_output_disabled()
+                && (!emu.audio.capture[1].addition_enabled()
+                    || emu.audio.channels[1].control().running())
+            {
+                total_l += channel_3_panned_output[0];
+                total_r += channel_3_panned_output[1];
+            }
+
+            for i in 4..16 {
+                channel_output!(i, |sample| {
+                    let [l, r] = pan!(sample, i);
+                    total_l += l;
+                    total_r += r;
                 });
             }
-            let channel_1_output = channel_output!(1);
-            let channel_3_output = channel_output!(3);
-            if !emu.audio.control.channel_1_mixer_output_disabled() {
-                total_l += channel_1_output[0];
-                total_r += channel_1_output[1];
+
+            #[cfg(not(feature = "xq-audio"))]
+            let elapsed = 512;
+            #[cfg(feature = "xq-audio")]
+            let elapsed = 512 >> emu.audio.xq_sample_rate_shift;
+
+            macro_rules! update_capture_unit {
+                ($i: literal, $sample: expr) => {
+                    if emu.audio.capture[$i].control().running() {
+                        emu.audio.capture[$i].timer_counter += elapsed;
+                        if emu.audio.capture[$i].timer_counter >> 16 != 0 {
+                            CaptureUnit::run(emu, capture::Index::new($i), $sample);
+                        }
+                    }
+                };
             }
-            if !emu.audio.control.channel_3_mixer_output_disabled() {
-                total_l += channel_3_output[0];
-                total_r += channel_3_output[1];
-            }
+
+            update_capture_unit!(0, {
+                if emu.audio.capture[0].control().capture_channel() {
+                    let channel_0_capture_output = channel_output_to_i16(channel_0_output);
+                    if emu.audio.capture[0].addition_enabled() {
+                        channel_0_capture_output
+                            .wrapping_add(channel_output_to_i16(channel_1_output))
+                    } else if channel_0_capture_output < 0 && channel_1_output < INTERP_SAMPLE_ZERO
+                    {
+                        -0x8000
+                    } else {
+                        channel_0_capture_output
+                    }
+                } else {
+                    mixer_output_to_i32(total_l).clamp(-0x8000, 0x7FFF) as i16
+                }
+            });
+
+            update_capture_unit!(1, {
+                if emu.audio.capture[1].control().capture_channel() {
+                    let channel_2_capture_output = channel_output_to_i16(channel_2_output);
+                    if emu.audio.capture[1].addition_enabled() {
+                        channel_2_capture_output
+                            .wrapping_add(channel_output_to_i16(channel_3_output))
+                    } else if channel_2_capture_output < 0 && channel_3_output < INTERP_SAMPLE_ZERO
+                    {
+                        -0x8000
+                    } else {
+                        channel_2_capture_output
+                    }
+                } else {
+                    mixer_output_to_i32(total_r).clamp(-0x8000, 0x7FFF) as i16
+                }
+            });
+
             let output_l = match emu.audio.control.l_output_src() {
                 0 => total_l,
-                1 => channel_1_output[0],
-                2 => channel_3_output[0],
-                _ => channel_1_output[0] + channel_3_output[0],
+                1 => channel_1_panned_output[0],
+                2 => channel_3_panned_output[0],
+                _ => channel_1_panned_output[0] + channel_3_panned_output[0],
             };
             let output_r = match emu.audio.control.r_output_src() {
                 0 => total_r,
-                1 => channel_1_output[1],
-                2 => channel_3_output[1],
-                _ => channel_1_output[1] + channel_3_output[1],
+                1 => channel_1_panned_output[1],
+                2 => channel_3_panned_output[1],
+                _ => channel_1_panned_output[1] + channel_3_panned_output[1],
             };
+
             #[cfg(not(feature = "xq-audio"))]
             {
                 [
@@ -297,11 +426,11 @@ impl Audio {
             }
             #[cfg(feature = "xq-audio")]
             {
-                let volume_fac = emu.audio.master_volume as InterpSample * (1.0 / 128.0);
+                let volume_factor = emu.audio.master_volume as InterpSample * (1.0 / 128.0);
                 let bias = emu.audio.bias as InterpSample * (1.0 / 512.0);
                 [
-                    ((output_l * volume_fac + bias).clamp(0.0, 2.0) - 1.0) as Sample,
-                    ((output_r * volume_fac + bias).clamp(0.0, 2.0) - 1.0) as Sample,
+                    ((output_l * volume_factor + bias).clamp(0.0, 2.0) - 1.0) as Sample,
+                    ((output_r * volume_factor + bias).clamp(0.0, 2.0) - 1.0) as Sample,
                 ]
             }
         } else {

@@ -99,6 +99,20 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             0x1A0 => emu.ds_slot.aux_spi_control().0 as u8,
             0x1A1 => (emu.ds_slot.aux_spi_control().0 >> 8) as u8,
             0x1A2 => emu.ds_slot.spi_data_out(),
+            0x1A8..=0x1AF => {
+                if emu.ds_slot.arm9_access() {
+                    emu.ds_slot.rom_cmd[(addr & 7) as usize]
+                } else {
+                    #[cfg(feature = "log")]
+                    if !A::IS_DEBUG {
+                        slog::warn!(
+                            emu.arm9.logger,
+                            "Tried to read from DS slot ROM command while inaccessible"
+                        );
+                    }
+                    0
+                }
+            }
             0x208 => emu.arm9.irqs.master_enable() as u8,
             0x247 => emu.swram.control().0,
             0x300 => emu.arm9.post_boot_flag.0,

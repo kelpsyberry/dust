@@ -231,24 +231,23 @@ impl super::RomDevice for Normal {
                 slog::trace!(self.logger, "KEY2: {:016X}", cmd.read_be::<u64>(0));
                 match cmd[0] {
                     0xB7 => {
-                        if cmd.read_be::<u32>(4) & 0x00FF_FFFF == 0 {
-                            let mut addr = (cmd.read_be::<u32>(1) & self.rom_mask) as usize;
-                            if addr < 0x8000 {
-                                addr = 0x8000 | (addr & 0x1FF);
-                            }
-                            let page_start = addr & !0xFFF;
-                            let page_end = page_start + 0x1000;
-                            let mut start_i = 0;
-                            while start_i < output_len.get() as usize {
-                                let len =
-                                    (page_end - addr).min(output_len.get() as usize - start_i);
-                                output[start_i..start_i + len]
-                                    .copy_from_slice(&self.rom[addr..addr + len]);
-                                addr = page_start;
-                                start_i += len;
-                            }
-                            return;
+                        // if cmd.read_be::<u32>(4) & 0x00FF_FFFF == 0 {
+                        let mut addr = (cmd.read_be::<u32>(1) & self.rom_mask) as usize;
+                        if addr < 0x8000 {
+                            addr = 0x8000 | (addr & 0x1FF);
                         }
+                        let page_start = addr & !0xFFF;
+                        let page_end = page_start + 0x1000;
+                        let mut start_i = 0;
+                        while start_i < output_len.get() as usize {
+                            let len = (page_end - addr).min(output_len.get() as usize - start_i);
+                            output[start_i..start_i + len]
+                                .copy_from_slice(&self.rom[addr..addr + len]);
+                            addr = page_start;
+                            start_i += len;
+                        }
+                        return;
+                        // }
                     }
 
                     0xB8 => {
@@ -266,7 +265,7 @@ impl super::RomDevice for Normal {
                 #[cfg(feature = "log")]
                 slog::warn!(
                     self.logger,
-                    "Unknown ROM command in KEY2 mode, entering invalid state: {:016X}",
+                    "Unknown ROM command in KEY2 mode: {:016X}",
                     cmd.read_be::<u64>(0)
                 );
                 // self.stage = Stage::Invalid;

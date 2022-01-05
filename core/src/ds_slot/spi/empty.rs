@@ -38,13 +38,13 @@ impl super::SpiDevice for Empty {
         #[cfg(feature = "log")]
         slog::info!(
             self.logger,
-            "{:#04X} {}",
+            "{:#04X}{}",
             _data,
             match (_first, _last) {
                 (false, false) => "",
-                (true, false) => "(first)",
-                (false, true) => "(last)",
-                (true, true) => "(first, last)",
+                (true, false) => " (first)",
+                (false, true) => " (last)",
+                (true, true) => " (first, last)",
             }
         );
         0

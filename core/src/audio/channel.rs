@@ -162,7 +162,7 @@ pub struct Channel {
     total_samples: u32,
     cur_sample_index: i32,
     cur_src_off: u32,
-    #[cfg(any(not(feature = "xq-audio"), feature = "channel-audio-capture"))]
+    #[cfg(not(feature = "xq-audio"))]
     last_sample: i16,
     fifo_read_pos: FifoReadPos,
     fifo_write_pos: FifoWritePos,
@@ -204,7 +204,7 @@ impl Channel {
             total_samples: 0,
             cur_sample_index: 0,
             cur_src_off: 0,
-            #[cfg(any(not(feature = "xq-audio"), feature = "channel-audio-capture"))]
+            #[cfg(not(feature = "xq-audio"))]
             last_sample: 0,
             fifo_read_pos: FifoReadPos::new(0),
             fifo_write_pos: FifoWritePos::new(0),
@@ -274,6 +274,10 @@ impl Channel {
         self.loop_start_sample_index = self.calc_loop_start_sample_index();
         self.total_samples = self.calc_total_samples();
         self.check_loop_start();
+    }
+
+    pub(super) fn pan(&self) -> u8 {
+        self.pan
     }
 
     #[inline]
@@ -375,7 +379,7 @@ impl Channel {
             self.hist.copy_within(1.., 0);
             self.hist[3] = sample as InterpSample / 32768.0;
         }
-        #[cfg(any(not(feature = "xq-audio"), feature = "channel-audio-capture"))]
+        #[cfg(not(feature = "xq-audio"))]
         {
             self.last_sample = sample;
         }
@@ -604,11 +608,6 @@ impl Channel {
         emu.audio.channels[i.get() as usize].push_sample(0);
     }
 
-    #[cfg(feature = "channel-audio-capture")]
-    pub(super) fn last_sample(&self) -> i16 {
-        self.last_sample
-    }
-
     #[allow(clippy::many_single_char_names)]
     pub(super) fn run(
         emu: &mut Emu<impl cpu::Engine>,
@@ -616,7 +615,7 @@ impl Channel {
         #[cfg(feature = "xq-audio")] xq_sample_rate_shift: u8,
         #[cfg(feature = "xq-audio")] xq_interp_method: InterpMethod,
         #[cfg(feature = "xq-audio")] time: arm7::Timestamp,
-    ) -> [InterpSample; 2] {
+    ) -> InterpSample {
         let channel = &mut emu.audio.channels[i.get() as usize];
 
         if channel.start {
@@ -684,10 +683,8 @@ impl Channel {
         channel.timer_counter = timer_counter as u16;
         #[cfg(not(feature = "xq-audio"))]
         {
-            let sample = ((channel.last_sample as InterpSample) << channel.volume_shift)
-                * channel.volume as InterpSample;
-            let r_sample = sample * channel.pan as InterpSample;
-            [(sample * 128 - r_sample) >> 10, r_sample >> 10]
+            ((channel.last_sample as InterpSample) << channel.volume_shift)
+                * channel.volume as InterpSample
         }
         #[cfg(feature = "xq-audio")]
         {
@@ -707,14 +704,9 @@ impl Channel {
                     (((a * mu + b) * mu + c) * mu + d).clamp(-1.0, 1.0)
                 }
             };
-            let sample = interp_result
+            interp_result
                 * (1 << channel.volume_shift) as InterpSample
-                * channel.volume as InterpSample;
-            let r_sample = sample * channel.pan as InterpSample;
-            [
-                (sample * 128.0 - r_sample) * (1.0 / (1 << 18) as InterpSample),
-                r_sample * (1.0 / (1 << 18) as InterpSample),
-            ]
+                * channel.volume as InterpSample
         }
     }
 }

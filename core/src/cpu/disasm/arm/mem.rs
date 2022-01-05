@@ -30,20 +30,20 @@ pub(super) fn load_store_wb<
         src_dst_reg,
         base_reg
     );
-    if ADDRESSING.preincrement() {
-        ctx.next_instr.opcode.push_str(", ");
-    } else {
-        ctx.next_instr.opcode.push_str("], ");
+    if !ADDRESSING.preincrement() {
+        ctx.next_instr.opcode.push(']');
     }
     let offset_sign = if UPWARDS { "" } else { "-" };
     match OFF_TY {
         WbOffTy::Imm => {
             let offset = instr & 0xFFF;
-            let _ = write!(ctx.next_instr.opcode, "#{}{:#05X}", offset_sign, offset);
+            if offset != 0 {
+                let _ = write!(ctx.next_instr.opcode, ", #{}{:#05X}", offset_sign, offset);
+            }
         }
         WbOffTy::Reg(shift_ty) => {
             let off_reg = instr & 0xF;
-            let _ = write!(ctx.next_instr.opcode, "{}r{}, ", offset_sign, off_reg);
+            let _ = write!(ctx.next_instr.opcode, ", {}r{}, ", offset_sign, off_reg);
             let mut shift = (instr >> 7 & 0x1F) as u8;
             if matches!(shift_ty, ShiftTy::Lsr | ShiftTy::Asr) && shift == 0 {
                 shift = 32;
@@ -68,7 +68,7 @@ pub(super) fn load_store_wb<
             ctx.next_instr.opcode.push('!');
         }
     }
-    if (!BYTE && src_dst_reg == 15)
+    if (BYTE && src_dst_reg == 15)
         || (ADDRESSING.writeback() && (base_reg == src_dst_reg || base_reg == 15))
     {
         ctx.next_instr.comment = "Unpredictable".to_string();
@@ -96,18 +96,18 @@ pub(super) fn load_store_misc<
         src_dst_reg,
         base_reg
     );
-    if ADDRESSING.preincrement() {
-        ctx.next_instr.opcode.push_str(", ");
-    } else {
-        ctx.next_instr.opcode.push_str("], ");
+    if !ADDRESSING.preincrement() {
+        ctx.next_instr.opcode.push(']');
     }
     let offset_sign = if UPWARDS { "" } else { "-" };
     if OFF_IMM {
         let offset = (instr & 0xF) | (instr >> 4 & 0xF0);
-        let _ = write!(ctx.next_instr.opcode, "#{}{:#05X}", offset_sign, offset);
+        if offset != 0 {
+            let _ = write!(ctx.next_instr.opcode, ", #{}{:#05X}", offset_sign, offset);
+        }
     } else {
         let off_reg = instr & 0xF;
-        let _ = write!(ctx.next_instr.opcode, "{}r{}", offset_sign, off_reg);
+        let _ = write!(ctx.next_instr.opcode, ", {}r{}", offset_sign, off_reg);
     }
     if ADDRESSING.preincrement() {
         ctx.next_instr.opcode.push(']');
@@ -165,8 +165,8 @@ pub(super) fn ldm_stm<
 
     let mut range_start = None;
     let mut separator = "";
-    for reg in 0..16 {
-        if instr & 1 << reg != 0 {
+    for reg in 0..17 {
+        if reg < 16 && instr & 1 << reg != 0 {
             range_start.get_or_insert(reg);
         } else if let Some(start) = range_start {
             let _ = if start == reg - 1 {

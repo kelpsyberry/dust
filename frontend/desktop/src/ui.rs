@@ -247,9 +247,10 @@ impl UiState {
         #[cfg(feature = "log")]
         let logger = self.logger.clone();
 
-        let ds_slot_save_type = ds_slot_rom.as_ref().and_then(|rom| {
+        let ds_slot = ds_slot_rom.map(|rom| {
             let game_code = rom.read_le::<u32>(0xC);
-            self.game_db
+            let save_type = self
+                .game_db
                 .as_ref()
                 .and_then(|db| db.lookup(game_code))
                 .map(|entry| {
@@ -263,7 +264,12 @@ impl UiState {
                         );
                     }
                     entry.save_type
-                })
+                });
+            emu::DsSlot {
+                rom,
+                save_type,
+                has_ir: game_code as u8 == b'I',
+            }
         });
 
         let frame_tx = self.frame_tx.take().unwrap();
@@ -289,8 +295,7 @@ impl UiState {
                     emu::main(
                         config,
                         cur_save_path,
-                        ds_slot_rom,
-                        ds_slot_save_type,
+                        ds_slot,
                         audio_tx_data,
                         frame_tx,
                         message_rx,

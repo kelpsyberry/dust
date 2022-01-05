@@ -48,179 +48,198 @@ pub enum Message {
     Reset,
 }
 
+pub struct DsSlot {
+    pub rom: BoxedByteSlice,
+    pub save_type: Option<SaveType>,
+    pub has_ir: bool,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn main(
     config: CommonLaunchConfig,
     mut cur_save_path: Option<PathBuf>,
-    ds_slot_rom: Option<BoxedByteSlice>,
-    ds_slot_save_type: Option<SaveType>,
+    ds_slot: Option<DsSlot>,
     audio_tx_data: Option<audio::SenderData>,
     mut frame_tx: triple_buffer::Sender<FrameData>,
     message_rx: crossbeam_channel::Receiver<Message>,
     shared_state: Arc<SharedState>,
     #[cfg(feature = "log")] logger: slog::Logger,
 ) -> triple_buffer::Sender<FrameData> {
-    let direct_boot = config.skip_firmware && ds_slot_rom.is_some();
+    let direct_boot = config.skip_firmware && ds_slot.is_some();
     let mut sync_to_audio = config.sync_to_audio.value;
-    let ds_slot_rom_present = ds_slot_rom.is_some();
 
-    let ds_slot_rom = if let Some(rom) = ds_slot_rom {
-        ds_slot::rom::normal::Normal::new(
-            rom,
+    let (ds_slot_rom, ds_slot_spi) = if let Some(ds_slot) = ds_slot {
+        let rom = ds_slot::rom::normal::Normal::new(
+            ds_slot.rom,
             &config.sys_files.arm7_bios,
             #[cfg(feature = "log")]
             logger.new(slog::o!("ds_rom" => "normal")),
         )
         .unwrap()
-        .into()
-    } else {
-        ds_slot::rom::Empty::new(
-            #[cfg(feature = "log")]
-            logger.new(slog::o!("ds_rom" => "empty")),
-        )
-        .into()
-    };
-    let save_contents = cur_save_path
-        .as_deref()
-        .and_then(|path| match File::open(path) {
-            Ok(mut save_file) => {
-                let save_len = save_file
-                    .metadata()
-                    .expect("Couldn't get save RAM file metadata")
-                    .len()
-                    .next_power_of_two() as usize;
-                let mut save = BoxedByteSlice::new_zeroed(save_len);
-                save_file
-                    .read_exact(&mut save[..])
-                    .expect("Couldn't read save file");
-                Some(save)
-            }
-            Err(err) => match err.kind() {
-                io::ErrorKind::NotFound => None,
-                _err => {
-                    #[cfg(feature = "log")]
-                    slog::error!(logger, "Couldn't read save file: {:?}.", _err);
-                    None
+        .into();
+
+        let save_contents = cur_save_path
+            .as_deref()
+            .and_then(|path| match File::open(path) {
+                Ok(mut save_file) => {
+                    let save_len = save_file
+                        .metadata()
+                        .expect("Couldn't get save RAM file metadata")
+                        .len()
+                        .next_power_of_two() as usize;
+                    let mut save = BoxedByteSlice::new_zeroed(save_len);
+                    save_file
+                        .read_exact(&mut save[..])
+                        .expect("Couldn't read save file");
+                    Some(save)
                 }
-            },
-        });
-    let save_type = if let Some(save_contents) = &save_contents {
-        if let Some(save_type) = ds_slot_save_type {
-            let expected_len = save_type.expected_len();
-            if expected_len != Some(save_contents.len()) {
-                let (chosen_save_type, _message) = if let Some(detected_save_type) =
-                    SaveType::from_save_len(save_contents.len())
-                {
-                    (detected_save_type, "existing save file")
-                } else {
-                    (save_type, "database entry")
-                };
-                #[cfg(feature = "log")]
-                slog::error!(
-                    logger,
-                    "Unexpected save file size: expected {}, got {} B; respecting {}.",
-                    if let Some(expected_len) = expected_len {
-                        format!("{} B", expected_len)
+                Err(err) => match err.kind() {
+                    io::ErrorKind::NotFound => None,
+                    _err => {
+                        #[cfg(feature = "log")]
+                        slog::error!(logger, "Couldn't read save file: {:?}.", _err);
+                        None
+                    }
+                },
+            });
+
+        let save_type = if let Some(save_contents) = &save_contents {
+            if let Some(save_type) = ds_slot.save_type {
+                let expected_len = save_type.expected_len();
+                if expected_len != Some(save_contents.len()) {
+                    let (chosen_save_type, _message) = if let Some(detected_save_type) =
+                        SaveType::from_save_len(save_contents.len())
+                    {
+                        (detected_save_type, "existing save file")
                     } else {
-                        "no file".to_string()
-                    },
-                    save_contents.len(),
-                    _message,
-                );
-                chosen_save_type
+                        (save_type, "database entry")
+                    };
+                    #[cfg(feature = "log")]
+                    slog::error!(
+                        logger,
+                        "Unexpected save file size: expected {}, got {} B; respecting {}.",
+                        if let Some(expected_len) = expected_len {
+                            format!("{} B", expected_len)
+                        } else {
+                            "no file".to_string()
+                        },
+                        save_contents.len(),
+                        _message,
+                    );
+                    chosen_save_type
+                } else {
+                    save_type
+                }
             } else {
-                save_type
+                #[allow(clippy::unnecessary_lazy_evaluations)]
+                SaveType::from_save_len(save_contents.len()).unwrap_or_else(|| {
+                    #[cfg(feature = "log")]
+                    slog::error!(
+                        logger,
+                        concat!(
+                            "Unrecognized save file size ({} B) and no database entry found, ",
+                            "defaulting to an empty save.",
+                        ),
+                        save_contents.len()
+                    );
+                    SaveType::None
+                })
             }
         } else {
             #[allow(clippy::unnecessary_lazy_evaluations)]
-            SaveType::from_save_len(save_contents.len()).unwrap_or_else(|| {
+            ds_slot.save_type.unwrap_or_else(|| {
                 #[cfg(feature = "log")]
                 slog::error!(
                     logger,
                     concat!(
-                        "Unrecognized save file size ({} B) and no database entry found, ",
-                        "defaulting to an empty save.",
-                    ),
-                    save_contents.len()
-                );
-                SaveType::None
-            })
-        }
-    } else if ds_slot_rom_present {
-        #[allow(clippy::unnecessary_lazy_evaluations)]
-        ds_slot_save_type.unwrap_or_else(|| {
-            #[cfg(feature = "log")]
-            slog::error!(
-                logger,
-                concat!(
                     "No existing save file present and no database entry found, defaulting to an",
                     "empty save.",
                 )
-            );
-            SaveType::None
-        })
-    } else {
-        SaveType::None
-    };
-    let ds_slot_spi = if save_type == SaveType::None {
-        ds_slot::spi::Empty::new(
-            #[cfg(feature = "log")]
-            logger.new(slog::o!("ds_spi" => "empty")),
-        )
-        .into()
-    } else {
-        let expected_len = save_type.expected_len().unwrap();
-        let save_contents = match save_contents {
-            Some(save_contents) => SaveContents::Existing(if save_contents.len() == expected_len {
-                let mut new_contents = BoxedByteSlice::new_zeroed(expected_len);
-                new_contents[..save_contents.len()].copy_from_slice(&save_contents);
-                drop(save_contents);
-                new_contents
-            } else {
-                save_contents
-            }),
-            None => SaveContents::New(expected_len),
+                );
+                SaveType::None
+            })
         };
-        match save_type {
-            SaveType::None => unreachable!(),
-            SaveType::Eeprom4k => ds_slot::spi::eeprom_4k::Eeprom4k::new(
-                save_contents,
-                None,
+
+        let spi = if save_type == SaveType::None {
+            ds_slot::spi::Empty::new(
                 #[cfg(feature = "log")]
-                logger.new(slog::o!("ds_spi" => "eeprom_4k")),
+                logger.new(slog::o!("ds_spi" => "empty")),
             )
-            .expect("Couldn't create 4 Kib EEPROM DS slot SPI device")
-            .into(),
-            SaveType::EepromFram64k | SaveType::EepromFram512k | SaveType::EepromFram1m => {
-                ds_slot::spi::eeprom_fram::EepromFram::new(
+            .into()
+        } else {
+            let expected_len = save_type.expected_len().unwrap();
+            let save_contents = match save_contents {
+                Some(save_contents) => {
+                    SaveContents::Existing(if save_contents.len() == expected_len {
+                        let mut new_contents = BoxedByteSlice::new_zeroed(expected_len);
+                        new_contents[..save_contents.len()].copy_from_slice(&save_contents);
+                        drop(save_contents);
+                        new_contents
+                    } else {
+                        save_contents
+                    })
+                }
+                None => SaveContents::New(expected_len),
+            };
+            match save_type {
+                SaveType::None => unreachable!(),
+                SaveType::Eeprom4k => ds_slot::spi::eeprom_4k::Eeprom4k::new(
                     save_contents,
                     None,
                     #[cfg(feature = "log")]
-                    logger.new(slog::o!("ds_spi" => "eeprom_fram")),
+                    logger.new(slog::o!("ds_spi" => "eeprom_4k")),
                 )
-                .expect("Couldn't create EEPROM/FRAM DS slot SPI device")
-                .into()
-            }
-            SaveType::Flash2m | SaveType::Flash4m | SaveType::Flash8m => {
-                ds_slot::spi::flash::Flash::new(
-                    save_contents,
-                    [0; 20],
+                .expect("Couldn't create 4 Kib EEPROM DS slot SPI device")
+                .into(),
+                SaveType::EepromFram64k | SaveType::EepromFram512k | SaveType::EepromFram1m => {
+                    ds_slot::spi::eeprom_fram::EepromFram::new(
+                        save_contents,
+                        None,
+                        #[cfg(feature = "log")]
+                        logger.new(slog::o!("ds_spi" => "eeprom_fram")),
+                    )
+                    .expect("Couldn't create EEPROM/FRAM DS slot SPI device")
+                    .into()
+                }
+                SaveType::Flash2m | SaveType::Flash4m | SaveType::Flash8m => {
+                    ds_slot::spi::flash::Flash::new(
+                        save_contents,
+                        [0; 20],
+                        ds_slot.has_ir,
+                        #[cfg(feature = "log")]
+                        logger.new(
+                            slog::o!("ds_spi" => if ds_slot.has_ir { "flash" } else { "flash_ir" }),
+                        ),
+                    )
+                    .expect("Couldn't create FLASH DS slot SPI device")
+                    .into()
+                }
+                SaveType::Nand64m | SaveType::Nand128m | SaveType::Nand256m => {
                     #[cfg(feature = "log")]
-                    logger.new(slog::o!("ds_spi" => "flash")),
-                )
-                .expect("Couldn't create FLASH DS slot SPI device")
-                .into()
+                    slog::error!(logger, "TODO: NAND saves");
+                    ds_slot::spi::Empty::new(
+                        #[cfg(feature = "log")]
+                        logger.new(slog::o!("ds_spi" => "nand_todo")),
+                    )
+                    .into()
+                }
             }
-            SaveType::Nand64m | SaveType::Nand128m | SaveType::Nand256m => {
+        };
+
+        (rom, spi)
+    } else {
+        (
+            ds_slot::rom::Empty::new(
                 #[cfg(feature = "log")]
-                slog::error!(logger, "TODO: NAND saves");
-                ds_slot::spi::Empty::new(
-                    #[cfg(feature = "log")]
-                    logger.new(slog::o!("ds_spi" => "nand_todo")),
-                )
-                .into()
-            }
-        }
+                logger.new(slog::o!("ds_rom" => "empty")),
+            )
+            .into(),
+            ds_slot::spi::Empty::new(
+                #[cfg(feature = "log")]
+                logger.new(slog::o!("ds_spi" => "empty")),
+            )
+            .into(),
+        )
     };
 
     let mut emu_builder = dust_core::emu::Builder::new(

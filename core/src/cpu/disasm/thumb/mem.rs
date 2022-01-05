@@ -46,8 +46,8 @@ pub(super) fn push_pop<const POP: bool>(ctx: &mut Context, instr: u16) {
     ctx.next_instr.opcode = format!("{} {{", if POP { "pop" } else { "push" });
     let mut range_start = None;
     let mut separator = "";
-    for reg in 0..8 {
-        if instr & 1 << reg != 0 {
+    for reg in 0..9 {
+        if reg < 8 && instr & 1 << reg != 0 {
             range_start.get_or_insert(reg);
         } else if let Some(start) = range_start {
             let _ = if start == reg - 1 {
@@ -85,8 +85,8 @@ pub(super) fn ldmia_stmia<const LOAD: bool>(ctx: &mut Context, instr: u16) {
     ctx.next_instr.opcode = format!("{}ia r{}!, {{", if LOAD { "ldm" } else { "stm" }, base_reg);
     let mut range_start = None;
     let mut separator = "";
-    for reg in 0..8 {
-        if instr & 1 << reg != 0 {
+    for reg in 0..9 {
+        if reg < 8 && instr & 1 << reg != 0 {
             range_start.get_or_insert(reg);
         } else if let Some(start) = range_start {
             let _ = if start == reg - 1 {

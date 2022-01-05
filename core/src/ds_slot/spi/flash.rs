@@ -4,7 +4,12 @@ pub type Status = flash::Status;
 
 #[derive(Clone)]
 pub struct Flash {
+    #[cfg(feature = "log")]
+    logger: slog::Logger,
     pub contents: flash::Flash,
+    has_ir: bool,
+    first: bool,
+    accessing_flash: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,6 +23,7 @@ impl Flash {
     pub fn new(
         contents: SaveContents,
         id: [u8; 20],
+        has_ir: bool,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Result<Self, CreationError> {
         if !matches!(contents.len(), 0x4_0000 | 0x8_0000 | 0x10_0000) {
@@ -28,9 +34,14 @@ impl Flash {
                 contents,
                 id,
                 #[cfg(feature = "log")]
-                logger,
+                logger.new(slog::o!("contents" => "")),
             )
             .unwrap(),
+            has_ir,
+            first: false,
+            accessing_flash: false,
+            #[cfg(feature = "log")]
+            logger,
         })
     }
 
@@ -38,7 +49,13 @@ impl Flash {
     pub fn reset(self) -> Self {
         Flash {
             contents: self.contents.reset(),
+            ..self
         }
+    }
+
+    #[inline]
+    pub fn has_ir(&self) -> bool {
+        self.has_ir
     }
 
     #[inline]
@@ -86,6 +103,33 @@ impl super::SpiDevice for Flash {
     }
 
     fn write_data(&mut self, value: u8, first: bool, last: bool) -> u8 {
-        self.contents.handle_byte(value, first, last)
+        if self.has_ir {
+            if first {
+                self.accessing_flash = value == 0x00;
+                self.first = true;
+                return 0xFF;
+            }
+            let first = self.first;
+            self.first = false;
+            if self.accessing_flash {
+                self.contents.handle_byte(value, first, last)
+            } else {
+                #[cfg(feature = "log")]
+                slog::info!(
+                    self.logger,
+                    "IR: {:#04X}{}",
+                    value,
+                    match (first, last) {
+                        (false, false) => "",
+                        (true, false) => " (first)",
+                        (false, true) => " (last)",
+                        (true, true) => " (first, last)",
+                    }
+                );
+                0xFF
+            }
+        } else {
+            self.contents.handle_byte(value, first, last)
+        }
     }
 }

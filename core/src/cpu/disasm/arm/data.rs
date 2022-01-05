@@ -32,7 +32,11 @@ pub(super) fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLA
             DpOpTy::Mvn => "mvn",
         },
         cond,
-        if SET_FLAGS { "s" } else { "" }
+        if SET_FLAGS && !OP_TY.is_test() {
+            "s"
+        } else {
+            ""
+        }
     );
     if !OP_TY.is_test() {
         let _ = write!(ctx.next_instr.opcode, "r{}, ", dst_reg);
@@ -44,36 +48,47 @@ pub(super) fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLA
         DpOperand::Imm => {
             let value = instr & 0xFF;
             let shift = instr >> 7 & 0x1E;
-            let _ = write!(ctx.next_instr.opcode, "#{:#04X}, {}", value, shift);
+            let _ = write!(ctx.next_instr.opcode, "#{:#04X}", value);
+            if shift != 0 {
+                let _ = write!(ctx.next_instr.opcode, ", {}", shift);
+            }
         }
         DpOperand::Reg {
             shift_ty,
             shift_imm,
         } => {
             let op_reg = instr & 0xF;
-            let _ = write!(ctx.next_instr.opcode, "r{}, ", op_reg);
+            let _ = write!(ctx.next_instr.opcode, "r{}", op_reg);
             if shift_imm {
                 let mut shift = instr >> 7 & 0x1F;
                 if matches!(shift_ty, ShiftTy::Lsr | ShiftTy::Asr) && shift == 0 {
                     shift = 32;
                 }
-                let _ = match shift_ty {
-                    ShiftTy::Lsl => write!(ctx.next_instr.opcode, "lsl #{}", shift),
-                    ShiftTy::Lsr => write!(ctx.next_instr.opcode, "lsr #{}", shift),
-                    ShiftTy::Asr => write!(ctx.next_instr.opcode, "asr #{}", shift),
-                    ShiftTy::Ror => {
-                        if shift == 0 {
-                            write!(ctx.next_instr.opcode, "rrx")
-                        } else {
-                            write!(ctx.next_instr.opcode, "ror #{}", shift)
+                match shift_ty {
+                    ShiftTy::Lsl => {
+                        if shift != 0 {
+                            let _ = write!(ctx.next_instr.opcode, ", lsl #{}", shift);
                         }
                     }
-                };
+                    ShiftTy::Lsr => {
+                        let _ = write!(ctx.next_instr.opcode, ", lsr #{}", shift);
+                    }
+                    ShiftTy::Asr => {
+                        let _ = write!(ctx.next_instr.opcode, ", asr #{}", shift);
+                    }
+                    ShiftTy::Ror => {
+                        let _ = if shift == 0 {
+                            write!(ctx.next_instr.opcode, ", rrx")
+                        } else {
+                            write!(ctx.next_instr.opcode, ", ror #{}", shift)
+                        };
+                    }
+                }
             } else {
                 let shift_reg = instr >> 8 & 0xF;
                 let _ = write!(
                     ctx.next_instr.opcode,
-                    "{} r{}",
+                    ", {} r{}",
                     match shift_ty {
                         ShiftTy::Lsl => "lsl",
                         ShiftTy::Lsr => "lsr",
