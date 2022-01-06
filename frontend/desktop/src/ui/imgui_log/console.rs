@@ -1,5 +1,8 @@
 use super::{AsyncKV, AsyncRecord, AsyncValue};
-use core::fmt::{self, Write as _};
+use core::{
+    fmt::{self, Write as _},
+    ptr,
+};
 use crossbeam_channel::{Receiver, Sender};
 use imgui::*;
 use slog::{ser::Serializer, BorrowedKV, Key, Level, Record, RecordStatic, KV};
@@ -13,6 +16,7 @@ enum HistoryNode {
 struct LoggerValuesSerializer<'a> {
     logger_values_history: &'a mut Vec<(String, String)>,
     history: &'a mut Vec<(f32, HistoryNode)>,
+    filtered_history: Option<&'a mut Vec<(f32, HistoryNode)>>,
     buf: &'a mut Vec<(String, String)>,
 }
 
@@ -40,6 +44,10 @@ impl<'a> LoggerValuesSerializer<'a> {
                     self.logger_values_history.push(buf);
                     let (k, v) = &self.logger_values_history[indent];
                     let group_str = format!("{}: {}", k, v);
+                    if let Some(filtered_history) = &mut self.filtered_history {
+                        filtered_history
+                            .push((indent as f32, HistoryNode::Group(group_str.clone())));
+                    }
                     self.history
                         .push((indent as f32, HistoryNode::Group(group_str)));
                 }
@@ -48,6 +56,10 @@ impl<'a> LoggerValuesSerializer<'a> {
                     self.logger_values_history.push(buf);
                     let (k, v) = &self.logger_values_history[indent];
                     let group_str = format!("{}: {}", k, v);
+                    if let Some(filtered_history) = &mut self.filtered_history {
+                        filtered_history
+                            .push((indent as f32, HistoryNode::Group(group_str.clone())));
+                    }
                     self.history
                         .push((indent as f32, HistoryNode::Group(group_str)));
                 }
@@ -160,7 +172,7 @@ impl<'a> AsyncKVSerializer<'a> {
             self.buffer.push_str(key);
             self.buffer.push_str(": ");
             match val {
-                AsyncValue::None => self.buffer.push_str("(None)"),
+                AsyncValue::None => self.buffer.push_str("None"),
                 AsyncValue::Unit => self.buffer.push_str("()"),
                 AsyncValue::Bool(val) => {
                     let _ = write!(self.buffer, "{}", val);
@@ -192,11 +204,12 @@ pub struct Console {
     lvs_buf: Vec<(String, String)>,
     pub filter: String,
     pub lock_to_bottom: bool,
+    pub history_capacity: usize,
 }
 
 impl Console {
     #[inline]
-    pub fn new(lock_to_bottom: bool) -> (Self, Sender<AsyncRecord>) {
+    pub fn new(lock_to_bottom: bool, history_capacity: usize) -> (Self, Sender<AsyncRecord>) {
         let (tx, rx) = crossbeam_channel::unbounded();
         (
             Console {
@@ -207,6 +220,7 @@ impl Console {
                 lvs_buf: Vec::new(),
                 filter: String::new(),
                 lock_to_bottom,
+                history_capacity,
             },
             tx,
         )
@@ -299,7 +313,11 @@ impl Console {
             ui.set_next_item_width(ui.content_region_avail()[0] - clear_button_width - 16.0);
 
             let prev_filter = self.filter.clone();
-            if ui.input_text("", &mut self.filter).build() {
+            if ui
+                .input_text("", &mut self.filter)
+                .enter_returns_true(true)
+                .build()
+            {
                 if self.filter.is_empty() {
                     self.filtered_history.clear();
                 } else {
@@ -341,12 +359,17 @@ impl Console {
         });
     }
 
-    pub fn render(&mut self, ui: &Ui) {
-        for record in self.rx.try_iter() {
+    pub fn process_messages(&mut self) {
+        while let Ok(record) = self.rx.try_recv() {
             let indent = {
                 let mut ser = LoggerValuesSerializer {
                     logger_values_history: &mut self.logger_values_history,
                     history: &mut self.history,
+                    filtered_history: if self.filter.is_empty() {
+                        None
+                    } else {
+                        Some(&mut self.filtered_history)
+                    },
                     buf: &mut self.lvs_buf,
                 };
                 let _ = record.logger_values.serialize(
@@ -370,11 +393,64 @@ impl Console {
                     buffer: &mut msg,
                 };
                 ser.serialize(record.kv);
+                if !self.filter.is_empty() && msg.contains(&self.filter) {
+                    self.filtered_history
+                        .push((indent as f32, HistoryNode::Leaf(record.level, msg.clone())));
+                    self.filter_history_groups();
+                    self.collapse_history_groups();
+                }
                 self.history
                     .push((indent as f32, HistoryNode::Leaf(record.level, msg)));
             }
         }
 
+        if self.history.len() > self.history_capacity {
+            let end_i = self.history.len() - self.history_capacity;
+            let mut min_indent = self.history[end_i].0;
+            let mut ranges_to_remove = Vec::new();
+            let mut next_range_end = None;
+            for (i, node) in self.history[0..end_i].iter_mut().enumerate().rev() {
+                if node.0 >= min_indent {
+                    if next_range_end.is_none() {
+                        next_range_end = Some(i + 1);
+                    }
+                } else {
+                    if let Some(next_range_end) = next_range_end.take() {
+                        ranges_to_remove.push(i + 1..next_range_end);
+                    }
+                    min_indent = node.0;
+                }
+            }
+            if let Some(next_range_end) = next_range_end {
+                ranges_to_remove.push(0..next_range_end);
+            }
+            unsafe {
+                let history_ptr = self.history.as_mut_ptr();
+                let mut removed = 0;
+                for (i, range) in ranges_to_remove.iter().enumerate().rev() {
+                    for i in range.clone() {
+                        ptr::drop_in_place(history_ptr.add(i));
+                    }
+                    let dst_start = range.start - removed;
+                    let src_start = range.end;
+                    removed += range.len();
+                    let src_end = if i >= 1 {
+                        ranges_to_remove[i - 1].start
+                    } else {
+                        self.history.len()
+                    };
+                    ptr::copy(
+                        history_ptr.add(src_start),
+                        history_ptr.add(dst_start),
+                        src_end - src_start,
+                    );
+                }
+                self.history.set_len(self.history.len() - removed);
+            }
+        }
+    }
+
+    pub fn render(&mut self, ui: &Ui) {
         let line_height = ui.text_line_height();
         if self.lock_to_bottom {
             ui.set_scroll_y(ui.scroll_max_y());

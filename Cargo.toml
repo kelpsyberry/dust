@@ -14,7 +14,3 @@ inherits = "release"
 debug = false
 lto = true
 codegen-units = 1
-
-[patch.crates-io]
-# TODO: Remove and update to 0.26 when imgui-winit-support gets updated
-winit = { git = "https://github.com/rust-windowing/winit", rev = "11a44081df97b82108be63a925d8c479bddfdc4d" }

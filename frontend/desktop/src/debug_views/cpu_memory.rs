@@ -3,7 +3,7 @@ use super::{
         memory::{Addr, MemoryEditor},
         RangeInclusive,
     },
-    FrameDataSlot, View,
+    FrameDataSlot, InstanceableView, View,
 };
 use crate::ui::window::Window;
 use dust_core::{
@@ -136,4 +136,8 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
             None
         }
     }
+}
+
+impl<const ARM9: bool> InstanceableView for CpuMemory<ARM9> {
+    fn finish_preparing_frame_data<E: cpu::Engine>(_emu: &mut Emu<E>) {}
 }

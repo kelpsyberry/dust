@@ -73,6 +73,7 @@ pub struct Global {
     pub fullscreen_render: bool,
     pub game_db_path: Option<PathBuf>,
     pub logging_kind: LoggingKind,
+    pub imgui_log_history_capacity: usize,
     pub window_size: (u32, u32),
     pub imgui_config_path: Option<PathBuf>,
 }
@@ -105,6 +106,7 @@ impl Default for Global {
             fullscreen_render: true,
             game_db_path: Some(data_base.join("game_db.json")),
             logging_kind: LoggingKind::Imgui,
+            imgui_log_history_capacity: 1024 * 1024,
             window_size: (1300, 800),
             imgui_config_path: Some(config_base.join("imgui.ini")),
         }

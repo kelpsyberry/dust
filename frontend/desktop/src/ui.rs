@@ -42,6 +42,7 @@ use std::{
 fn init_logging(
     imgui_log: &mut Option<(imgui_log::Console, imgui_log::Sender, bool)>,
     kind: LoggingKind,
+    imgui_log_history_capacity: usize,
 ) -> slog::Logger {
     use slog::Drain;
     match kind {
@@ -49,7 +50,8 @@ fn init_logging(
             let logger_tx = if let Some((_, logger_tx, _)) = imgui_log {
                 logger_tx.clone()
             } else {
-                let (log_console, logger_tx) = imgui_log::Console::new(true);
+                let (log_console, logger_tx) =
+                    imgui_log::Console::new(true, imgui_log_history_capacity);
                 *imgui_log = Some((log_console, logger_tx.clone(), false));
                 logger_tx
             };
@@ -484,7 +486,11 @@ pub fn main() {
     #[cfg(feature = "log")]
     let mut imgui_log = None;
     #[cfg(feature = "log")]
-    let logger = init_logging(&mut imgui_log, global_config.contents.logging_kind);
+    let logger = init_logging(
+        &mut imgui_log,
+        global_config.contents.logging_kind,
+        global_config.contents.imgui_log_history_capacity,
+    );
 
     let mut window_builder = futures_executor::block_on(window::Builder::new(
         "Dust",
@@ -995,10 +1001,14 @@ pub fn main() {
             }
 
             #[cfg(feature = "log")]
-            if let Some((console, _, console_visible @ true)) = &mut state.imgui_log {
-                let _window_padding = ui.push_style_var(imgui::StyleVar::WindowPadding([6.0; 2]));
-                let _item_spacing = ui.push_style_var(imgui::StyleVar::ItemSpacing([0.0; 2]));
-                console.render_window(ui, Some(window.mono_font), console_visible);
+            if let Some((console, _, console_visible)) = &mut state.imgui_log {
+                console.process_messages();
+                if *console_visible {
+                    let _window_padding =
+                        ui.push_style_var(imgui::StyleVar::WindowPadding([6.0; 2]));
+                    let _item_spacing = ui.push_style_var(imgui::StyleVar::ItemSpacing([0.0; 2]));
+                    console.render_window(ui, Some(window.mono_font), console_visible);
+                }
             }
 
             #[cfg(feature = "debug-views")]

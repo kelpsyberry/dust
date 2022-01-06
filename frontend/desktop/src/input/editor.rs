@@ -1,6 +1,6 @@
 use super::{trigger::Trigger, PressedKey, State as InputState};
 use dust_core::emu::input::Keys;
-use imgui::{StyleColor, Ui};
+use imgui::{StyleColor, TableFlags, Ui};
 use winit::event::{ElementState, Event, WindowEvent};
 
 #[derive(Default)]
@@ -36,40 +36,44 @@ impl Editor {
                 self.pressed_keys.clear();
             }
 
-            ui.columns(2, "input", true);
-            for &(key, name) in KEYS {
-                let id = format!("{}:", name);
-                ui.text(&id);
-                ui.same_line();
+            if let Some(_table_token) = ui.begin_table_with_flags(
+                "input",
+                2,
+                TableFlags::BORDERS_INNER_V | TableFlags::NO_CLIP | TableFlags::SIZING_STRETCH_SAME,
+            ) {
+                for &(key, name) in KEYS {
+                    ui.table_next_column();
 
-                let id_ = ui.push_id(&id);
-                let button_color = if self.current_key == Some(key) {
-                    Some(ui.push_style_color(
-                        StyleColor::Button,
-                        ui.style_color(StyleColor::ButtonActive),
-                    ))
-                } else if input_state.keymap.contents.0[&key].activated(&self.pressed_keys) {
-                    Some(ui.push_style_color(
-                        StyleColor::Button,
-                        ui.style_color(StyleColor::ButtonHovered),
-                    ))
-                } else {
-                    None
-                };
+                    let id = format!("{}:", name);
+                    ui.text(&id);
+                    ui.same_line();
 
-                if ui.button(&input_state.keymap.contents.0[&key].to_string()) {
-                    ui.set_keyboard_focus_here();
-                    self.current_key = Some(key);
+                    let id_ = ui.push_id(&id);
+                    let button_color = if self.current_key == Some(key) {
+                        Some(ui.push_style_color(
+                            StyleColor::Button,
+                            ui.style_color(StyleColor::ButtonActive),
+                        ))
+                    } else if input_state.keymap.contents.0[&key].activated(&self.pressed_keys) {
+                        Some(ui.push_style_color(
+                            StyleColor::Button,
+                            ui.style_color(StyleColor::ButtonHovered),
+                        ))
+                    } else {
+                        None
+                    };
+
+                    if ui.button(&input_state.keymap.contents.0[&key].to_string()) {
+                        ui.set_keyboard_focus_here();
+                        self.current_key = Some(key);
+                    }
+
+                    drop((id_, button_color));
+                    if self.current_key == Some(key) && !ui.is_item_focused() {
+                        self.current_key = None;
+                    }
                 }
-
-                drop((id_, button_color));
-                if self.current_key == Some(key) && !ui.is_item_focused() {
-                    self.current_key = None;
-                }
-
-                ui.next_column();
             }
-            ui.columns(1, "", false);
         });
     }
 

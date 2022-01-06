@@ -88,6 +88,10 @@ pub trait View {
     ) -> Option<Self::EmuState>;
 }
 
+pub trait InstanceableView {
+    fn finish_preparing_frame_data<E: cpu::Engine>(emu: &mut Emu<E>);
+}
+
 macro_rules! declare_structs {
     (
         $(
@@ -148,13 +152,13 @@ macro_rules! declare_structs {
                             if let Some((state, view_enabled)) = &mut self.$s_view_ident {
                                 *view_enabled = enabled;
                                 if enabled {
-                                    <$s_view_ty as View>::handle_emu_state_changed(
+                                    <$s_view_ty>::handle_emu_state_changed(
                                         None,
                                         Some(&state),
                                         emu,
                                     );
                                 } else {
-                                    <$s_view_ty as View>::handle_emu_state_changed(
+                                    <$s_view_ty>::handle_emu_state_changed(
                                         Some(&state),
                                         None,
                                         emu,
@@ -165,14 +169,14 @@ macro_rules! declare_structs {
                         Message::$s_update_emu_state_message_ident(new_state) => {
                             match self.$s_view_ident.as_ref() {
                                 Some((prev_state, true)) => {
-                                    <$s_view_ty as View>::handle_emu_state_changed(
+                                    <$s_view_ty>::handle_emu_state_changed(
                                         Some(prev_state),
                                         new_state.as_ref().map(|s| &s.0),
                                         emu,
                                     );
                                 }
                                 None => {
-                                    <$s_view_ty as View>::handle_emu_state_changed(
+                                    <$s_view_ty>::handle_emu_state_changed(
                                         None,
                                         new_state.as_ref().map(|s| &s.0),
                                         emu,
@@ -188,13 +192,13 @@ macro_rules! declare_structs {
                             if let Some((state, view_enabled)) = self.$i_view_ident.get_mut(&key) {
                                 *view_enabled = enabled;
                                 if enabled {
-                                    <$i_view_ty as View>::handle_emu_state_changed(
+                                    <$i_view_ty>::handle_emu_state_changed(
                                         None,
                                         Some(state),
                                         emu,
                                     );
                                 } else {
-                                    <$i_view_ty as View>::handle_emu_state_changed(
+                                    <$i_view_ty>::handle_emu_state_changed(
                                         Some(state),
                                         None,
                                         emu,
@@ -205,7 +209,7 @@ macro_rules! declare_structs {
                                 if *other_key == key || !*view_enabled {
                                     continue;
                                 }
-                                <$i_view_ty as View>::handle_emu_state_changed(
+                                <$i_view_ty>::handle_emu_state_changed(
                                     Some(state),
                                     Some(state),
                                     emu,
@@ -216,14 +220,14 @@ macro_rules! declare_structs {
                             if let Some(new_state) = new_state {
                                 match self.$i_view_ident.get(&key) {
                                     Some((prev_state, true)) => {
-                                        <$i_view_ty as View>::handle_emu_state_changed(
+                                        <$i_view_ty>::handle_emu_state_changed(
                                             Some(prev_state),
                                             Some(&new_state.0),
                                             emu,
                                         );
                                     }
                                     None => {
-                                        <$i_view_ty as View>::handle_emu_state_changed(
+                                        <$i_view_ty>::handle_emu_state_changed(
                                             None,
                                             Some(&new_state.0),
                                             emu,
@@ -234,7 +238,7 @@ macro_rules! declare_structs {
                                 self.$i_view_ident.insert(key, new_state);
                             } else {
                                 if let Some((prev_state, true)) = self.$i_view_ident.remove(&key) {
-                                    <$i_view_ty as View>::handle_emu_state_changed(
+                                    <$i_view_ty>::handle_emu_state_changed(
                                         Some(&prev_state),
                                         None,
                                         emu,
@@ -245,7 +249,7 @@ macro_rules! declare_structs {
                                 if *other_key == key || !*view_enabled {
                                     continue;
                                 }
-                                <$i_view_ty as View>::handle_emu_state_changed(
+                                <$i_view_ty>::handle_emu_state_changed(
                                     Some(state),
                                     Some(state),
                                     emu,
@@ -286,6 +290,7 @@ macro_rules! declare_structs {
                             frame_data.$i_view_ident.entry(*key),
                         );
                     }
+                    <$i_view_ty>::finish_preparing_frame_data(emu);
                 )*
             }
         }

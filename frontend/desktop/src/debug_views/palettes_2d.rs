@@ -1,7 +1,7 @@
-use super::{common::rgb_5_to_rgba_f32, FrameDataSlot, View};
+use super::{common::rgb_5_to_rgba_f32, FrameDataSlot, InstanceableView, View};
 use crate::ui::window::Window;
 use dust_core::{
-    cpu::Engine,
+    cpu,
     emu::Emu,
     utils::{zeroed_box, ByteSlice, Bytes},
 };
@@ -82,14 +82,14 @@ impl View for Palettes2D {
         self.cur_selection
     }
 
-    fn handle_emu_state_changed<E: Engine>(
+    fn handle_emu_state_changed<E: cpu::Engine>(
         _prev: Option<&Self::EmuState>,
         _new: Option<&Self::EmuState>,
         _emu: &mut Emu<E>,
     ) {
     }
 
-    fn prepare_frame_data<'a, E: Engine, S: FrameDataSlot<'a, Self::FrameData>>(
+    fn prepare_frame_data<'a, E: cpu::Engine, S: FrameDataSlot<'a, Self::FrameData>>(
         emu_state: &Self::EmuState,
         emu: &mut Emu<E>,
         frame_data: S,
@@ -233,4 +233,8 @@ impl View for Palettes2D {
 
         new_state
     }
+}
+
+impl InstanceableView for Palettes2D {
+    fn finish_preparing_frame_data<E: cpu::Engine>(_emu: &mut Emu<E>) {}
 }

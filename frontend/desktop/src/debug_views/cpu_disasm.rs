@@ -3,7 +3,7 @@ use super::{
         disasm::{Addr, DisassemblyView},
         RangeInclusive,
     },
-    FrameDataSlot, View,
+    FrameDataSlot, InstanceableView, View,
 };
 use crate::ui::window::Window;
 use dust_core::{
@@ -213,4 +213,8 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
             None
         }
     }
+}
+
+impl<const ARM9: bool> InstanceableView for CpuDisasm<ARM9> {
+    fn finish_preparing_frame_data<E: cpu::Engine>(_emu: &mut Emu<E>) {}
 }

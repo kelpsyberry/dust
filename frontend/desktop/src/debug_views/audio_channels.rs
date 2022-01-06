@@ -1,12 +1,12 @@
 use super::{
     common::regs::{bitfield, BitfieldCommand},
-    FrameDataSlot, View,
+    FrameDataSlot, InstanceableView, View,
 };
 use crate::ui::window::Window;
 use core::cmp::Ordering;
 use dust_core::{
     audio::channel::{Control, Format, Index as ChannelIndex, RepeatMode},
-    cpu::Engine,
+    cpu,
     emu::Emu,
 };
 use imgui::{PlotLines, Slider, SliderFlags, StyleVar, TableFlags, Ui};
@@ -52,6 +52,7 @@ impl<T: Copy> RingBuffer<T> {
                         .copy_within(prev_len - (new_len - prev_start)..prev_len, self.start);
                 }
                 self.buffer.truncate(new_len);
+                self.buffer.shrink_to_fit();
             }
             Ordering::Greater => {
                 let new_range = self.start..self.start + (new_len - prev_len);
@@ -107,7 +108,7 @@ impl View for AudioChannels {
         self.cur_channel
     }
 
-    fn handle_emu_state_changed<E: Engine>(
+    fn handle_emu_state_changed<E: cpu::Engine>(
         prev_channel_index: Option<&Self::EmuState>,
         new_channel_index: Option<&Self::EmuState>,
         emu: &mut Emu<E>,
@@ -120,7 +121,7 @@ impl View for AudioChannels {
         }
     }
 
-    fn prepare_frame_data<'a, E: Engine, S: FrameDataSlot<'a, Self::FrameData>>(
+    fn prepare_frame_data<'a, E: cpu::Engine, S: FrameDataSlot<'a, Self::FrameData>>(
         channel_index: &Self::EmuState,
         emu: &mut Emu<E>,
         frame_data: S,
@@ -296,5 +297,13 @@ impl View for AudioChannels {
         }
 
         new_state
+    }
+}
+
+impl InstanceableView for AudioChannels {
+    fn finish_preparing_frame_data<E: cpu::Engine>(emu: &mut Emu<E>) {
+        for buffer in &mut emu.audio.channel_audio_capture_data.buffers {
+            buffer.clear();
+        }
     }
 }
