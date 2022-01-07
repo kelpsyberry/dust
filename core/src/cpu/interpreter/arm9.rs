@@ -10,11 +10,12 @@ use crate::cpu::debug;
 use crate::schedule::SignedTimestamp;
 use crate::{
     cpu::{
-        arm9::{bus, Arm9, Schedule, Timestamp},
+        arm9::{bus, Arm9, Event, Timestamp},
         bus::CpuAccess,
         psr::{Cpsr, Mode},
         Arm9Data, CoreData, Schedule as _,
     },
+    ds_slot::DsSlot,
     emu::Emu,
     utils::{schedule::RawTimestamp, ByteSlice},
 };
@@ -818,7 +819,25 @@ impl Arm9Data for EngineData {
     #[inline]
     fn run_until(emu: &mut Emu<Self::Engine>, end_time: Timestamp) {
         while emu.arm9.schedule.cur_time() < end_time {
-            Schedule::handle_pending_events(emu);
+            while let Some((event, time)) = emu.arm9.schedule.pop_pending_event() {
+                match event {
+                    Event::DsSlotRomDataReady => DsSlot::handle_rom_data_ready(emu),
+                    Event::DsSlotSpiDataReady => emu.ds_slot.handle_spi_data_ready(),
+                    Event::DivResultReady => emu.arm9.div_engine.handle_result_ready(),
+                    Event::SqrtResultReady => emu.arm9.sqrt_engine.handle_result_ready(),
+                    Event::Timer(i) => emu.arm9.timers.handle_scheduled_overflow(
+                        i,
+                        time,
+                        &mut emu.arm9.schedule,
+                        &mut emu.arm9.irqs,
+                    ),
+                    Event::GxFifoStall => return,
+                    Event::Engine3dCommandFinished => emu
+                        .gpu
+                        .engine_3d
+                        .process_next_command(&mut emu.arm9, &mut emu.schedule),
+                }
+            }
             emu.arm9
                 .schedule
                 .set_target_time(emu.arm9.schedule.schedule().next_event_time().min(end_time));

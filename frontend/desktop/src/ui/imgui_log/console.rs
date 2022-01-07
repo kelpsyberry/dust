@@ -203,6 +203,7 @@ pub struct Console {
     filtered_history: Vec<(f32, HistoryNode)>,
     lvs_buf: Vec<(String, String)>,
     pub filter: String,
+    pub filter_buf: String,
     pub lock_to_bottom: bool,
     pub history_capacity: usize,
 }
@@ -219,6 +220,7 @@ impl Console {
                 filtered_history: Vec::new(),
                 lvs_buf: Vec::new(),
                 filter: String::new(),
+                filter_buf: String::new(),
                 lock_to_bottom,
                 history_capacity,
             },
@@ -312,19 +314,19 @@ impl Console {
                 ui.calc_text_size("Clear")[0] + unsafe { ui.style().frame_padding[0] } * 2.0;
             ui.set_next_item_width(ui.content_region_avail()[0] - clear_button_width - 16.0);
 
-            let prev_filter = self.filter.clone();
             if ui
-                .input_text("", &mut self.filter)
+                .input_text("##filter", &mut self.filter_buf)
                 .enter_returns_true(true)
                 .build()
             {
-                if self.filter.is_empty() {
+                if self.filter_buf.is_empty() {
                     self.filtered_history.clear();
+                    self.filter.clear();
                 } else {
-                    if !prev_filter.is_empty() && self.filter.contains(&prev_filter) {
+                    if !self.filter.is_empty() && self.filter_buf.contains(&self.filter) {
                         self.filtered_history.retain(|(_, node)| match node {
                             HistoryNode::Group(_) => true,
-                            HistoryNode::Leaf(_, content) => content.contains(&self.filter),
+                            HistoryNode::Leaf(_, content) => content.contains(&self.filter_buf),
                         })
                     } else {
                         self.filtered_history.clear();
@@ -333,11 +335,15 @@ impl Console {
                                 .iter()
                                 .filter(|(_, node)| match node {
                                     HistoryNode::Group(_) => true,
-                                    HistoryNode::Leaf(_, content) => content.contains(&self.filter),
+                                    HistoryNode::Leaf(_, content) => {
+                                        content.contains(&self.filter_buf)
+                                    }
                                 })
                                 .cloned(),
                         );
                     }
+                    self.filter.clear();
+                    self.filter.push_str(&self.filter_buf);
                     self.filter_history_groups();
                     self.collapse_history_groups();
                 }

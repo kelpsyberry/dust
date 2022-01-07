@@ -194,7 +194,7 @@ impl View for AudioChannels {
             return new_state;
         }
 
-        PlotLines::new(ui, "", &self.samples.buffer)
+        PlotLines::new(ui, "##sample_graph", &self.samples.buffer)
             .graph_size([ui.content_region_avail()[0], 128.0])
             .scale_min(-1.0)
             .scale_max(1.0)

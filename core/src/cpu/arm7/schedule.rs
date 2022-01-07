@@ -132,6 +132,30 @@ impl Schedule {
     ) -> &schedule::Schedule<Timestamp, Event, EventSlotIndex, { event_slots::LEN }> {
         &self.schedule
     }
+
+    #[inline]
+    pub(in crate::cpu) fn handle_pending_events<E: Engine>(emu: &mut Emu<E>) {
+        while let Some((event, time)) = emu
+            .arm7
+            .schedule
+            .schedule
+            .pop_pending_event(emu.arm7.schedule.cur_time)
+        {
+            match event {
+                Event::Shutdown => return,
+                Event::DsSlotRomDataReady => DsSlot::handle_rom_data_ready(emu),
+                Event::DsSlotSpiDataReady => emu.ds_slot.handle_spi_data_ready(),
+                Event::SpiDataReady => emu.spi.handle_data_ready(&mut emu.arm7.irqs),
+                Event::AudioSampleReady => Audio::handle_sample_ready(emu, time),
+                Event::Timer(i) => emu.arm7.timers.handle_scheduled_overflow(
+                    i,
+                    time,
+                    &mut emu.arm7.schedule,
+                    &mut emu.arm7.irqs,
+                ),
+            }
+        }
+    }
 }
 
 impl cpu::Schedule for Schedule {
@@ -183,31 +207,5 @@ impl cpu::Schedule for Schedule {
     #[inline]
     fn cancel_event(&mut self, slot_index: EventSlotIndex) {
         self.schedule.cancel(slot_index);
-    }
-
-    #[inline]
-    fn handle_pending_events<E: Engine>(emu: &mut Emu<E>) {
-        while let Some((event, time)) = emu
-            .arm7
-            .schedule
-            .schedule
-            .pop_pending_event(emu.arm7.schedule.cur_time)
-        {
-            match event {
-                Event::Shutdown => return,
-                Event::DsSlotRomDataReady => DsSlot::handle_rom_data_ready(emu),
-                Event::DsSlotSpiDataReady => emu.ds_slot.handle_spi_data_ready(),
-                Event::SpiDataReady => {
-                    emu.spi.handle_data_ready(&mut emu.arm7.irqs);
-                }
-                Event::AudioSampleReady => Audio::handle_sample_ready(emu, time),
-                Event::Timer(i) => emu.arm7.timers.handle_scheduled_overflow(
-                    i,
-                    time,
-                    &mut emu.arm7.schedule,
-                    &mut emu.arm7.irqs,
-                ),
-            }
-        }
     }
 }

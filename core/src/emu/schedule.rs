@@ -37,8 +37,9 @@ impl From<Timestamp> for RawTimestamp {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Event {
-    Gpu(gpu::Event), // Max 1
-    Shutdown,        // Max 1
+    Gpu(gpu::Event),         // Max 1
+    Shutdown,                // Max 1
+    Engine3dCommandFinished, // Max 1
 }
 
 impl Default for Event {
@@ -54,6 +55,7 @@ pub mod event_slots {
         super::EventSlotIndex,
         GPU,
         SHUTDOWN,
+        ENGINE_3D,
     }
 }
 bounded_int!(pub struct EventSlotIndex(u8), max (event_slots::LEN - 1) as u8);

@@ -1,5 +1,5 @@
-use super::{timers, Engine};
-use crate::emu::{self, Emu};
+use super::timers;
+use crate::emu;
 
 pub trait Schedule {
     type Timestamp: Copy
@@ -31,5 +31,4 @@ pub trait Schedule {
 
     fn schedule_event(&mut self, slot_index: Self::EventSlotIndex, time: Self::Timestamp);
     fn cancel_event(&mut self, slot_index: Self::EventSlotIndex);
-    fn handle_pending_events<E: Engine>(emu: &mut Emu<E>);
 }

@@ -177,7 +177,7 @@ impl View for Palettes2D {
             .iter()
             .position(|s| *s == self.cur_selection)
             .unwrap();
-        let selection_updated = ui.combo("", &mut i, &POSSIBLE_SELECTIONS, |selection| {
+        let selection_updated = ui.combo("##palette", &mut i, &POSSIBLE_SELECTIONS, |selection| {
             format!(
                 "Engine {} {} palette",
                 match selection.engine {

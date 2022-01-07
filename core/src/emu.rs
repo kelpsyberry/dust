@@ -11,7 +11,7 @@ use crate::{
         self,
         arm7::{self, Arm7},
         arm9::{self, Arm9},
-        Arm7Data, Arm9Data, CoreData,
+        Arm7Data, Arm9Data, CoreData, Schedule as _,
     },
     ds_slot::{self, DsSlot},
     flash::Flash,
@@ -167,6 +167,7 @@ impl Builder {
                 self.logger.new(slog::o!("rtc" => "")),
             ),
             gpu: Gpu::new(
+                &mut arm9.schedule,
                 &mut global_schedule,
                 #[cfg(feature = "log")]
                 &self.logger.new(slog::o!("gpu" => "")),
@@ -274,8 +275,15 @@ impl<E: cpu::Engine> Emu<E> {
     pub fn run_frame(&mut self) -> bool {
         loop {
             let batch_end_time = self.schedule.batch_end_time();
-            E::Arm7Data::run_until(self, batch_end_time.into());
-            E::Arm9Data::run_until(self, batch_end_time.into());
+            if !self.gpu.engine_3d.gx_fifo_stalled() {
+                E::Arm9Data::run_until(self, batch_end_time.into());
+                E::Arm7Data::run_until(
+                    self,
+                    Timestamp::from(self.arm9.schedule.cur_time())
+                        .min(batch_end_time)
+                        .into(),
+                );
+            }
             self.schedule.set_cur_time(batch_end_time);
             while let Some((event, time)) = self.schedule.pop_pending_event() {
                 match event {
@@ -290,6 +298,10 @@ impl<E: cpu::Engine> Emu<E> {
                     Event::Shutdown => {
                         return false;
                     }
+                    Event::Engine3dCommandFinished => self
+                        .gpu
+                        .engine_3d
+                        .process_next_command(&mut self.arm9, &mut self.schedule),
                 }
             }
         }

@@ -253,10 +253,10 @@ impl DsSlot {
                 .read_le(emu.ds_slot.rom_output_pos.get() as usize);
             if emu.ds_slot.arm7_access {
                 emu.arm7
-                    .start_dma_transfers_with_timing(arm7::dma::Timing::DsSlot);
+                    .start_dma_transfers_with_timing::<{ arm7::dma::Timing::DsSlot }>();
             } else {
                 emu.arm9
-                    .start_dma_transfers_with_timing(arm9::dma::Timing::DsSlot);
+                    .start_dma_transfers_with_timing::<{ arm9::dma::Timing::DsSlot }>();
             }
         }
     }

@@ -10,7 +10,8 @@ use crate::{
     },
     ds_slot,
     emu::{swram, Emu, GlobalExMemControl, LocalExMemControl},
-    gpu, ipc,
+    gpu::{self, engine_3d},
+    ipc,
 };
 
 // TODO: Fix GBA ROM open bus values, depending on the selected access time they're ORed with
@@ -40,6 +41,8 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             0x005 => (emu.gpu.disp_status_9().0 >> 8) as u8,
             0x006 => emu.gpu.vcount() as u8,
             0x007 => (emu.gpu.vcount() >> 8) as u8,
+            0x060 => emu.gpu.engine_3d.rendering_control().0 as u8,
+            0x061 => (emu.gpu.engine_3d.rendering_control().0 >> 8) as u8,
             0x100 => emu.arm9.timers.counter(
                 timers::Index::new(0),
                 &mut emu.arm9.schedule,
@@ -116,9 +119,11 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             0x208 => emu.arm9.irqs.master_enable() as u8,
             0x247 => emu.swram.control().0,
             0x300 => emu.arm9.post_boot_flag.0,
+            0x320..=0x6A3 => emu.gpu.engine_3d.read_8::<A>(addr as u16),
             0x1000..=0x1003 | 0x1008..=0x1057 | 0x106C..=0x106D => {
                 emu.gpu.engine_2d_b.read_8::<A>(addr)
             }
+            0x062..=0x063 | 0x06E..=0x06F => 0,
             _ => {
                 #[cfg(feature = "log")]
                 if !A::IS_DEBUG {
@@ -200,6 +205,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
             0x000..=0x002 | 0x008..=0x056 | 0x06C => emu.gpu.engine_2d_a.read_16::<A>(addr),
             0x004 => emu.gpu.disp_status_9().0,
             0x006 => emu.gpu.vcount(),
+            0x060 => emu.gpu.engine_3d.rendering_control().0,
             0x0B0 => emu.arm9.dma.channels[0].src_addr as u16,
             0x0B2 => (emu.arm9.dma.channels[0].src_addr >> 16) as u16,
             0x0B4 => emu.arm9.dma.channels[0].dst_addr as u16,
@@ -259,7 +265,9 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
             0x2B0 => emu.arm9.sqrt_engine.control().0,
             0x300 => emu.arm9.post_boot_flag.0 as u16,
             0x304 => emu.gpu.power_control().0,
+            0x320..=0x6A2 => emu.gpu.engine_3d.read_16::<A>(addr as u16),
             0x1000..=0x1002 | 0x1008..=0x1056 | 0x106C => emu.gpu.engine_2d_b.read_16::<A>(addr),
+            0x062 | 0x06E => 0,
             _ => {
                 #[cfg(feature = "log")]
                 if !A::IS_DEBUG {
@@ -340,6 +348,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
         0x04 => match addr & 0x00FF_FFFC {
             0x000 | 0x008..=0x054 | 0x06C => emu.gpu.engine_2d_a.read_32::<A>(addr),
             0x004 => emu.gpu.disp_status_9().0 as u32 | (emu.gpu.vcount() as u32) << 16,
+            0x060 => emu.gpu.engine_3d.rendering_control().0 as u32,
             0x0B0 => emu.arm9.dma.channels[0].src_addr,
             0x0B4 => emu.arm9.dma.channels[0].dst_addr,
             0x0B8 => emu.arm9.dma.channels[0].control.0,
@@ -374,6 +383,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
             0x2B4 => emu.arm9.sqrt_engine.result(),
             0x2B8 => emu.arm9.sqrt_engine.input() as u32,
             0x2BC => (emu.arm9.sqrt_engine.input() >> 32) as u32,
+            0x320..=0x6A0 => emu.gpu.engine_3d.read_32::<A>(addr as u16),
             0x1000 | 0x1008..=0x1054 | 0x106C => emu.gpu.engine_2d_b.read_32::<A>(addr),
             0x10_0000 => {
                 if A::IS_DEBUG {
@@ -474,6 +484,18 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
             0x000..=0x003 | 0x008..=0x057 | 0x06C..=0x06D => {
                 emu.gpu.engine_2d_a.write_8::<A>(addr, value);
             }
+            0x060 => emu
+                .gpu
+                .engine_3d
+                .write_rendering_control(engine_3d::RenderingControl(
+                    (emu.gpu.engine_3d.rendering_control().0 & 0x4F00) | value as u16,
+                )),
+            0x061 => emu
+                .gpu
+                .engine_3d
+                .write_rendering_control(engine_3d::RenderingControl(
+                    (emu.gpu.engine_3d.rendering_control().0 & 0xFF) | (value as u16) << 8,
+                )),
             0x1A0 => {
                 if emu.ds_slot.arm9_access() {
                     emu.ds_slot.set_aux_spi_control(ds_slot::AuxSpiControl(
@@ -580,9 +602,16 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
                 .vram
                 .set_bank_control_i(gpu::vram::BankControl(value), &mut emu.arm9),
             0x300 => emu.arm9.post_boot_flag.0 = (emu.arm9.post_boot_flag.0 & 1) | (value & 3),
+            0x320..=0x6A3 => emu.gpu.engine_3d.write_8::<A, _>(
+                addr as u16,
+                value,
+                &mut emu.arm9,
+                &mut emu.schedule,
+            ),
             0x1000..=0x1003 | 0x1008..=0x1057 | 0x106C..=0x106D => {
                 emu.gpu.engine_2d_b.write_8::<A>(addr, value);
             }
+            0x062 | 0x063 => {}
             _ =>
             {
                 #[cfg(feature = "log")]
@@ -635,6 +664,10 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                 }
                 0x004 => emu.gpu.set_disp_status_9(gpu::DispStatus(value)),
                 0x006 => emu.gpu.set_vcount(value),
+                0x060 => emu
+                    .gpu
+                    .engine_3d
+                    .write_rendering_control(engine_3d::RenderingControl(value)),
                 0x0B0 => emu.arm9.dma.channels[0]
                     .set_src_addr((emu.arm9.dma.channels[0].src_addr & 0xFFFF_0000) | value as u32),
                 0x0B2 => emu.arm9.dma.channels[0].set_src_addr(
@@ -651,6 +684,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     dma::Control(
                         (emu.arm9.dma.channels[0].control.0 & 0x0000_FFFF) | (value as u32) << 16,
                     ),
+                    &emu.gpu.engine_3d,
                 ),
                 0x0BC => emu.arm9.dma.channels[1]
                     .set_src_addr((emu.arm9.dma.channels[1].src_addr & 0xFFFF_0000) | value as u32),
@@ -668,6 +702,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     dma::Control(
                         (emu.arm9.dma.channels[1].control.0 & 0x0000_FFFF) | (value as u32) << 16,
                     ),
+                    &emu.gpu.engine_3d,
                 ),
                 0x0C8 => emu.arm9.dma.channels[2]
                     .set_src_addr((emu.arm9.dma.channels[2].src_addr & 0xFFFF_0000) | value as u32),
@@ -685,6 +720,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     dma::Control(
                         (emu.arm9.dma.channels[2].control.0 & 0x0000_FFFF) | (value as u32) << 16,
                     ),
+                    &emu.gpu.engine_3d,
                 ),
                 0x0D4 => emu.arm9.dma.channels[3]
                     .set_src_addr((emu.arm9.dma.channels[3].src_addr & 0xFFFF_0000) | value as u32),
@@ -702,6 +738,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     dma::Control(
                         (emu.arm9.dma.channels[3].control.0 & 0x0000_FFFF) | (value as u32) << 16,
                     ),
+                    &emu.gpu.engine_3d,
                 ),
                 0x100 => emu.arm9.timers.set_reload(
                     timers::Index::new(0),
@@ -872,9 +909,16 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     emu.arm9.post_boot_flag.0 = (emu.arm9.post_boot_flag.0 & 1) | (value as u8 & 3);
                 }
                 0x304 => emu.gpu.set_power_control(gpu::PowerControl(value)),
+                0x320..=0x6A2 => emu.gpu.engine_3d.write_16::<A, _>(
+                    addr as u16,
+                    value,
+                    &mut emu.arm9,
+                    &mut emu.schedule,
+                ),
                 0x1000..=0x1002 | 0x1008..=0x1056 | 0x106C => {
                     emu.gpu.engine_2d_b.write_16::<A>(addr, value);
                 }
+                0x062 => {}
                 _ =>
                 {
                     #[cfg(feature = "log")]
@@ -918,7 +962,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
 }
 
 #[inline(never)]
-pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value: u32) {
+pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut value: u32) {
     addr &= !3;
     match addr >> 24 {
         #[cfg(feature = "bft-w")]
@@ -942,26 +986,38 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     emu.gpu.set_disp_status_9(gpu::DispStatus(value as u16));
                     emu.gpu.set_vcount((value >> 16) as u16);
                 }
+                0x060 => emu
+                    .gpu
+                    .engine_3d
+                    .write_rendering_control(engine_3d::RenderingControl(value as u16)),
                 0x0B0 => emu.arm9.dma.channels[0].set_src_addr(value),
                 0x0B4 => emu.arm9.dma.channels[0].set_dst_addr(value),
-                0x0B8 => emu
-                    .arm9
-                    .set_dma_channel_control(dma::Index::new(0), dma::Control(value)),
+                0x0B8 => emu.arm9.set_dma_channel_control(
+                    dma::Index::new(0),
+                    dma::Control(value),
+                    &emu.gpu.engine_3d,
+                ),
                 0x0BC => emu.arm9.dma.channels[1].set_src_addr(value),
                 0x0C0 => emu.arm9.dma.channels[1].set_dst_addr(value),
-                0x0C4 => emu
-                    .arm9
-                    .set_dma_channel_control(dma::Index::new(1), dma::Control(value)),
+                0x0C4 => emu.arm9.set_dma_channel_control(
+                    dma::Index::new(1),
+                    dma::Control(value),
+                    &emu.gpu.engine_3d,
+                ),
                 0x0C8 => emu.arm9.dma.channels[2].set_src_addr(value),
                 0x0CC => emu.arm9.dma.channels[2].set_dst_addr(value),
-                0x0D0 => emu
-                    .arm9
-                    .set_dma_channel_control(dma::Index::new(2), dma::Control(value)),
+                0x0D0 => emu.arm9.set_dma_channel_control(
+                    dma::Index::new(2),
+                    dma::Control(value),
+                    &emu.gpu.engine_3d,
+                ),
                 0x0D4 => emu.arm9.dma.channels[3].set_src_addr(value),
                 0x0D8 => emu.arm9.dma.channels[3].set_dst_addr(value),
-                0x0DC => emu
-                    .arm9
-                    .set_dma_channel_control(dma::Index::new(3), dma::Control(value)),
+                0x0DC => emu.arm9.set_dma_channel_control(
+                    dma::Index::new(3),
+                    dma::Control(value),
+                    &emu.gpu.engine_3d,
+                ),
                 0x0E0..=0x0EC => emu.arm9.dma_fill.write_le(addr as usize & 0xC, value),
                 0x100 => emu.arm9.timers.set_control_reload(
                     timers::Index::new(0),
@@ -1058,10 +1114,16 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     .arm9
                     .irqs
                     .set_enabled(IrqFlags(value), &mut emu.arm9.schedule),
-                0x214 => emu
-                    .arm9
-                    .irqs
-                    .set_requested(IrqFlags(emu.arm9.irqs.requested().0 & !value), ()),
+                0x214 => {
+                    if emu.gpu.engine_3d.gx_fifo_irq_requested() {
+                        // The GXFIFO IRQ can't be acknowledged through IF as long as the trigger
+                        // condition is still met.
+                        value &= !(1 << 21);
+                    }
+                    emu.arm9
+                        .irqs
+                        .set_requested(IrqFlags(emu.arm9.irqs.requested().0 & !value), ());
+                }
                 0x240 => {
                     emu.gpu
                         .vram
@@ -1141,6 +1203,12 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     &mut emu.arm9.schedule,
                 ),
                 0x304 => emu.gpu.set_power_control(gpu::PowerControl(value as u16)),
+                0x320..=0x6A0 => emu.gpu.engine_3d.write_32::<A, _>(
+                    addr as u16,
+                    value,
+                    &mut emu.arm9,
+                    &mut emu.schedule,
+                ),
                 0x1000 | 0x1008..=0x1054 | 0x106C => {
                     emu.gpu.engine_2d_b.write_32::<A>(addr, value);
                 }

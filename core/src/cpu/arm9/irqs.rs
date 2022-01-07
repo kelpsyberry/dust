@@ -39,7 +39,7 @@ bitfield_debug! {
         pub ipc_recv_fifo_not_empty: bool @ 18,     // x
         pub ds_slot_transfer_complete: bool @ 19,   // x
         pub ds_slot_ext: bool @ 20,                 // -
-        pub gx_fifo: bool @ 21,                     // -
+        pub gx_fifo: bool @ 21,                     // x
     }
 }
 

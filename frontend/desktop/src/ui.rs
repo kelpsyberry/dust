@@ -751,7 +751,7 @@ pub fn main() {
                     ui.menu("Config", || {
                         ui.menu("Audio volume", || {
                             let mut volume = state.audio_volume * 100.0;
-                            if imgui::Slider::new("", 0.0, 100.0)
+                            if imgui::Slider::new("##audio_volume", 0.0, 100.0)
                                 .display_format("%.02f%%")
                                 .build(ui, &mut volume)
                             {
@@ -768,7 +768,7 @@ pub fn main() {
                         ui.menu("Audio sample chunk size", || {
                             let mut sample_chunk_size = state.audio_sample_chunk_size as i32;
                             if ui
-                                .input_int("", &mut sample_chunk_size)
+                                .input_int("##audio_sample_chunk_size", &mut sample_chunk_size)
                                 .enter_returns_true(true)
                                 .build()
                             {
@@ -865,13 +865,18 @@ pub fn main() {
                                 .iter()
                                 .position(|&m| m == state.audio_interp_method.value)
                                 .unwrap();
-                            let updated = ui.combo("", &mut i, &INTERP_METHODS, |interp_method| {
-                                match interp_method {
-                                    audio::InterpMethod::Nearest => "Nearest",
-                                    audio::InterpMethod::Cubic => "Cubic",
-                                }
-                                .into()
-                            });
+                            let updated = ui.combo(
+                                "##audio_interp_method",
+                                &mut i,
+                                &INTERP_METHODS,
+                                |interp_method| {
+                                    match interp_method {
+                                        audio::InterpMethod::Nearest => "Nearest",
+                                        audio::InterpMethod::Cubic => "Cubic",
+                                    }
+                                    .into()
+                                },
+                            );
                             if updated {
                                 state.audio_interp_method.value = INTERP_METHODS[i];
                                 if let Some(audio_channel) = state.audio_channel.as_mut() {
@@ -913,7 +918,11 @@ pub fn main() {
 
                         ui.menu("Screen rotation", || {
                             let mut screen_rot = state.screen_rotation.value as i32;
-                            if ui.input_int("", &mut screen_rot).step(1).build() {
+                            if ui
+                                .input_int("##screen_rot", &mut screen_rot)
+                                .step(1)
+                                .build()
+                            {
                                 screen_rot = screen_rot.clamp(0, 359);
                             }
                             macro_rules! buttons {

@@ -111,9 +111,9 @@ impl<E: Engine> Arm7<E> {
         }
     }
 
-    pub(crate) fn start_dma_transfers_with_timing(&mut self, timing: Timing) {
+    pub(crate) fn start_dma_transfers_with_timing<const TIMING: Timing>(&mut self) {
         for i in 0..4 {
-            if self.dma.channels[i as usize].timing == timing {
+            if self.dma.channels[i as usize].timing == TIMING {
                 self.start_dma_transfer::<false>(Index::new(i));
             }
         }

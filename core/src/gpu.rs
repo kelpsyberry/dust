@@ -1,12 +1,14 @@
 pub mod engine_2d;
+pub mod engine_3d;
 pub mod vram;
 
 use crate::{
     cpu::{arm7, arm9, Engine},
-    emu::{self, event_slots, Emu, Schedule, Timestamp},
+    emu::{self, event_slots, Emu, Timestamp},
     utils::{bitfield_debug, schedule::RawTimestamp, zeroed_box, Fill8, Zero},
 };
 use engine_2d::Engine2d;
+use engine_3d::Engine3d;
 use vram::Vram;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,15 +84,18 @@ pub struct Gpu {
     pub vram: Vram,
     pub engine_2d_a: Engine2d<engine_2d::EngineA>,
     pub engine_2d_b: Engine2d<engine_2d::EngineB>,
+    pub engine_3d: Engine3d,
 }
 
 impl Gpu {
     pub(crate) fn new(
-        schedule: &mut Schedule,
+        schedule: &mut arm9::Schedule,
+        emu_schedule: &mut emu::Schedule,
         #[cfg(feature = "log")] logger: &slog::Logger,
     ) -> Self {
-        schedule.set_event(event_slots::GPU, emu::Event::Gpu(Event::EndHDraw));
-        schedule.schedule_event(event_slots::GPU, HDRAW_DURATION);
+        emu_schedule.set_event(event_slots::GPU, emu::Event::Gpu(Event::EndHDraw));
+        emu_schedule.schedule_event(event_slots::GPU, HDRAW_DURATION);
+
         Gpu {
             framebuffer: zeroed_box(),
             power_control: PowerControl(0),
@@ -110,6 +115,12 @@ impl Gpu {
             engine_2d_b: Engine2d::new(
                 #[cfg(feature = "log")]
                 logger.new(slog::o!("eng_2d" => "b")),
+            ),
+            engine_3d: Engine3d::new(
+                schedule,
+                emu_schedule,
+                #[cfg(feature = "log")]
+                logger.new(slog::o!("eng_3d" => "")),
             ),
         }
     }
@@ -206,7 +217,7 @@ impl Gpu {
 
         if emu.gpu.vcount < SCREEN_HEIGHT as u16 {
             emu.arm9
-                .start_dma_transfers_with_timing(arm9::dma::Timing::HBlank);
+                .start_dma_transfers_with_timing::<{ arm9::dma::Timing::HBlank }>();
             if emu.gpu.cur_scanline < SCREEN_HEIGHT as u32 {
                 let scanline_base = (emu.gpu.cur_scanline as usize) * SCREEN_WIDTH;
                 unsafe {
@@ -302,9 +313,9 @@ impl Gpu {
                     .set_requested(emu.arm9.irqs.requested().with_vblank(true), ());
             }
             emu.arm7
-                .start_dma_transfers_with_timing(arm7::dma::Timing::VBlank);
+                .start_dma_transfers_with_timing::<{ arm7::dma::Timing::VBlank }>();
             emu.arm9
-                .start_dma_transfers_with_timing(arm9::dma::Timing::VBlank);
+                .start_dma_transfers_with_timing::<{ arm9::dma::Timing::VBlank }>();
         } else if emu.gpu.vcount == (TOTAL_SCANLINES - 1) as u16 {
             // The VBlank flag gets cleared one scanline earlier than the actual VBlank end.
             emu.gpu.disp_status_7.set_vblank(false);

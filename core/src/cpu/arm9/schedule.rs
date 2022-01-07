@@ -1,7 +1,6 @@
 use crate::{
-    cpu::{self, timers, Engine},
-    ds_slot::DsSlot,
-    emu::{self, Emu},
+    cpu::{self, timers},
+    emu,
     utils::{
         bounded_int,
         schedule::{self, RawTimestamp},
@@ -65,11 +64,13 @@ impl From<Timestamp> for timers::Timestamp {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Event {
-    DsSlotRomDataReady,   // Max 1
-    DsSlotSpiDataReady,   // Max 1
-    DivResultReady,       // Max 1
-    SqrtResultReady,      // Max 1
-    Timer(timers::Index), // Max 4
+    DsSlotRomDataReady,      // Max 1
+    DsSlotSpiDataReady,      // Max 1
+    DivResultReady,          // Max 1
+    SqrtResultReady,         // Max 1
+    Timer(timers::Index),    // Max 4
+    GxFifoStall,             // Max 1
+    Engine3dCommandFinished, // Max 1
 }
 
 impl Default for Event {
@@ -87,6 +88,8 @@ pub mod event_slots {
         DIV,
         SQRT,
         TIMERS_START..TIMERS_END 4,
+        GX_FIFO,
+        ENGINE_3D,
     }
 }
 bounded_int!(pub struct EventSlotIndex(u8), max (event_slots::LEN - 1) as u8);
@@ -128,6 +131,11 @@ impl Schedule {
         &self,
     ) -> &schedule::Schedule<Timestamp, Event, EventSlotIndex, { event_slots::LEN }> {
         &self.schedule
+    }
+
+    #[inline]
+    pub(in crate::cpu) fn pop_pending_event(&mut self) -> Option<(Event, Timestamp)> {
+        self.schedule.pop_pending_event(self.cur_time)
     }
 }
 
@@ -180,28 +188,5 @@ impl cpu::Schedule for Schedule {
     #[inline]
     fn cancel_event(&mut self, slot_index: EventSlotIndex) {
         self.schedule.cancel(slot_index);
-    }
-
-    #[inline]
-    fn handle_pending_events<E: Engine>(emu: &mut Emu<E>) {
-        while let Some((event, time)) = emu
-            .arm9
-            .schedule
-            .schedule
-            .pop_pending_event(emu.arm9.schedule.cur_time)
-        {
-            match event {
-                Event::DsSlotRomDataReady => DsSlot::handle_rom_data_ready(emu),
-                Event::DsSlotSpiDataReady => emu.ds_slot.handle_spi_data_ready(),
-                Event::DivResultReady => emu.arm9.div_engine.handle_result_ready(),
-                Event::SqrtResultReady => emu.arm9.sqrt_engine.handle_result_ready(),
-                Event::Timer(i) => emu.arm9.timers.handle_scheduled_overflow(
-                    i,
-                    time,
-                    &mut emu.arm9.schedule,
-                    &mut emu.arm9.irqs,
-                ),
-            }
-        }
     }
 }
