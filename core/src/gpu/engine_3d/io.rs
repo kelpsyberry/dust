@@ -19,6 +19,25 @@ impl Engine3d {
             0x606 => (self.poly_vert_ram_level().0 >> 16) as u8,
             0x607 => (self.poly_vert_ram_level().0 >> 24) as u8,
 
+            0x640..=0x67F => {
+                if self.clip_mtx_needs_recalculation {
+                    self.update_clip_mtx();
+                }
+                (self.cur_clip_mtx.get(addr as usize >> 2 & 0xF) >> ((addr & 3) << 3)) as u8
+            }
+
+            0x680..=0x68B => {
+                (self.cur_pos_vec_mtxs[1].get(addr as usize >> 2 & 0xF) >> ((addr & 3) << 3)) as u8
+            }
+            0x68C..=0x697 => {
+                (self.cur_pos_vec_mtxs[1].get(1 + (addr as usize >> 2 & 0xF)) >> ((addr & 3) << 3))
+                    as u8
+            }
+            0x698..=0x6A3 => {
+                (self.cur_pos_vec_mtxs[1].get(2 + (addr as usize >> 2 & 0xF)) >> ((addr & 3) << 3))
+                    as u8
+            }
+
             _ => {
                 #[cfg(feature = "log")]
                 if !A::IS_DEBUG {
@@ -39,6 +58,25 @@ impl Engine3d {
             0x604 => self.poly_vert_ram_level().0 as u16,
             0x606 => (self.poly_vert_ram_level().0 >> 16) as u16,
 
+            0x640..=0x67F => {
+                if self.clip_mtx_needs_recalculation {
+                    self.update_clip_mtx();
+                }
+                (self.cur_clip_mtx.get(addr as usize >> 2 & 0xF) >> ((addr & 2) << 3)) as u16
+            }
+
+            0x680..=0x68A => {
+                (self.cur_pos_vec_mtxs[1].get(addr as usize >> 2 & 0xF) >> ((addr & 2) << 3)) as u16
+            }
+            0x68C..=0x696 => {
+                (self.cur_pos_vec_mtxs[1].get(1 + (addr as usize >> 2 & 0xF)) >> ((addr & 2) << 3))
+                    as u16
+            }
+            0x698..=0x6A2 => {
+                (self.cur_pos_vec_mtxs[1].get(2 + (addr as usize >> 2 & 0xF)) >> ((addr & 2) << 3))
+                    as u16
+            }
+
             _ => {
                 #[cfg(feature = "log")]
                 if !A::IS_DEBUG {
@@ -55,6 +93,17 @@ impl Engine3d {
 
             0x600 => self.gx_status().0,
             0x604 => self.poly_vert_ram_level().0,
+
+            0x640..=0x67F => {
+                if self.clip_mtx_needs_recalculation {
+                    self.update_clip_mtx();
+                }
+                self.cur_clip_mtx.get(addr as usize >> 2 & 0xF) as u32
+            }
+
+            0x680..=0x688 => self.cur_pos_vec_mtxs[1].get(addr as usize >> 2 & 0xF) as u32,
+            0x68C..=0x694 => self.cur_pos_vec_mtxs[1].get(1 + (addr as usize >> 2 & 0xF)) as u32,
+            0x698..=0x6A0 => self.cur_pos_vec_mtxs[1].get(2 + (addr as usize >> 2 & 0xF)) as u32,
 
             _ => {
                 #[cfg(feature = "log")]

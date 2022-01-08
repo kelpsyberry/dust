@@ -95,6 +95,7 @@ impl DivEngine {
             .with_div_by_0(self.denominator == 0);
         match self.control.mode() {
             0 => {
+                // 32/32
                 let numerator = self.numerator as i32;
                 let denominator = self.denominator as i32;
                 if denominator == 0 {
@@ -109,7 +110,9 @@ impl DivEngine {
                     self.remainder = (numerator % denominator) as i64;
                 }
             }
+
             1 | 3 => {
+                // 64/32
                 let numerator = self.numerator;
                 let denominator = self.denominator as i32;
                 if denominator == 0 {
@@ -123,7 +126,9 @@ impl DivEngine {
                     self.remainder = numerator % denominator as i64;
                 }
             }
+
             _ => {
+                // 64/64
                 let numerator = self.numerator;
                 let denominator = self.denominator;
                 if self.denominator == 0 {
