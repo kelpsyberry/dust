@@ -1,5 +1,6 @@
 mod io;
 mod matrix;
+mod vertex;
 
 use crate::{
     cpu::{
@@ -8,10 +9,11 @@ use crate::{
         Schedule,
     },
     emu,
-    utils::{bitfield_debug, Fifo},
+    utils::{bitfield_debug, schedule::RawTimestamp, Fifo},
 };
-use core::mem::transmute;
+use core::mem::{replace, transmute};
 use matrix::{Matrix, MatrixBuffer};
+use vertex::{TexCoords, Vertex};
 
 bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -112,6 +114,22 @@ bitfield_debug! {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+#[allow(dead_code)] // Initialized through `transmute`
+enum PrimitiveType {
+    Triangles,
+    Quads,
+    TriangleStrip,
+    QuadStrip,
+}
+
+mod bounded {
+    use crate::utils::bounded_int_lit;
+    bounded_int_lit!(pub struct PrimVertIndex(u8), max 3);
+}
+use bounded::PrimVertIndex;
+
 pub struct Engine3d {
     #[cfg(feature = "log")]
     logger: slog::Logger,
@@ -139,7 +157,7 @@ pub struct Engine3d {
     cur_tex_mtx: Matrix,
 
     vert_color: u16,
-    tex_coords: [i16; 2],
+    tex_coords: TexCoords,
     last_vtx_coords: [i16; 3],
 
     shininess_table_enabled: bool,
@@ -158,6 +176,12 @@ pub struct Engine3d {
     cur_tex_params: TextureParams,
     next_tex_palette_base: u16,
     cur_tex_palette_base: u16,
+
+    cur_prim_type: PrimitiveType,
+    cur_prim_verts: [Vertex; 4],
+    cur_prim_max_verts: u8,
+    cur_prim_vert_index: PrimVertIndex,
+    cur_strip_prim_is_odd: bool,
 }
 
 fn command_name(cmd: u8) -> &'static str {
@@ -247,7 +271,7 @@ impl Engine3d {
             cur_tex_mtx: Matrix::zero(),
 
             vert_color: 0,
-            tex_coords: [0; 2],
+            tex_coords: TexCoords::splat(0),
             last_vtx_coords: [0; 3],
             shininess_table_enabled: false,
             diffuse_color: 0,
@@ -266,6 +290,12 @@ impl Engine3d {
             cur_tex_params: TextureParams(0),
             next_tex_palette_base: 0,
             cur_tex_palette_base: 0,
+
+            cur_prim_type: PrimitiveType::Triangles,
+            cur_prim_verts: [Vertex::zero(); 4],
+            cur_prim_max_verts: 0,
+            cur_prim_vert_index: PrimVertIndex::new(0),
+            cur_strip_prim_is_odd: false,
         }
     }
 
@@ -288,6 +318,8 @@ impl Engine3d {
     #[inline]
     pub fn gx_status(&self) -> GxStatus {
         self.gx_status
+            .with_proj_matrix_stack_level(self.proj_stack_pointer)
+            .with_pos_vec_matrix_stack_level(self.pos_vec_stack_pointer)
             .with_fifo_level(self.gx_fifo.len() as u16)
             .with_fifo_less_than_half_full(self.gx_fifo.len() < 128)
             .with_fifo_empty(self.gx_fifo.is_empty())
@@ -326,6 +358,18 @@ impl Engine3d {
         46
     }
 
+    pub(super) fn waiting_for_vblank(&self) -> bool {
+        self.command_finish_time.0 == RawTimestamp::MAX
+    }
+
+    pub(crate) fn gx_fifo_irq_requested(&self) -> bool {
+        self.gx_fifo_irq_requested
+    }
+
+    pub(crate) fn gx_fifo_half_empty(&self) -> bool {
+        self.gx_fifo.len() < 128
+    }
+
     fn params_for_command(&self, command: u8) -> u8 {
         match command {
             0x00 | 0x11 | 0x15 | 0x41 => 0,
@@ -343,14 +387,6 @@ impl Engine3d {
                 0
             }
         }
-    }
-
-    pub(crate) fn gx_fifo_irq_requested(&self) -> bool {
-        self.gx_fifo_irq_requested
-    }
-
-    pub(crate) fn gx_fifo_half_empty(&self) -> bool {
-        self.gx_fifo.len() < 128
     }
 
     fn write_to_gx_fifo(
@@ -371,11 +407,13 @@ impl Engine3d {
             if self.gx_fifo.len() == 257 {
                 let cur_time = arm9.schedule.cur_time();
                 if arm9::Timestamp::from(self.command_finish_time) > cur_time {
-                    arm9.schedule.cancel_event(arm9::event_slots::ENGINE_3D);
+                    if !self.waiting_for_vblank() {
+                        arm9.schedule.cancel_event(arm9::event_slots::ENGINE_3D);
+                        emu_schedule
+                            .schedule_event(emu::event_slots::ENGINE_3D, self.command_finish_time);
+                    }
                     arm9.schedule
                         .schedule_event(arm9::event_slots::GX_FIFO, cur_time);
-                    emu_schedule
-                        .schedule_event(emu::event_slots::ENGINE_3D, self.command_finish_time);
                 }
                 return;
             }
@@ -499,23 +537,175 @@ impl Engine3d {
 
     fn add_vertex(&mut self, coords: [i16; 3]) {
         self.last_vtx_coords = coords;
+
         if self.clip_mtx_needs_recalculation {
             self.update_clip_mtx();
         }
-        println!(
-            "Orig: {} {} {}",
-            coords[0] as f32 / 4096.0,
-            coords[1] as f32 / 4096.0,
-            coords[2] as f32 / 4096.0
-        );
-        let coords = self.cur_clip_mtx.mul_left_vec_i16(coords).0;
-        println!(
-            "Transformed: {} {} {} {}",
-            coords[0] as f32 / 4096.0,
-            coords[1] as f32 / 4096.0,
-            coords[2] as f32 / 4096.0,
-            coords[3] as f32 / 4096.0,
-        );
+        self.cur_prim_verts[self.cur_prim_vert_index.get() as usize] = Vertex {
+            coords: self.cur_clip_mtx.mul_left_vec_i16(coords),
+            uv: self.tex_coords,
+            color: vertex::decode_rgb_5(self.vert_color),
+        };
+
+        let new_vert_index = self.cur_prim_vert_index.get() + 1;
+        if new_vert_index == self.cur_prim_max_verts {
+            if self.cur_prim_type == PrimitiveType::QuadStrip {
+                self.cur_prim_verts.swap(2, 3);
+            }
+
+            self.clip_and_submit_polygon();
+
+            match self.cur_prim_type {
+                PrimitiveType::Triangles | PrimitiveType::Quads => {
+                    self.cur_tex_params = self.next_tex_params;
+                    self.cur_tex_palette_base = self.next_tex_palette_base;
+                    self.cur_prim_vert_index = PrimVertIndex::new(0);
+                }
+
+                PrimitiveType::TriangleStrip => {
+                    self.cur_prim_verts[self.cur_strip_prim_is_odd as usize] =
+                        self.cur_prim_verts[2];
+                    self.cur_prim_vert_index = PrimVertIndex::new(2);
+                    self.cur_strip_prim_is_odd = !self.cur_strip_prim_is_odd;
+                }
+
+                PrimitiveType::QuadStrip => {
+                    self.cur_prim_verts.copy_within(2.., 0);
+                    self.cur_prim_verts.swap(0, 1);
+                    self.cur_prim_vert_index = PrimVertIndex::new(2);
+                }
+            };
+        } else {
+            self.cur_prim_vert_index = unsafe { PrimVertIndex::new_unchecked(new_vert_index) };
+        }
+    }
+
+    fn clip_and_submit_polygon(&mut self) {
+        // TODO:
+        // - Check whether </> or <=/>= should be used for the frustum checks
+        // - Check what happens for vertices where the divisor ends up being 0
+        // - Maybe use Cohen-Sutherland algorithm? It'd basically be the same but without grouping
+        //   passes, and instead running until there are no points outside the frustum
+
+        let mut clipped_verts_len = self.cur_prim_max_verts as usize;
+
+        macro_rules! interpolate {
+            (
+                $axis_i: expr,
+                $output: expr,
+                $vert: expr,
+                $coord: expr, $w: expr,
+                $other: expr,
+                |$other_coord: ident, $other_w: ident|
+                ($compare: expr, $numer: expr, $coord_diff: expr,),
+            ) => {
+                let other = $other;
+                let $other_coord = other.coords.extract($axis_i) as i64;
+                let $other_w = other.coords.extract(3) as i64;
+                if $compare {
+                    // For the positive side of the frustum:
+                    //          w0 - x0
+                    // t = -----------------
+                    //     x1 - x0 - w1 + w0
+                    // for the negative side:
+                    //          w0 + x0
+                    // t = -----------------
+                    //     x0 - x1 - w1 + w0
+                    // Both can be summed up by:
+                    //           w0 ∓ x0                  $numer
+                    // t = --------------------- = ---------------------
+                    //     ±(x1 - x0) - w1 + w0    $coord_diff - w1 + w0
+                    let denom = $coord_diff + $w - $other_w;
+                    if denom != 0 {
+                        $output[clipped_verts_len] = $vert.interpolate($other, $numer, denom);
+                        clipped_verts_len += 1;
+                    }
+                }
+            };
+        }
+
+        macro_rules! run_pass {
+            ($axis_i: expr, $input: expr => $output: expr) => {
+                let input_len = replace(&mut clipped_verts_len, 0);
+                for (i, vert) in $input[..input_len].iter().enumerate() {
+                    let coord = vert.coords.extract($axis_i) as i64;
+                    let w = vert.coords.extract(3) as i64;
+                    if coord > w {
+                        interpolate!(
+                            $axis_i,
+                            $output,
+                            vert,
+                            coord,
+                            w,
+                            &$input[if i == 0 { input_len - 1 } else { i - 1 }],
+                            |other_coord, other_w| (
+                                other_coord <= other_w,
+                                w - coord,
+                                other_coord - coord,
+                            ),
+                        );
+                        interpolate!(
+                            $axis_i,
+                            $output,
+                            vert,
+                            coord,
+                            w,
+                            &$input[if i + 1 == input_len { 0 } else { i + 1 }],
+                            |other_coord, other_w| (
+                                other_coord <= other_w,
+                                w - coord,
+                                other_coord - coord,
+                            ),
+                        );
+                    } else if coord < -w {
+                        interpolate!(
+                            $axis_i,
+                            $output,
+                            vert,
+                            coord,
+                            w,
+                            &$input[if i == 0 { input_len - 1 } else { i - 1 }],
+                            |other_coord, other_w| (
+                                other_coord >= -other_w,
+                                w + coord,
+                                coord - other_coord,
+                            ),
+                        );
+                        interpolate!(
+                            $axis_i,
+                            $output,
+                            vert,
+                            coord,
+                            w,
+                            &$input[if i + 1 == input_len { 0 } else { i + 1 }],
+                            |other_coord, other_w| (
+                                other_coord >= -other_w,
+                                w + coord,
+                                coord - other_coord,
+                            ),
+                        );
+                    } else {
+                        $output[clipped_verts_len] = *vert;
+                        clipped_verts_len += 1;
+                    }
+                }
+                if clipped_verts_len == 0 {
+                    return;
+                }
+            };
+        }
+
+        let [mut buffer_0, mut buffer_1] = [[Vertex::zero(); 10]; 2];
+        run_pass!(2, self.cur_prim_verts => buffer_0);
+        run_pass!(1, buffer_0 => buffer_1);
+        run_pass!(0, buffer_1 => buffer_0);
+
+        // TODO (also, strips shouldn't duplicate vertices unless they get clipped)
+        println!("Submit polygon: ({})[", clipped_verts_len,);
+        for vert in &buffer_0[..clipped_verts_len] {
+            println!("\t{:?},", vert);
+        }
+        println!("]\n");
     }
 
     pub(crate) fn process_next_command(
@@ -523,26 +713,33 @@ impl Engine3d {
         arm9: &mut Arm9<impl cpu::Engine>,
         emu_schedule: &mut emu::Schedule,
     ) {
+        self.gx_status.set_matrix_stack_busy(false);
+
         loop {
             if self.gx_pipe.is_empty() {
-                self.command_finish_time.0 = 0;
-                return;
+                break;
             }
+
             let FifoEntry {
                 command,
                 param: first_param,
             } = unsafe { self.gx_pipe.peek_unchecked() };
+
             if command == 0 {
                 unsafe {
                     self.read_from_gx_pipe(arm9);
                 }
                 continue;
             }
+
             let params = self.params_for_command(command);
+
             if self.gx_pipe.len() + self.gx_fifo.len() < params as usize {
-                self.command_finish_time.0 = 0;
-                return;
+                break;
             }
+
+            self.gx_status.set_busy(true);
+
             unsafe {
                 self.read_from_gx_pipe(arm9);
             }
@@ -575,6 +772,8 @@ impl Engine3d {
 
                         MatrixMode::Texture => self.tex_stack = self.cur_tex_mtx,
                     }
+
+                    self.gx_status.set_matrix_stack_busy(true);
                 }
 
                 0x12 => {
@@ -601,6 +800,8 @@ impl Engine3d {
 
                         MatrixMode::Texture => self.cur_tex_mtx = self.tex_stack,
                     }
+
+                    self.gx_status.set_matrix_stack_busy(true);
                 }
 
                 0x13 => {
@@ -618,6 +819,8 @@ impl Engine3d {
 
                         MatrixMode::Texture => self.tex_stack = self.cur_tex_mtx,
                     }
+
+                    self.gx_status.set_matrix_stack_busy(true);
                 }
 
                 0x14 => {
@@ -639,6 +842,8 @@ impl Engine3d {
 
                         MatrixMode::Texture => self.cur_tex_mtx = self.tex_stack,
                     }
+
+                    self.gx_status.set_matrix_stack_busy(true);
                 }
 
                 0x15 => {
@@ -840,7 +1045,8 @@ impl Engine3d {
                 // 0x21 => {} // TODO: NORMAL
                 0x22 => {
                     // TEXCOORD
-                    self.tex_coords = [first_param as i16, (first_param >> 16) as i16];
+                    self.tex_coords =
+                        TexCoords::new(first_param as i16, (first_param >> 16) as i16);
                 }
 
                 0x23 => {
@@ -959,7 +1165,13 @@ impl Engine3d {
                 0x40 => {
                     // BEGIN_VTXS
                     self.cur_poly_attrs = self.next_poly_attrs;
-                    // TODO
+                    self.cur_tex_params = self.next_tex_params;
+                    self.cur_tex_palette_base = self.next_tex_palette_base;
+                    self.cur_prim_type = unsafe { transmute(first_param as u8 & 3) };
+                    self.cur_prim_max_verts = match self.cur_prim_type {
+                        PrimitiveType::Triangles | PrimitiveType::TriangleStrip => 3,
+                        PrimitiveType::Quads | PrimitiveType::QuadStrip => 4,
+                    };
                 }
 
                 0x41 => {
@@ -967,7 +1179,13 @@ impl Engine3d {
                     // Should do nothing according to GBATEK
                 }
 
-                // 0x50 => {} // TODO: SWAP_BUFFERS
+                0x50 => {
+                    // SWAP_BUFFERS
+                    // TODO: Parameters
+                    // Gets unlocked by the GPU when VBlank starts
+                    self.command_finish_time.0 = RawTimestamp::MAX;
+                    return;
+                }
 
                 // 0x60 => {} // TODO: VIEWPORT
 
@@ -1000,7 +1218,10 @@ impl Engine3d {
                     self.command_finish_time.into(),
                 );
             }
-            break;
+            return;
         }
+
+        self.gx_status.set_busy(false);
+        self.command_finish_time.0 = 0;
     }
 }

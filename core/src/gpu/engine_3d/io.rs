@@ -123,16 +123,16 @@ impl Engine3d {
         _emu_schedule: &mut emu::Schedule,
     ) {
         match addr & 0xFFE {
-            0x600 => {}
             0x601 => self.write_gx_status(
                 GxStatus((self.gx_status().0 & 0xFFFF_00FF) | (value as u32) << 8),
                 arm9,
             ),
-            0x602 => {}
             0x603 => self.write_gx_status(
                 GxStatus((self.gx_status().0 & 0x00FF_7FFF) | (value as u32) << 24),
                 arm9,
             ),
+
+            0x600 | 0x602 => {}
 
             _ =>
             {

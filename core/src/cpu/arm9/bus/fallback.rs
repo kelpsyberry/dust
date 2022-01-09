@@ -838,8 +838,6 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                         }
                     }
                 }
-                // The KEY2 encryption seeds aren't used
-                0x1B8 | 0x1BA => {}
                 0x204 => {
                     emu.arm9.set_local_ex_mem_control(LocalExMemControl(value));
                     emu.set_global_ex_mem_control(GlobalExMemControl(value));
@@ -918,7 +916,8 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                 0x1000..=0x1002 | 0x1008..=0x1056 | 0x106C => {
                     emu.gpu.engine_2d_b.write_16::<A>(addr, value);
                 }
-                0x062 => {}
+                // KEY2 encryption seeds that aren't used + other ineffective writes
+                0x062 | 0x1B8 | 0x1BA => {}
                 _ =>
                 {
                     #[cfg(feature = "log")]

@@ -99,6 +99,3 @@
 - GBA slot
 - Absent SIO (even if there's no actual functionality, all ports should still work)
 - GBA mode
-
-# Misc
-- Deduplicate DMA code

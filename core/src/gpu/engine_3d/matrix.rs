@@ -1,9 +1,6 @@
 use core::ops::Mul;
 use packed_simd::{i32x4, i64x4, FromCast};
 
-#[cfg(test)]
-extern crate test;
-
 #[derive(Clone, Copy, Debug)]
 #[repr(align(16))]
 pub struct MatrixBuffer<const LEN: usize>(pub [i32; LEN]);
@@ -104,8 +101,7 @@ impl Matrix {
         self.0 = [row!(0), row!(1), row!(2), self.0[3]];
     }
 
-    pub fn mul_left_vec_i16(&self, vec: [i16; 3]) -> MatrixBuffer<4> {
-        let mut result = MatrixBuffer([0; 4]);
+    pub fn mul_left_vec_i16(&self, vec: [i16; 3]) -> i32x4 {
         i32x4::from_cast(
             (i64x4::from_cast(self.0[0]) * vec[0] as i64
                 + i64x4::from_cast(self.0[1]) * vec[1] as i64
@@ -113,8 +109,6 @@ impl Matrix {
                 + (i64x4::from_cast(self.0[3]) << 12))
                 >> 12,
         )
-        .write_to_slice_aligned(&mut result.0);
-        result
     }
 }
 

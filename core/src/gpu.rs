@@ -300,6 +300,10 @@ impl Gpu {
         }
         emu.gpu.next_vcount = None;
         if emu.gpu.vcount == SCREEN_HEIGHT as u16 {
+            // Unlock the 3D engine if it was 
+            if emu.gpu.engine_3d.waiting_for_vblank() {
+                emu.gpu.engine_3d.process_next_command(&mut emu.arm9, &mut emu.schedule);
+            }
             emu.gpu.disp_status_7.set_vblank(true);
             if emu.gpu.disp_status_7.vblank_irq_enabled() {
                 emu.arm7
