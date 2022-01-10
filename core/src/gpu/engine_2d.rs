@@ -276,6 +276,8 @@ pub struct Engine2d<R: Role> {
     _role: PhantomData<R>,
     render_fns: render::FnPtrs<R>,
     pub(super) enabled: bool,
+    pub(super) engine_3d_enabled: bool,
+    engine_3d_enabled_in_frame: bool,
     control: Control,
     master_brightness_control: BrightnessControl,
     master_brightness_factor: u32,
@@ -302,7 +304,9 @@ impl<R: Role> Engine2d<R> {
             logger,
             _role: PhantomData,
             render_fns: render::FnPtrs::new(),
-            enabled: true,
+            enabled: false,
+            engine_3d_enabled: false,
+            engine_3d_enabled_in_frame: false,
             control: Control(0),
             master_brightness_control: BrightnessControl(0),
             master_brightness_factor: 0,
@@ -445,6 +449,9 @@ impl<R: Role> Engine2d<R> {
     }
 
     pub(super) fn end_vblank(&mut self) {
+        if R::IS_A {
+            self.engine_3d_enabled_in_frame = self.engine_3d_enabled;
+        }
         // TODO: When does this happen? This is just what might make the most sense, but GBATEK
         // doesn't say.
         for affine_bg in &mut self.affine_bg_data {

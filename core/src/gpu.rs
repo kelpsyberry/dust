@@ -61,9 +61,9 @@ const HBLANK_DURATION: Timestamp = Timestamp(99 * DOT_CYCLES);
 
 #[repr(C, align(64))]
 #[derive(Clone, Copy)]
-struct Scanline<T, const LEN: usize = SCREEN_WIDTH>(pub [T; LEN]);
+pub struct Scanline<T, const LEN: usize = SCREEN_WIDTH>(pub [T; LEN]);
 
-#[repr(C, align(32))]
+#[repr(C, align(64))]
 #[derive(Clone)]
 pub struct Framebuffer(pub [[u32; SCREEN_WIDTH * SCREEN_HEIGHT]; 2]);
 
@@ -89,6 +89,7 @@ pub struct Gpu {
 
 impl Gpu {
     pub(crate) fn new(
+        renderer_3d: Box<dyn engine_3d::Renderer>,
         schedule: &mut arm9::Schedule,
         emu_schedule: &mut emu::Schedule,
         #[cfg(feature = "log")] logger: &slog::Logger,
@@ -117,6 +118,7 @@ impl Gpu {
                 logger.new(slog::o!("eng_2d" => "b")),
             ),
             engine_3d: Engine3d::new(
+                renderer_3d,
                 schedule,
                 emu_schedule,
                 #[cfg(feature = "log")]
@@ -137,6 +139,9 @@ impl Gpu {
         self.swap_screens = value.swap_screens();
         self.engine_2d_a.enabled = value.engine_2d_a_enabled();
         self.engine_2d_b.enabled = value.engine_2d_b_enabled();
+        self.engine_2d_a.engine_3d_enabled = value.engine_3d_rendering_enabled();
+        self.engine_3d.gx_enabled = value.engine_3d_geometry_enabled();
+        self.engine_3d.rendering_enabled = value.engine_3d_rendering_enabled();
     }
 
     #[inline]
@@ -228,6 +233,7 @@ impl Gpu {
                             .add(scanline_base)
                             as *mut Scanline<u32>),
                         &emu.gpu.vram,
+                        &mut *emu.gpu.engine_3d.renderer,
                     );
                     emu.gpu.engine_2d_b.render_scanline(
                         emu.gpu.vcount,
@@ -236,6 +242,7 @@ impl Gpu {
                             .add(scanline_base)
                             as *mut Scanline<u32>),
                         &emu.gpu.vram,
+                        &mut *emu.gpu.engine_3d.renderer,
                     );
                 }
                 if emu.gpu.cur_scanline < (SCREEN_HEIGHT - 1) as u32 {
@@ -277,6 +284,9 @@ impl Gpu {
             emu.gpu.cur_scanline = 0;
             emu.gpu.engine_2d_a.end_vblank();
             emu.gpu.engine_2d_b.end_vblank();
+            if emu.gpu.engine_3d.rendering_enabled {
+                emu.gpu.engine_3d.renderer.start_frame();
+            }
         }
         if emu.gpu.vcount == emu.gpu.vcount_compare_7 {
             emu.gpu.disp_status_7.set_vcount_match(true);
@@ -300,9 +310,9 @@ impl Gpu {
         }
         emu.gpu.next_vcount = None;
         if emu.gpu.vcount == SCREEN_HEIGHT as u16 {
-            // Unlock the 3D engine if it was 
-            if emu.gpu.engine_3d.waiting_for_vblank() {
-                emu.gpu.engine_3d.process_next_command(&mut emu.arm9, &mut emu.schedule);
+            // Unlock the 3D engine if it was waiting for VBlank
+            if emu.gpu.engine_3d.swap_buffers_waiting() {
+                Engine3d::swap_buffers(emu);
             }
             emu.gpu.disp_status_7.set_vblank(true);
             if emu.gpu.disp_status_7.vblank_irq_enabled() {

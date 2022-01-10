@@ -5,6 +5,7 @@ use crate::{
         arm7::{self, Arm7},
         arm9::{bus::ptrs::mask as ptr_mask, Arm9},
     },
+    gpu::engine_3d::Engine3d,
     utils::OwnedBytesCellPtr,
 };
 use core::{iter::once, mem::size_of, ops::Range};
@@ -669,6 +670,7 @@ impl Vram {
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
+        engine_3d: &mut Engine3d,
     ) {
         value.0 &= 0x9B;
         let prev_value = self.bank_control[0];
@@ -698,6 +700,7 @@ impl Vram {
                     }
                     _ => {
                         let region = prev_value.offset() as usize;
+                        engine_3d.set_texture_dirty(1 << region);
                         self.unmap_texture::<0>(region);
                     }
                 }
@@ -723,6 +726,7 @@ impl Vram {
                     }
                     _ => {
                         let region = value.offset() as usize;
+                        engine_3d.set_texture_dirty(1 << region);
                         self.map_texture::<_, 0>(&self.banks.a, region);
                     }
                 }
@@ -734,6 +738,7 @@ impl Vram {
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
+        engine_3d: &mut Engine3d,
     ) {
         value.0 &= 0x9B;
         let prev_value = self.bank_control[1];
@@ -763,6 +768,7 @@ impl Vram {
                     }
                     _ => {
                         let region = prev_value.offset() as usize;
+                        engine_3d.set_texture_dirty(1 << region);
                         self.unmap_texture::<1>(region);
                     }
                 }
@@ -788,6 +794,7 @@ impl Vram {
                     }
                     _ => {
                         let region = value.offset() as usize;
+                        engine_3d.set_texture_dirty(1 << region);
                         self.map_texture::<_, 1>(&self.banks.b, region);
                     }
                 }
@@ -800,6 +807,7 @@ impl Vram {
         mut value: BankControl,
         arm7: &mut Arm7<E>,
         arm9: &mut Arm9<E>,
+        engine_3d: &mut Engine3d,
     ) {
         value.0 &= 0x9F;
         let prev_value = self.bank_control[2];
@@ -828,6 +836,7 @@ impl Vram {
                     }
                     3 => {
                         let region = prev_value.offset() as usize;
+                        engine_3d.set_texture_dirty(1 << region);
                         self.unmap_texture::<2>(region);
                     }
                     4 => self.unmap_b_bg::<_, _, 0x2_0000, false, 0>(arm9, &self.banks.c, 0..4),
@@ -856,6 +865,7 @@ impl Vram {
                     }
                     3 => {
                         let region = value.offset() as usize;
+                        engine_3d.set_texture_dirty(1 << region);
                         self.map_texture::<_, 2>(&self.banks.c, region);
                     }
                     4 => self.map_b_bg::<_, _, _, 0>(arm9, &self.banks.c, 0..4),
@@ -872,6 +882,7 @@ impl Vram {
         mut value: BankControl,
         arm7: &mut Arm7<E>,
         arm9: &mut Arm9<E>,
+        engine_3d: &mut Engine3d,
     ) {
         value.0 &= 0x9F;
         unsafe {
@@ -900,6 +911,7 @@ impl Vram {
                     }
                     3 => {
                         let region = prev_value.offset() as usize;
+                        engine_3d.set_texture_dirty(1 << region);
                         self.unmap_texture::<3>(region);
                     }
                     4 => self.unmap_b_obj::<_, _, 0>(arm9, &self.banks.d),
@@ -926,6 +938,7 @@ impl Vram {
                     }
                     3 => {
                         let region = value.offset() as usize;
+                        engine_3d.set_texture_dirty(1 << region);
                         self.map_texture::<_, 3>(&self.banks.d, region);
                     }
                     4 => self.map_b_obj::<_, _, 0>(arm9, &self.banks.d),
@@ -941,6 +954,7 @@ impl Vram {
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
+        engine_3d: &mut Engine3d,
     ) {
         value.0 &= 0x87;
         unsafe {
@@ -954,7 +968,10 @@ impl Vram {
                     0 => self.unmap_lcdc(arm9, 0x20, 0x23),
                     1 => self.unmap_a_bg::<_, _, 0x1_0000, false, 4>(arm9, &self.banks.e, 0..4),
                     2 => self.unmap_a_obj::<_, _, 0x1_0000, false, 2>(arm9, &self.banks.e, 0..4),
-                    3 => self.unmap_tex_pal::<_, 0>(0..4),
+                    3 => {
+                        engine_3d.set_tex_pal_dirty(0xF);
+                        self.unmap_tex_pal::<_, 0>(0..4);
+                    }
                     4 => self.unmap_a_bg_ext_pal::<_, 0>(0..2),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank E: {}", prev_value.mst())
@@ -966,7 +983,10 @@ impl Vram {
                     0 => self.map_lcdc(arm9, 0x20, 0x23, self.banks.e.as_ptr()),
                     1 => self.map_a_bg::<_, _, _, 4>(arm9, &self.banks.e, 0..4),
                     2 => self.map_a_obj::<_, _, _, 2>(arm9, &self.banks.e, 0..4),
-                    3 => self.map_tex_pal::<_, _, 0>(&self.banks.e, 0..4),
+                    3 => {
+                        engine_3d.set_tex_pal_dirty(0xF);
+                        self.map_tex_pal::<_, _, 0>(&self.banks.e, 0..4);
+                    }
                     4 => self.map_a_bg_ext_pal::<_, _, 0>(&self.banks.e, 0..2),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank E: {}", value.mst())
@@ -980,6 +1000,7 @@ impl Vram {
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
+        engine_3d: &mut Engine3d,
     ) {
         value.0 &= 0x9F;
         unsafe {
@@ -1024,6 +1045,7 @@ impl Vram {
                     3 => {
                         let region =
                             ((prev_value.offset() & 1) | (prev_value.offset() & 2) << 1) as usize;
+                        engine_3d.set_tex_pal_dirty(1 << region);
                         self.unmap_tex_pal::<_, 1>(once(region));
                     }
                     4 => {
@@ -1059,6 +1081,7 @@ impl Vram {
                     }
                     3 => {
                         let region = ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
+                        engine_3d.set_tex_pal_dirty(1 << region);
                         self.map_tex_pal::<_, _, 1>(&self.banks.f, once(region));
                     }
                     4 => {
@@ -1078,6 +1101,7 @@ impl Vram {
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
+        engine_3d: &mut Engine3d,
     ) {
         value.0 &= 0x9F;
         unsafe {
@@ -1122,6 +1146,7 @@ impl Vram {
                     3 => {
                         let region =
                             ((prev_value.offset() & 1) | (prev_value.offset() & 2) << 1) as usize;
+                        engine_3d.set_tex_pal_dirty(1 << region);
                         self.unmap_tex_pal::<_, 2>(once(region));
                     }
                     4 => {
@@ -1157,6 +1182,7 @@ impl Vram {
                     }
                     3 => {
                         let region = ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
+                        engine_3d.set_tex_pal_dirty(1 << region);
                         self.map_tex_pal::<_, _, 2>(&self.banks.g, once(region));
                     }
                     4 => {

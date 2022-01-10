@@ -17,6 +17,7 @@ use crate::{
     },
     ds_slot::DsSlot,
     emu::Emu,
+    gpu::engine_3d::Engine3d,
     utils::{schedule::RawTimestamp, ByteSlice},
 };
 use cfg_if::cfg_if;
@@ -832,10 +833,7 @@ impl Arm9Data for EngineData {
                         &mut emu.arm9.irqs,
                     ),
                     Event::GxFifoStall => return,
-                    Event::Engine3dCommandFinished => emu
-                        .gpu
-                        .engine_3d
-                        .process_next_command(&mut emu.arm9, &mut emu.schedule),
+                    Event::Engine3dCommandFinished => Engine3d::process_next_command(emu),
                 }
             }
             emu.arm9

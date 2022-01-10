@@ -560,36 +560,43 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
                 .arm9
                 .irqs
                 .set_master_enable(value & 1 != 0, &mut emu.arm9.schedule),
-            0x240 => emu
-                .gpu
-                .vram
-                .set_bank_control_a(gpu::vram::BankControl(value), &mut emu.arm9),
-            0x241 => emu
-                .gpu
-                .vram
-                .set_bank_control_b(gpu::vram::BankControl(value), &mut emu.arm9),
+            0x240 => emu.gpu.vram.set_bank_control_a(
+                gpu::vram::BankControl(value),
+                &mut emu.arm9,
+                &mut emu.gpu.engine_3d,
+            ),
+            0x241 => emu.gpu.vram.set_bank_control_b(
+                gpu::vram::BankControl(value),
+                &mut emu.arm9,
+                &mut emu.gpu.engine_3d,
+            ),
             0x242 => emu.gpu.vram.set_bank_control_c(
                 gpu::vram::BankControl(value),
                 &mut emu.arm7,
                 &mut emu.arm9,
+                &mut emu.gpu.engine_3d,
             ),
             0x243 => emu.gpu.vram.set_bank_control_d(
                 gpu::vram::BankControl(value),
                 &mut emu.arm7,
                 &mut emu.arm9,
+                &mut emu.gpu.engine_3d,
             ),
-            0x244 => emu
-                .gpu
-                .vram
-                .set_bank_control_e(gpu::vram::BankControl(value), &mut emu.arm9),
-            0x245 => emu
-                .gpu
-                .vram
-                .set_bank_control_f(gpu::vram::BankControl(value), &mut emu.arm9),
-            0x246 => emu
-                .gpu
-                .vram
-                .set_bank_control_g(gpu::vram::BankControl(value), &mut emu.arm9),
+            0x244 => emu.gpu.vram.set_bank_control_e(
+                gpu::vram::BankControl(value),
+                &mut emu.arm9,
+                &mut emu.gpu.engine_3d,
+            ),
+            0x245 => emu.gpu.vram.set_bank_control_f(
+                gpu::vram::BankControl(value),
+                &mut emu.arm9,
+                &mut emu.gpu.engine_3d,
+            ),
+            0x246 => emu.gpu.vram.set_bank_control_g(
+                gpu::vram::BankControl(value),
+                &mut emu.arm9,
+                &mut emu.gpu.engine_3d,
+            ),
             0x247 => emu
                 .swram
                 .set_control(swram::Control(value), &mut emu.arm7, &mut emu.arm9),
@@ -602,12 +609,7 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
                 .vram
                 .set_bank_control_i(gpu::vram::BankControl(value), &mut emu.arm9),
             0x300 => emu.arm9.post_boot_flag.0 = (emu.arm9.post_boot_flag.0 & 1) | (value & 3),
-            0x320..=0x6A3 => emu.gpu.engine_3d.write_8::<A, _>(
-                addr as u16,
-                value,
-                &mut emu.arm9,
-                &mut emu.schedule,
-            ),
+            0x320..=0x6A3 => gpu::engine_3d::Engine3d::write_8::<A, _>(emu, addr as u16, value),
             0x1000..=0x1003 | 0x1008..=0x1057 | 0x106C..=0x106D => {
                 emu.gpu.engine_2d_b.write_8::<A>(addr, value);
             }
@@ -847,12 +849,15 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     .irqs
                     .set_master_enable(value & 1 != 0, &mut emu.arm9.schedule),
                 0x240 => {
-                    emu.gpu
-                        .vram
-                        .set_bank_control_a(gpu::vram::BankControl(value as u8), &mut emu.arm9);
+                    emu.gpu.vram.set_bank_control_a(
+                        gpu::vram::BankControl(value as u8),
+                        &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
+                    );
                     emu.gpu.vram.set_bank_control_b(
                         gpu::vram::BankControl((value >> 8) as u8),
                         &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
                     );
                 }
                 0x242 => {
@@ -860,26 +865,33 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                         gpu::vram::BankControl(value as u8),
                         &mut emu.arm7,
                         &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
                     );
                     emu.gpu.vram.set_bank_control_d(
                         gpu::vram::BankControl((value >> 8) as u8),
                         &mut emu.arm7,
                         &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
                     );
                 }
                 0x244 => {
-                    emu.gpu
-                        .vram
-                        .set_bank_control_e(gpu::vram::BankControl(value as u8), &mut emu.arm9);
+                    emu.gpu.vram.set_bank_control_e(
+                        gpu::vram::BankControl(value as u8),
+                        &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
+                    );
                     emu.gpu.vram.set_bank_control_f(
                         gpu::vram::BankControl((value >> 8) as u8),
                         &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
                     );
                 }
                 0x246 => {
-                    emu.gpu
-                        .vram
-                        .set_bank_control_g(gpu::vram::BankControl(value as u8), &mut emu.arm9);
+                    emu.gpu.vram.set_bank_control_g(
+                        gpu::vram::BankControl(value as u8),
+                        &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
+                    );
                     emu.swram.set_control(
                         swram::Control((value >> 8) as u8),
                         &mut emu.arm7,
@@ -907,12 +919,9 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     emu.arm9.post_boot_flag.0 = (emu.arm9.post_boot_flag.0 & 1) | (value as u8 & 3);
                 }
                 0x304 => emu.gpu.set_power_control(gpu::PowerControl(value)),
-                0x320..=0x6A2 => emu.gpu.engine_3d.write_16::<A, _>(
-                    addr as u16,
-                    value,
-                    &mut emu.arm9,
-                    &mut emu.schedule,
-                ),
+                0x320..=0x6A2 => {
+                    gpu::engine_3d::Engine3d::write_16::<A, _>(emu, addr as u16, value);
+                }
                 0x1000..=0x1002 | 0x1008..=0x1056 | 0x106C => {
                     emu.gpu.engine_2d_b.write_16::<A>(addr, value);
                 }
@@ -1124,35 +1133,44 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                         .set_requested(IrqFlags(emu.arm9.irqs.requested().0 & !value), ());
                 }
                 0x240 => {
-                    emu.gpu
-                        .vram
-                        .set_bank_control_a(gpu::vram::BankControl(value as u8), &mut emu.arm9);
+                    emu.gpu.vram.set_bank_control_a(
+                        gpu::vram::BankControl(value as u8),
+                        &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
+                    );
                     emu.gpu.vram.set_bank_control_b(
                         gpu::vram::BankControl((value >> 8) as u8),
                         &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
                     );
                     emu.gpu.vram.set_bank_control_c(
                         gpu::vram::BankControl((value >> 16) as u8),
                         &mut emu.arm7,
                         &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
                     );
                     emu.gpu.vram.set_bank_control_d(
                         gpu::vram::BankControl((value >> 24) as u8),
                         &mut emu.arm7,
                         &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
                     );
                 }
                 0x244 => {
-                    emu.gpu
-                        .vram
-                        .set_bank_control_e(gpu::vram::BankControl(value as u8), &mut emu.arm9);
+                    emu.gpu.vram.set_bank_control_e(
+                        gpu::vram::BankControl(value as u8),
+                        &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
+                    );
                     emu.gpu.vram.set_bank_control_f(
                         gpu::vram::BankControl((value >> 8) as u8),
                         &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
                     );
                     emu.gpu.vram.set_bank_control_g(
                         gpu::vram::BankControl((value >> 16) as u8),
                         &mut emu.arm9,
+                        &mut emu.gpu.engine_3d,
                     );
                     emu.swram.set_control(
                         swram::Control((value >> 24) as u8),
@@ -1202,12 +1220,9 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                     &mut emu.arm9.schedule,
                 ),
                 0x304 => emu.gpu.set_power_control(gpu::PowerControl(value as u16)),
-                0x320..=0x6A0 => emu.gpu.engine_3d.write_32::<A, _>(
-                    addr as u16,
-                    value,
-                    &mut emu.arm9,
-                    &mut emu.schedule,
-                ),
+                0x320..=0x6A0 => {
+                    gpu::engine_3d::Engine3d::write_32::<A, _>(emu, addr as u16, value);
+                }
                 0x1000 | 0x1008..=0x1054 | 0x106C => {
                     emu.gpu.engine_2d_b.write_32::<A>(addr, value);
                 }

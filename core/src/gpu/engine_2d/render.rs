@@ -7,7 +7,7 @@ use super::{
     WindowPixel,
 };
 use crate::{
-    gpu::{vram::Vram, Scanline, SCREEN_HEIGHT, SCREEN_WIDTH},
+    gpu::{engine_3d, vram::Vram, Scanline, SCREEN_HEIGHT, SCREEN_WIDTH},
     utils::make_zero,
 };
 use core::mem::MaybeUninit;
@@ -141,10 +141,15 @@ impl<R: Role> Engine2d<R> {
         vcount: u16,
         scanline_buffer: &mut Scanline<u32>,
         vram: &Vram,
+        renderer_3d: &mut dyn engine_3d::Renderer,
     ) {
         // According to melonDS, if vcount falls outside the drawing range or 2D engine B is
         // disabled, the scanline is filled with pure white.
         if vcount >= SCREEN_HEIGHT as u16 || (!R::IS_A && !self.enabled) {
+            if R::IS_A && self.engine_3d_enabled_in_frame {
+                renderer_3d.skip_scanline();
+            }
+
             scanline_buffer.0.fill(0xFFFF_FFFF);
             return;
         }
@@ -155,6 +160,10 @@ impl<R: Role> Engine2d<R> {
             self.control.display_mode_b()
         } {
             0 => {
+                if R::IS_A && self.engine_3d_enabled_in_frame {
+                    renderer_3d.skip_scanline();
+                }
+
                 scanline_buffer.0.fill(0xFFFF_FFFF);
                 return;
             }
@@ -200,6 +209,13 @@ impl<R: Role> Engine2d<R> {
                     .0
                     .fill(backdrop as u64 | (backdrop as u64) << 32);
 
+                if R::IS_A
+                    && self.engine_3d_enabled_in_frame
+                    && (self.bgs[0].priority == 4 || !self.control.bg0_3d())
+                {
+                    renderer_3d.skip_scanline();
+                }
+
                 [
                     Self::render_scanline_bgs_and_objs::<0>,
                     Self::render_scanline_bgs_and_objs::<1>,
@@ -209,7 +225,7 @@ impl<R: Role> Engine2d<R> {
                     Self::render_scanline_bgs_and_objs::<5>,
                     Self::render_scanline_bgs_and_objs::<6>,
                     Self::render_scanline_bgs_and_objs::<7>,
-                ][self.control.bg_mode() as usize](self, vcount, vram);
+                ][self.control.bg_mode() as usize](self, vcount, vram, renderer_3d);
                 [
                     Self::apply_color_effects::<0>,
                     Self::apply_color_effects::<1>,
@@ -221,6 +237,10 @@ impl<R: Role> Engine2d<R> {
             }
 
             2 => {
+                if R::IS_A && self.engine_3d_enabled_in_frame {
+                    renderer_3d.skip_scanline();
+                }
+
                 // The bank must be mapped as LCDC VRAM to be used
                 let bank_index = self.control.a_vram_bank();
                 if vram.bank_control()[bank_index as usize].mst() == 0 {
@@ -242,6 +262,10 @@ impl<R: Role> Engine2d<R> {
             }
 
             _ => {
+                if R::IS_A && self.engine_3d_enabled_in_frame {
+                    renderer_3d.skip_scanline();
+                }
+
                 // TODO: Main memory display mode
             }
         }
@@ -280,7 +304,12 @@ impl<R: Role> Engine2d<R> {
         }
     }
 
-    fn render_scanline_bgs_and_objs<const BG_MODE: u8>(&mut self, line: u16, vram: &Vram) {
+    fn render_scanline_bgs_and_objs<const BG_MODE: u8>(
+        &mut self,
+        line: u16,
+        vram: &Vram,
+        renderer_3d: &mut dyn engine_3d::Renderer,
+    ) {
         let render_affine = [
             Self::render_scanline_bg_affine::<false>,
             Self::render_scanline_bg_affine::<true>,
@@ -320,6 +349,7 @@ impl<R: Role> Engine2d<R> {
                     _ => {}
                 }
             }
+
             if self.bgs[2].priority == priority {
                 match BG_MODE {
                     0..=1 | 3 => {
@@ -355,12 +385,17 @@ impl<R: Role> Engine2d<R> {
                     _ => {}
                 }
             }
+
             if self.bgs[1].priority == priority && BG_MODE != 6 {
                 (self.render_fns.render_scanline_bg_text)(self, BgIndex::new(1), line, vram);
             }
+
             if self.bgs[0].priority == priority {
-                if self.control.bg0_3d() {
-                    // TODO: 3D
+                if R::IS_A && self.control.bg0_3d() {
+                    if self.engine_3d_enabled_in_frame {
+                        // TODO: 3D
+                        let _scanline = renderer_3d.read_scanline();
+                    }
                 } else {
                     (self.render_fns.render_scanline_bg_text)(self, BgIndex::new(0), line, vram);
                 }

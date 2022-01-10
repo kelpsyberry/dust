@@ -15,7 +15,7 @@ use crate::{
     },
     ds_slot::{self, DsSlot},
     flash::Flash,
-    gpu::{self, Gpu},
+    gpu::{self, engine_3d::Engine3d, Gpu},
     ipc::Ipc,
     rtc::{self, Rtc},
     spi,
@@ -68,6 +68,9 @@ pub struct Emu<E: cpu::Engine> {
 }
 
 pub struct Builder {
+    #[cfg(feature = "log")]
+    logger: slog::Logger,
+
     pub arm7_bios: Box<Bytes<{ arm7::BIOS_SIZE }>>,
     pub arm9_bios: Box<Bytes<{ arm9::BIOS_BUFFER_SIZE }>>,
     pub firmware: Flash,
@@ -75,8 +78,7 @@ pub struct Builder {
     pub ds_spi: ds_slot::spi::Spi,
     pub audio_backend: Box<dyn audio::Backend>,
     pub rtc_backend: Box<dyn rtc::Backend>,
-    #[cfg(feature = "log")]
-    logger: slog::Logger,
+    pub renderer_3d: Box<dyn gpu::engine_3d::Renderer>,
 
     pub model: Model,
     pub direct_boot: bool,
@@ -100,9 +102,13 @@ impl Builder {
         ds_spi: ds_slot::spi::Spi,
         audio_backend: Box<dyn audio::Backend>,
         rtc_backend: Box<dyn rtc::Backend>,
+        renderer_3d: Box<dyn gpu::engine_3d::Renderer>,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Self {
         Builder {
+            #[cfg(feature = "log")]
+            logger,
+
             arm7_bios,
             arm9_bios,
             firmware,
@@ -110,8 +116,7 @@ impl Builder {
             ds_spi,
             audio_backend,
             rtc_backend,
-            #[cfg(feature = "log")]
-            logger,
+            renderer_3d,
 
             model: Model::Ds,
             direct_boot: true,
@@ -167,6 +172,7 @@ impl Builder {
                 self.logger.new(slog::o!("rtc" => "")),
             ),
             gpu: Gpu::new(
+                self.renderer_3d,
                 &mut arm9.schedule,
                 &mut global_schedule,
                 #[cfg(feature = "log")]
@@ -208,6 +214,7 @@ impl<E: cpu::Engine> Emu<E> {
         let mut header = Bytes::new([0; 0x170]);
         self.ds_slot.rom.read(0, header.as_byte_mut_slice());
         let chip_id = self.ds_slot.rom.chip_id();
+
         self.main_mem.write_le(0x3F_F800, chip_id);
         self.main_mem.write_le(0x3F_F804, chip_id);
         self.main_mem
@@ -241,6 +248,8 @@ impl<E: cpu::Engine> Emu<E> {
         Arm9::set_cp15_control(self, arm9::cp15::Control(0x0005_2078));
         self.swram
             .set_control(swram::Control(3), &mut self.arm7, &mut self.arm9);
+        self.gpu.set_power_control(gpu::PowerControl(0x820F));
+
         let arm9_rom_offset = header.read_le::<u32>(0x20);
         let arm9_entry_addr = header.read_le::<u32>(0x24);
         let arm9_ram_addr = header.read_le::<u32>(0x28);
@@ -298,10 +307,7 @@ impl<E: cpu::Engine> Emu<E> {
                     Event::Shutdown => {
                         return false;
                     }
-                    Event::Engine3dCommandFinished => self
-                        .gpu
-                        .engine_3d
-                        .process_next_command(&mut self.arm9, &mut self.schedule),
+                    Event::Engine3dCommandFinished => Engine3d::process_next_command(self),
                 }
             }
         }

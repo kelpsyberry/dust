@@ -86,8 +86,8 @@ pub struct Vram {
     b_obj: OwnedBytesCellPtr<0x2_0000>,
     pub(super) b_bg_ext_pal_ptr: *const u8,
     pub(super) b_obj_ext_pal_ptr: *const u8,
-    texture: OwnedBytesCellPtr<0x8_0000>,
-    tex_pal: OwnedBytesCellPtr<0x1_8000>,
+    pub(super) texture: OwnedBytesCellPtr<0x8_0000>,
+    pub(super) tex_pal: OwnedBytesCellPtr<0x1_8000>,
     arm7: OwnedBytesCellPtr<0x4_0000>,
 
     // Six bytes need to be added to allow for 64-bit loads from the last color

@@ -1,7 +1,7 @@
 use super::{Engine3d, GxStatus};
 use crate::{
-    cpu::{self, arm9::Arm9, bus::AccessType},
-    emu,
+    cpu::{self, bus::AccessType},
+    emu::Emu,
 };
 
 impl Engine3d {
@@ -115,22 +115,28 @@ impl Engine3d {
         }
     }
 
-    pub(crate) fn write_8<A: AccessType, E: cpu::Engine>(
-        &mut self,
-        addr: u16,
-        value: u8,
-        arm9: &mut Arm9<E>,
-        _emu_schedule: &mut emu::Schedule,
-    ) {
+    pub(crate) fn write_8<A: AccessType, E: cpu::Engine>(emu: &mut Emu<E>, addr: u16, value: u8) {
         match addr & 0xFFE {
-            0x601 => self.write_gx_status(
-                GxStatus((self.gx_status().0 & 0xFFFF_00FF) | (value as u32) << 8),
-                arm9,
-            ),
-            0x603 => self.write_gx_status(
-                GxStatus((self.gx_status().0 & 0x00FF_7FFF) | (value as u32) << 24),
-                arm9,
-            ),
+            0x601 => {
+                if emu.gpu.engine_3d.gx_enabled {
+                    emu.gpu.engine_3d.write_gx_status(
+                        GxStatus(
+                            (emu.gpu.engine_3d.gx_status().0 & 0xFFFF_00FF) | (value as u32) << 8,
+                        ),
+                        &mut emu.arm9,
+                    );
+                }
+            }
+            0x603 => {
+                if emu.gpu.engine_3d.gx_enabled {
+                    emu.gpu.engine_3d.write_gx_status(
+                        GxStatus(
+                            (emu.gpu.engine_3d.gx_status().0 & 0x00FF_7FFF) | (value as u32) << 24,
+                        ),
+                        &mut emu.arm9,
+                    );
+                }
+            }
 
             0x600 | 0x602 => {}
 
@@ -139,7 +145,7 @@ impl Engine3d {
                 #[cfg(feature = "log")]
                 if !A::IS_DEBUG {
                     slog::warn!(
-                        self.logger,
+                        emu.gpu.engine_3d.logger,
                         "Unknown write8 @ {:#06X}: {:#04X}",
                         addr,
                         value
@@ -149,29 +155,33 @@ impl Engine3d {
         }
     }
 
-    pub(crate) fn write_16<A: AccessType, E: cpu::Engine>(
-        &mut self,
-        addr: u16,
-        value: u16,
-        arm9: &mut Arm9<E>,
-        _emu_schedule: &mut emu::Schedule,
-    ) {
+    pub(crate) fn write_16<A: AccessType, E: cpu::Engine>(emu: &mut Emu<E>, addr: u16, value: u16) {
         match addr & 0xFFE {
-            0x600 => self.write_gx_status(
-                GxStatus((self.gx_status().0 & 0xFFFF_0000) | value as u32),
-                arm9,
-            ),
-            0x602 => self.write_gx_status(
-                GxStatus((self.gx_status().0 & 0x0000_7FFF) | (value as u32) << 16),
-                arm9,
-            ),
+            0x600 => {
+                if emu.gpu.engine_3d.gx_enabled {
+                    emu.gpu.engine_3d.write_gx_status(
+                        GxStatus((emu.gpu.engine_3d.gx_status().0 & 0xFFFF_0000) | value as u32),
+                        &mut emu.arm9,
+                    );
+                }
+            }
+            0x602 => {
+                if emu.gpu.engine_3d.gx_enabled {
+                    emu.gpu.engine_3d.write_gx_status(
+                        GxStatus(
+                            (emu.gpu.engine_3d.gx_status().0 & 0x0000_7FFF) | (value as u32) << 16,
+                        ),
+                        &mut emu.arm9,
+                    );
+                }
+            }
 
             _ =>
             {
                 #[cfg(feature = "log")]
                 if !A::IS_DEBUG {
                     slog::warn!(
-                        self.logger,
+                        emu.gpu.engine_3d.logger,
                         "Unknown write16 @ {:#06X}: {:#06X}",
                         addr,
                         value
@@ -181,28 +191,34 @@ impl Engine3d {
         }
     }
 
-    pub(crate) fn write_32<A: AccessType, E: cpu::Engine>(
-        &mut self,
-        addr: u16,
-        value: u32,
-        arm9: &mut Arm9<E>,
-        emu_schedule: &mut emu::Schedule,
-    ) {
+    pub(crate) fn write_32<A: AccessType, E: cpu::Engine>(emu: &mut Emu<E>, addr: u16, value: u32) {
         match addr & 0xFFC {
-            0x400..=0x43C => self.write_packed_command(value, arm9, emu_schedule),
-
-            0x440..=0x5FC => {
-                self.write_unpacked_command((addr >> 2) as u8, value, arm9, emu_schedule);
+            0x400..=0x43C => {
+                if emu.gpu.engine_3d.gx_enabled {
+                    Self::write_packed_command(emu, value);
+                }
             }
 
-            0x600 => self.write_gx_status(GxStatus(value), arm9),
+            0x440..=0x5FC => {
+                if emu.gpu.engine_3d.gx_enabled {
+                    Self::write_unpacked_command(emu, (addr >> 2) as u8, value);
+                }
+            }
+
+            0x600 => {
+                if emu.gpu.engine_3d.gx_enabled {
+                    emu.gpu
+                        .engine_3d
+                        .write_gx_status(GxStatus(value), &mut emu.arm9);
+                }
+            }
 
             _ =>
             {
                 #[cfg(feature = "log")]
                 if !A::IS_DEBUG {
                     slog::warn!(
-                        self.logger,
+                        emu.gpu.engine_3d.logger,
                         "Unknown write32 @ {:#06X}: {:#010X}",
                         addr,
                         value

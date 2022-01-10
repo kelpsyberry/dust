@@ -1,4 +1,5 @@
 mod rtc;
+mod renderer_3d;
 
 #[cfg(feature = "debug-views")]
 use super::debug_views;
@@ -263,6 +264,7 @@ pub(super) fn main(
             None => Box::new(DummyAudioBackend),
         },
         Box::new(rtc::Backend::new(config.rtc_time_offset_seconds.value)),
+        Box::new(renderer_3d::Renderer::new()),
         #[cfg(feature = "log")]
         logger.clone(),
     );
@@ -384,6 +386,7 @@ pub(super) fn main(
                         },
                         emu.audio.backend,
                         emu.rtc.backend,
+                        emu.gpu.engine_3d.renderer,
                         #[cfg(feature = "log")]
                         logger.clone(),
                     );

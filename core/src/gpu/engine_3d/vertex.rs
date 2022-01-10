@@ -1,28 +1,20 @@
 use packed_simd::{i16x2, i32x4, i64x2, i64x4, i8x4, FromCast};
 
 pub type TexCoords = i16x2;
-
-pub fn decode_rgb_5(value: u16) -> i8x4 {
-    i8x4::new(
-        value as i8 & 0x1F,
-        (value >> 5) as i8 & 0x1F,
-        (value >> 10) as i8 & 0x1F,
-        1,
-    )
-}
+pub type Color = i8x4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Vertex {
     pub coords: i32x4,
-    pub uv: i16x2,
+    pub uv: TexCoords,
     pub color: i8x4,
 }
 
 impl Vertex {
-    pub const fn zero() -> Self {
+    pub const fn new() -> Self {
         Vertex {
             coords: i32x4::splat(0),
-            uv: i16x2::splat(0),
+            uv: TexCoords::splat(0),
             color: i8x4::splat(0),
         }
     }
@@ -43,7 +35,7 @@ impl Vertex {
         }
         Vertex {
             coords: interpolate_attr!(coords, i32x4, i64x4),
-            uv: interpolate_attr!(uv, i16x2, i64x2),
+            uv: interpolate_attr!(uv, TexCoords, i64x2),
             color: interpolate_attr!(color, i8x4, i64x4),
         }
     }
