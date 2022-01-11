@@ -9,6 +9,10 @@
     slice_ptr_len
 )]
 
+#[cfg(target_os = "macos")]
+#[macro_use]
+extern crate objc;
+
 #[macro_use]
 mod utils;
 
@@ -29,7 +33,7 @@ use std::panic;
 #[repr(C)]
 struct FrameData {
     fb: Box<Framebuffer>,
-    fps: f64,
+    fps: f32,
     #[cfg(feature = "debug-views")]
     debug: debug_views::FrameData,
 }

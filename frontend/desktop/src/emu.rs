@@ -1,5 +1,5 @@
-mod rtc;
 mod renderer_3d;
+mod rtc;
 
 #[cfg(feature = "debug-views")]
 use super::debug_views;
@@ -422,7 +422,7 @@ pub(super) fn main(
         let now = Instant::now();
         let elapsed = now - last_fps_calc_time;
         if elapsed >= FPS_CALC_INTERVAL {
-            fps = frames_since_last_fps_calc as f64 / elapsed.as_secs_f64();
+            fps = (frames_since_last_fps_calc as f64 / elapsed.as_secs_f64()) as f32;
             last_fps_calc_time = now;
             frames_since_last_fps_calc = 0;
         }

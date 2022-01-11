@@ -1,13 +1,14 @@
 use super::imgui_wgpu;
 #[cfg(target_os = "macos")]
 use cocoa::{
-    appkit::{NSWindow, NSWindowOcclusionState},
+    appkit::{NSWindow, NSWindowOcclusionState, NSWindowStyleMask},
     base::id,
+    foundation::NSRect,
 };
 use core::{iter, mem::ManuallyDrop};
 use std::{path::PathBuf, time::Instant};
 #[cfg(target_os = "macos")]
-use winit::platform::macos::WindowExtMacOS;
+use winit::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
     event::{Event, StartCause, WindowEvent},
@@ -175,6 +176,37 @@ pub struct Window {
     pub gfx: GfxState,
     pub normal_font: imgui::FontId,
     pub mono_font: imgui::FontId,
+    #[cfg(target_os = "macos")]
+    pub macos_title_bar_height: f32,
+}
+
+impl Window {
+    #[cfg(target_os = "macos")]
+    fn macos_title_bar_height(&self) -> f32 {
+        let content_layout_rect: NSRect =
+            unsafe { msg_send![self.window.ns_window() as id, contentLayoutRect] };
+        (self.window.outer_size().height as f64 / self.scale_factor
+            - content_layout_rect.size.height) as f32
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn set_macos_titlebar_hidden(&mut self, hidden: bool) {
+        self.macos_title_bar_height = if hidden {
+            self.macos_title_bar_height()
+        } else {
+            0.0
+        };
+        unsafe {
+            let window = self.window.ns_window() as id;
+            window.setTitlebarAppearsTransparent_(hidden as i8);
+            let prev_style_mask = window.styleMask();
+            window.setStyleMask_(if hidden {
+                prev_style_mask | NSWindowStyleMask::NSFullSizeContentViewWindowMask
+            } else {
+                prev_style_mask & !NSWindowStyleMask::NSFullSizeContentViewWindowMask
+            });
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -188,18 +220,29 @@ impl Builder {
         title: impl Into<String>,
         default_logical_size: (u32, u32),
         imgui_config_path: Option<PathBuf>,
+        #[cfg(target_os = "macos")] macos_title_bar_hidden: bool,
     ) -> Self {
         let event_loop = EventLoop::new();
-        let window = WinitWindowBuilder::new()
+        let window_builder = WinitWindowBuilder::new()
             .with_title(title)
             .with_inner_size(LogicalSize::new(
                 default_logical_size.0,
                 default_logical_size.1,
             ))
             // Make the window invisible for the first frame, to avoid showing invalid data
-            .with_visible(false)
+            .with_visible(false);
+        #[cfg(target_os = "macos")]
+        let window_builder = if macos_title_bar_hidden {
+            window_builder
+                .with_titlebar_transparent(true)
+                .with_fullsize_content_view(true)
+        } else {
+            window_builder
+        };
+        let window = window_builder
             .build(&event_loop)
             .expect("Couldn't create window");
+
         let scale_factor = window.scale_factor();
 
         let mut imgui = imgui::Context::create();
@@ -242,17 +285,27 @@ impl Builder {
 
         let gfx = GfxState::new(&window, &mut imgui).await;
 
+        #[allow(unused_mut)]
+        let mut window = Window {
+            window,
+            is_hidden: true,
+            scale_factor,
+            gfx,
+            last_frame: Instant::now(),
+            imgui_winit_platform,
+            normal_font,
+            mono_font,
+            #[cfg(target_os = "macos")]
+            macos_title_bar_height: 0.0,
+        };
+
+        #[cfg(target_os = "macos")]
+        if macos_title_bar_hidden {
+            window.macos_title_bar_height = window.macos_title_bar_height();
+        }
+
         Builder {
-            window: Window {
-                window,
-                is_hidden: true,
-                scale_factor,
-                gfx,
-                last_frame: Instant::now(),
-                imgui_winit_platform,
-                normal_font,
-                mono_font,
-            },
+            window,
             event_loop,
             imgui,
         }

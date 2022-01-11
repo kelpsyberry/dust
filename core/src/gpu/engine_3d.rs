@@ -12,7 +12,7 @@ use crate::{
         Schedule,
     },
     emu::{self, Emu},
-    utils::{bitfield_debug, schedule::RawTimestamp, Fifo},
+    utils::{bitfield_debug, schedule::RawTimestamp, zeroed_box, Fifo, Zero},
 };
 use core::mem::{replace, transmute};
 use matrix::{Matrix, MatrixBuffer};
@@ -116,6 +116,7 @@ mod bounded {
 use bounded::{PrimVertIndex, VertexAddr};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
 pub struct Polygon {
     vertices: [VertexAddr; 10],
     vertices_len: u8,
@@ -123,6 +124,8 @@ pub struct Polygon {
     tex_params: TextureParams,
     attrs: PolygonAttrs,
 }
+
+unsafe impl Zero for Polygon {}
 
 impl Polygon {
     pub const fn new() -> Self {
@@ -368,9 +371,9 @@ impl Engine3d {
             cur_prim_vert_index: PrimVertIndex::new(0),
             cur_strip_prim_is_odd: false,
 
-            vert_ram: Box::new([Vertex::new(); 6144]),
+            vert_ram: zeroed_box(),
             vert_ram_level: 0,
-            poly_ram: Box::new([Polygon::new(); 2048]),
+            poly_ram: zeroed_box(),
             poly_ram_level: 0,
 
             rendering_state: RenderingState {

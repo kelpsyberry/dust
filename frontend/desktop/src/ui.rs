@@ -388,6 +388,24 @@ impl UiState {
         );
     }
 
+    fn update_window_title(&self, window: &window::Window) {
+        if !cfg!(target_os = "macos") || self.show_menu_bar {
+            let mut buffer = "Dust - ".to_string();
+            if let Some(game_title) = &self.game_title {
+                buffer.push_str(game_title);
+                if let Some(fps_fixed) = self.fps_fixed {
+                    use core::fmt::Write;
+                    let _ = write!(buffer, " - {:.01} FPS", fps_fixed as f32 / 10.0);
+                }
+            } else {
+                buffer.push_str("No game loaded");
+            }
+            window.window.set_title(&buffer);
+        } else {
+            window.window.set_title("");
+        }
+    }
+
     #[cfg(feature = "discord-presence")]
     fn flush_presence(&mut self) {
         if !self.presence_updated {
@@ -496,6 +514,8 @@ pub fn main() {
         "Dust",
         global_config.contents.window_size,
         global_config.contents.imgui_config_path.clone(),
+        #[cfg(target_os = "macos")]
+        global_config.contents.hide_macos_title_bar,
     ));
 
     let audio_channel = audio::channel(
@@ -661,16 +681,6 @@ pub fn main() {
                         .debug_views
                         .update_from_frame_data(&frame.debug, window);
 
-                    let fps_fixed = (frame.fps * 10.0).round() as u64;
-                    if Some(fps_fixed) != state.fps_fixed {
-                        state.fps_fixed = Some(fps_fixed);
-                        window.window.set_title(&format!(
-                            "Dust - {} - {:.01} FPS",
-                            state.game_title.as_ref().unwrap(),
-                            frame.fps
-                        ));
-                    }
-
                     let fb_texture = window.gfx.imgui.texture_mut(state.fb_texture_id);
                     let data = unsafe {
                         core::slice::from_raw_parts(
@@ -683,9 +693,12 @@ pub fn main() {
                         data,
                         imgui_wgpu::TextureRange::default(),
                     );
+
+                    let fps_fixed = (frame.fps * 10.0).round() as u64;
+                    if Some(fps_fixed) != state.fps_fixed {
+                        state.fps_fixed = Some(fps_fixed);
+                    }
                 }
-            } else {
-                window.window.set_title("Dust - No game loaded");
             }
 
             if state.playing {
@@ -702,7 +715,30 @@ pub fn main() {
             }
 
             if state.show_menu_bar {
+                #[cfg(target_os = "macos")]
+                let frame_padding = if state.global_config.contents.hide_macos_title_bar {
+                    Some(ui.push_style_var(imgui::StyleVar::FramePadding([
+                        0.0,
+                        0.5 * (window.macos_title_bar_height - ui.text_line_height()),
+                    ])))
+                } else {
+                    None
+                };
+
                 ui.main_menu_bar(|| {
+                    #[cfg(target_os = "macos")]
+                    {
+                        drop(frame_padding);
+                        if state.global_config.contents.hide_macos_title_bar {
+                            let _item_spacing =
+                                ui.push_style_var(imgui::StyleVar::ItemSpacing([0.0; 2]));
+                            // TODO: There has to be some way to compute this width instead of
+                            //       hardcoding it.
+                            ui.dummy([68.0, 0.0]);
+                            ui.same_line();
+                        }
+                    }
+
                     ui.menu("Emulation", || {
                         if ui
                             .menu_item_config(if state.playing { "Pause" } else { "Play" })
@@ -985,6 +1021,17 @@ pub fn main() {
                                 None
                             };
                         }
+
+                        #[cfg(target_os = "macos")]
+                        if ui
+                            .menu_item_config("Hide title bar")
+                            .build_with_ref(&mut state.global_config.contents.hide_macos_title_bar)
+                        {
+                            state.global_config.dirty = true;
+                            window.set_macos_titlebar_hidden(
+                                state.global_config.contents.hide_macos_title_bar,
+                            );
+                        }
                     });
 
                     #[cfg(feature = "log")]
@@ -1127,6 +1174,8 @@ pub fn main() {
                         );
                     });
             }
+
+            state.update_window_title(window);
 
             window::ControlFlow::Continue
         },

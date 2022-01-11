@@ -1,13 +1,14 @@
 use dust_core::{
     gpu::{
         engine_3d::{Polygon, Renderer as RendererTrair, Vertex},
-        Scanline, SCREEN_HEIGHT, SCREEN_WIDTH,
+        Scanline, SCREEN_HEIGHT,
     },
-    utils::Bytes,
+    utils::{zeroed_box, Bytes, Zero},
 };
 use std::{
     cell::UnsafeCell,
     hint,
+    mem::transmute,
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
@@ -24,9 +25,11 @@ struct RenderingData {
     poly_ram_level: u16,
 }
 
+unsafe impl Zero for RenderingData {}
+
 struct SharedData {
-    rendering_data: UnsafeCell<RenderingData>,
-    scanline_buffer: UnsafeCell<[Scanline<u32, SCREEN_WIDTH>; SCREEN_HEIGHT]>,
+    rendering_data: Box<UnsafeCell<RenderingData>>,
+    scanline_buffer: Box<UnsafeCell<[Scanline<u32, 512>; SCREEN_HEIGHT]>>,
     processing_scanline: AtomicU8,
     stopped: AtomicBool,
 }
@@ -79,7 +82,7 @@ impl RendererTrair for Renderer {
         self.next_scanline = 0;
     }
 
-    fn read_scanline(&mut self) -> &Scanline<u32, SCREEN_WIDTH> {
+    fn read_scanline(&mut self) -> &Scanline<u32, 512> {
         while {
             let processing_scanline = self.shared_data.processing_scanline.load(Ordering::Acquire);
             processing_scanline == u8::MAX || processing_scanline <= self.next_scanline
@@ -109,18 +112,13 @@ impl Drop for Renderer {
 
 impl Renderer {
     pub fn new() -> Self {
-        let shared_data = Arc::new(SharedData {
-            rendering_data: UnsafeCell::new(RenderingData {
-                texture: Bytes::new([0; 0x8_0000]),
-                tex_pal: Bytes::new([0; 0x1_8000]),
-                vert_ram: [Vertex::new(); 6144],
-                poly_ram: [Polygon::new(); 2048],
-                vert_ram_level: 0,
-                poly_ram_level: 0,
-            }),
-            scanline_buffer: UnsafeCell::new([Scanline([0; SCREEN_WIDTH]); SCREEN_HEIGHT]),
-            processing_scanline: AtomicU8::new(SCREEN_HEIGHT as u8),
-            stopped: AtomicBool::new(false),
+        let shared_data = Arc::new(unsafe {
+            SharedData {
+                rendering_data: transmute(zeroed_box::<RenderingData>()),
+                scanline_buffer: transmute(zeroed_box::<[Scanline<u32, 512>; SCREEN_HEIGHT]>()),
+                processing_scanline: AtomicU8::new(SCREEN_HEIGHT as u8),
+                stopped: AtomicBool::new(false),
+            }
         });
         Renderer {
             next_scanline: 0,

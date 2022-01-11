@@ -1,14 +1,18 @@
 use packed_simd::{i16x2, i32x4, i64x2, i64x4, i8x4, FromCast};
+use crate::utils::Zero;
 
 pub type TexCoords = i16x2;
 pub type Color = i8x4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
 pub struct Vertex {
     pub coords: i32x4,
     pub uv: TexCoords,
     pub color: i8x4,
 }
+
+unsafe impl Zero for Vertex {}
 
 impl Vertex {
     pub const fn new() -> Self {

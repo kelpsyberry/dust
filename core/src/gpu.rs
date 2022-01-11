@@ -63,6 +63,8 @@ const HBLANK_DURATION: Timestamp = Timestamp(99 * DOT_CYCLES);
 #[derive(Clone, Copy)]
 pub struct Scanline<T, const LEN: usize = SCREEN_WIDTH>(pub [T; LEN]);
 
+unsafe impl<T, const LEN: usize> Zero for Scanline<T, LEN> where T: Zero {}
+
 #[repr(C, align(64))]
 #[derive(Clone)]
 pub struct Framebuffer(pub [[u32; SCREEN_WIDTH * SCREEN_HEIGHT]; 2]);

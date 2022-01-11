@@ -76,6 +76,7 @@ pub struct Global {
     pub imgui_log_history_capacity: usize,
     pub window_size: (u32, u32),
     pub imgui_config_path: Option<PathBuf>,
+    pub hide_macos_title_bar: bool,
 }
 
 impl Default for Global {
@@ -109,6 +110,7 @@ impl Default for Global {
             imgui_log_history_capacity: 1024 * 1024,
             window_size: (1300, 800),
             imgui_config_path: Some(config_base.join("imgui.ini")),
+            hide_macos_title_bar: true,
         }
     }
 }

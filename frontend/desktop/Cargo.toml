@@ -47,7 +47,8 @@ chrono = { version = "0.4", features = ["serde"] }
 discord-rpc = { git = "https://github.com/Kelpsy/discord-rpc", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.24" # TODO: Remove when https://github.com/rust-windowing/winit/issues/2022 is closed
+cocoa = "0.24"
+objc = "0.2"
 
 [build-dependencies]
 shaderc = { version = "0.7", optional = true }

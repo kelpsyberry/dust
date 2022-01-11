@@ -1,8 +1,5 @@
 use super::{Polygon, RenderingState, Vertex};
-use crate::{
-    gpu::{Scanline, SCREEN_WIDTH},
-    utils::Bytes,
-};
+use crate::{gpu::Scanline, utils::Bytes};
 
 pub trait Renderer {
     fn swap_buffers(
@@ -16,6 +13,6 @@ pub trait Renderer {
 
     fn start_frame(&mut self);
 
-    fn read_scanline(&mut self) -> &Scanline<u32, SCREEN_WIDTH>;
+    fn read_scanline(&mut self) -> &Scanline<u32, 512>;
     fn skip_scanline(&mut self);
 }
