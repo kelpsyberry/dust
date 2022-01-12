@@ -128,7 +128,7 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
         }
     } else {
         #[cfg(feature = "debug-hooks")]
-        check_watchpoints!(emu.arm9, addr, 1, Read);
+        check_watchpoints!(emu.arm9, addr, 0, 1, Read);
         if !A::IS_DMA {
             check_tcm_read!(emu, addr, false, 0);
         }
@@ -137,8 +137,7 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
 }
 
 #[inline]
-pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16 {
-    addr &= !1;
+pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u16 {
     if let Some(ptr) = if A::IS_DMA {
         emu.arm9.bus_ptrs.read(addr)
     } else {
@@ -156,7 +155,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
         }
     } else {
         #[cfg(feature = "debug-hooks")]
-        check_watchpoints!(emu.arm9, addr, 5, Read);
+        check_watchpoints!(emu.arm9, addr, 1, 5, Read);
         if !A::IS_DMA {
             check_tcm_read!(emu, addr, false, 1);
         }
@@ -165,8 +164,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
 }
 
 #[inline]
-pub fn read_32<A: AccessType, E: Engine, const CODE: bool>(emu: &mut Emu<E>, mut addr: u32) -> u32 {
-    addr &= !3;
+pub fn read_32<A: AccessType, E: Engine, const CODE: bool>(emu: &mut Emu<E>, addr: u32) -> u32 {
     if let Some(ptr) = if A::IS_DMA {
         emu.arm9.bus_ptrs.read(addr)
     } else if CODE {
@@ -186,7 +184,7 @@ pub fn read_32<A: AccessType, E: Engine, const CODE: bool>(emu: &mut Emu<E>, mut
         }
     } else {
         #[cfg(feature = "debug-hooks")]
-        check_watchpoints!(emu.arm9, addr, 0x55, Read);
+        check_watchpoints!(emu.arm9, addr, 3, 0x55, Read);
         if !A::IS_DMA {
             check_tcm_read!(emu, addr, CODE, 3);
         }
@@ -215,7 +213,7 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
     } else {
         emu.arm9.engine_data.invalidate_word(addr);
         #[cfg(feature = "debug-hooks")]
-        check_watchpoints!(emu.arm9, addr, 2, Write);
+        check_watchpoints!(emu.arm9, addr, 0, 2, Write);
         if !A::IS_DMA {
             check_tcm_write!(emu, addr, value, 0);
         }
@@ -224,8 +222,7 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
 }
 
 #[inline]
-pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value: u16) {
-    addr &= !1;
+pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u16) {
     if let Some(ptr) = if A::IS_DMA {
         emu.arm9.bus_ptrs.write_16_32(addr)
     } else {
@@ -244,7 +241,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
     } else {
         emu.arm9.engine_data.invalidate_word(addr);
         #[cfg(feature = "debug-hooks")]
-        check_watchpoints!(emu.arm9, addr, 0xA, Write);
+        check_watchpoints!(emu.arm9, addr, 1, 0xA, Write);
         if !A::IS_DMA {
             check_tcm_write!(emu, addr, value, 1);
         }
@@ -253,8 +250,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
 }
 
 #[inline]
-pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value: u32) {
-    addr &= !3;
+pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u32) {
     if let Some(ptr) = if A::IS_DMA {
         emu.arm9.bus_ptrs.write_16_32(addr)
     } else {
@@ -273,7 +269,7 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
     } else {
         emu.arm9.engine_data.invalidate_word(addr);
         #[cfg(feature = "debug-hooks")]
-        check_watchpoints!(emu.arm9, addr, 0xAA, Write);
+        check_watchpoints!(emu.arm9, addr, 3, 0xAA, Write);
         if !A::IS_DMA {
             check_tcm_write!(emu, addr, value, 3);
         }

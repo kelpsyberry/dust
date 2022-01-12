@@ -16,7 +16,7 @@ use crate::{
 #[inline(never)]
 pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
     #[cfg(feature = "debug-hooks")]
-    check_watchpoints!(emu.arm7, addr, 1, Read);
+    check_watchpoints!(emu.arm7, addr, 0, 1, Read);
     match addr >> 24 {
         0x00 if addr < BIOS_SIZE as u32 => {
             let max_pc = if addr < emu.arm7.bios_prot as u32 {
@@ -52,7 +52,7 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             if addr & 1 << 23 == 0 {
                 unsafe {
                     emu.swram
-                        .arm7_ptr()
+                        .arm7_r_ptr()
                         .add(addr as usize & emu.swram.arm7_mask() as usize)
                         .read()
                 }
@@ -185,9 +185,9 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
 
 #[inline(never)]
 pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16 {
-    addr &= !1;
     #[cfg(feature = "debug-hooks")]
-    check_watchpoints!(emu.arm7, addr, 5, Read);
+    check_watchpoints!(emu.arm7, addr, 1, 5, Read);
+    addr &= !1;
     match addr >> 24 {
         0x00 if addr < BIOS_SIZE as u32 => {
             let max_pc = if addr < emu.arm7.bios_prot as u32 {
@@ -224,7 +224,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
                 unsafe {
                     u16::read_le_aligned(
                         emu.swram
-                            .arm7_ptr()
+                            .arm7_r_ptr()
                             .add(addr as usize & emu.swram.arm7_mask() as usize)
                             as *const u16,
                     )
@@ -353,9 +353,9 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
 
 #[inline(never)]
 pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32 {
-    addr &= !3;
     #[cfg(feature = "debug-hooks")]
-    check_watchpoints!(emu.arm7, addr, 0x55, Read);
+    check_watchpoints!(emu.arm7, addr, 3, 0x55, Read);
+    addr &= !3;
     match addr >> 24 {
         0x00 if addr < BIOS_SIZE as u32 => {
             let max_pc = if addr < emu.arm7.bios_prot as u32 {
@@ -393,7 +393,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
                 unsafe {
                     u32::read_le_aligned(
                         emu.swram
-                            .arm7_ptr()
+                            .arm7_r_ptr()
                             .add(addr as usize & emu.swram.arm7_mask() as usize)
                             as *const u32,
                     )
@@ -507,7 +507,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
 pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8) {
     emu.arm7.engine_data.invalidate_word(addr);
     #[cfg(feature = "debug-hooks")]
-    check_watchpoints!(emu.arm7, addr, 2, Write);
+    check_watchpoints!(emu.arm7, addr, 0, 2, Write);
     match addr >> 24 {
         #[cfg(feature = "bft-w")]
         0x02 => emu.main_mem.write(addr as usize & 0x3F_FFFF, value),
@@ -517,7 +517,7 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
             if addr & 1 << 23 == 0 {
                 unsafe {
                     emu.swram
-                        .arm7_ptr()
+                        .arm7_w_ptr()
                         .add(addr as usize & emu.swram.arm7_mask() as usize)
                         .write(value)
                 }
@@ -656,15 +656,13 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
 #[inline(never)]
 #[allow(clippy::single_match)]
 pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value: u16) {
-    addr &= !1;
     emu.arm7.engine_data.invalidate_word(addr);
     #[cfg(feature = "debug-hooks")]
-    check_watchpoints!(emu.arm7, addr, 0xA, Write);
+    check_watchpoints!(emu.arm7, addr, 1, 0xA, Write);
+    addr &= !1;
     match addr >> 24 {
         #[cfg(feature = "bft-w")]
-        0x02 => unsafe {
-            emu.main_mem.write_le(addr as usize & 0x3F_FFFE, value);
-        },
+        0x02 => emu.main_mem.write_le(addr as usize & 0x3F_FFFE, value),
 
         #[cfg(feature = "bft-w")]
         0x03 => {
@@ -672,7 +670,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                 unsafe {
                     value.write_le_aligned(
                         emu.swram
-                            .arm7_ptr()
+                            .arm7_w_ptr()
                             .add(addr as usize & emu.swram.arm7_mask() as usize)
                             as *mut u16,
                     );
@@ -920,10 +918,10 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
 #[inline(never)]
 #[allow(clippy::single_match)]
 pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value: u32) {
-    addr &= !3;
     emu.arm7.engine_data.invalidate_word(addr);
     #[cfg(feature = "debug-hooks")]
-    check_watchpoints!(emu.arm7, addr, 0xAA, Write);
+    check_watchpoints!(emu.arm7, addr, 3, 0xAA, Write);
+    addr &= !3;
     match addr >> 24 {
         #[cfg(feature = "bft-w")]
         0x02 => emu.main_mem.write_le(addr as usize & 0x3F_FFFC, value),
@@ -934,7 +932,7 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                 unsafe {
                     value.write_le_aligned(
                         emu.swram
-                            .arm7_ptr()
+                            .arm7_w_ptr()
                             .add(addr as usize & emu.swram.arm7_mask() as usize)
                             as *mut u32,
                     )

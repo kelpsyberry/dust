@@ -24,11 +24,11 @@ static COND_TABLE: [u16; 0x10] = [
 
 impl Cpsr {
     #[inline]
-    pub fn satisfies_condition(self, condition: u8) -> bool {
+    pub(super) fn satisfies_condition(self, condition: u8) -> bool {
         COND_TABLE[condition as usize] & 1 << (self.raw() >> 28) != 0
     }
 
-    pub fn copy_nzcv(&mut self, value: u32) {
+    pub(super) fn copy_nzcv(&mut self, value: u32) {
         *self = unsafe {
             Cpsr::from_raw_unchecked((self.raw() & !0xF000_0000) | (value & 0xF000_0000))
         };

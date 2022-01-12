@@ -315,6 +315,8 @@ impl Gpu {
             // Unlock the 3D engine if it was waiting for VBlank
             if emu.gpu.engine_3d.swap_buffers_waiting() {
                 Engine3d::swap_buffers(emu);
+            } else {
+                emu.gpu.engine_3d.swap_buffers_missed(&emu.gpu.vram);
             }
             emu.gpu.disp_status_7.set_vblank(true);
             if emu.gpu.disp_status_7.vblank_irq_enabled() {

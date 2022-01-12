@@ -45,7 +45,7 @@ impl Flash {
         id: [u8; 20],
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Result<Self, CreationError> {
-        if !contents.len().is_power_of_two() {
+        if !contents.len().is_power_of_two() || contents.len() < 0x4_0000 {
             return Err(CreationError::SizeNotPowerOfTwo);
         }
         let contents_len_mask = (contents.len() - 1) as u32;

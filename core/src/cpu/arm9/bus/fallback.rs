@@ -29,7 +29,7 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
         #[cfg(feature = "bft-r")]
         0x03 => unsafe {
             emu.swram
-                .arm9_ptr()
+                .arm9_r_ptr()
                 .add((addr & emu.swram.arm9_mask()) as usize)
                 .read()
         },
@@ -196,7 +196,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
         0x03 => unsafe {
             u16::read_le_aligned(
                 emu.swram
-                    .arm9_ptr()
+                    .arm9_r_ptr()
                     .add((addr & emu.swram.arm9_mask()) as usize) as *const u16,
             )
         },
@@ -340,7 +340,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
         0x03 => unsafe {
             u32::read_le_aligned(
                 emu.swram
-                    .arm9_ptr()
+                    .arm9_r_ptr()
                     .add((addr & emu.swram.arm9_mask()) as usize) as *const u32,
             )
         },

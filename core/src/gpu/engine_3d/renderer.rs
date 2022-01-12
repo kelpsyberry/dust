@@ -1,4 +1,4 @@
-use super::{Polygon, RenderingState, Vertex};
+use super::{Polygon, RenderingState, ScreenVertex};
 use crate::{gpu::Scanline, utils::Bytes};
 
 pub trait Renderer {
@@ -6,8 +6,14 @@ pub trait Renderer {
         &mut self,
         texture: &Bytes<0x8_0000>,
         tex_pal: &Bytes<0x1_8000>,
-        vert_ram: &[Vertex],
+        vert_ram: &[ScreenVertex],
         poly_ram: &[Polygon],
+        state: &RenderingState,
+    );
+    fn repeat_last_frame(
+        &mut self,
+        texture: &Bytes<0x8_0000>,
+        tex_pal: &Bytes<0x1_8000>,
         state: &RenderingState,
     );
 

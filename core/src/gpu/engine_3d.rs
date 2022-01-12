@@ -1,7 +1,7 @@
 mod io;
 mod matrix;
 mod vertex;
-pub use vertex::{Color, TexCoords, Vertex};
+pub use vertex::{Color, ScreenCoords, ScreenVertex, TexCoords};
 mod renderer;
 pub use renderer::Renderer;
 
@@ -12,10 +12,13 @@ use crate::{
         Schedule,
     },
     emu::{self, Emu},
+    gpu::vram::Vram,
     utils::{bitfield_debug, schedule::RawTimestamp, zeroed_box, Fifo, Zero},
 };
 use core::mem::{replace, transmute};
 use matrix::{Matrix, MatrixBuffer};
+use packed_simd::FromCast;
+use vertex::{ConversionScreenCoords, Vertex};
 
 bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -47,6 +50,14 @@ bitfield_debug! {
 struct FifoEntry {
     command: u8,
     param: u32,
+}
+
+bitfield_debug! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub struct SwapBuffersAttrs(pub u8) {
+        pub auto_sort_translucent: bool @ 0,
+        pub w_buffering: bool @ 1,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -119,6 +130,10 @@ use bounded::{PrimVertIndex, VertexAddr};
 #[repr(C)]
 pub struct Polygon {
     vertices: [VertexAddr; 10],
+    depth_values: [i32; 10],
+    w_values: [i32; 10],
+    top_y: u8,
+    bot_y: u8,
     vertices_len: u8,
     tex_palette_base: u16,
     tex_params: TextureParams,
@@ -130,7 +145,11 @@ unsafe impl Zero for Polygon {}
 impl Polygon {
     pub const fn new() -> Self {
         Polygon {
+            depth_values: [0; 10],
+            w_values: [0; 10],
             vertices: [VertexAddr::new(0); 10],
+            top_y: 0,
+            bot_y: 0,
             vertices_len: 0,
             tex_palette_base: 0,
             tex_params: TextureParams(0),
@@ -195,6 +214,8 @@ pub struct Engine3d {
     remaining_command_params: u8,
     command_finish_time: emu::Timestamp,
 
+    swap_buffers_attrs: SwapBuffersAttrs,
+
     mtx_mode: MatrixMode,
     proj_stack: Matrix,
     pos_vec_stack: [[Matrix; 2]; 32],
@@ -206,6 +227,8 @@ pub struct Engine3d {
     cur_clip_mtx: Matrix,
     clip_mtx_needs_recalculation: bool,
     cur_tex_mtx: Matrix,
+
+    viewport: [u8; 4],
 
     vert_color: u16,
     tex_coords: TexCoords,
@@ -231,14 +254,14 @@ pub struct Engine3d {
     cur_prim_type: PrimitiveType,
     cur_prim_verts: [Vertex; 4],
     last_strip_prim_vert_indices: [VertexAddr; 2],
-    connect_to_last_strip_prim: bool,
     cur_prim_max_verts: u8,
     cur_prim_vert_index: PrimVertIndex,
     cur_strip_prim_is_odd: bool,
+    connect_to_last_strip_prim: bool,
 
     vert_ram_level: u16,
     poly_ram_level: u16,
-    vert_ram: Box<[Vertex; 6144]>,
+    vert_ram: Box<[ScreenVertex; 6144]>,
     poly_ram: Box<[Polygon; 2048]>,
 
     rendering_state: RenderingState,
@@ -322,6 +345,8 @@ impl Engine3d {
             gx_enabled: false,
             rendering_enabled: false,
 
+            viewport: [0; 4],
+
             gx_status: GxStatus(0),
             gx_fifo_irq_requested: false,
             gx_fifo: Box::new(Fifo::new()),
@@ -329,6 +354,8 @@ impl Engine3d {
             cur_packed_commands: 0,
             remaining_command_params: 0,
             command_finish_time: emu::Timestamp(0),
+
+            swap_buffers_attrs: SwapBuffersAttrs(0),
 
             mtx_mode: MatrixMode::Projection,
             proj_stack: Matrix::zero(),
@@ -366,10 +393,10 @@ impl Engine3d {
             cur_prim_type: PrimitiveType::Triangles,
             cur_prim_verts: [Vertex::new(); 4],
             last_strip_prim_vert_indices: [VertexAddr::new(0); 2],
-            connect_to_last_strip_prim: true,
             cur_prim_max_verts: 0,
             cur_prim_vert_index: PrimVertIndex::new(0),
             cur_strip_prim_is_odd: false,
+            connect_to_last_strip_prim: false,
 
             vert_ram: zeroed_box(),
             vert_ram_level: 0,
@@ -429,7 +456,7 @@ impl Engine3d {
         self.vert_ram_level
     }
 
-    pub fn vert_ram(&self) -> &[Vertex; 6144] {
+    pub fn vert_ram(&self) -> &[ScreenVertex; 6144] {
         &self.vert_ram
     }
 
@@ -830,38 +857,105 @@ impl Engine3d {
         run_pass!(1, buffer_0 => buffer_1);
         run_pass!(0, buffer_1 => buffer_0);
 
-        let mut polygon = &mut self.poly_ram[self.poly_ram_level as usize];
+        let mut poly = &mut self.poly_ram[self.poly_ram_level as usize];
         self.poly_ram_level += 1;
-        polygon.vertices_len = clipped_verts_len as u8;
-        polygon.tex_palette_base = self.cur_tex_palette_base;
-        polygon.tex_params = self.cur_tex_params;
-        polygon.attrs = self.cur_poly_attrs;
+        poly.vertices_len = clipped_verts_len as u8;
+        poly.tex_palette_base = self.cur_tex_palette_base;
+        poly.tex_params = self.cur_tex_params;
+        poly.attrs = self.cur_poly_attrs;
 
         if connect_to_last_strip_prim {
-            polygon.vertices[..2].copy_from_slice(&self.last_strip_prim_vert_indices);
+            poly.vertices[..2].copy_from_slice(&self.last_strip_prim_vert_indices);
         }
+
+        let mut top_y = 0;
+        let mut bot_y = 0;
+
+        let viewport_origin = ConversionScreenCoords::new(
+            self.viewport[0] as i32,
+            191_u8.wrapping_sub(self.viewport[1]) as i32,
+        );
+        let viewport_size = ConversionScreenCoords::new(
+            (self.viewport[2] as i32 - self.viewport[0] as i32 + 1) & 0x1FF,
+            // H = (191 - Y2) - (191 - Y1) + 1 = Y1 - Y2 + 1
+            self.viewport[1]
+                .wrapping_sub(self.viewport[3])
+                .wrapping_add(1) as i32,
+        );
 
         for (vert, vert_addr) in buffer_0[shared_verts..clipped_verts_len]
             .iter()
-            .zip(&mut polygon.vertices[shared_verts..clipped_verts_len])
+            .zip(&mut poly.vertices[shared_verts..clipped_verts_len])
         {
+            let w = vert.coords.extract(3);
+            let coords = if w == 0 {
+                // TODO: What should actually happen for W == 0?
+                ScreenCoords::splat(0)
+            } else {
+                ScreenCoords::from_cast(
+                    (ConversionScreenCoords::new(vert.coords.extract(0), vert.coords.extract(1))
+                        + w)
+                        * viewport_size
+                        / (w << 1)
+                        + viewport_origin,
+                ) & ScreenCoords::new(0x1FF, 0xFF)
+            };
+            let y = coords.extract(1) as u8;
+            bot_y = bot_y.min(y);
+            top_y = top_y.max(y);
+            self.vert_ram[self.vert_ram_level as usize] = ScreenVertex {
+                coords,
+                uv: vert.uv,
+                color: vert.color,
+            };
             *vert_addr = VertexAddr::new(self.vert_ram_level);
-            self.vert_ram[self.vert_ram_level as usize] = *vert;
             self.vert_ram_level += 1;
+        }
+
+        poly.top_y = top_y;
+        poly.bot_y = bot_y;
+
+        let mut leading_zeros = 32;
+
+        for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
+            // TODO: The depth buffer's range is likely restricted, but to how many bits, and how?
+            let w = vert.coords.extract(3);
+            leading_zeros = leading_zeros.min(w.leading_zeros());
+            poly.depth_values[i] = if self.swap_buffers_attrs.w_buffering() {
+                w
+            } else if w != 0 {
+                (((((vert.coords.extract(2) as i64) << 14) / w as i64) + 0x3FFF) << 9) as i32
+            } else {
+                // TODO: What should this value be? This is using 0 as (z << 14) / w
+                0x7F_FE00
+            };
+        }
+
+        leading_zeros &= !3;
+        if leading_zeros >= 16 {
+            let shift = leading_zeros - 16;
+            for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
+                poly.w_values[i] = vert.coords.extract(3) << shift;
+            }
+        } else {
+            let shift = 16 - leading_zeros;
+            for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
+                poly.w_values[i] = vert.coords.extract(3) >> shift;
+            }
         }
 
         if self.connect_to_last_strip_prim {
             match self.cur_prim_type {
                 PrimitiveType::TriangleStrip => {
                     self.last_strip_prim_vert_indices = if self.cur_strip_prim_is_odd {
-                        [polygon.vertices[0], polygon.vertices[2]]
+                        [poly.vertices[0], poly.vertices[2]]
                     } else {
-                        [polygon.vertices[2], polygon.vertices[1]]
+                        [poly.vertices[2], poly.vertices[1]]
                     };
                 }
 
                 PrimitiveType::QuadStrip => {
-                    self.last_strip_prim_vert_indices = [polygon.vertices[3], polygon.vertices[2]];
+                    self.last_strip_prim_vert_indices = [poly.vertices[3], poly.vertices[2]];
                 }
 
                 _ => {}
@@ -873,8 +967,44 @@ impl Engine3d {
         self.command_finish_time.0 == RawTimestamp::MAX
     }
 
+    pub(super) fn swap_buffers_missed(&mut self, vram: &Vram) {
+        if self.gx_enabled && self.rendering_enabled {
+            unsafe {
+                self.renderer.repeat_last_frame(
+                    &*vram.texture.as_bytes_ptr(),
+                    &*vram.tex_pal.as_bytes_ptr(),
+                    &self.rendering_state,
+                );
+            }
+            self.rendering_state.texture_dirty = 0;
+            self.rendering_state.tex_pal_dirty = 0;
+        }
+    }
+
     pub(super) fn swap_buffers(emu: &mut Emu<impl cpu::Engine>) {
         if emu.gpu.engine_3d.rendering_enabled {
+            // According to melonDS, the sort order is determined by these things, in order of
+            // decreasing priority:
+            // - Being translucent/opaque (translucent polygons always come first, GBATEK says this
+            //   too)
+            // - Bottom Y (lower first)
+            // - Top Y (lower first)
+            // - Submit order (thus needing a stable sort)
+            if emu.gpu.engine_3d.swap_buffers_attrs.auto_sort_translucent() {
+                emu.gpu.engine_3d.poly_ram.sort_by_key(|poly| {
+                    ((1..31).contains(&poly.attrs.alpha()) as u32) << 16
+                        | (poly.bot_y as u32) << 8
+                        | poly.top_y as u32
+                });
+            } else {
+                emu.gpu
+                    .engine_3d
+                    .poly_ram
+                    .sort_by_key(|poly| match poly.attrs.alpha() {
+                        1..=30 => 0x1_0000,
+                        _ => (poly.bot_y as u32) << 8 | poly.top_y as u32,
+                    });
+            }
             unsafe {
                 emu.gpu.engine_3d.renderer.swap_buffers(
                     &*emu.gpu.vram.texture.as_bytes_ptr(),
@@ -884,11 +1014,11 @@ impl Engine3d {
                     &emu.gpu.engine_3d.rendering_state,
                 );
             }
+            emu.gpu.engine_3d.rendering_state.texture_dirty = 0;
+            emu.gpu.engine_3d.rendering_state.tex_pal_dirty = 0;
         }
         emu.gpu.engine_3d.vert_ram_level = 0;
         emu.gpu.engine_3d.poly_ram_level = 0;
-        emu.gpu.engine_3d.rendering_state.texture_dirty = 0;
-        emu.gpu.engine_3d.rendering_state.tex_pal_dirty = 0;
         Self::process_next_command(emu);
     }
 
@@ -1383,11 +1513,13 @@ impl Engine3d {
                     emu.gpu.engine_3d.cur_tex_palette_base =
                         emu.gpu.engine_3d.next_tex_palette_base;
                     emu.gpu.engine_3d.cur_prim_type = unsafe { transmute(first_param as u8 & 3) };
-                    emu.gpu.engine_3d.connect_to_last_strip_prim = false;
+                    emu.gpu.engine_3d.cur_prim_vert_index = PrimVertIndex::new(0);
                     emu.gpu.engine_3d.cur_prim_max_verts = match emu.gpu.engine_3d.cur_prim_type {
                         PrimitiveType::Triangles | PrimitiveType::TriangleStrip => 3,
                         PrimitiveType::Quads | PrimitiveType::QuadStrip => 4,
                     };
+                    emu.gpu.engine_3d.cur_strip_prim_is_odd = false;
+                    emu.gpu.engine_3d.connect_to_last_strip_prim = false;
                 }
 
                 0x41 => {
@@ -1397,13 +1529,18 @@ impl Engine3d {
 
                 0x50 => {
                     // SWAP_BUFFERS
-                    // TODO: Parameters
+                    emu.gpu.engine_3d.swap_buffers_attrs = SwapBuffersAttrs(first_param as u8);
                     // Gets unlocked by the GPU when VBlank starts
                     emu.gpu.engine_3d.command_finish_time.0 = RawTimestamp::MAX;
                     return;
                 }
 
-                // 0x60 => {} // TODO: VIEWPORT
+                0x60 => {
+                    // VIEWPORT
+                    for i in 0..4 {
+                        emu.gpu.engine_3d.viewport[i] = (first_param >> (i << 3)) as u8;
+                    }
+                }
 
                 // 0x70 => {} // TODO: BOX_TEST
 

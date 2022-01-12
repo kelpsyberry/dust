@@ -48,11 +48,15 @@ pub fn render_scanline_bg_text<R: Role>(
     let mut x = x_start;
     let mut tile_i = x_start as usize >> 3 & tile_off_mask;
 
-    let zero = unsafe { _mm256_setzero_si256() };
-    let ones = unsafe { _mm256_set1_epi64x(-1) };
-    let pixel_attrs = unsafe { _mm256_set1_epi64x(pixel_attrs.0 as i64) };
-    let conv_data = unsafe { rgb_15_to_18_data() };
-    let bg_mask = unsafe { _mm256_set1_epi64x(bg_mask as i64) };
+    let (zero, ones, pixel_attrs, conv_data, bg_mask) = unsafe {
+        (
+            _mm256_setzero_si256(),
+            _mm256_set1_epi64x(-1),
+            _mm256_set1_epi64x(pixel_attrs.0 as i64),
+            rgb_15_to_18_data(),
+            _mm256_set1_epi64x(bg_mask as i64),
+        )
+    };
 
     macro_rules! render {
         (

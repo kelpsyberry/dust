@@ -1,6 +1,6 @@
 use dust_core::{
     gpu::{
-        engine_3d::{Polygon, Renderer as RendererTrair, Vertex},
+        engine_3d::{Polygon, Renderer as RendererTrair, ScreenVertex},
         Scanline, SCREEN_HEIGHT,
     },
     utils::{zeroed_box, Bytes, Zero},
@@ -19,13 +19,37 @@ use std::{
 struct RenderingData {
     texture: Bytes<0x8_0000>,
     tex_pal: Bytes<0x1_8000>,
-    vert_ram: [Vertex; 6144],
+    vert_ram: [ScreenVertex; 6144],
     poly_ram: [Polygon; 2048],
     vert_ram_level: u16,
     poly_ram_level: u16,
 }
 
 unsafe impl Zero for RenderingData {}
+
+impl RenderingData {
+    fn copy_texture_data(
+        &mut self,
+        texture: &Bytes<0x8_0000>,
+        tex_pal: &Bytes<0x1_8000>,
+        state: &dust_core::gpu::engine_3d::RenderingState,
+    ) {
+        for i in 0..4 {
+            if state.texture_dirty & 1 << i == 0 {
+                continue;
+            }
+            let range = i << 17..(i + 1) << 17;
+            self.texture[range.clone()].copy_from_slice(&texture[range]);
+        }
+        for i in 0..6 {
+            if state.tex_pal_dirty & 1 << i == 0 {
+                continue;
+            }
+            let range = i << 14..(i + 1) << 14;
+            self.tex_pal[range.clone()].copy_from_slice(&tex_pal[range]);
+        }
+    }
+}
 
 struct SharedData {
     rendering_data: Box<UnsafeCell<RenderingData>>,
@@ -42,35 +66,51 @@ pub struct Renderer {
     thread: Option<thread::JoinHandle<()>>,
 }
 
+impl Renderer {
+    fn wait_for_line(&self, line: u8) {
+        while {
+            let processing_scanline = self.shared_data.processing_scanline.load(Ordering::Acquire);
+            processing_scanline == u8::MAX || processing_scanline <= line
+        } {
+            hint::spin_loop();
+        }
+    }
+}
+
 impl RendererTrair for Renderer {
     fn swap_buffers(
         &mut self,
         texture: &Bytes<0x8_0000>,
         tex_pal: &Bytes<0x1_8000>,
-        vert_ram: &[Vertex],
+        vert_ram: &[ScreenVertex],
         poly_ram: &[Polygon],
         state: &dust_core::gpu::engine_3d::RenderingState,
     ) {
-        let rendering_data = unsafe { &mut *self.shared_data.rendering_data.get() };
+        self.wait_for_line(SCREEN_HEIGHT as u8 - 1);
 
-        for i in 0..4 {
-            if state.texture_dirty & 1 << i == 0 {
-                continue;
-            }
-            let range = i << 17..(i + 1) << 17;
-            rendering_data.texture[range.clone()].copy_from_slice(&texture[range]);
-        }
-        for i in 0..6 {
-            if state.tex_pal_dirty & 1 << i == 0 {
-                continue;
-            }
-            let range = i << 14..(i + 1) << 14;
-            rendering_data.tex_pal[range.clone()].copy_from_slice(&tex_pal[range]);
-        }
+        let rendering_data = unsafe { &mut *self.shared_data.rendering_data.get() };
+        rendering_data.copy_texture_data(texture, tex_pal, state);
         rendering_data.vert_ram[..vert_ram.len()].copy_from_slice(vert_ram);
         rendering_data.poly_ram[..poly_ram.len()].copy_from_slice(poly_ram);
         rendering_data.vert_ram_level = vert_ram.len() as u16;
         rendering_data.poly_ram_level = poly_ram.len() as u16;
+
+        self.shared_data
+            .processing_scanline
+            .store(u8::MAX, Ordering::Release);
+        self.thread.as_ref().unwrap().thread().unpark();
+    }
+
+    fn repeat_last_frame(
+        &mut self,
+        texture: &Bytes<0x8_0000>,
+        tex_pal: &Bytes<0x1_8000>,
+        state: &dust_core::gpu::engine_3d::RenderingState,
+    ) {
+        self.wait_for_line(SCREEN_HEIGHT as u8 - 1);
+
+        let rendering_data = unsafe { &mut *self.shared_data.rendering_data.get() };
+        rendering_data.copy_texture_data(texture, tex_pal, state);
 
         self.shared_data
             .processing_scanline
@@ -83,12 +123,7 @@ impl RendererTrair for Renderer {
     }
 
     fn read_scanline(&mut self) -> &Scanline<u32, 512> {
-        while {
-            let processing_scanline = self.shared_data.processing_scanline.load(Ordering::Acquire);
-            processing_scanline == u8::MAX || processing_scanline <= self.next_scanline
-        } {
-            hint::spin_loop();
-        }
+        self.wait_for_line(self.next_scanline);
         let result =
             unsafe { &(&*self.shared_data.scanline_buffer.get())[self.next_scanline as usize] };
         self.next_scanline += 1;
@@ -168,6 +203,11 @@ impl RenderingState {
     }
 
     fn run_frame(&mut self) {
+        let rendering_data = unsafe { &*self.shared_data.rendering_data.get() };
+        // println!(
+        //     "{:X?}",
+        //     &rendering_data.poly_ram[..rendering_data.poly_ram_level as usize]
+        // );
         for i in 0..SCREEN_HEIGHT as u8 {
             if self
                 .shared_data

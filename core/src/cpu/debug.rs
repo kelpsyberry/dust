@@ -31,7 +31,7 @@ pub const MWLT_ENTRY_COUNT: u32 = 1 << (10 - MWLT_BYTES_PER_ENTRY_SHIFT);
 pub const MWLT_ENTRY_COUNT_MASK: u32 = MWLT_ENTRY_COUNT - 1;
 
 macro_rules! check_watchpoints {
-    ($core: expr, $addr: ident, $mask: expr, $cause: ident) => {
+    ($core: expr, $addr: ident, $align_mask: expr, $mask: expr, $cause: ident) => {
         if let Some((hook, hook_data)) = &$core.mem_watchpoint_hook {
             if let Some(leaf_table) = $core.mem_watchpoints.0[($addr >> 21) as usize]
                 .as_ref()
@@ -39,14 +39,17 @@ macro_rules! check_watchpoints {
             {
                 // NOTE: Bits will never be lost by shifting as accesses are assumed to be aligned
                 let leaf = leaf_table.0[($addr >> $crate::cpu::debug::MWLT_BYTES_PER_ENTRY_SHIFT
-                    & $crate::cpu::debug::MWLT_ENTRY_COUNT_MASK)
+                    & ($crate::cpu::debug::MWLT_ENTRY_COUNT_MASK
+                        & !($align_mask >> $crate::cpu::debug::MWLT_BYTES_PER_ENTRY_SHIFT)))
                     as usize]
-                    >> (($addr & $crate::cpu::debug::MWLT_BYTES_PER_ENTRY_MASK) << 1)
+                    >> (($addr & ($crate::cpu::debug::MWLT_BYTES_PER_ENTRY_MASK & !$align_mask))
+                        << 1)
                     & $mask;
                 if leaf != 0 {
                     use $crate::cpu::Schedule;
                     hook(
-                        $addr + (leaf.trailing_zeros() >> 1),
+                        $addr & !$align_mask,
+                        $align_mask + 1,
                         $crate::cpu::debug::MemWatchpointTriggerCause::$cause,
                         *hook_data,
                     );
@@ -102,7 +105,8 @@ pub type Hook<T> = (T, HookData);
 pub type BranchHook = Hook<fn(addr: u32, HookData) -> Option<u32>>;
 pub type BreakpointHook = Hook<fn(bkpt_addr: u32, HookData)>;
 pub type SwiHook = Hook<fn(swi_num: u8, HookData)>;
-pub type MemWatchpointHook = Hook<fn(addr: u32, cause: MemWatchpointTriggerCause, HookData)>;
+pub type MemWatchpointHook =
+    Hook<fn(addr: u32, size: u8, cause: MemWatchpointTriggerCause, HookData)>;
 
 pub(super) struct CoreData {
     pub branch_breakpoint_hooks: Option<(BranchHook, BreakpointHook)>,
