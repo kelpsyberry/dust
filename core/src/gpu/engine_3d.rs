@@ -267,50 +267,6 @@ pub struct Engine3d {
     rendering_state: RenderingState,
 }
 
-fn command_name(cmd: u8) -> &'static str {
-    match cmd {
-        0x00 => "NOP",
-        0x10 => "MTX_MODE",
-        0x11 => "MTX_PUSH",
-        0x12 => "MTX_POP",
-        0x13 => "MTX_STORE",
-        0x14 => "MTX_RESTORE",
-        0x15 => "MTX_IDENTITY",
-        0x16 => "MTX_LOAD_4x4",
-        0x17 => "MTX_LOAD_4x3",
-        0x18 => "MTX_MULT_4x4",
-        0x19 => "MTX_MULT_4x3",
-        0x1A => "MTX_MULT_3x3",
-        0x1B => "MTX_SCALE",
-        0x1C => "MTX_TRANS",
-        0x20 => "COLOR",
-        0x21 => "NORMAL",
-        0x22 => "TEXCOORD",
-        0x23 => "VTX_16",
-        0x24 => "VTX_10",
-        0x25 => "VTX_XY",
-        0x26 => "VTX_XZ",
-        0x27 => "VTX_YZ",
-        0x28 => "VTX_DIFF",
-        0x29 => "POLYGON_ATTR",
-        0x2A => "TEXIMAGE_PARAM",
-        0x2B => "PLTT_BASE",
-        0x30 => "DIF_AMB",
-        0x31 => "SPE_EMI",
-        0x32 => "LIGHT_VECTOR",
-        0x33 => "LIGHT_COLOR",
-        0x34 => "SHININESS",
-        0x40 => "BEGIN_VTXS",
-        0x41 => "END_VTXS",
-        0x50 => "SWAP_BUFFERS",
-        0x60 => "VIEWPORT",
-        0x70 => "BOX_TEST",
-        0x71 => "POS_TEST",
-        0x72 => "VEC_TEST",
-        _ => "Unknown",
-    }
-}
-
 fn decode_rgb_5(value: u16) -> Color {
     Color::new(
         value as i8 & 0x1F,
@@ -517,6 +473,7 @@ impl Engine3d {
         self.gx_fifo.len() < 128
     }
 
+    #[allow(clippy::match_same_arms)]
     fn params_for_command(&self, command: u8) -> u8 {
         match command {
             0x00 | 0x11 | 0x15 | 0x41 => 0,
@@ -1553,7 +1510,13 @@ impl Engine3d {
                         emu.gpu.engine_3d.logger,
                         "Unhandled command: {:#04X} ({})",
                         command,
-                        command_name(command),
+                        match command {
+                            0x21 => "NORMAL",
+                            0x70 => "BOX_TEST",
+                            0x71 => "POS_TEST",
+                            0x72 => "VEC_TEST",
+                            _ => "Unknown",
+                        },
                     );
                     for _ in 1..params {
                         unsafe { emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param };

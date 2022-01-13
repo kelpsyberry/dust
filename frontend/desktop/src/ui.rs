@@ -1013,6 +1013,10 @@ pub fn main() {
                             state.show_menu_bar = !state.global_config.contents.fullscreen_render;
                         }
 
+                        state.global_config.dirty |= ui
+                            .menu_item_config("Limit screen scale to integers")
+                            .build_with_ref(&mut state.global_config.contents.screen_integer_scale);
+
                         let mut show_input = state.input_editor.is_some();
                         if ui.menu_item_config("Input").build_with_ref(&mut show_input) {
                             state.input_editor = if show_input {
@@ -1087,11 +1091,11 @@ pub fn main() {
             }
 
             let window_size = window.window.inner_size();
-            const ASPECT_RATIO: f32 = SCREEN_WIDTH as f32 / (2 * SCREEN_HEIGHT) as f32;
             let screen_rot = (state.screen_rotation.value as f32).to_radians();
             if state.global_config.contents.fullscreen_render {
                 let (center, points) = scale_to_fit_rotated(
-                    ASPECT_RATIO,
+                    [SCREEN_WIDTH as f32, (2 * SCREEN_HEIGHT) as f32],
+                    state.global_config.contents.screen_integer_scale,
                     screen_rot,
                     [
                         (window_size.width as f64 / window.scale_factor) as f32,
@@ -1134,7 +1138,8 @@ pub fn main() {
                     .position_pivot([0.5; 2])
                     .build(|| {
                         let (center, points) = scale_to_fit_rotated(
-                            ASPECT_RATIO,
+                            [SCREEN_WIDTH as f32, (2 * SCREEN_HEIGHT) as f32],
+                            state.global_config.contents.screen_integer_scale,
                             screen_rot,
                             ui.content_region_avail(),
                         );

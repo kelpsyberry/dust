@@ -333,7 +333,7 @@ impl Builder {
             process_event(window, &mut state, &event);
             match event {
                 Event::NewEvents(StartCause::Init) => {
-                    *control_flow = WinitControlFlow::Wait;
+                    *control_flow = WinitControlFlow::Poll;
                 }
 
                 Event::WindowEvent {

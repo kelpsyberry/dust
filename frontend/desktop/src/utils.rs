@@ -74,7 +74,8 @@ pub fn scale_to_fit(aspect_ratio: f32, frame_size: [f32; 2]) -> ([f32; 2], [f32;
 }
 
 pub fn scale_to_fit_rotated(
-    aspect_ratio: f32,
+    mut orig_size: [f32; 2],
+    integer_scale: bool,
     rot: f32,
     frame_size: [f32; 2],
 ) -> ([f32; 2], [[f32; 2]; 4]) {
@@ -89,16 +90,21 @@ pub fn scale_to_fit_rotated(
             .min(half_size[1] / rot_y.abs());
         [rot_x, rot_y]
     };
+    orig_size[0] *= 0.5;
+    orig_size[1] *= 0.5;
+    let rotated_rel_points = [
+        [-orig_size[0], -orig_size[1]],
+        [orig_size[0], -orig_size[1]],
+        orig_size,
+        [-orig_size[0], orig_size[1]],
+    ]
+    .map(rotate_and_get_scale);
+    if integer_scale && scale > 1.0 {
+        scale = scale.floor();
+    }
     (
         half_size,
-        [
-            [-aspect_ratio, -1.0],
-            [aspect_ratio, -1.0],
-            [aspect_ratio, 1.0],
-            [-aspect_ratio, 1.0],
-        ]
-        .map(rotate_and_get_scale)
-        .map(|point| {
+        rotated_rel_points.map(|point| {
             [
                 point[0] * scale + half_size[0],
                 point[1] * scale + half_size[1],
