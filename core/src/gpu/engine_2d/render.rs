@@ -393,8 +393,16 @@ impl<R: Role> Engine2d<R> {
             if self.bgs[0].priority == priority {
                 if R::IS_A && self.control.bg0_3d() {
                     if self.engine_3d_enabled_in_frame {
-                        // TODO: 3D
-                        let _scanline = renderer_3d.read_scanline();
+                        let scanline = renderer_3d.read_scanline();
+                        let pixel_attrs = BgObjPixel(0).with_color_effects_mask(1);
+                        for i in 0..SCREEN_WIDTH {
+                            let pixel = scanline.0[i];
+                            if pixel & 0x8000 != 0 {
+                                self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64)
+                                    << 32
+                                    | (rgb_15_to_18(pixel) | pixel_attrs.0) as u64;
+                            }
+                        }
                     }
                 } else {
                     (self.render_fns.render_scanline_bg_text)(self, BgIndex::new(0), line, vram);

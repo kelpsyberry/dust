@@ -122,22 +122,26 @@ enum PrimitiveType {
 mod bounded {
     use crate::utils::bounded_int_lit;
     bounded_int_lit!(pub struct PrimVertIndex(u8), max 3);
+    bounded_int_lit!(pub struct PrimMaxVerts(u8), max 4);
+    bounded_int_lit!(pub struct PolyVertIndex(u8), max 9);
+    bounded_int_lit!(pub struct PolyVertsLen(u8), max 10);
     bounded_int_lit!(pub struct VertexAddr(u16), max 6143);
 }
-use bounded::{PrimVertIndex, VertexAddr};
+pub use bounded::{PolyVertIndex, PolyVertsLen, VertexAddr};
+use bounded::{PrimMaxVerts, PrimVertIndex};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct Polygon {
-    vertices: [VertexAddr; 10],
-    depth_values: [i32; 10],
-    w_values: [i32; 10],
-    top_y: u8,
-    bot_y: u8,
-    vertices_len: u8,
-    tex_palette_base: u16,
-    tex_params: TextureParams,
-    attrs: PolygonAttrs,
+    pub vertices: [VertexAddr; 10],
+    pub depth_values: [i32; 10],
+    pub w_values: [i32; 10],
+    pub top_y: u8,
+    pub bot_y: u8,
+    pub vertices_len: PolyVertsLen,
+    pub tex_palette_base: u16,
+    pub tex_params: TextureParams,
+    pub attrs: PolygonAttrs,
 }
 
 unsafe impl Zero for Polygon {}
@@ -150,7 +154,7 @@ impl Polygon {
             vertices: [VertexAddr::new(0); 10],
             top_y: 0,
             bot_y: 0,
-            vertices_len: 0,
+            vertices_len: PolyVertsLen::new(0),
             tex_palette_base: 0,
             tex_params: TextureParams(0),
             attrs: PolygonAttrs(0),
@@ -254,7 +258,7 @@ pub struct Engine3d {
     cur_prim_type: PrimitiveType,
     cur_prim_verts: [Vertex; 4],
     last_strip_prim_vert_indices: [VertexAddr; 2],
-    cur_prim_max_verts: u8,
+    cur_prim_max_verts: PrimMaxVerts,
     cur_prim_vert_index: PrimVertIndex,
     cur_strip_prim_is_odd: bool,
     connect_to_last_strip_prim: bool,
@@ -349,7 +353,7 @@ impl Engine3d {
             cur_prim_type: PrimitiveType::Triangles,
             cur_prim_verts: [Vertex::new(); 4],
             last_strip_prim_vert_indices: [VertexAddr::new(0); 2],
-            cur_prim_max_verts: 0,
+            cur_prim_max_verts: PrimMaxVerts::new(0),
             cur_prim_vert_index: PrimVertIndex::new(0),
             cur_strip_prim_is_odd: false,
             connect_to_last_strip_prim: false,
@@ -651,7 +655,7 @@ impl Engine3d {
         };
 
         let new_vert_index = self.cur_prim_vert_index.get() + 1;
-        if new_vert_index == self.cur_prim_max_verts {
+        if new_vert_index >= self.cur_prim_max_verts.get() {
             if self.cur_prim_type == PrimitiveType::QuadStrip {
                 self.cur_prim_verts.swap(2, 3);
             }
@@ -679,7 +683,7 @@ impl Engine3d {
                 }
             };
         } else {
-            self.cur_prim_vert_index = unsafe { PrimVertIndex::new_unchecked(new_vert_index) };
+            self.cur_prim_vert_index = PrimVertIndex::new(new_vert_index);
         }
     }
 
@@ -690,7 +694,7 @@ impl Engine3d {
         // - Maybe use Cohen-Sutherland algorithm? It'd basically be the same but without grouping
         //   passes, and instead running until there are no points outside the frustum
 
-        let mut clipped_verts_len = self.cur_prim_max_verts as usize;
+        let mut clipped_verts_len = self.cur_prim_max_verts.get() as usize;
 
         // If the last polygon wasn't clipped, then the shared vertices won't need clipping either
         let shared_verts = (self.connect_to_last_strip_prim as usize) << 1;
@@ -810,13 +814,14 @@ impl Engine3d {
         );
         let [mut buffer_0, mut buffer_1] = [[Vertex::new(); 10]; 2];
         buffer_0[..shared_verts].copy_from_slice(&self.cur_prim_verts[..shared_verts]);
+        buffer_1[..shared_verts].copy_from_slice(&self.cur_prim_verts[..shared_verts]);
         run_pass!(2, self.cur_prim_verts => buffer_0);
         run_pass!(1, buffer_0 => buffer_1);
         run_pass!(0, buffer_1 => buffer_0);
 
         let mut poly = &mut self.poly_ram[self.poly_ram_level as usize];
         self.poly_ram_level += 1;
-        poly.vertices_len = clipped_verts_len as u8;
+        poly.vertices_len = PolyVertsLen::new(clipped_verts_len as u8);
         poly.tex_palette_base = self.cur_tex_palette_base;
         poly.tex_params = self.cur_tex_params;
         poly.attrs = self.cur_poly_attrs;
@@ -825,18 +830,17 @@ impl Engine3d {
             poly.vertices[..2].copy_from_slice(&self.last_strip_prim_vert_indices);
         }
 
-        let mut top_y = 0;
+        let mut top_y = 0xFF;
         let mut bot_y = 0;
 
         let viewport_origin = ConversionScreenCoords::new(
             self.viewport[0] as i32,
-            191_u8.wrapping_sub(self.viewport[1]) as i32,
+            191_u8.wrapping_sub(self.viewport[3]) as i32,
         );
         let viewport_size = ConversionScreenCoords::new(
             (self.viewport[2] as i32 - self.viewport[0] as i32 + 1) & 0x1FF,
-            // H = (191 - Y2) - (191 - Y1) + 1 = Y1 - Y2 + 1
-            self.viewport[1]
-                .wrapping_sub(self.viewport[3])
+            self.viewport[3]
+                .wrapping_sub(self.viewport[1])
                 .wrapping_add(1) as i32,
         );
 
@@ -850,7 +854,7 @@ impl Engine3d {
                 ScreenCoords::splat(0)
             } else {
                 ScreenCoords::from_cast(
-                    (ConversionScreenCoords::new(vert.coords.extract(0), vert.coords.extract(1))
+                    (ConversionScreenCoords::new(vert.coords.extract(0), -vert.coords.extract(1))
                         + w)
                         * viewport_size
                         / (w << 1)
@@ -858,8 +862,8 @@ impl Engine3d {
                 ) & ScreenCoords::new(0x1FF, 0xFF)
             };
             let y = coords.extract(1) as u8;
-            bot_y = bot_y.min(y);
-            top_y = top_y.max(y);
+            top_y = top_y.min(y);
+            bot_y = bot_y.max(y);
             self.vert_ram[self.vert_ram_level as usize] = ScreenVertex {
                 coords,
                 uv: vert.uv,
@@ -869,19 +873,25 @@ impl Engine3d {
             self.vert_ram_level += 1;
         }
 
+        for &vert_addr in &poly.vertices[..shared_verts] {
+            let y = self.vert_ram[vert_addr.get() as usize].coords.extract(1) as u8;
+            top_y = top_y.min(y);
+            bot_y = bot_y.max(y);
+        }
+
         poly.top_y = top_y;
         poly.bot_y = bot_y;
 
         let mut leading_zeros = 32;
 
         for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
-            // TODO: The depth buffer's range is likely restricted, but to how many bits, and how?
             let w = vert.coords.extract(3);
             leading_zeros = leading_zeros.min(w.leading_zeros());
             poly.depth_values[i] = if self.swap_buffers_attrs.w_buffering() {
-                w
+                w & 0xFF_FFFF
             } else if w != 0 {
                 (((((vert.coords.extract(2) as i64) << 14) / w as i64) + 0x3FFF) << 9) as i32
+                    & 0xFF_FFFF
             } else {
                 // TODO: What should this value be? This is using 0 as (z << 14) / w
                 0x7F_FE00
@@ -948,15 +958,14 @@ impl Engine3d {
             // - Top Y (lower first)
             // - Submit order (thus needing a stable sort)
             if emu.gpu.engine_3d.swap_buffers_attrs.auto_sort_translucent() {
-                emu.gpu.engine_3d.poly_ram.sort_by_key(|poly| {
-                    ((1..31).contains(&poly.attrs.alpha()) as u32) << 16
-                        | (poly.bot_y as u32) << 8
-                        | poly.top_y as u32
-                });
+                emu.gpu.engine_3d.poly_ram[..emu.gpu.engine_3d.poly_ram_level as usize]
+                    .sort_by_key(|poly| {
+                        ((1..31).contains(&poly.attrs.alpha()) as u32) << 16
+                            | (poly.bot_y as u32) << 8
+                            | poly.top_y as u32
+                    });
             } else {
-                emu.gpu
-                    .engine_3d
-                    .poly_ram
+                emu.gpu.engine_3d.poly_ram[..emu.gpu.engine_3d.poly_ram_level as usize]
                     .sort_by_key(|poly| match poly.attrs.alpha() {
                         1..=30 => 0x1_0000,
                         _ => (poly.bot_y as u32) << 8 | poly.top_y as u32,
@@ -1152,9 +1161,9 @@ impl Engine3d {
 
                 0x16 => {
                     // MTX_LOAD_4x4
-                    let mut contents = [0; 16];
-                    contents[0] = first_param as i32;
-                    for elem in &mut contents[1..] {
+                    let mut contents = MatrixBuffer([0; 16]);
+                    contents.0[0] = first_param as i32;
+                    for elem in &mut contents.0[1..] {
                         *elem = unsafe {
                             emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32
                         };
@@ -1164,23 +1173,15 @@ impl Engine3d {
 
                 0x17 => {
                     // MTX_LOAD_4x3
-                    let mut contents = [0; 16];
-                    contents[0] = first_param as i32;
-                    contents[15] = 0x1000;
-                    for elem in &mut contents[1..3] {
-                        *elem = unsafe {
-                            emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32
-                        };
-                    }
-                    for elem in &mut contents[4..7] {
-                        *elem = unsafe {
-                            emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32
-                        };
-                    }
-                    for elem in &mut contents[8..11] {
-                        *elem = unsafe {
-                            emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32
-                        };
+                    let mut contents = MatrixBuffer([0; 16]);
+                    contents.0[0] = first_param as i32;
+                    contents.0[15] = 0x1000;
+                    for range in [1..3, 4..7, 8..11, 12..15] {
+                        for elem in &mut contents.0[range] {
+                            *elem = unsafe {
+                                emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32
+                            };
+                        }
                     }
                     emu.gpu.engine_3d.load_matrix(Matrix::new(contents));
                 }
@@ -1293,6 +1294,7 @@ impl Engine3d {
                             emu.gpu.engine_3d.cur_proj_mtx.scale(contents);
                             emu.gpu.engine_3d.clip_mtx_needs_recalculation = true;
                         }
+
                         MatrixMode::Position | MatrixMode::PositionVector => {
                             emu.gpu.engine_3d.cur_pos_vec_mtxs[0].scale(contents);
                             emu.gpu.engine_3d.clip_mtx_needs_recalculation = true;
@@ -1472,8 +1474,10 @@ impl Engine3d {
                     emu.gpu.engine_3d.cur_prim_type = unsafe { transmute(first_param as u8 & 3) };
                     emu.gpu.engine_3d.cur_prim_vert_index = PrimVertIndex::new(0);
                     emu.gpu.engine_3d.cur_prim_max_verts = match emu.gpu.engine_3d.cur_prim_type {
-                        PrimitiveType::Triangles | PrimitiveType::TriangleStrip => 3,
-                        PrimitiveType::Quads | PrimitiveType::QuadStrip => 4,
+                        PrimitiveType::Triangles | PrimitiveType::TriangleStrip => {
+                            PrimMaxVerts::new(3)
+                        }
+                        PrimitiveType::Quads | PrimitiveType::QuadStrip => PrimMaxVerts::new(4),
                     };
                     emu.gpu.engine_3d.cur_strip_prim_is_odd = false;
                     emu.gpu.engine_3d.connect_to_last_strip_prim = false;

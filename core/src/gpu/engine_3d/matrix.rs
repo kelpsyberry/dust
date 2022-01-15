@@ -23,12 +23,12 @@ impl Matrix {
         ])
     }
 
-    pub fn new(arr: [i32; 16]) -> Self {
+    pub fn new(arr: MatrixBuffer<16>) -> Self {
         Matrix([
-            i32x4::from_slice_unaligned(&arr[..4]),
-            i32x4::from_slice_unaligned(&arr[4..8]),
-            i32x4::from_slice_unaligned(&arr[8..12]),
-            i32x4::from_slice_unaligned(&arr[12..]),
+            i32x4::from_slice_aligned(&arr.0[..4]),
+            i32x4::from_slice_aligned(&arr.0[4..8]),
+            i32x4::from_slice_aligned(&arr.0[8..12]),
+            i32x4::from_slice_aligned(&arr.0[12..]),
         ])
     }
 
@@ -37,17 +37,16 @@ impl Matrix {
     }
 
     pub fn scale(&mut self, vec: [i32; 3]) {
-        let vec = i64x4::from_cast(i32x4::new(vec[0], vec[1], vec[2], 0x1000));
-        for row in &mut self.0 {
-            *row = i32x4::from_cast((i64x4::from_cast(*row) * vec) >> 12);
+        for (i, coeff) in vec.into_iter().enumerate() {
+            self.0[i] =
+                i32x4::from_cast((i64x4::splat(coeff as i64) * i64x4::from_cast(self.0[i])) >> 12);
         }
     }
 
     pub fn translate(&mut self, vec: [i32; 3]) {
         let mut last_row = i64x4::from_cast(self.0[3]) << 12;
         for (i, coeff) in vec.into_iter().enumerate() {
-            let coeff = coeff as i64;
-            last_row += i64x4::new(coeff, coeff, coeff, 0x1000) * i64x4::from_cast(self.0[i]);
+            last_row += i64x4::splat(coeff as i64) * i64x4::from_cast(self.0[i]);
         }
         self.0[3] = i32x4::from_cast(last_row >> 12);
     }

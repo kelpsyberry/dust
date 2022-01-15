@@ -25,18 +25,16 @@ impl Vertex {
         }
     }
 
-    pub(super) fn interpolate(&self, other: &Self, mut numer: i64, denom: i64) -> Self {
-        numer <<= 12;
+    pub(super) fn interpolate(&self, other: &Self, numer: i64, denom: i64) -> Self {
         macro_rules! interpolate_attr {
             ($ident: ident, $orig_ty: ty, $interp_ty: ty) => {
-                <$orig_ty>::from_cast(
-                    ((<$interp_ty>::from_cast(self.$ident) << 12)
-                        + (<$interp_ty>::from_cast(other.$ident)
+                self.$ident
+                    + <$orig_ty>::from_cast(
+                        (<$interp_ty>::from_cast(other.$ident)
                             - <$interp_ty>::from_cast(self.$ident))
                             * numer
-                            / denom)
-                        >> 12,
-                )
+                            / denom,
+                    )
             };
         }
         Vertex {
