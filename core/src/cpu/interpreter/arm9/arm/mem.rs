@@ -1,7 +1,7 @@
 use super::super::{
     add_bus_cycles, add_cycles, add_interlock, apply_reg_interlock_1, apply_reg_interlocks_2,
-    apply_reg_interlocks_3, can_read, can_write, handle_data_abort, prefetch_arm, reload_pipeline,
-    restore_spsr, write_reg_clear_interlock_ab, write_reg_interlock,
+    apply_reg_interlocks_3, can_read, can_write, handle_data_abort, handle_undefined, prefetch_arm,
+    reload_pipeline, restore_spsr, write_reg_clear_interlock_ab, write_reg_interlock,
 };
 use crate::{
     cpu::{
@@ -238,7 +238,6 @@ macro_rules! misc_handler {
             $(, dst = $dst_reg: ident)?$(,)?
         | $inner: block$(,)?
     ) => {
-        #[allow(unreachable_code, unused)] // TODO: Remove, it's here for LDRD/STRD
         pub fn $ident<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddressing>(
             $emu: &mut Emu<Engine>,
             $instr: u32,
@@ -251,7 +250,6 @@ macro_rules! misc_handler {
                 let abs_off = if OFF_IMM {
                     $( apply_reg_interlocks_2::<0, true>($emu, base_reg, $src_reg); )*
                     $( apply_reg_interlock_1::<false>($emu, base_reg); let _ = $dst_reg; )*
-                    add_bus_cycles($emu, 1);
                     ($instr & 0xF) | ($instr >> 4 & 0xF0)
                 } else {
                     let off_reg = ($instr & 0xF) as u8;
@@ -260,7 +258,6 @@ macro_rules! misc_handler {
                         apply_reg_interlocks_2::<0, false>($emu, base_reg, off_reg);
                         let _ = $dst_reg;
                     )*
-                    add_bus_cycles($emu, 1);
                     reg!($emu.arm9, off_reg)
                 } as i32;
                 if UPWARDS {
@@ -269,6 +266,7 @@ macro_rules! misc_handler {
                     abs_off.wrapping_neg()
                 }
             };
+            add_bus_cycles($emu, 1);
 
             let $addr = if ADDRESSING.preincrement() {
                 reg!($emu.arm9, base_reg).wrapping_add(offset as u32)
@@ -348,17 +346,207 @@ misc_handler! {
     },
 }
 
-misc_handler! {
-    ldrd,
-    |emu, instr, addr, dst = _dst_reg| {
-        todo!("LDRD");
+pub fn ldrd<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddressing>(
+    emu: &mut Emu<Engine>,
+    instr: u32,
+) {
+    let dst_base_reg = (instr >> 12 & 0xF) as u8;
+    if dst_base_reg & 1 != 0 {
+        return handle_undefined::<false>(emu);
+    }
+
+    let base_reg = (instr >> 16 & 0xF) as u8;
+
+    let offset = {
+        let abs_off = if OFF_IMM {
+            apply_reg_interlock_1::<false>(emu, base_reg);
+            (instr & 0xF) | (instr >> 4 & 0xF0)
+        } else {
+            let off_reg = (instr & 0xF) as u8;
+            apply_reg_interlocks_2::<0, false>(emu, base_reg, off_reg);
+            reg!(emu.arm9, off_reg)
+        } as i32;
+        if UPWARDS {
+            abs_off
+        } else {
+            abs_off.wrapping_neg()
+        }
+    };
+    add_bus_cycles(emu, 2);
+
+    let start_addr = if ADDRESSING.preincrement() {
+        reg!(emu.arm9, base_reg).wrapping_add(offset as u32)
+    } else {
+        reg!(emu.arm9, base_reg)
+    };
+
+    prefetch_arm::<false, true>(emu);
+
+    macro_rules! do_read {
+        (
+            $i: expr, $is_r15: expr,
+            $addr: expr => ($dst_reg: expr, $data_cycles: expr)
+            $(, use $use_data_cycles: ident)?
+        ) => {
+            let addr = $addr;
+
+            $(
+                add_cycles(emu, $use_data_cycles as RawTimestamp);
+            )*
+
+            if unlikely(!can_read(emu, addr, emu.arm9.engine_data.regs.is_in_priv_mode())) {
+                // Should behave in the same way as an LDM, see the corresponding comment
+                emu.arm9.engine_data.data_cycles = 1;
+                add_cycles(emu, (1 - $i) + 1);
+                return handle_data_abort::<false>(emu, addr);
+            }
+
+            reg!(emu.arm9, $dst_reg) = bus::read_32::<CpuAccess, _, false>(emu, addr);
+            let timings = emu.arm9.cp15.timings.get(addr);
+            let cycles = if $i == 0 || addr & 0x3FC == 0 {
+                timings.r_n32_data
+            } else {
+                timings.r_s32_data
+            };
+            if $is_r15 {
+                add_cycles(emu, cycles as RawTimestamp + 1);
+                if emu.arm9.cp15.control().t_bit_load_disabled() {
+                    reload_pipeline::<{ StateSource::Arm }>(emu);
+                } else {
+                    reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
+                }
+            } else {
+                $data_cycles = cycles;
+            }
+        }
+    }
+
+    #[allow(clippy::needless_late_init)]
+    let mut first_data_cycles = 0;
+    do_read!(
+        0, false,
+        start_addr => (dst_base_reg, first_data_cycles)
+    );
+    do_read!(
+        1, dst_base_reg == 14,
+        start_addr.wrapping_add(4) => (dst_base_reg | 1, emu.arm9.engine_data.data_cycles),
+        use first_data_cycles
+    );
+
+    if ADDRESSING.writeback() && dst_base_reg | 1 != base_reg {
+        #[cfg(feature = "interp-r15-write-checks")]
+        if unlikely(base_reg == 15) {
+            unimplemented!("ldrd r15 writeback");
+        }
+        write_reg_clear_interlock_ab(
+            emu,
+            base_reg,
+            if ADDRESSING.preincrement() {
+                start_addr
+            } else {
+                start_addr.wrapping_add(offset as u32)
+            },
+        );
     }
 }
 
-misc_handler! {
-    strd,
-    |emu, instr, add, src = _src_reg| {
-        todo!("STRD");
+pub fn strd<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddressing>(
+    emu: &mut Emu<Engine>,
+    instr: u32,
+) {
+    let src_base_reg = (instr >> 12 & 0xF) as u8;
+    if src_base_reg & 1 != 0 {
+        return handle_undefined::<false>(emu);
+    }
+
+    let base_reg = (instr >> 16 & 0xF) as u8;
+
+    let offset = {
+        let abs_off = if OFF_IMM {
+            apply_reg_interlock_1::<false>(emu, base_reg);
+            (instr & 0xF) | (instr >> 4 & 0xF0)
+        } else {
+            let off_reg = (instr & 0xF) as u8;
+            apply_reg_interlocks_2::<0, false>(emu, base_reg, off_reg);
+            reg!(emu.arm9, off_reg)
+        } as i32;
+        if UPWARDS {
+            abs_off
+        } else {
+            abs_off.wrapping_neg()
+        }
+    };
+
+    let start_addr = if ADDRESSING.preincrement() {
+        reg!(emu.arm9, base_reg).wrapping_add(offset as u32)
+    } else {
+        reg!(emu.arm9, base_reg)
+    };
+
+    prefetch_arm::<false, true>(emu);
+
+    macro_rules! do_write {
+        (
+            $i: expr,
+            $src_reg: expr => $addr: expr => $data_cycles: expr
+            $(, use $use_data_cycles: ident)?
+        ) => {
+            let addr = $addr;
+
+            if $i == 0 {
+                apply_reg_interlock_1::<true>(emu, $src_reg);
+            }
+
+            $(
+                add_cycles(emu, $use_data_cycles as RawTimestamp);
+            )*
+
+            if unlikely(!can_write(emu, addr, emu.arm9.engine_data.regs.is_in_priv_mode())) {
+                // Should behave in the same way as an STM, see the corresponding comment
+                emu.arm9.engine_data.data_cycles = 1;
+                add_bus_cycles(emu, 2);
+                add_cycles(emu, (1 - $i) + 1);
+                return handle_data_abort::<false>(emu, addr);
+            }
+
+            bus::write_32::<CpuAccess, _>(emu, addr, reg!(emu.arm9, $src_reg));
+            let timings = emu.arm9.cp15.timings.get(addr);
+            $data_cycles = if $i == 0 || addr & 0x3FC == 0 {
+                timings.w_n32_data
+            } else {
+                timings.w_s32_data
+            };
+        }
+    }
+
+    #[allow(clippy::needless_late_init)]
+    let first_data_cycles;
+    do_write!(
+        0,
+        src_base_reg => start_addr => first_data_cycles
+    );
+    do_write!(
+        1,
+        src_base_reg | 1 => start_addr.wrapping_add(4) => emu.arm9.engine_data.data_cycles,
+        use first_data_cycles
+    );
+
+    add_bus_cycles(emu, 2);
+
+    if ADDRESSING.writeback() {
+        #[cfg(feature = "interp-r15-write-checks")]
+        if unlikely(base_reg == 15) {
+            unimplemented!("strd r15 writeback");
+        }
+        write_reg_clear_interlock_ab(
+            emu,
+            base_reg,
+            if ADDRESSING.preincrement() {
+                start_addr
+            } else {
+                start_addr.wrapping_add(offset as u32)
+            },
+        );
     }
 }
 
@@ -563,9 +751,8 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
                 add_cycles(emu, 1);
                 return handle_data_abort::<false>(emu, cur_addr);
             }
-            let result = bus::read_32::<CpuAccess, _, false>(emu, cur_addr);
+            reg!(emu.arm9, reg) = bus::read_32::<CpuAccess, _, false>(emu, cur_addr);
             emu.arm9.engine_data.data_cycles = access_cycles;
-            reg!(emu.arm9, reg) = result;
             cur_addr = cur_addr.wrapping_add(4);
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm9.cp15.timings.get(cur_addr);
@@ -604,9 +791,8 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
             add_cycles(emu, 1);
             return handle_data_abort::<false>(emu, cur_addr);
         }
-        let result = bus::read_32::<CpuAccess, _, false>(emu, cur_addr);
+        reg!(emu.arm9, 15) = bus::read_32::<CpuAccess, _, false>(emu, cur_addr);
         add_cycles(emu, access_cycles as RawTimestamp + 1);
-        reg!(emu.arm9, 15) = result;
         if S_BIT {
             restore_spsr(emu);
             reload_pipeline::<{ StateSource::Cpsr }>(emu);

@@ -153,9 +153,9 @@ pub(super) fn main(
                 slog::error!(
                     logger,
                     concat!(
-                    "No existing save file present and no database entry found, defaulting to an",
-                    "empty save.",
-                )
+                        "No existing save file present and no database entry found, defaulting to ",
+                        "an empty save.",
+                    )
                 );
                 SaveType::None
             })

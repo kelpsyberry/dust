@@ -54,7 +54,11 @@ impl Controller {
             firmware_hold: false,
             firmware,
             power_hold: false,
-            power: Power::new(model == Model::Lite, arm7_schedule, emu_schedule),
+            power: Power::new(
+                matches!(model, Model::Lite | Model::IqueLite),
+                arm7_schedule,
+                emu_schedule,
+            ),
             touchscreen_hold: false,
             tsc: Tsc::new(
                 model == Model::Lite,

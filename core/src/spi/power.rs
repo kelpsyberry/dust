@@ -297,16 +297,13 @@ impl Power {
         self.ds_lite_backlight_control
     }
 
-    #[inline]
-    pub fn set_ds_lite_backlight_control(&mut self, value: DsLiteBacklightControl) {
-        self.ds_lite_backlight_control.0 =
-            (self.ds_lite_backlight_control.0 & 0xF8) | (value.0 & 7);
+    fn update_ds_lite_backlight_level(&mut self) {
         self.ds_lite_backlight_level = if self.ds_lite_backlight_control.external_power()
-            && value.max_level_with_ext_power()
+            && self.ds_lite_backlight_control.max_level_with_ext_power()
         {
             DsLiteBacklightLevel::Max
         } else {
-            match value.backlight_level() {
+            match self.ds_lite_backlight_control.backlight_level() {
                 0 => DsLiteBacklightLevel::Low,
                 1 => DsLiteBacklightLevel::Medium,
                 2 => DsLiteBacklightLevel::High,
@@ -316,8 +313,16 @@ impl Power {
     }
 
     #[inline]
+    pub fn set_ds_lite_backlight_control(&mut self, value: DsLiteBacklightControl) {
+        self.ds_lite_backlight_control.0 =
+            (self.ds_lite_backlight_control.0 & 0xF8) | (value.0 & 7);
+        self.update_ds_lite_backlight_level();
+    }
+
+    #[inline]
     pub fn set_ds_lite_external_power(&mut self, value: bool) {
         self.ds_lite_backlight_control.set_external_power(value);
+        self.update_ds_lite_backlight_level();
     }
 
     #[inline]
@@ -340,6 +345,7 @@ impl Power {
                 DsLiteBacklightLevel::Max => 3,
             })
             .with_max_level_with_ext_power(max_level_with_ext_power);
+        self.update_ds_lite_backlight_level();
     }
 
     pub(super) fn handle_byte(

@@ -23,7 +23,6 @@ struct RenderingData {
     tex_pal: Bytes<0x1_8000>,
     vert_ram: [ScreenVertex; 6144],
     poly_ram: [Polygon; 2048],
-    vert_ram_level: u16,
     poly_ram_level: u16,
 }
 
@@ -94,7 +93,6 @@ impl RendererTrair for Renderer {
         rendering_data.copy_texture_data(texture, tex_pal, state);
         rendering_data.vert_ram[..vert_ram.len()].copy_from_slice(vert_ram);
         rendering_data.poly_ram[..poly_ram.len()].copy_from_slice(poly_ram);
-        rendering_data.vert_ram_level = vert_ram.len() as u16;
         rendering_data.poly_ram_level = poly_ram.len() as u16;
 
         self.shared_data
@@ -351,7 +349,7 @@ impl RenderingState {
                     src.vertices[..src.vertices_len.get() as usize]
                         .iter()
                         .enumerate()
-                        .filter_map(|(i, vert_addr)| {
+                        .find_map(|(i, vert_addr)| {
                             let vert = &rendering_data.vert_ram[vert_addr.get() as usize];
                             if vert.coords.extract(1) == top_y {
                                 Some((i, vert))
@@ -359,7 +357,6 @@ impl RenderingState {
                                 None
                             }
                         })
-                        .last()
                         .unwrap_unchecked()
                 };
                 let top_i = PolyVertIndex::new(top_i as u8);

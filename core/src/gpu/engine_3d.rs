@@ -305,19 +305,18 @@ impl Engine3d {
             gx_enabled: false,
             rendering_enabled: false,
 
-            viewport: [0; 4],
-
             gx_status: GxStatus(0),
+
             gx_fifo_irq_requested: false,
             gx_fifo: Box::new(Fifo::new()),
             gx_pipe: Fifo::new(),
             cur_packed_commands: 0,
             remaining_command_params: 0,
             command_finish_time: emu::Timestamp(0),
-
             swap_buffers_attrs: SwapBuffersAttrs(0),
 
             mtx_mode: MatrixMode::Projection,
+
             proj_stack: Matrix::zero(),
             pos_vec_stack: [[Matrix::zero(); 2]; 32],
             tex_stack: Matrix::zero(),
@@ -328,6 +327,7 @@ impl Engine3d {
             cur_clip_mtx: Matrix::zero(),
             clip_mtx_needs_recalculation: false,
             cur_tex_mtx: Matrix::zero(),
+            viewport: [0; 4],
 
             vert_color: 0,
             tex_coords: TexCoords::splat(0),
@@ -358,10 +358,10 @@ impl Engine3d {
             cur_strip_prim_is_odd: false,
             connect_to_last_strip_prim: false,
 
-            vert_ram: zeroed_box(),
             vert_ram_level: 0,
-            poly_ram: zeroed_box(),
             poly_ram_level: 0,
+            vert_ram: zeroed_box(),
+            poly_ram: zeroed_box(),
 
             rendering_state: RenderingState {
                 control: RenderingControl(0),
@@ -699,13 +699,6 @@ impl Engine3d {
         // If the last polygon wasn't clipped, then the shared vertices won't need clipping either
         let shared_verts = (self.connect_to_last_strip_prim as usize) << 1;
 
-        if self.vert_ram_level as usize > self.vert_ram.len() - (clipped_verts_len - shared_verts) {
-            self.rendering_state
-                .control
-                .set_poly_vert_ram_overflow(true);
-            return;
-        }
-
         macro_rules! interpolate {
             (
                 $axis_i: expr,
@@ -818,6 +811,13 @@ impl Engine3d {
         run_pass!(2, self.cur_prim_verts => buffer_0);
         run_pass!(1, buffer_0 => buffer_1);
         run_pass!(0, buffer_1 => buffer_0);
+
+        if self.vert_ram_level as usize > self.vert_ram.len() - (clipped_verts_len - shared_verts) {
+            self.rendering_state
+                .control
+                .set_poly_vert_ram_overflow(true);
+            return;
+        }
 
         let mut poly = &mut self.poly_ram[self.poly_ram_level as usize];
         self.poly_ram_level += 1;
