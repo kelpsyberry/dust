@@ -142,6 +142,7 @@ pub struct Polygon {
     pub tex_palette_base: u16,
     pub tex_params: TextureParams,
     pub attrs: PolygonAttrs,
+    pub is_front_facing: bool,
 }
 
 unsafe impl Zero for Polygon {}
@@ -158,6 +159,7 @@ impl Polygon {
             tex_palette_base: 0,
             tex_params: TextureParams(0),
             attrs: PolygonAttrs(0),
+            is_front_facing: false,
         }
     }
 }
@@ -691,10 +693,25 @@ impl Engine3d {
         // TODO:
         // - Check whether </> or <=/>= should be used for the frustum checks
         // - Check what happens for vertices where the divisor ends up being 0
-        // - Maybe use Cohen-Sutherland algorithm? It'd basically be the same but without grouping
-        //   passes, and instead running until there are no points outside the frustum
+        // - Maybe use the Cohen-Sutherland algorithm? It'd basically be the same but without
+        //   grouping passes, and instead running until there are no points outside the frustum
 
         let mut clipped_verts_len = self.cur_prim_max_verts.get() as usize;
+
+        let is_front_facing = vertex::front_facing(
+            &self.cur_prim_verts[0],
+            &self.cur_prim_verts[1],
+            &self.cur_prim_verts[2],
+        );
+        let not_culled = if is_front_facing {
+            self.cur_poly_attrs.show_front()
+        } else {
+            self.cur_poly_attrs.show_back()
+        };
+        if !not_culled {
+            self.connect_to_last_strip_prim = false;
+            return;
+        }
 
         // If the last polygon wasn't clipped, then the shared vertices won't need clipping either
         let shared_verts = (self.connect_to_last_strip_prim as usize) << 1;
@@ -825,6 +842,7 @@ impl Engine3d {
         poly.tex_palette_base = self.cur_tex_palette_base;
         poly.tex_params = self.cur_tex_params;
         poly.attrs = self.cur_poly_attrs;
+        poly.is_front_facing = is_front_facing;
 
         if connect_to_last_strip_prim {
             poly.vertices[..2].copy_from_slice(&self.last_strip_prim_vert_indices);
