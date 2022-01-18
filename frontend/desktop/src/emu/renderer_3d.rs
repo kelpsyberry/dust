@@ -214,12 +214,9 @@ impl Edge {
         let a_x = a.coords.extract(0) as i32;
         let b_x = b.coords.extract(0) as i32;
         let a_y = a.coords.extract(1) as u8;
-        let mut b_y = b.coords.extract(1) as u8;
+        let b_y = b.coords.extract(1) as u8;
         let mut x_diff = b_x - a_x;
         let y_diff = b_y as i32 - a_y as i32;
-        if y_diff == 0 {
-            b_y += 1;
-        }
 
         let mut x_ref = a_x << 18;
 
@@ -257,7 +254,7 @@ impl Edge {
         }
     }
 
-    fn compute_line(&mut self, y: u8) -> (u16, u16) {
+    fn compute_line(&self, y: u8) -> (u16, u16) {
         let line_x_disp = self.x_incr * (y - self.y_start) as i32;
         let start_x = if self.is_negative {
             self.x_ref - line_x_disp
@@ -309,10 +306,9 @@ struct RenderingPolygon {
     poly: Polygon,
     height_minus_1: u8,
     left_edge_decreasing: bool,
+    right_edge_enabled: bool,
     left_edge: Edge,
     right_edge: Edge,
-    left_edge_enabled: bool,
-    right_edge_enabled: bool,
     left_i: PolyVertIndex,
     right_i: PolyVertIndex,
 }
@@ -369,7 +365,6 @@ impl RenderingState {
                     (
                         i,
                         &rendering_data.vert_ram[src.vertices[i.get() as usize].get() as usize],
-                        src.depth_values[i.get() as usize],
                     )
                 });
 
@@ -387,19 +382,8 @@ impl RenderingState {
                     poly: *src,
                     height_minus_1: src.bot_y - src.top_y,
                     left_edge_decreasing,
-                    left_edge: Edge::new(
-                        *top_vert,
-                        *other_verts[0].1,
-                        // src.depth_values[top_i as usize],
-                        // other_verts[0].2,
-                    ),
-                    right_edge: Edge::new(
-                        *top_vert,
-                        *other_verts[1].1,
-                        // src.depth_values[top_i as usize],
-                        // other_verts[1].2,
-                    ),
-                    left_edge_enabled: true,
+                    left_edge: Edge::new(*top_vert, *other_verts[0].1),
+                    right_edge: Edge::new(*top_vert, *other_verts[1].1),
                     right_edge_enabled: true,
                     left_i: other_verts[0].0,
                     right_i: other_verts[1].0,
@@ -412,78 +396,74 @@ impl RenderingState {
             scanline.0.fill(0);
             for poly in self.polys[..rendering_data.poly_ram_level as usize].iter_mut() {
                 if y.wrapping_sub(poly.poly.top_y) <= poly.height_minus_1 {
-                    if poly.left_edge_enabled {
-                        if y >= poly.left_edge.y_end {
-                            let mut i = poly.left_i;
-                            let mut start_vert = &poly.left_edge.b;
-                            let mut y_start = poly.left_edge.y_end;
-                            loop {
-                                if i == poly.right_i {
-                                    poly.left_edge_enabled = false;
-                                    poly.left_i = i;
-                                    break;
-                                }
-                                i = if poly.left_edge_decreasing {
-                                    dec_poly_vert_index(i, poly.poly.vertices_len)
-                                } else {
-                                    inc_poly_vert_index(i, poly.poly.vertices_len)
-                                };
-                                let new_end_vert = &rendering_data.vert_ram
-                                    [poly.poly.vertices[i.get() as usize].get() as usize];
-                                let new_y_end = new_end_vert.coords.extract(1) as u8;
-                                if new_y_end >= y_start {
-                                    poly.left_edge = Edge::new(*start_vert, *new_end_vert);
-                                    poly.left_i = i;
-                                    break;
-                                } else {
+                    macro_rules! process_edge {
+                        (
+                            $edge: expr, $i: expr, $decreasing: expr, $other_i: expr
+                            $(, $enabled: expr)?
+                        ) => {{
+                            let range = $edge.compute_line(y);
+                            for x in range.0..range.1 {
+                                scanline.0[x as usize] = 0xFFFF;
+                            }
+
+                            if y >= $edge.y_end {
+                                let mut i = $i;
+                                let mut start_vert = $edge.b;
+                                let mut y_start = $edge.y_end;
+                                loop {
+                                    if i == $other_i {
+                                        $(
+                                            $enabled = false;
+                                        )*
+                                        $i = i;
+                                        break;
+                                    }
+
+                                    i = if $decreasing {
+                                        dec_poly_vert_index(i, poly.poly.vertices_len)
+                                    } else {
+                                        inc_poly_vert_index(i, poly.poly.vertices_len)
+                                    };
+                                    let new_end_vert = rendering_data.vert_ram
+                                        [poly.poly.vertices[i.get() as usize].get() as usize];
+                                    let new_y_end = new_end_vert.coords.extract(1) as u8;
+
+                                    if new_y_end >= y_start {
+                                        $edge = Edge::new(start_vert, new_end_vert);
+
+                                        let range = $edge.compute_line(y);
+                                        for x in range.0..range.1 {
+                                            scanline.0[x as usize] = 0xFFFF;
+                                        }
+
+                                        if new_y_end != y_start {
+                                            $i = i;
+                                            break;
+                                        }
+                                    }
+
                                     start_vert = new_end_vert;
                                     y_start = new_y_end.max(y);
                                 }
                             }
-                        }
-                        if poly.left_edge_enabled {
-                            let left_range = poly.left_edge.compute_line(y);
-                            for x in left_range.0..left_range.1 {
-                                scanline.0[x as usize] = 0xFFFF;
-                            }
-                        }
+                        }}
                     }
 
+                    process_edge!(
+                        poly.left_edge,
+                        poly.left_i,
+                        poly.left_edge_decreasing,
+                        poly.right_i
+                    );
+
                     if poly.right_edge_enabled {
-                        if y >= poly.right_edge.y_end {
-                            let mut i = poly.right_i;
-                            let mut start_vert = &poly.right_edge.b;
-                            let mut y_start = poly.right_edge.y_end;
-                            loop {
-                                if i == poly.left_i {
-                                    poly.right_edge_enabled = false;
-                                    poly.right_i = i;
-                                    break;
-                                }
-                                i = if poly.left_edge_decreasing {
-                                    inc_poly_vert_index(i, poly.poly.vertices_len)
-                                } else {
-                                    dec_poly_vert_index(i, poly.poly.vertices_len)
-                                };
-                                let new_end_vert = &rendering_data.vert_ram
-                                    [poly.poly.vertices[i.get() as usize].get() as usize];
-                                let new_y_end = new_end_vert.coords.extract(1) as u8;
-                                if new_y_end >= y_start {
-                                    poly.right_edge = Edge::new(*start_vert, *new_end_vert);
-                                    poly.right_i = i;
-                                    break;
-                                } else {
-                                    start_vert = new_end_vert;
-                                    y_start = new_y_end.max(y);
-                                }
-                            }
-                        }
-                        if poly.right_edge_enabled {
-                            let right_range = poly.right_edge.compute_line(y);
-                            for x in right_range.0..right_range.1 {
-                                scanline.0[x as usize] = 0xFFFF;
-                            }
-                        }
+                        process_edge!(
+                            poly.right_edge,
+                            poly.right_i,
+                            !poly.left_edge_decreasing,
+                            poly.left_i,
+                            poly.right_edge_enabled
+                        );
                     }
                 }
             }
