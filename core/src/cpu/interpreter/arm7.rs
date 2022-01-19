@@ -4,7 +4,7 @@ mod thumb;
 #[cfg(feature = "interp-pipeline")]
 use super::common::{thumb_pipeline_entry, PipelineEntry};
 use super::{super::Regs as EngineRegs, common::StateSource, Engine, Regs};
-#[cfg(feature = "debug-hooks")]
+#[cfg(feature = "debugger-hooks")]
 use crate::cpu::debug;
 use crate::{
     cpu::{
@@ -25,7 +25,7 @@ pub struct EngineData {
     #[cfg(feature = "interp-pipeline")]
     pipeline: [PipelineEntry; 2],
     prefetch_nseq: bool,
-    #[cfg(feature = "debug-hooks")]
+    #[cfg(feature = "debugger-hooks")]
     next_breakpoint_addr: u32,
 }
 
@@ -38,7 +38,7 @@ impl EngineData {
             #[cfg(feature = "interp-pipeline")]
             pipeline: [0; 2],
             prefetch_nseq: false,
-            #[cfg(feature = "debug-hooks")]
+            #[cfg(feature = "debugger-hooks")]
             next_breakpoint_addr: u32::MAX,
         }
     }
@@ -58,6 +58,27 @@ fn add_cycles(emu: &mut Emu<Engine>, cycles: RawTimestamp) {
 
 fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
     let mut addr = reg!(emu.arm7, 15);
+
+    macro_rules! get_next_breakpoint {
+        ($mask: expr) => {
+            #[cfg(feature = "debugger-hooks")]
+            if !emu.arm7.debug.breakpoints.is_empty() {
+                let i = emu
+                    .arm7
+                    .debug
+                    .breakpoints
+                    .binary_search(&addr)
+                    .into_ok_or_err();
+                emu.arm7.engine_data.next_breakpoint_addr =
+                    emu.arm7.debug.breakpoints[if i >= emu.arm7.debug.breakpoints.len() {
+                        0
+                    } else {
+                        i
+                    }] & !$mask;
+            }
+        };
+    }
+
     if match STATE_SOURCE {
         StateSource::Arm => false,
         StateSource::Thumb => true,
@@ -73,11 +94,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
         StateSource::Cpsr => emu.arm7.engine_data.regs.cpsr.thumb_state(),
     } {
         addr &= !1;
-        #[cfg(feature = "debug-hooks")]
-        if let Some(((branch_hook_fn, branch_hook_data), _)) = emu.arm7.branch_breakpoint_hooks() {
-            emu.arm7.engine_data.next_breakpoint_addr =
-                branch_hook_fn(addr, *branch_hook_data).unwrap_or(u32::MAX);
-        }
+        get_next_breakpoint!(1);
         #[cfg(feature = "interp-pipeline")]
         {
             emu.arm7.engine_data.pipeline[0] =
@@ -108,11 +125,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
         }
     } else {
         addr &= !3;
-        #[cfg(feature = "debug-hooks")]
-        if let Some(((branch_hook_fn, branch_hook_data), _)) = emu.arm7.branch_breakpoint_hooks() {
-            emu.arm7.engine_data.next_breakpoint_addr =
-                branch_hook_fn(addr, *branch_hook_data).unwrap_or(u32::MAX);
-        }
+        get_next_breakpoint!(3);
         #[cfg(feature = "interp-pipeline")]
         {
             emu.arm7.engine_data.pipeline[0] =
@@ -204,11 +217,16 @@ fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Engine>) {
 
 fn handle_swi<const THUMB: bool>(
     emu: &mut Emu<Engine>,
-    #[cfg(feature = "debug-hooks")] swi_num: u8,
+    #[cfg(feature = "debugger-hooks")] swi_num: u8,
 ) {
-    #[cfg(feature = "debug-hooks")]
-    if let Some(((swi_hook_fn, swi_hook_data), _)) = emu.arm7.swi_hook() {
-        swi_hook_fn(swi_num, *swi_hook_data);
+    #[cfg(feature = "debugger-hooks")]
+    if let Some(swi_hook) = emu.arm7.swi_hook() {
+        if unsafe { swi_hook.get()(swi_num) } {
+            emu.arm7
+                .schedule
+                .set_target_time(emu.arm7.schedule.cur_time());
+            emu.stopped_by_debug_hook = true;
+        }
     }
     let old_cpsr = emu.arm7.engine_data.regs.cpsr;
     emu.arm7.engine_data.regs.cpsr = emu
@@ -301,40 +319,47 @@ impl CoreData for EngineData {
     }
 
     cfg_if! {
-        if #[cfg(feature = "debug-hooks")] {
+        if #[cfg(feature = "debugger-hooks")] {
             #[inline]
-            fn set_branch_breakpoint_hooks(
-                &mut self,
-                value: &Option<(debug::BranchHook, debug::BreakpointHook, u32)>,
-            ) {
-                self.next_breakpoint_addr = value.map_or(u32::MAX, |v| v.2);
+            fn set_swi_hook(&mut self, _hook: &Option<debug::SwiHook>) {}
+
+            #[inline]
+            fn add_breakpoint(&mut self, addr: u32) {
+                if addr < self.next_breakpoint_addr
+                    && addr
+                        > self.regs.cur[15].wrapping_sub(8 >> self.regs.cpsr.thumb_state() as u8)
+                {
+                    self.next_breakpoint_addr = addr;
+                }
             }
 
             #[inline]
-            fn set_swi_hook(&mut self, _value: &Option<debug::SwiHook>) {}
-
-            #[inline]
-            fn set_mem_watchpoint_hook(
-                &mut self,
-                _value: &Option<debug::MemWatchpointHook>,
-            ) {
+            fn remove_breakpoint(&mut self, addr: u32, i: usize, breakpoints: &[u32]) {
+                if self.next_breakpoint_addr == addr {
+                    self.next_breakpoint_addr = if breakpoints.is_empty() {
+                        breakpoints[if i == breakpoints.len() { 0 } else { i }]
+                    } else {
+                        u32::MAX
+                    };
+                }
             }
 
             #[inline]
-            fn add_mem_watchpoint(
-                &mut self,
-                _addr: u32,
-                _rw: debug::MemWatchpointRwMask,
-            ) {
+            fn clear_breakpoints(&mut self) {
+                self.next_breakpoint_addr = u32::MAX;
             }
 
             #[inline]
-            fn remove_mem_watchpoint(
-                &mut self,
-                _addr: u32,
-                _rw: debug::MemWatchpointRwMask,
-            ) {
-            }
+            fn set_breakpoint_hook(&mut self, _hook: &Option<debug::BreakpointHook>) {}
+
+            #[inline]
+            fn set_mem_watchpoint_hook(&mut self, _hook: &Option<debug::MemWatchpointHook>) {}
+
+            #[inline]
+            fn add_mem_watchpoint(&mut self, _addr: u32, _rw: debug::MemWatchpointRwMask) {}
+
+            #[inline]
+            fn remove_mem_watchpoint(&mut self, _addr: u32, _rw: debug::MemWatchpointRwMask) {}
         }
     }
 }
@@ -405,21 +430,22 @@ impl Arm7Data for EngineData {
                     continue;
                 }
                 while emu.arm7.schedule.cur_time() < emu.arm7.schedule.target_time() {
-                    #[cfg(feature = "debug-hooks")]
+                    #[cfg(feature = "debugger-hooks")]
                     {
                         let instr_addr = reg!(emu.arm7, 15)
                             .wrapping_sub(8 >> emu.arm7.engine_data.regs.cpsr.thumb_state() as u8);
-                        if emu.arm7.engine_data.next_breakpoint_addr == instr_addr {
-                            match emu.arm7.branch_breakpoint_hooks() {
-                                Some((_, (breakpoint_hook, breakpoint_hook_data))) => {
-                                    breakpoint_hook(instr_addr, *breakpoint_hook_data);
-                                }
-                                None => unsafe { core::hint::unreachable_unchecked() },
+                        if emu.arm7.engine_data.next_breakpoint_addr == instr_addr
+                            && unsafe {
+                                emu.arm7.breakpoint_hook().as_ref().unwrap_unchecked().get()(
+                                    instr_addr,
+                                )
                             }
-                            // TODO: Handle breakpoints somehow (would probably need to be able to
-                            // pause the CPU while not in sync with the other, which complicates
-                            // things)
-                            todo!();
+                        {
+                            emu.arm7
+                                .schedule
+                                .set_target_time(emu.arm7.schedule.cur_time());
+                            emu.stopped_by_debug_hook = true;
+                            return;
                         }
                     }
                     #[cfg(feature = "interp-pipeline")]

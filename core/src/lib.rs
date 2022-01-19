@@ -9,6 +9,7 @@
     maybe_uninit_uninit_array,
     maybe_uninit_slice,
     label_break_value,
+    result_into_ok_or_err
 )]
 #![warn(clippy::pedantic)]
 #![allow(

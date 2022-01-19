@@ -1,3 +1,7 @@
+// Rustc seems to have an original definition of "dead code", which just happens not to coincide
+// with actually dead code at the time of adding this.
+#![allow(dead_code)]
+
 use super::{map_mask, MapMask};
 #[cfg(any(feature = "bft-r", feature = "bft-w"))]
 use crate::cpu::arm9::bus::ptrs::attrs as sys_bus_attrs;
@@ -75,9 +79,11 @@ mod mask {
     use super::Mask;
     pub const R_CODE: Mask = 1 << 0;
     pub const R_DATA: Mask = 1 << 1;
+    pub const R_ALL: Mask = R_CODE | R_DATA;
     pub const W_8: Mask = 1 << 2;
     pub const W_16_32: Mask = 1 << 3;
     pub const W_ALL: Mask = W_8 | W_16_32;
+    pub const ALL: Mask = R_ALL | W_ALL;
 }
 
 #[repr(C)]
@@ -132,38 +138,40 @@ impl Ptrs {
     pub fn disable_read(&mut self, addr: u32, flags: RDisableFlags) {
         debug_assert!(flags != 0 && flags & !r_disable_flags::ALL == 0);
         let i = (addr >> Self::PAGE_SHIFT) as usize;
-        let attrs = self.attrs[i];
-        self.attrs[i] = (attrs & !mask::R_ALL) | flags << attrs::R_DISABLE_START;
+        self.map_attrs[i] |= flags << map_attrs::R_DISABLE_START;
+        self.attrs[i] &= !mask::R_ALL;
     }
 
     #[cfg(feature = "bft-r")]
     pub fn enable_read(&mut self, addr: u32, flags: RDisableFlags) {
         debug_assert!(flags != 0 && flags & !r_disable_flags::ALL == 0);
         let i = (addr >> Self::PAGE_SHIFT) as usize;
-        let mut attrs = self.attrs[i] & !(flags << attrs::R_DISABLE_START);
-        if attrs & attrs::R_DISABLE_ALL == 0 {
-            attrs |= (attrs & attrs::BAK_MASK_R) >> attrs::BAK_MASK_START;
+        let map_attrs = self.map_attrs[i] & !(flags << map_attrs::R_DISABLE_START);
+        if map_attrs & map_attrs::R_DISABLE_ALL == 0 {
+            let attrs = self.attrs[i];
+            self.attrs[i] = attrs | (attrs & attrs::BAK_MASK_R) >> attrs::BAK_MASK_START;
         }
-        self.attrs[i] = attrs;
+        self.map_attrs[i] = map_attrs;
     }
 
     #[cfg(feature = "bft-w")]
     pub fn disable_write(&mut self, addr: u32, flags: WDisableFlags) {
         debug_assert!(flags != 0 && flags & !w_disable_flags::ALL == 0);
         let i = (addr >> Self::PAGE_SHIFT) as usize;
-        let attrs = self.attrs[i];
-        self.attrs[i] = (attrs & !mask::W_ALL) | flags << attrs::W_DISABLE_START;
+        self.map_attrs[i] |= flags << map_attrs::W_DISABLE_START;
+        self.attrs[i] &= !mask::W_ALL;
     }
 
     #[cfg(feature = "bft-w")]
     pub fn enable_write(&mut self, addr: u32, flags: Attrs) {
         debug_assert!(flags != 0 && flags & !w_disable_flags::ALL == 0);
         let i = (addr >> Self::PAGE_SHIFT) as usize;
-        let mut attrs = self.attrs[i] & !(flags << attrs::W_DISABLE_START);
-        if attrs & attrs::W_DISABLE_ALL == 0 {
-            attrs |= (attrs & attrs::BAK_MASK_W) >> attrs::BAK_MASK_START;
+        let map_attrs = self.map_attrs[i] & !(flags << map_attrs::W_DISABLE_START);
+        if map_attrs & map_attrs::W_DISABLE_ALL == 0 {
+            let attrs = self.attrs[i];
+            self.attrs[i] = attrs | (attrs & attrs::BAK_MASK_W) >> attrs::BAK_MASK_START;
         }
-        self.attrs[i] = attrs;
+        self.map_attrs[i] = map_attrs;
     }
 
     unsafe fn map_cpu_local_range_inner(

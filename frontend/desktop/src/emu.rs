@@ -10,6 +10,7 @@ use dust_core::{
     audio::DummyBackend as DummyAudioBackend,
     cpu::{arm9, interpreter::Interpreter},
     ds_slot::{self, rom::Rom as DsSlotRom, spi::Spi as DsSlotSpi},
+    emu::RunOutput,
     flash::Flash,
     spi::firmware,
     utils::{zeroed_box, BoxedByteSlice, Bytes},
@@ -410,8 +411,17 @@ pub(super) fn main(
 
         let frame = frame_tx.start();
 
-        if playing && !emu.run_frame() {
-            shared_state.stopped.store(true, Ordering::Relaxed);
+        if playing {
+            match emu.run_frame() {
+                RunOutput::FrameFinished => {}
+                RunOutput::Shutdown => {
+                    shared_state.stopped.store(true, Ordering::Relaxed);
+                }
+                #[cfg(feature = "debugger-hooks")]
+                RunOutput::StoppedByDebugHook => {
+                    todo!();
+                }
+            }
         }
         frame.fb.0.copy_from_slice(&emu.gpu.framebuffer.0);
 

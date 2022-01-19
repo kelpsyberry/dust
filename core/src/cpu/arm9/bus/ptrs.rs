@@ -171,7 +171,7 @@ impl Ptrs {
         {
             attrs |= flags << attrs::W_DISABLE_START;
         }
-        attrs &= !mask::W;
+        attrs &= !mask::W_ALL;
         self.attrs[i] = attrs;
     }
 
@@ -265,7 +265,7 @@ impl Ptrs {
                         attrs = (attrs & !mask::R) | read_mask_attrs;
                     }
                     if disable_attrs & disable_attrs::W_DISABLE_ALL == 0 {
-                        attrs = (attrs & !mask::W) | write_mask_attrs;
+                        attrs = (attrs & !mask::W_ALL) | write_mask_attrs;
                     }
                 }
                 self.attrs[i] = attrs;

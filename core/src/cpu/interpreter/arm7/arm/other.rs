@@ -56,7 +56,7 @@ pub fn msr<const IMM: bool, const SPSR: bool>(emu: &mut Emu<Engine>, instr: u32)
 pub fn swi(emu: &mut Emu<Engine>, _instr: u32) {
     handle_swi::<false>(
         emu,
-        #[cfg(feature = "debug-hooks")]
+        #[cfg(feature = "debugger-hooks")]
         {
             (_instr >> 16) as u8
         },

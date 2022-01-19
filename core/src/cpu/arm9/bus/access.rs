@@ -68,7 +68,8 @@ macro_rules! check_tcm_read {
             {
                 return $emu
                     .arm9
-                    .itcm
+                    .cp15
+                    .itcm()
                     .read_le($addr as usize & (0x7FFF & !$align_mask));
             }
             if !$code
@@ -77,7 +78,8 @@ macro_rules! check_tcm_read {
             {
                 return $emu
                     .arm9
-                    .dtcm
+                    .cp15
+                    .dtcm()
                     .read_le($addr as usize & (0x3FFF & !$align_mask));
             }
         }
@@ -92,7 +94,8 @@ macro_rules! check_tcm_write {
                 == $emu.arm9.cp15.itcm_addr_check_value()
             {
                 $emu.arm9
-                    .itcm
+                    .cp15
+                    .itcm()
                     .write_le($addr as usize & (0x7FFF & !$align_mask), $value);
                 return;
             }
@@ -100,7 +103,8 @@ macro_rules! check_tcm_write {
                 == $emu.arm9.cp15.dtcm_addr_check_value()
             {
                 $emu.arm9
-                    .dtcm
+                    .cp15
+                    .dtcm()
                     .write_le($addr as usize & (0x3FFF & !$align_mask), $value);
                 return;
             }
@@ -127,8 +131,8 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             .read()
         }
     } else {
-        #[cfg(feature = "debug-hooks")]
-        check_watchpoints!(emu.arm9, addr, 0, 1, Read);
+        #[cfg(feature = "debugger-hooks")]
+        check_watchpoints!(emu, emu.arm9, addr, 0, 1, Read);
         if !A::IS_DMA {
             check_tcm_read!(emu, addr, false, 0);
         }
@@ -154,8 +158,8 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u16 {
             ) as *const _)
         }
     } else {
-        #[cfg(feature = "debug-hooks")]
-        check_watchpoints!(emu.arm9, addr, 1, 5, Read);
+        #[cfg(feature = "debugger-hooks")]
+        check_watchpoints!(emu, emu.arm9, addr, 1, 5, Read);
         if !A::IS_DMA {
             check_tcm_read!(emu, addr, false, 1);
         }
@@ -183,8 +187,8 @@ pub fn read_32<A: AccessType, E: Engine, const CODE: bool>(emu: &mut Emu<E>, add
             ) as *const _)
         }
     } else {
-        #[cfg(feature = "debug-hooks")]
-        check_watchpoints!(emu.arm9, addr, 3, 0x55, Read);
+        #[cfg(feature = "debugger-hooks")]
+        check_watchpoints!(emu, emu.arm9, addr, 3, 0x55, Read);
         if !A::IS_DMA {
             check_tcm_read!(emu, addr, CODE, 3);
         }
@@ -212,8 +216,8 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
         }
     } else {
         emu.arm9.engine_data.invalidate_word(addr);
-        #[cfg(feature = "debug-hooks")]
-        check_watchpoints!(emu.arm9, addr, 0, 2, Write);
+        #[cfg(feature = "debugger-hooks")]
+        check_watchpoints!(emu, emu.arm9, addr, 0, 2, Write);
         if !A::IS_DMA {
             check_tcm_write!(emu, addr, value, 0);
         }
@@ -240,8 +244,8 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u1
         }
     } else {
         emu.arm9.engine_data.invalidate_word(addr);
-        #[cfg(feature = "debug-hooks")]
-        check_watchpoints!(emu.arm9, addr, 1, 0xA, Write);
+        #[cfg(feature = "debugger-hooks")]
+        check_watchpoints!(emu, emu.arm9, addr, 1, 0xA, Write);
         if !A::IS_DMA {
             check_tcm_write!(emu, addr, value, 1);
         }
@@ -268,8 +272,8 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u3
         }
     } else {
         emu.arm9.engine_data.invalidate_word(addr);
-        #[cfg(feature = "debug-hooks")]
-        check_watchpoints!(emu.arm9, addr, 3, 0xAA, Write);
+        #[cfg(feature = "debugger-hooks")]
+        check_watchpoints!(emu, emu.arm9, addr, 3, 0xAA, Write);
         if !A::IS_DMA {
             check_tcm_write!(emu, addr, value, 3);
         }

@@ -119,22 +119,22 @@ impl Swram {
                 self.arm7_mask = 0x3FFF;
                 #[cfg(feature = "bft-r")]
                 {
-                    self.arm9_r_ptr = self.contents[0x4000..].as_ptr();
+                    self.arm9_r_ptr = self.contents.as_ptr().wrapping_add(0x4000);
                 }
                 #[cfg(feature = "bft-w")]
                 {
-                    self.arm9_w_ptr = self.contents[0x4000..].as_ptr();
+                    self.arm9_w_ptr = self.contents.as_ptr().wrapping_add(0x4000);
                 }
                 self.arm9_mask = 0x3FFF;
             }
             2 => {
                 #[cfg(feature = "bft-r")]
                 {
-                    self.arm7_r_ptr = self.contents[0x4000..].as_ptr();
+                    self.arm7_r_ptr = self.contents.as_ptr().wrapping_add(0x4000);
                 }
                 #[cfg(feature = "bft-w")]
                 {
-                    self.arm7_w_ptr = self.contents[0x4000..].as_ptr();
+                    self.arm7_w_ptr = self.contents.as_ptr().wrapping_add(0x4000);
                 }
                 self.arm7_mask = 0x3FFF;
                 #[cfg(feature = "bft-r")]
@@ -171,7 +171,7 @@ impl Swram {
     }
 
     #[cfg(feature = "bft-r")]
-    pub(crate) fn arm7_r_ptr(&self) -> *mut u8 {
+    pub(crate) fn arm7_r_ptr(&self) -> *const u8 {
         self.arm7_r_ptr
     }
 
@@ -186,7 +186,7 @@ impl Swram {
     }
 
     #[cfg(feature = "bft-r")]
-    pub(crate) fn arm9_r_ptr(&self) -> *mut u8 {
+    pub(crate) fn arm9_r_ptr(&self) -> *const u8 {
         self.arm9_r_ptr
     }
 

@@ -265,6 +265,16 @@ impl Cp15 {
     }
 
     #[inline]
+    pub fn dtcm(&self) -> &OwnedBytesCellPtr<0x4000> {
+        &self.dtcm
+    }
+
+    #[inline]
+    pub fn itcm(&self) -> &OwnedBytesCellPtr<0x8000> {
+        &self.itcm
+    }
+
+    #[inline]
     pub fn dtcm_control(&self) -> TcmControl {
         self.dtcm_control
     }

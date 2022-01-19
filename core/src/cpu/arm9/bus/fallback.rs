@@ -24,13 +24,13 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
     #[allow(clippy::shadow_unrelated)]
     match addr >> 24 {
         #[cfg(feature = "bft-r")]
-        0x02 => emu.mem.main_mem.read(addr as usize & 0x3F_FFFF),
+        0x02 => emu.main_mem().read(addr as usize & 0x3F_FFFF),
 
         #[cfg(feature = "bft-r")]
         0x03 => unsafe {
             emu.swram
                 .arm9_r_ptr()
-                .add((addr & emu.swram.arm9_mask()) as usize)
+                .add(addr as usize & emu.swram.arm9_mask() as usize)
                 .read()
         },
 
@@ -169,7 +169,7 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
         #[cfg(feature = "bft-r")]
         0xFF => {
             if addr & 0xFFFF_F000 == 0xFFFF_0000 {
-                emu.mem.arm9_bios[addr as usize & 0xFFF]
+                emu.arm9.bios.read(addr as usize & 0xFFF)
             } else {
                 0
             }
@@ -190,14 +190,15 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
     addr &= !1;
     match addr >> 24 {
         #[cfg(feature = "bft-r")]
-        0x02 => emu.main_mem.read_le(addr as usize & 0x3F_FFFE),
+        0x02 => emu.main_mem().read_le(addr as usize & 0x3F_FFFE),
 
         #[cfg(feature = "bft-r")]
         0x03 => unsafe {
             u16::read_le_aligned(
                 emu.swram
                     .arm9_r_ptr()
-                    .add((addr & emu.swram.arm9_mask()) as usize) as *const u16,
+                    .add(addr as usize & emu.swram.arm9_mask() as usize)
+                    as *const u16,
             )
         },
 
@@ -334,14 +335,15 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
     addr &= !3;
     match addr >> 24 {
         #[cfg(feature = "bft-r")]
-        0x02 => emu.main_mem.read_le(addr as usize & 0x3F_FFFC),
+        0x02 => emu.main_mem().read_le(addr as usize & 0x3F_FFFC),
 
         #[cfg(feature = "bft-r")]
         0x03 => unsafe {
             u32::read_le_aligned(
                 emu.swram
                     .arm9_r_ptr()
-                    .add((addr & emu.swram.arm9_mask()) as usize) as *const u32,
+                    .add(addr as usize & emu.swram.arm9_mask() as usize)
+                    as *const u32,
             )
         },
 
@@ -470,13 +472,13 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
 pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8) {
     match addr >> 24 {
         #[cfg(feature = "bft-w")]
-        0x02 => emu.main_mem.write(addr as usize & 0x3F_FFFF, value),
+        0x02 => emu.main_mem().write(addr as usize & 0x3F_FFFF, value),
 
         #[cfg(feature = "bft-w")]
         0x03 => unsafe {
             emu.swram
                 .arm9_w_ptr()
-                .add((addr & emu.swram.arm9_mask()) as usize)
+                .add(addr as usize & emu.swram.arm9_mask() as usize)
                 .write(value);
         },
 
@@ -648,14 +650,15 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
     addr &= !1;
     match addr >> 24 {
         #[cfg(feature = "bft-w")]
-        0x02 => emu.main_mem.write_le(addr as usize & 0x3F_FFFE, value),
+        0x02 => emu.main_mem().write_le(addr as usize & 0x3F_FFFE, value),
 
         #[cfg(feature = "bft-w")]
         0x03 => unsafe {
             value.write_le_aligned(
                 emu.swram
                     .arm9_w_ptr()
-                    .add((addr & emu.swram.arm9_mask()) as usize) as *mut u16,
+                    .add(addr as usize & emu.swram.arm9_mask() as usize)
+                    as *mut u16,
             );
         },
 
@@ -974,14 +977,15 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
     addr &= !3;
     match addr >> 24 {
         #[cfg(feature = "bft-w")]
-        0x02 => emu.main_mem.write_le(addr as usize & 0x3F_FFFC, value),
+        0x02 => emu.main_mem().write_le(addr as usize & 0x3F_FFFC, value),
 
         #[cfg(feature = "bft-w")]
         0x03 => unsafe {
             value.write_le_aligned(
                 emu.swram
                     .arm9_w_ptr()
-                    .add((addr & emu.swram.arm9_mask()) as usize) as *mut u32,
+                    .add(addr as usize & emu.swram.arm9_mask() as usize)
+                    as *mut u32,
             );
         },
 

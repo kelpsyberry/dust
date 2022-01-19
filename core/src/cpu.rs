@@ -4,7 +4,7 @@ mod schedule;
 pub(crate) use schedule::Schedule;
 mod irqs;
 pub(crate) use irqs::Irqs;
-#[cfg(any(feature = "debug-hooks", doc))]
+#[cfg(any(feature = "debugger-hooks", doc))]
 #[macro_use]
 pub mod debug;
 pub mod arm7;
@@ -69,12 +69,12 @@ pub trait CoreData {
     fn set_regs(&mut self, values: &Regs);
 
     cfg_if! {
-        if #[cfg(any(feature = "debug-hooks", doc))] {
-            fn set_branch_breakpoint_hooks(
-                &mut self,
-                hooks: &Option<(debug::BranchHook, debug::BreakpointHook, u32)>,
-            );
-            fn set_swi_hook(&mut self, hooks: &Option<debug::SwiHook>);
+        if #[cfg(any(feature = "debugger-hooks", doc))] {
+            fn set_swi_hook(&mut self, hook: &Option<debug::SwiHook>);
+            fn add_breakpoint(&mut self, addr: u32);
+            fn remove_breakpoint(&mut self, addr: u32, i: usize, breakpoints: &[u32]);
+            fn clear_breakpoints(&mut self);
+            fn set_breakpoint_hook(&mut self, hook: &Option<debug::BreakpointHook>);
             fn set_mem_watchpoint_hook(&mut self, hook: &Option<debug::MemWatchpointHook>);
             fn add_mem_watchpoint(&mut self, addr: u32, rw: debug::MemWatchpointRwMask);
             fn remove_mem_watchpoint(&mut self, addr: u32, rw: debug::MemWatchpointRwMask);

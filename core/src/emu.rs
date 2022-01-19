@@ -48,9 +48,8 @@ bitfield_debug! {
     }
 }
 
-#[repr(C)]
 pub struct Emu<E: cpu::Engine> {
-    global_engine_data: E::GlobalData,
+    pub(crate) global_engine_data: E::GlobalData,
     pub arm7: Arm7<E>,
     pub arm9: Arm9<E>,
     main_mem: OwnedBytesCellPtr<0x40_0000>,
@@ -65,6 +64,8 @@ pub struct Emu<E: cpu::Engine> {
     pub input: Input,
     pub audio: Audio,
     rcnt: u16, // TODO: Move to SIO
+    #[cfg(feature = "debugger-hooks")]
+    pub(crate) stopped_by_debug_hook: bool,
 }
 
 pub struct Builder {
@@ -194,6 +195,8 @@ impl Builder {
             schedule: global_schedule,
             arm7,
             arm9,
+            #[cfg(feature = "debugger-hooks")]
+            stopped_by_debug_hook: false,
         };
         Arm7::setup(&mut emu);
         Arm9::setup(&mut emu);
@@ -206,6 +209,14 @@ impl Builder {
         }
         emu
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunOutput {
+    FrameFinished,
+    Shutdown,
+    #[cfg(feature = "debugger-hooks")]
+    StoppedByDebugHook,
 }
 
 impl<E: cpu::Engine> Emu<E> {
@@ -281,17 +292,18 @@ impl<E: cpu::Engine> Emu<E> {
     }
 
     #[inline(never)]
-    pub fn run_frame(&mut self) -> bool {
+    pub fn run_frame(&mut self) -> RunOutput {
         loop {
-            let batch_end_time = self.schedule.batch_end_time();
+            let mut batch_end_time = self.schedule.batch_end_time();
             if !self.gpu.engine_3d.gx_fifo_stalled() {
                 E::Arm9Data::run_until(self, batch_end_time.into());
-                E::Arm7Data::run_until(
-                    self,
-                    Timestamp::from(self.arm9.schedule.cur_time())
-                        .min(batch_end_time)
-                        .into(),
-                );
+                batch_end_time = batch_end_time.min(Timestamp::from(self.arm9.schedule.cur_time()));
+                E::Arm7Data::run_until(self, batch_end_time.into());
+                #[cfg(feature = "debugger-hooks")]
+                {
+                    batch_end_time =
+                        batch_end_time.min(Timestamp::from(self.arm7.schedule.cur_time()));
+                }
             }
             self.schedule.set_cur_time(batch_end_time);
             while let Some((event, time)) = self.schedule.pop_pending_event() {
@@ -301,14 +313,19 @@ impl<E: cpu::Engine> Emu<E> {
                         gpu::Event::EndHBlank => Gpu::end_hblank(self, time),
                         gpu::Event::FinishFrame => {
                             Gpu::end_hblank(self, time);
-                            return true;
+                            return RunOutput::FrameFinished;
                         }
                     },
                     Event::Shutdown => {
-                        return false;
+                        return RunOutput::Shutdown;
                     }
                     Event::Engine3dCommandFinished => Engine3d::process_next_command(self),
                 }
+            }
+            #[cfg(feature = "debugger-hooks")]
+            if self.stopped_by_debug_hook {
+                self.stopped_by_debug_hook = false;
+                return RunOutput::StoppedByDebugHook;
             }
         }
     }

@@ -1,5 +1,5 @@
-use crate::utils::{zeroed_box, Fill8, Zero};
-use core::mem;
+use crate::utils::{zeroed_box, Zero};
+use bitflags::bitflags;
 
 #[repr(transparent)]
 pub struct MemWatchpointRootTable(pub [Option<Box<MemWatchpointSubTable>>; 0x800]);
@@ -31,9 +31,9 @@ pub const MWLT_ENTRY_COUNT: u32 = 1 << (10 - MWLT_BYTES_PER_ENTRY_SHIFT);
 pub const MWLT_ENTRY_COUNT_MASK: u32 = MWLT_ENTRY_COUNT - 1;
 
 macro_rules! check_watchpoints {
-    ($core: expr, $addr: ident, $align_mask: expr, $mask: expr, $cause: ident) => {
-        if let Some((hook, hook_data)) = &$core.mem_watchpoint_hook {
-            if let Some(leaf_table) = $core.mem_watchpoints.0[($addr >> 21) as usize]
+    ($emu: expr, $core: expr, $addr: ident, $align_mask: expr, $mask: expr, $cause: ident) => {
+        if let Some(hook) = &$core.debug.mem_watchpoint_hook {
+            if let Some(leaf_table) = $core.debug.mem_watchpoints.0[($addr >> 21) as usize]
                 .as_ref()
                 .and_then(|sub_table| sub_table.0[($addr >> 10 & 0x7FF) as usize].as_ref())
             {
@@ -47,12 +47,16 @@ macro_rules! check_watchpoints {
                     & $mask;
                 if leaf != 0 {
                     use $crate::cpu::Schedule;
-                    hook(
-                        $addr & !$align_mask,
-                        $align_mask + 1,
-                        $crate::cpu::debug::MemWatchpointTriggerCause::$cause,
-                        *hook_data,
-                    );
+                    if unsafe {
+                        hook.get()(
+                            $addr & !$align_mask,
+                            $align_mask + 1,
+                            $crate::cpu::debug::MemWatchpointTriggerCause::$cause,
+                        )
+                    } {
+                        $core.schedule.set_target_time($core.schedule.cur_time());
+                        $emu.stopped_by_debug_hook = true;
+                    }
                     $core.schedule.set_target_time($core.schedule.cur_time());
                 }
             }
@@ -62,8 +66,8 @@ macro_rules! check_watchpoints {
 
 impl MemWatchpointRootTable {
     pub(super) fn add(&mut self, addr: u32, rw: MemWatchpointRwMask) {
-        let sub_table = self.0[(addr >> 21) as usize].get_or_insert(|| zeroed_box());
-        let leaf_table = sub_table.0[(addr >> 10 & 0x7FF) as usize].get_or_insert(|| zeroed_box());
+        let sub_table = self.0[(addr >> 21) as usize].get_or_insert_with(zeroed_box);
+        let leaf_table = sub_table.0[(addr >> 10 & 0x7FF) as usize].get_or_insert_with(zeroed_box);
         leaf_table.0[(addr >> MWLT_BYTES_PER_ENTRY_SHIFT & MWLT_ENTRY_COUNT_MASK) as usize] |=
             (rw.bits() as usize) << ((addr & MWLT_BYTES_PER_ENTRY_MASK) << 1);
     }
@@ -99,18 +103,35 @@ pub enum MemWatchpointTriggerCause {
     Write,
 }
 
-pub type HookData = *mut ();
-pub type Hook<T> = (T, HookData);
+pub struct Hook<T: ?Sized>(pub *mut T);
 
-pub type BranchHook = Hook<fn(addr: u32, HookData) -> Option<u32>>;
-pub type BreakpointHook = Hook<fn(bkpt_addr: u32, HookData)>;
-pub type SwiHook = Hook<fn(swi_num: u8, HookData)>;
-pub type MemWatchpointHook =
-    Hook<fn(addr: u32, size: u8, cause: MemWatchpointTriggerCause, HookData)>;
+impl<T: ?Sized> Hook<T> {
+    pub fn new(value: Box<T>) -> Self {
+        Hook(Box::into_raw(value))
+    }
+
+    #[allow(clippy::mut_from_ref)]
+    pub(super) unsafe fn get(&self) -> &mut T {
+        &mut *self.0
+    }
+}
+
+impl<T: ?Sized> Drop for Hook<T> {
+    fn drop(&mut self) {
+        unsafe {
+            drop(Box::from_raw(self.0));
+        }
+    }
+}
+
+pub type SwiHook = Hook<dyn FnMut(u8) -> bool>;
+pub type BreakpointHook = Hook<dyn FnMut(u32) -> bool>;
+pub type MemWatchpointHook = Hook<dyn FnMut(u32, u8, MemWatchpointTriggerCause) -> bool>;
 
 pub(super) struct CoreData {
-    pub branch_breakpoint_hooks: Option<(BranchHook, BreakpointHook)>,
     pub swi_hook: Option<SwiHook>,
+    pub breakpoints: Vec<u32>,
+    pub breakpoint_hook: Option<BreakpointHook>,
     pub mem_watchpoint_hook: Option<MemWatchpointHook>,
     pub mem_watchpoints: Box<MemWatchpointRootTable>,
 }
@@ -118,8 +139,9 @@ pub(super) struct CoreData {
 impl CoreData {
     pub(super) fn new() -> Self {
         CoreData {
-            branch_breakpoint_hooks: None,
             swi_hook: None,
+            breakpoints: Vec::new(),
+            breakpoint_hook: None,
             mem_watchpoint_hook: None,
             mem_watchpoints: zeroed_box(),
         }

@@ -8,7 +8,7 @@ pub fn bkpt(emu: &mut Emu<Engine>, _instr: u16) {
 pub fn swi(emu: &mut Emu<Engine>, _instr: u16) {
     handle_swi::<true>(
         emu,
-        #[cfg(feature = "debug-hooks")]
+        #[cfg(feature = "debugger-hooks")]
         {
             _instr as u8
         },
