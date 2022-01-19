@@ -3,14 +3,16 @@ pub use self::cpal::*;
 mod interp;
 pub use interp::{Interp, InterpMethod};
 
-use core::{
-    hint::spin_loop,
-    sync::atomic::{AtomicUsize, Ordering},
-};
 use dust_core::audio::Sample;
+use parking_lot::Mutex;
 #[cfg(feature = "xq-audio")]
 use parking_lot::RwLock;
 use std::sync::Arc;
+use std::{
+    marker::PhantomData,
+    sync::atomic::{AtomicUsize, Ordering},
+    thread::{self, Thread},
+};
 
 const SYS_CLOCK: f64 = (1 << 25) as f64;
 const ORIG_FRAME_RATE: f64 = SYS_CLOCK / (6.0 * 355.0 * 263.0);
@@ -23,13 +25,14 @@ struct Buffer {
     read_pos: AtomicUsize,
     write_pos: AtomicUsize,
     data: *mut [[Sample; 2]],
+    thread: Mutex<Thread>,
 }
 
 unsafe impl Send for Buffer {}
 unsafe impl Sync for Buffer {}
 
 impl Buffer {
-    fn new_arc(#[cfg(feature = "xq-audio")] xq_sample_rate_shift: u8) -> Arc<Self> {
+    fn new_arc(thread: Thread, #[cfg(feature = "xq-audio")] xq_sample_rate_shift: u8) -> Arc<Self> {
         #[cfg(not(feature = "xq-audio"))]
         let capacity = BUFFER_CAPACITY;
         #[cfg(feature = "xq-audio")]
@@ -39,6 +42,7 @@ impl Buffer {
             read_pos: AtomicUsize::new(capacity - 1),
             write_pos: AtomicUsize::new(0),
             data: Box::into_raw(unsafe { Box::new_zeroed_slice(capacity).assume_init() }),
+            thread: Mutex::new(thread),
         })
     }
 }
@@ -63,6 +67,7 @@ pub struct Sender {
     buffer: Arc<Buffer>,
     write_pos: usize,
     sync: bool,
+    _not_send: PhantomData<*const ()>,
 }
 
 impl Sender {
@@ -71,12 +76,14 @@ impl Sender {
         let buffer = Arc::clone(&data.buffer_ptr.read());
         #[cfg(not(feature = "xq-audio"))]
         let buffer = Arc::clone(&data.buffer);
+        *buffer.thread.lock() = thread::current();
         Sender {
             #[cfg(feature = "xq-audio")]
             buffer_ptr: Arc::clone(&data.buffer_ptr),
             write_pos: buffer.write_pos.load(Ordering::Relaxed),
             buffer,
             sync,
+            _not_send: PhantomData,
         }
     }
 }
@@ -114,11 +121,12 @@ impl dust_core::audio::Backend for Sender {
                         if Arc::as_ptr(&buffer) != Arc::as_ptr(&self.buffer) {
                             self.buffer = Arc::clone(&buffer);
                             self.write_pos = self.buffer.write_pos.load(Ordering::Relaxed);
+                            buffer_mask = self.buffer.data.len() - 1;
+                            len = samples.len().min((buffer_mask + 1) >> 1);
+                            continue;
                         }
-                        buffer_mask = self.buffer.data.len() - 1;
-                        len = samples.len().min((buffer_mask + 1) >> 1);
                     }
-                    spin_loop();
+                    thread::park();
                 }
             } else {
                 // Overwrite the oldest samples, attempt to move the read position to the start of the
@@ -199,6 +207,10 @@ impl Receiver {
             None
         }
     }
+
+    fn finish_reading(&mut self) {
+        self.buffer.thread.lock().unpark();
+    }
 }
 
 pub struct Channel {
@@ -209,8 +221,9 @@ pub struct Channel {
 impl Channel {
     #[cfg(feature = "xq-audio")]
     pub fn set_xq_sample_rate_shift(&mut self, shift: u8) {
-        let buffer = Buffer::new_arc(shift);
-        *self.tx_data.buffer_ptr.write() = buffer;
+        let mut buffer = self.tx_data.buffer_ptr.write();
+        let new_buffer = Buffer::new_arc(buffer.thread.lock().clone(), shift);
+        *buffer = new_buffer;
         self.output_stream.set_xq_input_sample_rate_shift(shift);
     }
 }
@@ -221,6 +234,7 @@ pub fn channel(
     #[cfg(feature = "xq-audio")] xq_sample_rate_shift: u8,
 ) -> Option<Channel> {
     let buffer = Buffer::new_arc(
+        thread::current(),
         #[cfg(feature = "xq-audio")]
         xq_sample_rate_shift,
     );

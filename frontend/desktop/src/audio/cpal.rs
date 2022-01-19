@@ -148,6 +148,7 @@ impl OutputData {
                 while fract < 1.0 {
                     if output_i >= data.len() {
                         self.fract = fract;
+                        self.rx.finish_reading();
                         return;
                     }
                     let result = self.interp.get_output_sample(fract);
