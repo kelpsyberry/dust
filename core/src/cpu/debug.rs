@@ -1,4 +1,8 @@
-use crate::utils::{zeroed_box, Zero};
+use crate::{
+    cpu::Engine,
+    emu::Emu,
+    utils::{zeroed_box, Zero},
+};
 use bitflags::bitflags;
 
 #[repr(transparent)]
@@ -49,13 +53,14 @@ macro_rules! check_watchpoints {
                     use $crate::cpu::Schedule;
                     if unsafe {
                         hook.get()(
+                            $emu,
                             $addr & !$align_mask,
                             $align_mask + 1,
                             $crate::cpu::debug::MemWatchpointTriggerCause::$cause,
                         )
                     } {
                         $core.schedule.set_target_time($core.schedule.cur_time());
-                        $emu.stopped_by_debug_hook = true;
+                        $core.stopped_by_debug_hook = true;
                     }
                     $core.schedule.set_target_time($core.schedule.cur_time());
                 }
@@ -111,7 +116,7 @@ impl<T: ?Sized> Hook<T> {
     }
 
     #[allow(clippy::mut_from_ref)]
-    pub(super) unsafe fn get(&self) -> &mut T {
+    pub(super) unsafe fn get<'a>(&self) -> &'a mut T {
         &mut *self.0
     }
 }
@@ -124,24 +129,27 @@ impl<T: ?Sized> Drop for Hook<T> {
     }
 }
 
-pub type SwiHook = Hook<dyn FnMut(u8) -> bool>;
-pub type BreakpointHook = Hook<dyn FnMut(u32) -> bool>;
-pub type MemWatchpointHook = Hook<dyn FnMut(u32, u8, MemWatchpointTriggerCause) -> bool>;
+pub type SwiHook<E> = Hook<dyn FnMut(&mut Emu<E>, u8) -> bool>;
+pub type BreakpointHook<E> = Hook<dyn FnMut(&mut Emu<E>, u32) -> bool>;
+pub type MemWatchpointHook<E> =
+    Hook<dyn FnMut(&mut Emu<E>, u32, u8, MemWatchpointTriggerCause) -> bool>;
 
-pub(super) struct CoreData {
-    pub swi_hook: Option<SwiHook>,
-    pub breakpoints: Vec<u32>,
-    pub breakpoint_hook: Option<BreakpointHook>,
-    pub mem_watchpoint_hook: Option<MemWatchpointHook>,
+pub(super) struct CoreData<E: Engine> {
+    pub swi_hook: Option<SwiHook<E>>,
+    pub sw_breakpoints: Vec<u32>,
+    pub sw_breakpoint_hook: Option<BreakpointHook<E>>,
+    pub hw_breakpoint_hook: Option<BreakpointHook<E>>,
+    pub mem_watchpoint_hook: Option<MemWatchpointHook<E>>,
     pub mem_watchpoints: Box<MemWatchpointRootTable>,
 }
 
-impl CoreData {
+impl<E: Engine> CoreData<E> {
     pub(super) fn new() -> Self {
         CoreData {
             swi_hook: None,
-            breakpoints: Vec::new(),
-            breakpoint_hook: None,
+            sw_breakpoints: Vec::new(),
+            sw_breakpoint_hook: None,
+            hw_breakpoint_hook: None,
             mem_watchpoint_hook: None,
             mem_watchpoints: zeroed_box(),
         }

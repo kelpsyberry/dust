@@ -64,8 +64,6 @@ pub struct Emu<E: cpu::Engine> {
     pub input: Input,
     pub audio: Audio,
     rcnt: u16, // TODO: Move to SIO
-    #[cfg(feature = "debugger-hooks")]
-    pub(crate) stopped_by_debug_hook: bool,
 }
 
 pub struct Builder {
@@ -195,8 +193,6 @@ impl Builder {
             schedule: global_schedule,
             arm7,
             arm9,
-            #[cfg(feature = "debugger-hooks")]
-            stopped_by_debug_hook: false,
         };
         Arm7::setup(&mut emu);
         Arm9::setup(&mut emu);
@@ -293,17 +289,37 @@ impl<E: cpu::Engine> Emu<E> {
 
     #[inline(never)]
     pub fn run_frame(&mut self) -> RunOutput {
+        #[cfg(feature = "debugger-hooks")]
+        {
+            self.arm7.stopped_by_debug_hook = false;
+            self.arm9.stopped_by_debug_hook = false;
+        }
         loop {
             let mut batch_end_time = self.schedule.batch_end_time();
             if !self.gpu.engine_3d.gx_fifo_stalled() {
-                E::Arm9Data::run_until(self, batch_end_time.into());
-                batch_end_time = batch_end_time.min(Timestamp::from(self.arm9.schedule.cur_time()));
-                E::Arm7Data::run_until(self, batch_end_time.into());
-                #[cfg(feature = "debugger-hooks")]
-                {
-                    batch_end_time =
-                        batch_end_time.min(Timestamp::from(self.arm7.schedule.cur_time()));
+                macro_rules! run_core {
+                    ($core: expr, $engine_data: ty, |$stopped_ident: ident| $run: expr) => {
+                        #[cfg(feature = "debugger-hooks")]
+                        let $stopped_ident = $core.stopped;
+                        #[cfg(not(feature = "debugger-hooks"))]
+                        let $stopped_ident = false;
+                        if $stopped_ident {
+                            $core.schedule.set_cur_time(batch_end_time.into());
+                        } else {
+                            <$engine_data>::run_until(self, batch_end_time.into());
+                            $run
+                        }
+                    };
                 }
+                run_core!(self.arm9, E::Arm9Data, |stopped| {});
+                batch_end_time = batch_end_time.min(Timestamp::from(self.arm9.schedule.cur_time()));
+                run_core!(self.arm7, E::Arm7Data, |stopped| {
+                    #[cfg(feature = "debugger-hooks")]
+                    {
+                        batch_end_time =
+                            batch_end_time.min(Timestamp::from(self.arm7.schedule.cur_time()));
+                    }
+                });
             }
             self.schedule.set_cur_time(batch_end_time);
             while let Some((event, time)) = self.schedule.pop_pending_event() {
@@ -323,15 +339,12 @@ impl<E: cpu::Engine> Emu<E> {
                 }
             }
             #[cfg(feature = "debugger-hooks")]
-            if self.stopped_by_debug_hook {
-                self.stopped_by_debug_hook = false;
+            if self.arm7.stopped_by_debug_hook || self.arm9.stopped_by_debug_hook {
                 return RunOutput::StoppedByDebugHook;
             }
         }
     }
-}
 
-impl<E: cpu::Engine> Emu<E> {
     #[inline]
     pub fn main_mem(&self) -> &OwnedBytesCellPtr<0x40_0000> {
         &self.main_mem
@@ -356,5 +369,12 @@ impl<E: cpu::Engine> Emu<E> {
     #[inline]
     pub fn set_rcnt(&mut self, value: u16) {
         self.rcnt = value & 0xC1FF;
+    }
+
+    #[inline]
+    pub fn request_shutdown(&mut self) {
+        self.spi
+            .power
+            .request_shutdown(&mut self.arm7.schedule, &mut self.schedule);
     }
 }

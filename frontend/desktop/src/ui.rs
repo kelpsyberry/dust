@@ -288,6 +288,10 @@ impl UiState {
                 config.autosave_interval_ms.value / 1000.0,
             )),
             stopped: AtomicBool::new(false),
+            #[cfg(feature = "gdb-server")]
+            gdb_server_active: AtomicBool::new(false),
+            #[cfg(feature = "gdb-server")]
+            gdb_server_addr: RwLock::new(None),
         });
         self.emu_shared_state = Some(Arc::clone(&emu_shared_state));
         self.emu_thread = Some(
@@ -1042,20 +1046,67 @@ pub fn main() {
                     let imgui_log_enabled = state.imgui_log.is_some();
                     #[cfg(not(feature = "log"))]
                     let imgui_log_enabled = false;
-                    if cfg!(feature = "debug-views") || imgui_log_enabled {
+                    if cfg!(any(feature = "debug-views", feature = "gdb-server"))
+                        || imgui_log_enabled
+                    {
                         ui.menu("Debug", || {
+                            #[allow(unused_mut)]
+                            let mut separator_needed = false;
                             #[cfg(feature = "log")]
                             if let Some((_, _, console_visible)) = &mut state.imgui_log {
                                 ui.menu_item_config("Log").build_with_ref(console_visible);
+                                separator_needed = true;
+                            }
+                            #[cfg(feature = "gdb-server")]
+                            {
+                                if separator_needed {
+                                    ui.separator();
+                                }
+                                let gdb_server_active = match &state.emu_shared_state {
+                                    Some(state) => state.gdb_server_active.load(Ordering::Relaxed),
+                                    None => false,
+                                };
+                                if ui
+                                    .menu_item_config(if gdb_server_active {
+                                        "Stop GDB server"
+                                    } else {
+                                        "Start GDB server"
+                                    })
+                                    .enabled(state.emu_shared_state.is_some())
+                                    .build()
+                                {
+                                    if let Some(state) = &state.emu_shared_state {
+                                        state
+                                            .gdb_server_active
+                                            .store(!gdb_server_active, Ordering::Relaxed);
+                                    }
+                                }
+                                separator_needed = true;
                             }
                             #[cfg(feature = "debug-views")]
                             {
-                                if imgui_log_enabled {
+                                if separator_needed {
                                     ui.separator();
                                 }
                                 state.debug_views.render_menu(ui, window);
                             }
                         });
+                    }
+
+                    #[cfg(feature = "gdb-server")]
+                    if let Some(state) = &state.emu_shared_state {
+                        let addr = *state.gdb_server_addr.read();
+                        if let Some(addr) = addr {
+                            let text = format!("GDB: {}", addr);
+                            let width =
+                                ui.calc_text_size(&text)[0] + unsafe { ui.style().item_spacing[0] };
+                            ui.set_cursor_pos([
+                                ui.content_region_max()[0] - width,
+                                ui.cursor_pos()[1],
+                            ]);
+                            ui.separator();
+                            ui.text(&text);
+                        }
                     }
                 });
             }

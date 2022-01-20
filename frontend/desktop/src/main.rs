@@ -6,7 +6,8 @@
     slice_ptr_get,
     int_log,
     try_blocks,
-    slice_ptr_len
+    slice_ptr_len,
+    array_chunks
 )]
 
 #[cfg(target_os = "macos")]

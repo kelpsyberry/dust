@@ -9,7 +9,6 @@ default = ["debug-views", "log", "xq-audio", "discord-presence"]
 
 debug-views = ["bitflags", "dust-core/disasm", "dust-core/channel-audio-capture"]
 log = ["slog", "slog-term", "slog-async", "dust-core/log"]
-discord-presence = ["discord-rpc"]
 
 pu-checks = ["dust-core/pu-checks"]
 
@@ -19,7 +18,9 @@ interp-arm9-interlocks = ["dust-core/interp-arm9-interlocks"]
 interp-r15-write-checks = ["dust-core/interp-r15-write-checks"]
 
 xq-audio = ["dust-core/xq-audio"]
-debugger-hooks = ["dust-core/debugger-hooks"]
+
+discord-presence = ["discord-rpc"]
+gdb-server = ["gdb-protocol", "dust-core/debugger-hooks"]
 
 compile-shaders = ["shaderc"]
 
@@ -45,6 +46,7 @@ parking_lot = "0.11"
 cpal = "0.13"
 chrono = { version = "0.4", features = ["serde"] }
 discord-rpc = { git = "https://github.com/Kelpsy/discord-rpc", optional = true }
+gdb-protocol = { version = "0.1", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.24"

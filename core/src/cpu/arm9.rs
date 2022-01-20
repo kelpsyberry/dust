@@ -36,7 +36,7 @@ pub struct Arm9<E: Engine> {
     #[cfg(feature = "log")]
     pub logger: slog::Logger,
     #[cfg(feature = "debugger-hooks")]
-    pub(super) debug: debug::CoreData,
+    pub(super) debug: debug::CoreData<E>,
     pub engine_data: E::Arm9Data,
     pub bios: OwnedBytesCellPtr<BIOS_BUFFER_SIZE>,
     pub schedule: Schedule,
@@ -51,6 +51,10 @@ pub struct Arm9<E: Engine> {
     pub dma_fill: Bytes<16>,
     pub div_engine: DivEngine,
     pub sqrt_engine: SqrtEngine,
+    #[cfg(feature = "debugger-hooks")]
+    pub stopped: bool,
+    #[cfg(feature = "debugger-hooks")]
+    pub(crate) stopped_by_debug_hook: bool,
 }
 
 impl<E: Engine> Arm9<E> {
@@ -115,6 +119,10 @@ impl<E: Engine> Arm9<E> {
             dma_fill: Bytes::new([0; 16]),
             div_engine,
             sqrt_engine,
+            #[cfg(feature = "debugger-hooks")]
+            stopped: false,
+            #[cfg(feature = "debugger-hooks")]
+            stopped_by_debug_hook: false,
         }
     }
 
@@ -153,70 +161,83 @@ impl<E: Engine> Arm9<E> {
         if #[cfg(any(feature = "debugger-hooks", doc))] {
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn swi_hook(&self) -> &Option<debug::SwiHook> {
+            pub fn swi_hook(&self) -> &Option<debug::SwiHook<E>> {
                 &self.debug.swi_hook
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn set_swi_hook(&mut self, value: Option<debug::SwiHook>) {
+            pub fn set_swi_hook(&mut self, value: Option<debug::SwiHook<E>>) {
                 self.debug.swi_hook = value;
                 self.engine_data.set_swi_hook(&self.debug.swi_hook);
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn breakpoints(&self) -> &[u32] {
-                &self.debug.breakpoints
+            pub fn sw_breakpoints(&self) -> &[u32] {
+                &self.debug.sw_breakpoints
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn add_breakpoint(&mut self, addr: u32) {
-                if let Err(i) = self.debug.breakpoints.binary_search(&addr) {
-                    self.debug.breakpoints.insert(i, addr);
-                    self.engine_data.add_breakpoint(addr);
+            pub fn add_sw_breakpoint(&mut self, addr: u32) {
+                if let Err(i) = self.debug.sw_breakpoints.binary_search(&addr) {
+                    self.debug.sw_breakpoints.insert(i, addr);
+                    self.engine_data.add_sw_breakpoint(addr);
                 }
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn remove_breakpoint(&mut self, addr: u32) {
-                if let Ok(i) = self.debug.breakpoints.binary_search(&addr) {
-                    self.debug.breakpoints.remove(i);
-                    self.engine_data.remove_breakpoint(addr, i, &self.debug.breakpoints);
+            pub fn remove_sw_breakpoint(&mut self, addr: u32) {
+                if let Ok(i) = self.debug.sw_breakpoints.binary_search(&addr) {
+                    self.debug.sw_breakpoints.remove(i);
+                    self.engine_data.remove_sw_breakpoint(addr, i, &self.debug.sw_breakpoints);
                 }
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn clear_breakpoints(&mut self) {
-                self.debug.breakpoints.clear();
-                self.engine_data.clear_breakpoints();
+            pub fn clear_sw_breakpoints(&mut self) {
+                self.debug.sw_breakpoints.clear();
+                self.engine_data.clear_sw_breakpoints();
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn breakpoint_hook(&self) -> &Option<debug::BreakpointHook> {
-                &self.debug.breakpoint_hook
+            pub fn sw_breakpoint_hook(&self) -> &Option<debug::BreakpointHook<E>> {
+                &self.debug.sw_breakpoint_hook
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn set_breakpoint_hook(&mut self, value: Option<debug::BreakpointHook>) {
-                self.debug.breakpoint_hook = value;
-                self.engine_data.set_breakpoint_hook(&self.debug.breakpoint_hook);
+            pub fn set_sw_breakpoint_hook(&mut self, value: Option<debug::BreakpointHook<E>>) {
+                self.debug.sw_breakpoint_hook = value;
+                self.engine_data.set_sw_breakpoint_hook(&self.debug.sw_breakpoint_hook);
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn mem_watchpoint_hook(&self) -> &Option<debug::MemWatchpointHook> {
+            pub fn hw_breakpoint_hook(&self) -> &Option<debug::BreakpointHook<E>> {
+                &self.debug.hw_breakpoint_hook
+            }
+
+            #[doc(cfg(feature = "debugger-hooks"))]
+            #[inline]
+            pub fn set_hw_breakpoint_hook(&mut self, value: Option<debug::BreakpointHook<E>>) {
+                self.debug.hw_breakpoint_hook = value;
+                self.engine_data.set_hw_breakpoint_hook(&self.debug.hw_breakpoint_hook);
+            }
+
+            #[doc(cfg(feature = "debugger-hooks"))]
+            #[inline]
+            pub fn mem_watchpoint_hook(&self) -> &Option<debug::MemWatchpointHook<E>> {
                 &self.debug.mem_watchpoint_hook
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn set_mem_watchpoint_hook(&mut self, value: Option<debug::MemWatchpointHook>) {
+            pub fn set_mem_watchpoint_hook(&mut self, value: Option<debug::MemWatchpointHook<E>>) {
                 self.debug.mem_watchpoint_hook = value;
                 self.engine_data.set_mem_watchpoint_hook(&self.debug.mem_watchpoint_hook);
             }

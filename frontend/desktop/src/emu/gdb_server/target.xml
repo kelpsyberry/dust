@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!DOCTYPE target SYSTEM "gdb-target.dtd">
+<target version="1.0">
+    <architecture>armv5te</architecture>
+    <feature name="org.gnu.gdb.arm.core">
+        <reg name="r0" bitsize="32" group="general"/>
+        <reg name="r1" bitsize="32" group="general"/>
+        <reg name="r2" bitsize="32" group="general"/>
+        <reg name="r3" bitsize="32" group="general"/>
+        <reg name="r4" bitsize="32" group="general"/>
+        <reg name="r5" bitsize="32" group="general"/>
+        <reg name="r6" bitsize="32" group="general"/>
+        <reg name="r7" bitsize="32" group="general"/>
+        <reg name="r8" bitsize="32" group="general"/>
+        <reg name="r9" bitsize="32" group="general"/>
+        <reg name="r10" bitsize="32" group="general"/>
+        <reg name="r11" bitsize="32" group="general"/>
+        <reg name="r12" bitsize="32" group="general"/>
+        <reg name="sp" bitsize="32" type="data_ptr" group="general"/>
+        <reg name="lr" bitsize="32" type="code_ptr" group="general"/>
+        <reg name="pc" bitsize="32" type="code_ptr" group="general"/>
+
+        <flags id="cpsr_flags" size="4">
+            <field name="mode" start="0" end="4"/>
+            <field name="T" start="5" end="5"/>
+            <field name="F" start="6" end="6"/>
+            <field name="I" start="7" end="7"/>
+            <field name="Q" start="27" end="27"/>
+            <field name="V" start="28" end="28"/>
+            <field name="C" start="29" end="29"/>
+            <field name="Z" start="30" end="30"/>
+            <field name="N" start="31" end="31"/>
+        </flags>
+        <reg name="cpsr" bitsize="32" type="cpsr_flags" group="general"/>
+    </feature>
+</target>

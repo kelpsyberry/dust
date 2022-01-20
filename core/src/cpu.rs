@@ -70,12 +70,22 @@ pub trait CoreData {
 
     cfg_if! {
         if #[cfg(any(feature = "debugger-hooks", doc))] {
-            fn set_swi_hook(&mut self, hook: &Option<debug::SwiHook>);
-            fn add_breakpoint(&mut self, addr: u32);
-            fn remove_breakpoint(&mut self, addr: u32, i: usize, breakpoints: &[u32]);
-            fn clear_breakpoints(&mut self);
-            fn set_breakpoint_hook(&mut self, hook: &Option<debug::BreakpointHook>);
-            fn set_mem_watchpoint_hook(&mut self, hook: &Option<debug::MemWatchpointHook>);
+            fn set_swi_hook(&mut self, hook: &Option<debug::SwiHook<Self::Engine>>);
+            fn add_sw_breakpoint(&mut self, addr: u32);
+            fn remove_sw_breakpoint(&mut self, addr: u32, i: usize, breakpoints: &[u32]);
+            fn clear_sw_breakpoints(&mut self);
+            fn set_sw_breakpoint_hook(
+                &mut self,
+                hook: &Option<debug::BreakpointHook<Self::Engine>>,
+            );
+            fn set_hw_breakpoint_hook(
+                &mut self,
+                hook: &Option<debug::BreakpointHook<Self::Engine>>,
+            );
+            fn set_mem_watchpoint_hook(
+                &mut self,
+                hook: &Option<debug::MemWatchpointHook<Self::Engine>>,
+            );
             fn add_mem_watchpoint(&mut self, addr: u32, rw: debug::MemWatchpointRwMask);
             fn remove_mem_watchpoint(&mut self, addr: u32, rw: debug::MemWatchpointRwMask);
         }

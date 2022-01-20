@@ -1,3 +1,5 @@
+#[cfg(feature = "gdb-server")]
+mod gdb_server;
 mod renderer_3d;
 mod rtc;
 
@@ -17,6 +19,8 @@ use dust_core::{
     SaveContents,
 };
 use parking_lot::RwLock;
+#[cfg(feature = "gdb-server")]
+use std::net::SocketAddr;
 use std::{
     fs::{self, File},
     hint,
@@ -34,6 +38,10 @@ pub struct SharedState {
     pub limit_framerate: AtomicBool,
     pub autosave_interval: RwLock<Duration>,
     pub stopped: AtomicBool,
+    #[cfg(feature = "gdb-server")]
+    pub gdb_server_active: AtomicBool,
+    #[cfg(feature = "gdb-server")]
+    pub gdb_server_addr: RwLock<Option<SocketAddr>>,
 }
 
 pub enum Message {
@@ -309,6 +317,11 @@ pub(super) fn main(
     #[cfg(feature = "debug-views")]
     let mut debug_views = debug_views::EmuState::new();
 
+    #[cfg(feature = "gdb-server")]
+    let mut gdb_server = None;
+
+    let mut reset_triggered = false;
+
     loop {
         if shared_state.stopped.load(Ordering::Relaxed) {
             break;
@@ -366,48 +379,82 @@ pub(super) fn main(
                 }
 
                 Message::Reset => {
-                    #[cfg(feature = "xq-audio")]
-                    let audio_xq_sample_rate_shift = emu.audio.xq_sample_rate_shift();
-                    #[cfg(feature = "xq-audio")]
-                    let audio_xq_interp_method = emu.audio.xq_interp_method();
-
-                    let mut emu_builder = dust_core::emu::Builder::new(
-                        emu.arm7.into_bios().into(),
-                        emu.arm9.into_bios().into(),
-                        emu.spi.firmware.reset(),
-                        match emu.ds_slot.rom {
-                            DsSlotRom::Empty(device) => DsSlotRom::Empty(device.reset()),
-                            DsSlotRom::Normal(device) => DsSlotRom::Normal(device.reset()),
-                        },
-                        match emu.ds_slot.spi {
-                            DsSlotSpi::Empty(device) => DsSlotSpi::Empty(device.reset()),
-                            DsSlotSpi::Eeprom4k(device) => DsSlotSpi::Eeprom4k(device.reset()),
-                            DsSlotSpi::EepromFram(device) => DsSlotSpi::EepromFram(device.reset()),
-                            DsSlotSpi::Flash(device) => DsSlotSpi::Flash(device.reset()),
-                        },
-                        emu.audio.backend,
-                        emu.rtc.backend,
-                        emu.gpu.engine_3d.renderer,
-                        #[cfg(feature = "log")]
-                        logger.clone(),
-                    );
-
-                    emu_builder.model = config.model;
-                    emu_builder.direct_boot = direct_boot;
-                    // TODO: Set batch_duration and first_launch?
-                    emu_builder.audio_sample_chunk_size = emu.audio.sample_chunk_size;
-                    #[cfg(feature = "xq-audio")]
-                    {
-                        emu_builder.audio_xq_sample_rate_shift = audio_xq_sample_rate_shift;
-                        emu_builder.audio_xq_interp_method = audio_xq_interp_method;
-                    }
-
-                    emu = emu_builder.build(Interpreter);
+                    reset_triggered = true;
                 }
             }
         }
 
-        let playing = shared_state.playing.load(Ordering::Relaxed);
+        if shared_state.gdb_server_active.load(Ordering::Relaxed) != gdb_server.is_some() {
+            if gdb_server.is_some() {
+                gdb_server = None;
+                *shared_state.gdb_server_addr.write() = None;
+            } else {
+                // TODO: Allow address configuration
+                let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 12345_u16));
+                match gdb_server::GdbServer::new(addr) {
+                    Ok(server) => {
+                        gdb_server = Some(server);
+                        *shared_state.gdb_server_addr.write() = Some(addr);
+                    }
+                    Err(_err) => {
+                        #[cfg(feature = "log")]
+                        slog::error!(logger, "Couldn't start GDB server: {}", _err);
+                        shared_state
+                            .gdb_server_active
+                            .store(false, Ordering::Relaxed)
+                    }
+                };
+            }
+        }
+
+        let mut playing = true;
+
+        if let Some(gdb_server) = &mut gdb_server {
+            reset_triggered |= gdb_server.poll(&mut emu);
+            playing &= !gdb_server.target_stopped();
+        }
+
+        if reset_triggered {
+            #[cfg(feature = "xq-audio")]
+            let audio_xq_sample_rate_shift = emu.audio.xq_sample_rate_shift();
+            #[cfg(feature = "xq-audio")]
+            let audio_xq_interp_method = emu.audio.xq_interp_method();
+
+            let mut emu_builder = dust_core::emu::Builder::new(
+                emu.arm7.into_bios().into(),
+                emu.arm9.into_bios().into(),
+                emu.spi.firmware.reset(),
+                match emu.ds_slot.rom {
+                    DsSlotRom::Empty(device) => DsSlotRom::Empty(device.reset()),
+                    DsSlotRom::Normal(device) => DsSlotRom::Normal(device.reset()),
+                },
+                match emu.ds_slot.spi {
+                    DsSlotSpi::Empty(device) => DsSlotSpi::Empty(device.reset()),
+                    DsSlotSpi::Eeprom4k(device) => DsSlotSpi::Eeprom4k(device.reset()),
+                    DsSlotSpi::EepromFram(device) => DsSlotSpi::EepromFram(device.reset()),
+                    DsSlotSpi::Flash(device) => DsSlotSpi::Flash(device.reset()),
+                },
+                emu.audio.backend,
+                emu.rtc.backend,
+                emu.gpu.engine_3d.renderer,
+                #[cfg(feature = "log")]
+                logger.clone(),
+            );
+
+            emu_builder.model = config.model;
+            emu_builder.direct_boot = direct_boot;
+            // TODO: Set batch_duration and first_launch?
+            emu_builder.audio_sample_chunk_size = emu.audio.sample_chunk_size;
+            #[cfg(feature = "xq-audio")]
+            {
+                emu_builder.audio_xq_sample_rate_shift = audio_xq_sample_rate_shift;
+                emu_builder.audio_xq_interp_method = audio_xq_interp_method;
+            }
+
+            emu = emu_builder.build(Interpreter);
+        }
+
+        playing &= shared_state.playing.load(Ordering::Relaxed);
 
         let frame = frame_tx.start();
 
@@ -417,9 +464,11 @@ pub(super) fn main(
                 RunOutput::Shutdown => {
                     shared_state.stopped.store(true, Ordering::Relaxed);
                 }
-                #[cfg(feature = "debugger-hooks")]
+                #[cfg(feature = "gdb-server")]
                 RunOutput::StoppedByDebugHook => {
-                    todo!();
+                    if let Some(gdb_server) = &mut gdb_server {
+                        gdb_server.emu_stopped(&mut emu);
+                    }
                 }
             }
         }

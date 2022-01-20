@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<threads>
+    <thread id="1" core="0" name="ARM9"></thread>
+    <thread id="2" core="1" name="ARM7"></thread>
+</threads>

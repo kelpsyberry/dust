@@ -44,7 +44,7 @@ pub struct EngineData {
     interlocks: [Interlock; 16],
     data_cycles: u8,
     #[cfg(feature = "debugger-hooks")]
-    next_breakpoint_addr: u32,
+    next_sw_breakpoint_addr: u32,
     exc_vectors_start: u32,
 }
 
@@ -67,7 +67,7 @@ impl EngineData {
             }; 16],
             data_cycles: 0,
             #[cfg(feature = "debugger-hooks")]
-            next_breakpoint_addr: 0xFFFF_FFFF,
+            next_sw_breakpoint_addr: 0xFFFF_FFFF,
             exc_vectors_start: 0xFFFF_0000,
         }
     }
@@ -323,18 +323,18 @@ fn add_bus_cycles(emu: &mut Emu<Engine>, cycles: RawTimestamp) {
 fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
     let mut addr = reg!(emu.arm9, 15);
 
-    macro_rules! get_next_breakpoint {
+    macro_rules! get_next_sw_breakpoint {
         ($mask: expr) => {
             #[cfg(feature = "debugger-hooks")]
-            if !emu.arm9.debug.breakpoints.is_empty() {
+            if !emu.arm9.debug.sw_breakpoints.is_empty() {
                 let i = emu
                     .arm9
                     .debug
-                    .breakpoints
+                    .sw_breakpoints
                     .binary_search(&addr)
                     .into_ok_or_err();
-                emu.arm9.engine_data.next_breakpoint_addr =
-                    emu.arm9.debug.breakpoints[if i >= emu.arm9.debug.breakpoints.len() {
+                emu.arm9.engine_data.next_sw_breakpoint_addr =
+                    emu.arm9.debug.sw_breakpoints[if i >= emu.arm9.debug.sw_breakpoints.len() {
                         0
                     } else {
                         i
@@ -358,7 +358,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
         StateSource::Cpsr => emu.arm9.engine_data.regs.cpsr.thumb_state(),
     } {
         addr &= !1;
-        get_next_breakpoint!(1);
+        get_next_sw_breakpoint!(1);
         // NOTE: The ARM9 should actually only merge thumb code fetches from the system bus and not
         // from TCM, but timings are the same as long as concurrent data/code access waitstates are
         // not emulated.
@@ -449,7 +449,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
         }
     } else {
         addr &= !3;
-        get_next_breakpoint!(3);
+        get_next_sw_breakpoint!(3);
         #[cfg(feature = "interp-pipeline")]
         {
             if unlikely(!can_execute(
@@ -565,11 +565,11 @@ fn handle_swi<const THUMB: bool>(
 ) {
     #[cfg(feature = "debugger-hooks")]
     if let Some(swi_hook) = emu.arm9.swi_hook() {
-        if unsafe { swi_hook.get()(swi_num) } {
+        if unsafe { swi_hook.get()(emu, swi_num) } {
             emu.arm9
                 .schedule
                 .set_target_time(emu.arm9.schedule.cur_time());
-            emu.stopped_by_debug_hook = true;
+            emu.arm9.stopped_by_debug_hook = true;
         }
     }
     prefetch_arm::<true, false>(emu);
@@ -790,22 +790,22 @@ impl CoreData for EngineData {
     cfg_if! {
         if #[cfg(feature = "debugger-hooks")] {
             #[inline]
-            fn set_swi_hook(&mut self, _hook: &Option<debug::SwiHook>) {}
+            fn set_swi_hook(&mut self, _hook: &Option<debug::SwiHook<Engine>>) {}
 
             #[inline]
-            fn add_breakpoint(&mut self, addr: u32) {
-                if addr < self.next_breakpoint_addr
+            fn add_sw_breakpoint(&mut self, addr: u32) {
+                if addr < self.next_sw_breakpoint_addr
                     && addr
                         > self.regs.cur[15].wrapping_sub(8 >> self.regs.cpsr.thumb_state() as u8)
                 {
-                    self.next_breakpoint_addr = addr;
+                    self.next_sw_breakpoint_addr = addr;
                 }
             }
 
             #[inline]
-            fn remove_breakpoint(&mut self, addr: u32, i: usize, breakpoints: &[u32]) {
-                if self.next_breakpoint_addr == addr {
-                    self.next_breakpoint_addr = if breakpoints.is_empty() {
+            fn remove_sw_breakpoint(&mut self, addr: u32, i: usize, breakpoints: &[u32]) {
+                if self.next_sw_breakpoint_addr == addr {
+                    self.next_sw_breakpoint_addr = if breakpoints.is_empty() {
                         breakpoints[if i == breakpoints.len() { 0 } else { i }]
                     } else {
                         u32::MAX
@@ -814,15 +814,21 @@ impl CoreData for EngineData {
             }
 
             #[inline]
-            fn clear_breakpoints(&mut self) {
-                self.next_breakpoint_addr = u32::MAX;
+            fn clear_sw_breakpoints(&mut self) {
+                self.next_sw_breakpoint_addr = u32::MAX;
             }
 
             #[inline]
-            fn set_breakpoint_hook(&mut self, _hook: &Option<debug::BreakpointHook>) {}
+            fn set_sw_breakpoint_hook(&mut self, _hook: &Option<debug::BreakpointHook<Engine>>) {}
 
             #[inline]
-            fn set_mem_watchpoint_hook(&mut self, _hook: &Option<debug::MemWatchpointHook>) {}
+            fn set_hw_breakpoint_hook(&mut self, _hook: &Option<debug::BreakpointHook<Engine>>) {}
+
+            #[inline]
+            fn set_mem_watchpoint_hook(
+                &mut self,
+                _hook: &Option<debug::MemWatchpointHook<Engine>>,
+            ) {}
 
             #[inline]
             fn add_mem_watchpoint(&mut self, _addr: u32, _rw: debug::MemWatchpointRwMask) {}
@@ -928,17 +934,19 @@ impl Arm9Data for EngineData {
                     {
                         let instr_addr = reg!(emu.arm9, 15)
                             .wrapping_sub(8 >> emu.arm9.engine_data.regs.cpsr.thumb_state() as u8);
-                        if emu.arm9.engine_data.next_breakpoint_addr == instr_addr
+                        if emu.arm9.engine_data.next_sw_breakpoint_addr == instr_addr
                             && unsafe {
-                                emu.arm9.breakpoint_hook().as_ref().unwrap_unchecked().get()(
-                                    instr_addr,
-                                )
+                                emu.arm9
+                                    .sw_breakpoint_hook()
+                                    .as_ref()
+                                    .unwrap_unchecked()
+                                    .get()(emu, instr_addr)
                             }
                         {
                             emu.arm9
                                 .schedule
                                 .set_target_time(emu.arm9.schedule.cur_time());
-                            emu.stopped_by_debug_hook = true;
+                            emu.arm9.stopped_by_debug_hook = true;
                             return;
                         }
                     }
