@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
   # `compile-shaders` shouldn't be enabled, as it requires building the entirety of shaderc from
   # source.
-  FEATURES: log,debug-views,discord-presence
+  FEATURES: xq-audio,discord-presence,debug-views,log,pu-checks,gdb-server
   MACOSX_DEPLOYMENT_TARGET: 10.11
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
     - name: Install nightly toolchain
       uses: actions-rs/toolchain@v1
       with:
-          toolchain: nightly
+          toolchain: nightly-2022-01-17
           override: true
           components: clippy
 
@@ -59,7 +59,7 @@ jobs:
       with:
         name: Run clippy (${{ matrix.os }}, all features)
         token: ${{ secrets.GITHUB_TOKEN }}
-        args: --features=${{ env.FEATURES }} --package dust-desktop
+        args: --no-default-features --features=${{ env.FEATURES }} --package dust-desktop
 
     - name: Run tests (no default features)
       run: cargo test --verbose --no-default-features --package dust-desktop

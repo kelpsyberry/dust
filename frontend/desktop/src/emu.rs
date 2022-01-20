@@ -384,6 +384,7 @@ pub(super) fn main(
             }
         }
 
+        #[cfg(feature = "gdb-server")]
         if shared_state.gdb_server_active.load(Ordering::Relaxed) != gdb_server.is_some() {
             if gdb_server.is_some() {
                 gdb_server = None;
@@ -409,6 +410,7 @@ pub(super) fn main(
 
         let mut playing = true;
 
+        #[cfg(feature = "gdb-server")]
         if let Some(gdb_server) = &mut gdb_server {
             reset_triggered |= gdb_server.poll(&mut emu);
             playing &= !gdb_server.target_stopped();

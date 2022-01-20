@@ -7,7 +7,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  DEBUG_FEATURES: log,debug-views
+  RELEASE_FEATURES: xq-audio,discord-presence
+  DEBUG_FEATURES: xq-audio,discord-presence,log,debug-views
+  DEBUG_GDB_FEATURES: xq-audio,discord-presence,log,debug-views,pu-checks,gdb-server
   MACOSX_DEPLOYMENT_TARGET: 10.11
 
 jobs:
@@ -31,7 +33,7 @@ jobs:
     - name: Install nightly toolchain
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly
+        toolchain: nightly-2022-01-17
         override: true
         components: clippy
     
@@ -53,7 +55,7 @@ jobs:
         sudo apt-get install libgtk-3-dev libasound2-dev
 
     - name: Build release binary (no debugging features)
-      run: cargo build --profile ci --verbose --no-default-features --package dust-desktop
+      run: cargo build --profile ci --verbose --no-default-features --features=${{ env.RELEASE_FEATURES }} --package dust-desktop
 
     - name: Upload release binary (no debugging features)
       uses: actions/upload-artifact@v2
@@ -62,10 +64,19 @@ jobs:
         path: target/ci/dust-desktop${{ matrix.artifact-extension }}
 
     - name: Build release binary (debugging features)
-      run: cargo build --profile ci --verbose --features=${{ env.DEBUG_FEATURES }} --package dust-desktop
+      run: cargo build --profile ci --verbose --no-default-features --features=${{ env.DEBUG_FEATURES }} --package dust-desktop
       
     - name: Upload release binary (debugging features)
       uses: actions/upload-artifact@v2
       with:
         name: ${{ matrix.artifact }}-debug
+        path: target/ci/dust-desktop${{ matrix.artifact-extension }}
+
+    - name: Build release binary (debugging features + GDB)
+      run: cargo build --profile ci --verbose --no-default-features --features=${{ env.DEBUG_GDB_FEATURES }} --package dust-desktop
+      
+    - name: Upload release binary (debugging features + GDB)
+      uses: actions/upload-artifact@v2
+      with:
+        name: ${{ matrix.artifact }}-debug-gdb
         path: target/ci/dust-desktop${{ matrix.artifact-extension }}
