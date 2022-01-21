@@ -393,7 +393,8 @@ pub(super) fn main(
                 // TODO: Allow address configuration
                 let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 12345_u16));
                 match gdb_server::GdbServer::new(addr) {
-                    Ok(server) => {
+                    Ok(mut server) => {
+                        server.attach(&mut emu);
                         gdb_server = Some(server);
                         *shared_state.gdb_server_addr.write() = Some(addr);
                     }
@@ -454,6 +455,9 @@ pub(super) fn main(
             }
 
             emu = emu_builder.build(Interpreter);
+            if let Some(server) = &mut gdb_server {
+                server.attach(&mut emu);
+            }
         }
 
         playing &= shared_state.playing.load(Ordering::Relaxed);

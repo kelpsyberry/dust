@@ -70,14 +70,21 @@ macro_rules! check_watchpoints {
 }
 
 impl MemWatchpointRootTable {
-    pub(super) fn add(&mut self, addr: u32, rw: MemWatchpointRwMask) {
+    pub(super) fn add(&mut self, addr: u32, size: u8, rw: MemWatchpointRwMask) {
         let sub_table = self.0[(addr >> 21) as usize].get_or_insert_with(zeroed_box);
         let leaf_table = sub_table.0[(addr >> 10 & 0x7FF) as usize].get_or_insert_with(zeroed_box);
-        leaf_table.0[(addr >> MWLT_BYTES_PER_ENTRY_SHIFT & MWLT_ENTRY_COUNT_MASK) as usize] |=
-            (rw.bits() as usize) << ((addr & MWLT_BYTES_PER_ENTRY_MASK) << 1);
+        let mut mask = rw.bits() as usize;
+        for i in 0..size.trailing_zeros() {
+            mask |= mask << (2 << i);
+        }
+        mask <<= (addr & MWLT_BYTES_PER_ENTRY_MASK) << 1;
+        for addr in (addr..addr + size as u32).step_by(1 << MWLT_BYTES_PER_ENTRY_SHIFT) {
+            let leaf_i = (addr >> MWLT_BYTES_PER_ENTRY_SHIFT & MWLT_ENTRY_COUNT_MASK) as usize;
+            leaf_table.0[leaf_i] |= mask;
+        }
     }
 
-    pub(super) fn remove(&mut self, addr: u32, rw: MemWatchpointRwMask) {
+    pub(super) fn remove(&mut self, addr: u32, size: u8, rw: MemWatchpointRwMask) {
         let root_i = (addr >> 21) as usize;
         let sub_table = match &mut self.0[root_i] {
             Some(sub_table_ptr) => sub_table_ptr,
@@ -88,10 +95,19 @@ impl MemWatchpointRootTable {
             Some(leaf_table_ptr) => leaf_table_ptr,
             None => return,
         };
-        let leaf_i = (addr >> MWLT_BYTES_PER_ENTRY_SHIFT & MWLT_ENTRY_COUNT_MASK) as usize;
-        leaf_table.0[leaf_i] &=
-            !((rw.bits() as usize) << ((addr & MWLT_BYTES_PER_ENTRY_MASK) << 1));
-        if leaf_table.0[leaf_i] != 0 || leaf_table.0.iter().any(|value| *value != 0) {
+        let mut mask = rw.bits() as usize;
+        for i in 0..size.trailing_zeros() {
+            mask |= mask << (2 << i);
+        }
+        mask = !(mask << ((addr & MWLT_BYTES_PER_ENTRY_MASK) << 1));
+        for addr in (addr..addr + size as u32).step_by(1 << MWLT_BYTES_PER_ENTRY_SHIFT) {
+            let leaf_i = (addr >> MWLT_BYTES_PER_ENTRY_SHIFT & MWLT_ENTRY_COUNT_MASK) as usize;
+            leaf_table.0[leaf_i] &= mask;
+            if leaf_table.0[leaf_i] != 0 {
+                return;
+            }
+        }
+        if leaf_table.0.iter().any(|value| *value != 0) {
             return;
         }
         sub_table.0[sub_i] = None;
@@ -99,6 +115,12 @@ impl MemWatchpointRootTable {
             return;
         }
         self.0[root_i] = None;
+    }
+
+    pub(super) fn clear(&mut self) {
+        for entry in &mut self.0 {
+            *entry = None;
+        }
     }
 }
 
@@ -130,15 +152,18 @@ impl<T: ?Sized> Drop for Hook<T> {
 }
 
 pub type SwiHook<E> = Hook<dyn FnMut(&mut Emu<E>, u8) -> bool>;
+pub type UndefHook<E> = Hook<dyn FnMut(&mut Emu<E>) -> bool>;
+pub type PrefetchAbortHook<E> = Hook<dyn FnMut(&mut Emu<E>) -> bool>;
+pub type DataAbortHook<E> = Hook<dyn FnMut(&mut Emu<E>, u32) -> bool>;
 pub type BreakpointHook<E> = Hook<dyn FnMut(&mut Emu<E>, u32) -> bool>;
 pub type MemWatchpointHook<E> =
     Hook<dyn FnMut(&mut Emu<E>, u32, u8, MemWatchpointTriggerCause) -> bool>;
 
 pub(super) struct CoreData<E: Engine> {
     pub swi_hook: Option<SwiHook<E>>,
-    pub sw_breakpoints: Vec<u32>,
-    pub sw_breakpoint_hook: Option<BreakpointHook<E>>,
-    pub hw_breakpoint_hook: Option<BreakpointHook<E>>,
+    pub undef_hook: Option<UndefHook<E>>,
+    pub breakpoints: Vec<u32>,
+    pub breakpoint_hook: Option<BreakpointHook<E>>,
     pub mem_watchpoint_hook: Option<MemWatchpointHook<E>>,
     pub mem_watchpoints: Box<MemWatchpointRootTable>,
 }
@@ -147,9 +172,9 @@ impl<E: Engine> CoreData<E> {
     pub(super) fn new() -> Self {
         CoreData {
             swi_hook: None,
-            sw_breakpoints: Vec::new(),
-            sw_breakpoint_hook: None,
-            hw_breakpoint_hook: None,
+            undef_hook: None,
+            breakpoints: Vec::new(),
+            breakpoint_hook: None,
             mem_watchpoint_hook: None,
             mem_watchpoints: zeroed_box(),
         }

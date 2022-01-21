@@ -70,24 +70,37 @@ pub trait CoreData {
 
     cfg_if! {
         if #[cfg(any(feature = "debugger-hooks", doc))] {
+            #[doc(cfg(feature = "debugger-hooks"))]
             fn set_swi_hook(&mut self, hook: &Option<debug::SwiHook<Self::Engine>>);
-            fn add_sw_breakpoint(&mut self, addr: u32);
-            fn remove_sw_breakpoint(&mut self, addr: u32, i: usize, breakpoints: &[u32]);
-            fn clear_sw_breakpoints(&mut self);
-            fn set_sw_breakpoint_hook(
+            #[doc(cfg(feature = "debugger-hooks"))]
+            fn set_undef_hook(&mut self, hook: &Option<debug::UndefHook<Self::Engine>>);
+            #[doc(cfg(feature = "debugger-hooks"))]
+            fn add_breakpoint(&mut self, addr: u32);
+            #[doc(cfg(feature = "debugger-hooks"))]
+            fn remove_breakpoint(&mut self, addr: u32, i: usize, breakpoints: &[u32]);
+            #[doc(cfg(feature = "debugger-hooks"))]
+            fn clear_breakpoints(&mut self);
+            #[doc(cfg(feature = "debugger-hooks"))]
+            fn set_breakpoint_hook(
                 &mut self,
                 hook: &Option<debug::BreakpointHook<Self::Engine>>,
             );
-            fn set_hw_breakpoint_hook(
-                &mut self,
-                hook: &Option<debug::BreakpointHook<Self::Engine>>,
-            );
+            #[doc(cfg(feature = "debugger-hooks"))]
             fn set_mem_watchpoint_hook(
                 &mut self,
                 hook: &Option<debug::MemWatchpointHook<Self::Engine>>,
             );
-            fn add_mem_watchpoint(&mut self, addr: u32, rw: debug::MemWatchpointRwMask);
-            fn remove_mem_watchpoint(&mut self, addr: u32, rw: debug::MemWatchpointRwMask);
+            #[doc(cfg(feature = "debugger-hooks"))]
+            fn add_mem_watchpoint(&mut self, addr: u32, size: u8, rw: debug::MemWatchpointRwMask);
+            #[doc(cfg(feature = "debugger-hooks"))]
+            fn remove_mem_watchpoint(
+                &mut self,
+                addr: u32,
+                size: u8,
+                rw: debug::MemWatchpointRwMask,
+            );
+            #[doc(cfg(feature = "debugger-hooks"))]
+            fn clear_mem_watchpoints(&mut self);
         }
     }
 }
@@ -101,4 +114,16 @@ pub trait Arm9Data: CoreData {
     fn set_t_bit_load_disabled(&mut self, value: bool);
 
     fn run_until(emu: &mut Emu<Self::Engine>, end_time: arm9::Timestamp);
+
+    cfg_if! {
+        if #[cfg(any(feature = "debugger-hooks", doc))] {
+            #[doc(cfg(feature = "debugger-hooks"))]
+            fn set_prefetch_abort_hook(
+                &mut self,
+                hook: &Option<debug::PrefetchAbortHook<Self::Engine>>,
+            );
+            #[doc(cfg(feature = "debugger-hooks"))]
+            fn set_data_abort_hook(&mut self, hook: &Option<debug::DataAbortHook<Self::Engine>>);
+        }
+    }
 }

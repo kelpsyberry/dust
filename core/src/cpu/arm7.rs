@@ -157,59 +157,59 @@ impl<E: Engine> Arm7<E> {
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn sw_breakpoints(&self) -> &[u32] {
-                &self.debug.sw_breakpoints
+            pub fn undef_hook(&self) -> &Option<debug::UndefHook<E>> {
+                &self.debug.undef_hook
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn add_sw_breakpoint(&mut self, addr: u32) {
-                if let Err(i) = self.debug.sw_breakpoints.binary_search(&addr) {
-                    self.debug.sw_breakpoints.insert(i, addr);
-                    self.engine_data.add_sw_breakpoint(addr);
+            pub fn set_undef_hook(&mut self, value: Option<debug::UndefHook<E>>) {
+                self.debug.undef_hook = value;
+                self.engine_data.set_undef_hook(&self.debug.undef_hook);
+            }
+
+            #[doc(cfg(feature = "debugger-hooks"))]
+            #[inline]
+            pub fn breakpoints(&self) -> &[u32] {
+                &self.debug.breakpoints
+            }
+
+            #[doc(cfg(feature = "debugger-hooks"))]
+            #[inline]
+            pub fn add_breakpoint(&mut self, addr: u32) {
+                if let Err(i) = self.debug.breakpoints.binary_search(&addr) {
+                    self.debug.breakpoints.insert(i, addr);
+                    self.engine_data.add_breakpoint(addr);
                 }
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn remove_sw_breakpoint(&mut self, addr: u32) {
-                if let Ok(i) = self.debug.sw_breakpoints.binary_search(&addr) {
-                    self.debug.sw_breakpoints.remove(i);
-                    self.engine_data.remove_sw_breakpoint(addr, i, &self.debug.sw_breakpoints);
+            pub fn remove_breakpoint(&mut self, addr: u32) {
+                if let Ok(i) = self.debug.breakpoints.binary_search(&addr) {
+                    self.debug.breakpoints.remove(i);
+                    self.engine_data.remove_breakpoint(addr, i, &self.debug.breakpoints);
                 }
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn clear_sw_breakpoints(&mut self) {
-                self.debug.sw_breakpoints.clear();
-                self.engine_data.clear_sw_breakpoints();
+            pub fn clear_breakpoints(&mut self) {
+                self.debug.breakpoints.clear();
+                self.engine_data.clear_breakpoints();
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn sw_breakpoint_hook(&self) -> &Option<debug::BreakpointHook<E>> {
-                &self.debug.sw_breakpoint_hook
+            pub fn breakpoint_hook(&self) -> &Option<debug::BreakpointHook<E>> {
+                &self.debug.breakpoint_hook
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn set_sw_breakpoint_hook(&mut self, value: Option<debug::BreakpointHook<E>>) {
-                self.debug.sw_breakpoint_hook = value;
-                self.engine_data.set_sw_breakpoint_hook(&self.debug.sw_breakpoint_hook);
-            }
-
-            #[doc(cfg(feature = "debugger-hooks"))]
-            #[inline]
-            pub fn hw_breakpoint_hook(&self) -> &Option<debug::BreakpointHook<E>> {
-                &self.debug.hw_breakpoint_hook
-            }
-
-            #[doc(cfg(feature = "debugger-hooks"))]
-            #[inline]
-            pub fn set_hw_breakpoint_hook(&mut self, value: Option<debug::BreakpointHook<E>>) {
-                self.debug.hw_breakpoint_hook = value;
-                self.engine_data.set_hw_breakpoint_hook(&self.debug.hw_breakpoint_hook);
+            pub fn set_breakpoint_hook(&mut self, value: Option<debug::BreakpointHook<E>>) {
+                self.debug.breakpoint_hook = value;
+                self.engine_data.set_breakpoint_hook(&self.debug.breakpoint_hook);
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
@@ -233,22 +233,42 @@ impl<E: Engine> Arm7<E> {
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn add_mem_watchpoint(&mut self, addr: u32, rw: debug::MemWatchpointRwMask) {
-                self.debug.mem_watchpoints.add(addr, rw);
+            pub fn add_mem_watchpoint(
+                &mut self,
+                mut addr: u32,
+                size: u8,
+                rw: debug::MemWatchpointRwMask,
+            ) {
+                addr &= !(size - 1) as u32;
+                self.debug.mem_watchpoints.add(addr, size, rw);
                 if rw.contains(debug::MemWatchpointRwMask::READ) {
                     self.bus_ptrs.disable_read(addr, cpu::bus::r_disable_flags::WATCHPOINT);
                 }
                 if rw.contains(debug::MemWatchpointRwMask::WRITE) {
                     self.bus_ptrs.disable_write(addr, cpu::bus::w_disable_flags::WATCHPOINT);
                 }
-                self.engine_data.add_mem_watchpoint(addr, rw);
+                self.engine_data.add_mem_watchpoint(addr, size, rw);
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
-            pub fn remove_mem_watchpoint(&mut self, addr: u32, rw: debug::MemWatchpointRwMask) {
-                self.debug.mem_watchpoints.remove(addr, rw);
-                self.engine_data.remove_mem_watchpoint(addr, rw);
+            pub fn remove_mem_watchpoint(
+                &mut self,
+                mut addr: u32,
+                size: u8,
+                rw: debug::MemWatchpointRwMask,
+            ) {
+                addr &= !(size - 1) as u32;
+                self.debug.mem_watchpoints.remove(addr, size, rw);
+                self.engine_data.remove_mem_watchpoint(addr, size, rw);
+                todo!(); // TODO: "No remove, only add" isn't a valid strategy
+            }
+
+            #[doc(cfg(feature = "debugger-hooks"))]
+            #[inline]
+            pub fn clear_mem_watchpoints(&mut self) {
+                self.debug.mem_watchpoints.clear();
+                self.engine_data.clear_mem_watchpoints();
                 todo!(); // TODO: "No remove, only add" isn't a valid strategy
             }
         }

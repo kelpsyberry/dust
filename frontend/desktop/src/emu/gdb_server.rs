@@ -11,16 +11,19 @@ use server::Server;
 
 use bitflags::bitflags;
 use dust_core::{
-    cpu::{self, arm7, arm9, bus::DebugCpuAccess},
+    cpu::{
+        self, arm7, arm9,
+        bus::DebugCpuAccess,
+        debug::{
+            BreakpointHook, DataAbortHook, MemWatchpointHook,
+            MemWatchpointTriggerCause as MemWatchpointCause, PrefetchAbortHook, UndefHook,
+        },
+    },
     emu::Emu,
 };
+use fxhash::FxHashMap;
 use gdb_protocol::packet::{CheckedPacket, Kind as PacketKind};
-use std::{
-    cell::RefCell, collections::BTreeMap, io::Write, lazy::SyncLazy, net::ToSocketAddrs, rc::Rc,
-    str,
-};
-
-enum Breakpoint {}
+use std::{cell::RefCell, io::Write, lazy::SyncLazy, net::ToSocketAddrs, rc::Rc, str};
 
 bitflags! {
     struct ThreadMask: u8 {
@@ -57,13 +60,37 @@ impl ThreadId {
 }
 
 #[derive(Clone, Copy, Debug)]
+struct Breakpoint {}
+
+#[derive(Clone, Copy, Debug)]
+struct Watchpoint {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Core {
+    Arm9,
+    Arm7,
+}
+
+#[derive(Clone, Copy, Debug)]
 enum StopCause {
-    Break,
-    Watchpoint(u32, u8),
-    Syscall(u8),
-    SwBreakpoint,
-    HwBreakpoint,
-    Shutdown,
+    Break,                                        // Signal 0x00 (None)
+    Syscall(u8, u8),                              // Signal 0x05 (SIGTRAP), syscall_entry
+    Undefined(Core),                              // Signal 0x04 (SIGILL)
+    PrefetchAbort,                                // Signal 0x0B (SIGSEGV)
+    DataAbort,                                    // Signal 0x0B (SIGSEGV)
+    Breakpoint(Core),                             // Signal 0x05 (SIGTRAP), hwbreak
+    MemWatchpoint(Core, u32, MemWatchpointCause), // Signal 0x05 (SIGTRAP), watch/rwatch/awatch
+    Shutdown,                                     // Signal 0x0F (SIGTERM)
+}
+
+pub struct GdbServer {
+    server: Server,
+    c_thread: ThreadId,
+    g_thread: ThreadId,
+    target_stopped: bool,
+    waiting_for_stop: bool,
+    sw_breakpoints: FxHashMap<u32, (u32, u32)>,
+    stop_causes: Rc<RefCell<Vec<StopCause>>>,
 }
 
 static CRC_TABLE: SyncLazy<[u32; 256]> = SyncLazy::new(|| {
@@ -84,22 +111,30 @@ static CRC_TABLE: SyncLazy<[u32; 256]> = SyncLazy::new(|| {
     table
 });
 
-pub struct GdbServer {
-    server: Server,
-    c_thread: ThreadId,
-    g_thread: ThreadId,
-    breakpoints: BTreeMap<u32, Breakpoint>,
-    target_stopped: bool,
-    waiting_for_stop: bool,
-    stop_causes: Rc<RefCell<Vec<StopCause>>>,
+fn split_once(data: &[u8], char: u8) -> (&[u8], &[u8]) {
+    if let Some(split_pos) = data.iter().position(|c| *c == char) {
+        (&data[..split_pos], &data[split_pos + 1..])
+    } else {
+        (data, &[])
+    }
 }
 
-fn split_once(data: &[u8], char: u8) -> (&[u8], Option<&[u8]>) {
-    let split_pos = data.iter().position(|c| *c == char);
-    if let Some(split_pos) = split_pos {
-        (&data[..split_pos], Some(&data[split_pos + 1..]))
-    } else {
-        (data, None)
+trait IntoVec<T> {
+    fn into_vec(self) -> Vec<T>;
+}
+
+impl<T> IntoVec<T> for Vec<T> {
+    fn into_vec(self) -> Vec<T> {
+        self
+    }
+}
+
+impl<T, const LEN: usize> IntoVec<T> for &[T; LEN]
+where
+    T: Clone,
+{
+    fn into_vec(self) -> Vec<T> {
+        self[..].into()
     }
 }
 
@@ -109,9 +144,9 @@ impl GdbServer {
             server: Server::new(addr)?,
             c_thread: ThreadId::new(1, ThreadMask::ARM9),
             g_thread: ThreadId::new(1, ThreadMask::ARM9),
-            breakpoints: BTreeMap::new(),
             target_stopped: false,
             waiting_for_stop: false,
+            sw_breakpoints: FxHashMap::default(),
             stop_causes: Rc::new(RefCell::new(Vec::new())),
         })
     }
@@ -119,6 +154,92 @@ impl GdbServer {
     #[inline]
     pub fn target_stopped(&self) -> bool {
         self.target_stopped
+    }
+
+    pub fn attach<E: cpu::Engine>(&mut self, emu: &mut Emu<E>) {
+        macro_rules! set_hook {
+            (
+                ($fn: ident, $hook_ty: ty),
+                [$(($core: ident, $core_enum: ident)),*],
+                |$core_enum_ident: ident, $stop_causes_ident: ident| $hook: expr
+            ) => {
+                $(
+                    let $stop_causes_ident = Rc::clone(&self.stop_causes);
+                    let $core_enum_ident = Core::$core_enum;
+                    emu.$core.$fn(Some(<$hook_ty>::new(Box::new($hook))));
+                )*
+            }
+        }
+
+        set_hook!(
+            (set_undef_hook, UndefHook<E>),
+            [(arm7, Arm7), (arm9, Arm9)],
+            |core, stop_causes| move |_emu| {
+                stop_causes.borrow_mut().push(StopCause::Undefined(core));
+                true
+            }
+        );
+
+        set_hook!(
+            (set_prefetch_abort_hook, PrefetchAbortHook<E>),
+            [(arm9, Arm9)],
+            |_core, stop_causes| move |_emu| {
+                stop_causes.borrow_mut().push(StopCause::PrefetchAbort);
+                true
+            }
+        );
+
+        set_hook!(
+            (set_data_abort_hook, DataAbortHook<E>),
+            [(arm9, Arm9)],
+            |_core, stop_causes| move |_emu, _addr| {
+                stop_causes.borrow_mut().push(StopCause::DataAbort);
+                true
+            }
+        );
+
+        set_hook!(
+            (set_breakpoint_hook, BreakpointHook<E>),
+            [(arm7, Arm7), (arm9, Arm9)],
+            |core, stop_causes| move |_emu, _addr| {
+                stop_causes.borrow_mut().push(StopCause::Breakpoint(core));
+                true
+            }
+        );
+
+        set_hook!(
+            (set_mem_watchpoint_hook, MemWatchpointHook<E>),
+            [(arm7, Arm7), (arm9, Arm9)],
+            |core, stop_causes| move |_emu, addr, _size, cause| {
+                stop_causes
+                    .borrow_mut()
+                    .push(StopCause::MemWatchpoint(core, addr, cause));
+                true
+            }
+        );
+    }
+
+    fn detach<E: cpu::Engine>(&mut self, emu: &mut Emu<E>) {
+        self.target_stopped = false;
+        self.server.close();
+
+        emu.arm9.set_swi_hook(None);
+        emu.arm9.set_undef_hook(None);
+        emu.arm9.set_prefetch_abort_hook(None);
+        emu.arm9.set_data_abort_hook(None);
+        emu.arm9.set_breakpoint_hook(None);
+        emu.arm9.set_mem_watchpoint_hook(None);
+        emu.arm9.clear_breakpoints();
+        emu.arm9.clear_mem_watchpoints();
+        emu.arm9.stopped = false;
+
+        emu.arm7.set_swi_hook(None);
+        emu.arm7.set_undef_hook(None);
+        emu.arm7.set_breakpoint_hook(None);
+        emu.arm7.set_mem_watchpoint_hook(None);
+        emu.arm7.clear_breakpoints();
+        emu.arm7.clear_mem_watchpoints();
+        emu.arm7.stopped = false;
     }
 
     fn send_empty_packet(&mut self) {
@@ -140,37 +261,44 @@ impl GdbServer {
     fn encode_stop_reply(&mut self, cause: StopCause, buf: &mut Vec<u8>) {
         match cause {
             StopCause::Break => buf.extend_from_slice(b"S00"),
-            StopCause::Watchpoint(_addr, _size) => todo!(),
-            StopCause::Syscall(number) => {
-                let _ = write!(buf, "T05syscall_entry:{:X}", number);
+            StopCause::Syscall(number, core) => {
+                let _ = write!(
+                    buf,
+                    "T05syscall_entry:{:X};thread:{};core:{};",
+                    number,
+                    core as u8 + 1,
+                    core as u8
+                );
             }
-            StopCause::SwBreakpoint => buf.extend_from_slice(b"T05swbreak:"),
-            StopCause::HwBreakpoint => buf.extend_from_slice(b"T05hwbreak:"),
-            StopCause::Shutdown => buf.extend_from_slice(b"X00"),
-        }
-    }
-
-    fn detach<E: cpu::Engine>(&mut self, emu: &mut Emu<E>) {
-        self.target_stopped = false;
-        self.server.close();
-        emu.arm7.clear_sw_breakpoints();
-        // TODO: Clean up the emulator's state
-    }
-
-    pub fn emu_stopped<E: cpu::Engine>(&mut self, emu: &mut Emu<E>) {
-        self.target_stopped = true;
-        if self.waiting_for_stop {
-            self.waiting_for_stop = false;
-            self.send_stop_reason(emu);
-        }
-    }
-
-    fn manually_stop<E: cpu::Engine>(&mut self, emu: &mut Emu<E>) {
-        self.stop_causes.borrow_mut().push(StopCause::Break);
-        self.target_stopped = true;
-        if self.waiting_for_stop {
-            self.waiting_for_stop = false;
-            self.send_stop_reason(emu);
+            StopCause::Undefined(core) => {
+                let _ = write!(buf, "T04thread:{};core:{};", core as u8 + 1, core as u8);
+            }
+            StopCause::PrefetchAbort | StopCause::DataAbort => {
+                buf.extend_from_slice(b"T0Bthread:1;core:0;");
+            }
+            StopCause::Breakpoint(core) => {
+                let _ = write!(
+                    buf,
+                    "T05hwbreak:;thread:{};core:{};",
+                    core as u8 + 1,
+                    core as u8
+                );
+            }
+            StopCause::MemWatchpoint(core, addr, cause) => {
+                let _ = write!(
+                    buf,
+                    "T05{}:{:08X};thread:{};core:{};",
+                    if cause == MemWatchpointCause::Read {
+                        "rwatch"
+                    } else {
+                        "watch"
+                    },
+                    addr,
+                    core as u8 + 1,
+                    core as u8
+                );
+            }
+            StopCause::Shutdown => buf.extend_from_slice(b"X0F"),
         }
     }
 
@@ -184,12 +312,44 @@ impl GdbServer {
         self.send_packet(reply);
     }
 
+    pub fn emu_stopped<E: cpu::Engine>(&mut self, emu: &mut Emu<E>) {
+        self.target_stopped = true;
+        if self.waiting_for_stop {
+            self.waiting_for_stop = false;
+            self.send_stop_reason(emu);
+        }
+    }
+
+    fn manually_stop<E: cpu::Engine>(&mut self, emu: &mut Emu<E>) {
+        self.stop_causes.borrow_mut().push(StopCause::Break);
+        self.target_stopped = true;
+        self.waiting_for_stop = false;
+        self.send_stop_reason(emu);
+    }
+
     fn wait_for_stop<E: cpu::Engine>(&mut self, emu: &mut Emu<E>) {
         if self.stop_causes.borrow().is_empty() {
             self.target_stopped = false;
             self.waiting_for_stop = true;
         } else {
             self.send_stop_reason(emu);
+        }
+    }
+
+    fn toggle_breakpoint<E: cpu::Engine, const SET: bool>(&mut self, emu: &mut Emu<E>, addr: u32) {
+        if self.g_thread.mask.contains(ThreadMask::ARM9) {
+            if SET {
+                emu.arm9.add_breakpoint(addr);
+            } else {
+                emu.arm9.remove_breakpoint(addr);
+            }
+        }
+        if self.g_thread.mask.contains(ThreadMask::ARM7) {
+            if SET {
+                emu.arm7.add_breakpoint(addr);
+            } else {
+                emu.arm7.remove_breakpoint(addr);
+            }
         }
     }
 
@@ -200,7 +360,7 @@ impl GdbServer {
                 return false;
             }};
             ($reply: expr) => {{
-                self.send_packet($reply);
+                self.send_packet($reply.into_vec());
                 return false;
             }};
         }
@@ -234,55 +394,70 @@ impl GdbServer {
             };
         }
 
-        macro_rules! parse_addr_length {
-            ($args: expr, $sep: expr, $packet_name: literal) => {{
-                let (addr, length) = split_once($args, $sep);
-                (
-                    unwrap_res!(
-                        u32::from_str_radix(
-                            unwrap_res!(
-                                str::from_utf8(addr),
-                                (concat!("Invalid unicode in ", $packet_name, " packet addr: {}"))
-                            ),
-                            16
+        macro_rules! parse_int {
+            ($data: expr, $ty: ty, $name: literal, $packet_name: literal) => {{
+                unwrap_res!(
+                    <$ty>::from_str_radix(
+                        unwrap_res!(
+                            str::from_utf8($data),
+                            (concat!(
+                                "Invalid unicode in ",
+                                $packet_name,
+                                " packet ",
+                                $name,
+                                ": {}"
+                            ))
                         ),
-                        (concat!("Couldn't parse ", $packet_name, " packet addr: {:?}"))
+                        16
                     ),
-                    unwrap_res!(
-                        u32::from_str_radix(
-                            unwrap_res!(
-                                str::from_utf8(unwrap_opt!(
-                                    length,
-                                    (concat!("Received invalid ", $packet_name, " packet"))
-                                )),
-                                (concat!(
-                                    "Invalid unicode in ",
-                                    $packet_name,
-                                    " packet length: {}"
-                                ))
-                            ),
-                            16
-                        ),
-                        (concat!("Couldn't parse ", $packet_name, " packet length: {:?}"))
-                    ),
+                    (concat!("Couldn't parse ", $packet_name, " packet ", $name, ": {}"))
                 )
+            }};
+        }
+
+        macro_rules! parse_addr_length {
+            ($args: expr, $packet_name: literal) => {{
+                let (addr, length) = split_once($args, b',');
+                (
+                    parse_int!(addr, u32, "addr", $packet_name),
+                    parse_int!(length, u32, "length", $packet_name),
+                )
+            }};
+        }
+
+        macro_rules! parse_addr_kind {
+            ($args: expr, $packet_name: literal) => {{
+                let (addr, kind) = split_once($args, b',');
+                let addr = parse_int!(addr, u32, "addr", $packet_name);
+                let kind = parse_int!(kind, u8, "kind", $packet_name);
+                if !(2..=4).contains(&kind) {
+                    err!(
+                        (
+                            concat!(
+                                "Received invalid ",
+                                $packet_name,
+                                " packet breakpoint kind: {}"
+                            ),
+                            kind
+                        ),
+                        b"E00"
+                    );
+                }
+                (addr, kind)
             }};
         }
 
         macro_rules! parse_thread_id {
             ($id: expr, $packet_name: literal) => {{
-                let thread_id = unwrap_res!(
-                    i8::from_str_radix(
-                        unwrap_res!(
-                            str::from_utf8($id),
-                            (concat!("Invalid unicode in ", $packet_name, " packet thread ID: {}"))
-                        ),
-                        16
-                    ),
-                    (concat!("Couldn't parse ", $packet_name, " packet thread ID: {}"))
-                );
+                let thread_id = parse_int!($id, i8, "thread ID", $packet_name);
                 if !(-1..=2).contains(&thread_id) {
-                    reply!(b"E00".to_vec());
+                    err!(
+                        (
+                            concat!("Received invalid ", $packet_name, " packet thread ID: {}"),
+                            thread_id
+                        ),
+                        b"E00"
+                    );
                 }
                 thread_id
             }};
@@ -293,27 +468,30 @@ impl GdbServer {
 
         match prefix {
             b'?' => {
-                self.waiting_for_stop = true;
                 self.manually_stop(emu);
                 return false;
             }
 
             b'B' => {
-                // TODO: Set breakpoint
+                let (addr, mode) = split_once(data, b',');
+                let addr = parse_int!(addr, u32, "addr", "B");
+                match mode {
+                    b"S" => self.toggle_breakpoint::<_, true>(emu, addr),
+                    b"C" => self.toggle_breakpoint::<_, false>(emu, addr),
+                    _ => err!(
+                        (
+                            "Received invalid B packet mode: {}",
+                            str::from_utf8(mode).unwrap_or("<invalid UTF-8>")
+                        ),
+                        b"E00"
+                    ),
+                }
+                reply!(b"OK");
             }
 
             b'c' => {
                 if !data.is_empty() {
-                    let _addr = unwrap_res!(
-                        u32::from_str_radix(
-                            unwrap_res!(
-                                str::from_utf8(data),
-                                ("Invalid unicode in c packet addr: {}")
-                            ),
-                            16
-                        ),
-                        ("Couldn't parse c packet addr: {:?}")
-                    );
+                    let _addr = parse_int!(data, u32, "addr", "c");
                     if self.c_thread.mask.contains(ThreadMask::ARM9) {
                         // TODO: Set r15
                     }
@@ -332,14 +510,15 @@ impl GdbServer {
 
             b'g' => {
                 if self.g_thread.mask.contains_multiple() {
-                    reply!(b"E00".to_vec());
+                    reply!(b"E00");
                 }
                 let mut reply = Vec::with_capacity(17 * 8);
-                let regs = if self.g_thread.mask == ThreadMask::ARM9 {
+                let mut regs = if self.g_thread.mask == ThreadMask::ARM9 {
                     emu.arm9.regs()
                 } else {
                     emu.arm7.regs()
                 };
+                regs.gprs[15] = regs.gprs[15].wrapping_sub(8 >> regs.cpsr.thumb_state() as u8);
                 for reg in regs.gprs {
                     let _ = write!(reply, "{:08X}", reg.swap_bytes());
                 }
@@ -361,7 +540,7 @@ impl GdbServer {
                         err!(("Received unknown \"H {} {:X}\" packet", op, thread_id));
                     }
                 }
-                reply!(b"OK".to_vec());
+                reply!(b"OK");
             }
 
             b'i' => {
@@ -376,9 +555,9 @@ impl GdbServer {
             }
 
             b'm' => {
-                let (mut addr, length) = parse_addr_length!(data, b',', "m");
+                let (mut addr, length) = parse_addr_length!(data, "m");
                 if self.g_thread.mask.contains_multiple() {
-                    reply!(b"E00".to_vec());
+                    reply!(b"E00");
                 }
                 let mut reply = Vec::with_capacity(length as usize * 2);
                 for _ in 0..length {
@@ -395,47 +574,32 @@ impl GdbServer {
 
             b'M' => {
                 let (addr_length, bytes) = split_once(data, b':');
-                let (mut addr, _) = parse_addr_length!(addr_length, b',', "m");
-                if let Some(bytes) = bytes {
-                    for byte in bytes.array_chunks::<2>() {
-                        let byte = unwrap_res!(
-                            u8::from_str_radix(
-                                unwrap_res!(
-                                    str::from_utf8(byte),
-                                    ("Invalid unicode in M packet data: {}")
-                                ),
-                                16
-                            ),
-                            ("Couldn't parse M packet data: {:?}")
-                        );
-                        if self.g_thread.mask.contains(ThreadMask::ARM9) {
-                            arm9::bus::write_8::<DebugCpuAccess, _>(emu, addr, byte);
-                        }
-                        if self.g_thread.mask.contains(ThreadMask::ARM7) {
-                            arm7::bus::write_8::<DebugCpuAccess, _>(emu, addr, byte);
-                        }
-                        addr = addr.wrapping_add(1);
+                let (mut addr, _) = parse_addr_length!(addr_length, "m");
+                for byte in bytes.array_chunks::<2>() {
+                    let byte = parse_int!(byte, u8, "data", "M");
+                    if self.g_thread.mask.contains(ThreadMask::ARM9) {
+                        arm9::bus::write_8::<DebugCpuAccess, _>(emu, addr, byte);
                     }
+                    if self.g_thread.mask.contains(ThreadMask::ARM7) {
+                        arm7::bus::write_8::<DebugCpuAccess, _>(emu, addr, byte);
+                    }
+                    addr = addr.wrapping_add(1);
                 }
-                reply!(b"OK".to_vec());
+                reply!(b"OK");
             }
 
             b'p' => {
-                let reg_index = unwrap_res!(
-                    u8::from_str_radix(
-                        unwrap_res!(
-                            str::from_utf8(data),
-                            ("Invalid unicode in p packet reg index: {}")
-                        ),
-                        16
-                    ),
-                    ("Couldn't parse p packet reg index: {}")
-                );
+                let reg_index = parse_int!(data, u8, "reg index", "p");
                 if !(0..=16).contains(&reg_index) {
-                    reply!(b"E00".to_vec());
+                    reply!(b"E00");
                 }
 
-                let regs = emu.arm7.regs();
+                let mut regs = if self.g_thread.mask == ThreadMask::ARM9 {
+                    emu.arm9.regs()
+                } else {
+                    emu.arm7.regs()
+                };
+                regs.gprs[15] = regs.gprs[15].wrapping_sub(8 >> regs.cpsr.thumb_state() as u8);
                 let value = if reg_index < 16 {
                     regs.gprs[reg_index as usize]
                 } else {
@@ -460,9 +624,9 @@ impl GdbServer {
                     }
 
                     b"CRC" => {
-                        let (mut addr, length) = parse_addr_length!(data, b',', "qCRC");
+                        let (mut addr, length) = parse_addr_length!(data, "qCRC");
                         if self.g_thread.mask.contains_multiple() {
-                            reply!(b"E00".to_vec());
+                            reply!(b"E00");
                         }
                         let mut crc = 0xFFFF_FFFF;
                         let crc_table = &*CRC_TABLE;
@@ -480,9 +644,9 @@ impl GdbServer {
                         reply!(reply);
                     }
 
-                    b"fThreadInfo" => reply!(b"m1,2".to_vec()),
+                    b"fThreadInfo" => reply!(b"m1,2"),
 
-                    b"sThreadInfo" => reply!(b"l".to_vec()),
+                    b"sThreadInfo" => reply!(b"l"),
 
                     b"Search" => {
                         // TODO: Search for byte pattern
@@ -490,7 +654,7 @@ impl GdbServer {
 
                     b"Supported" => {
                         // TODO: Parse GDB features
-                        reply!(b"PacketSize=1048576;qXfer:features:read+;qXfer:memory-map:read+;qXfer:threads:read+;QNonStop+;QCatchSyscalls+;QStartNoAckMode+;swbreak+;hwbreak+;vContSupported+".to_vec())
+                        reply!(b"PacketSize=1048576;qXfer:features:read+;qXfer:memory-map:read+;qXfer:threads:read+;QNonStop+;QCatchSyscalls+;QStartNoAckMode+;swbreak-;hwbreak+;vContSupported+")
                     }
 
                     b"ThreadExtraInfo" => {
@@ -507,33 +671,24 @@ impl GdbServer {
                             response
                         }
 
-                        let mut args =
-                            unwrap_opt!(args, ("Received invalid qXfer packet"), b"E00".to_vec())
-                                .split(|c| *c == b':');
-                        let object = unwrap_opt!(
-                            args.next(),
-                            ("Received invalid qXfer packet"),
-                            b"E00".to_vec()
-                        );
-                        let operation = unwrap_opt!(
-                            args.next(),
-                            ("Received invalid qXfer packet"),
-                            b"E00".to_vec()
-                        );
+                        let mut args = args.split(|c| *c == b':');
+                        let object =
+                            unwrap_opt!(args.next(), ("Received invalid qXfer packet"), b"E00");
+                        let operation =
+                            unwrap_opt!(args.next(), ("Received invalid qXfer packet"), b"E00");
 
                         if operation == b"read" {
                             let annex = unwrap_opt!(
                                 args.next(),
                                 ("Received invalid qXfer read packet"),
-                                b"E00".to_vec()
+                                b"E00"
                             );
                             let (addr, length) = parse_addr_length!(
                                 unwrap_opt!(
                                     args.next(),
                                     ("Received invalid qXfer read packet"),
-                                    b"E00".to_vec()
+                                    b"E00"
                                 ),
-                                b',',
                                 "qXfer read"
                             );
 
@@ -542,7 +697,7 @@ impl GdbServer {
                                     if annex != b"target.xml" {
                                         err!(
                                             ("Received invalid qXfer features read packet"),
-                                            b"E00".to_vec()
+                                            b"E00"
                                         );
                                     }
                                     reply!(send_binary_range(
@@ -556,7 +711,7 @@ impl GdbServer {
                                     if annex != b"" {
                                         err!(
                                             ("Received invalid qXfer:memory-map:read packet"),
-                                            b"E00".to_vec()
+                                            b"E00"
                                         );
                                     }
                                     // TODO: Memory map
@@ -566,7 +721,7 @@ impl GdbServer {
                                     if annex != b"" {
                                         err!(
                                             ("Received invalid qXfer:threads:read packet"),
-                                            b"E00".to_vec()
+                                            b"E00"
                                         );
                                     }
                                     reply!(send_binary_range(
@@ -581,7 +736,7 @@ impl GdbServer {
                     }
 
                     b"Attached" => {
-                        reply!(b"1".to_vec());
+                        reply!(b"1");
                     }
 
                     _ => {}
@@ -593,14 +748,14 @@ impl GdbServer {
                 match command {
                     b"NonStop" => {
                         let enabled = match args {
-                            Some(b"0") => false,
-                            Some(b"1") => true,
-                            _ => err!(("Received invalid QNonStop packet"), b"E00".to_vec()),
+                            b"0" => false,
+                            b"1" => true,
+                            _ => err!(("Received invalid QNonStop packet"), b"E00"),
                         };
                         if enabled {
                             // TODO: Non-stop mode
                         } else {
-                            reply!(b"OK".to_vec());
+                            reply!(b"OK");
                         }
                     }
 
@@ -631,54 +786,41 @@ impl GdbServer {
             }
 
             b'T' => {
-                let thread_id = unwrap_res!(
-                    i8::from_str_radix(
-                        unwrap_res!(
-                            str::from_utf8(data),
-                            ("Invalid unicode in T packet thread ID: {}")
-                        ),
-                        16
-                    ),
-                    ("Couldn't parse T packet thread ID: {}")
-                );
-                reply!(if (-1..=2).contains(&thread_id) {
-                    &b"OK"[..]
-                } else {
-                    &b"E00"[..]
-                }
-                .to_vec());
+                let _thread_id = parse_thread_id!(data, "T");
+                reply!(b"OK");
             }
 
             b'v' => {
                 let (command, args) = split_once(data, b';');
                 match command {
                     b"Cont" => {
-                        if let Some(args) = args {
-                            for (action, thread_id) in args
-                                .split(|c| *c == b';')
-                                .map(|action_and_tid| split_once(action_and_tid, b':'))
-                            {
-                                let _thread_id =
-                                    parse_thread_id!(thread_id.unwrap_or(b"-1"), "vCont");
-                                match action {
-                                    b"c" => {
-                                        // TODO: Continue
-                                    }
-                                    b"s" => {
-                                        // TODO: Single step
-                                    }
-                                    b"t" => {
-                                        // TODO: Stop thread
-                                    }
-                                    b"r" => {
-                                        // TODO: Step while in range
-                                    }
-                                    _ => {}
+                        for (action, thread_id) in args
+                            .split(|c| *c == b';')
+                            .map(|action_and_tid| split_once(action_and_tid, b':'))
+                        {
+                            let _thread_id = if thread_id.is_empty() {
+                                -1
+                            } else {
+                                parse_thread_id!(thread_id, "vCont")
+                            };
+                            match action {
+                                b"c" => {
+                                    // TODO: Continue
                                 }
+                                b"s" => {
+                                    // TODO: Single step
+                                }
+                                b"t" => {
+                                    // TODO: Stop thread
+                                }
+                                b"r" => {
+                                    // TODO: Step while in range
+                                }
+                                _ => {}
                             }
                         }
                     }
-                    b"Cont?" => reply!(b"vCont;c;s;t;r".to_vec()),
+                    b"Cont?" => reply!(b"vCont;c;s;t;r"),
                     b"CtrlC" => {
                         // TODO: Pause program (non-stop mode)
                     }
@@ -688,27 +830,117 @@ impl GdbServer {
 
             b'X' => {
                 let (addr_length, bytes) = split_once(data, b':');
-                let (mut addr, _) = parse_addr_length!(addr_length, b',', "X");
-                if let Some(bytes) = bytes {
-                    for &byte in bytes {
-                        if self.g_thread.mask.contains(ThreadMask::ARM9) {
-                            arm9::bus::write_8::<DebugCpuAccess, _>(emu, addr, byte);
-                        }
-                        if self.g_thread.mask.contains(ThreadMask::ARM7) {
-                            arm7::bus::write_8::<DebugCpuAccess, _>(emu, addr, byte);
-                        }
-                        addr = addr.wrapping_add(1);
+                let (mut addr, _) = parse_addr_length!(addr_length, "X");
+                for &byte in bytes {
+                    if self.g_thread.mask.contains(ThreadMask::ARM9) {
+                        arm9::bus::write_8::<DebugCpuAccess, _>(emu, addr, byte);
                     }
+                    if self.g_thread.mask.contains(ThreadMask::ARM7) {
+                        arm7::bus::write_8::<DebugCpuAccess, _>(emu, addr, byte);
+                    }
+                    addr = addr.wrapping_add(1);
                 }
-                reply!(b"OK".to_vec());
+                reply!(b"OK");
             }
 
             b'z' => {
-                // TODO: Remove breakpoint
+                let (ty, addr_kind) = split_once(data, b',');
+                let ty = parse_int!(ty, u8, "type", "z");
+                let (addr, kind) = parse_addr_kind!(addr_kind, "z");
+                match ty {
+                    0 => {
+                        if matches!(kind, 2 | 4) {
+                            if let Some((arm9, arm7)) = self.sw_breakpoints.remove(&addr) {
+                                macro_rules! write {
+                                    ($core: ident) => {
+                                        if kind == 2 {
+                                            $core::bus::write_16::<DebugCpuAccess, _>(
+                                                emu,
+                                                addr,
+                                                $core as u16,
+                                            );
+                                        } else {
+                                            $core::bus::write_32::<DebugCpuAccess, _>(
+                                                emu, addr, $core,
+                                            );
+                                        }
+                                    };
+                                }
+                                if self.g_thread.mask.contains(ThreadMask::ARM9) {
+                                    write!(arm9);
+                                }
+                                if self.g_thread.mask.contains(ThreadMask::ARM7) {
+                                    write!(arm7);
+                                }
+                                reply!(b"OK");
+                            }
+                        }
+                    }
+                    1 => {
+                        self.toggle_breakpoint::<_, false>(emu, addr);
+                        reply!(b"OK");
+                    }
+                    2 => {}
+                    3 => {}
+                    4 => {}
+                    _ => {}
+                }
             }
 
             b'Z' => {
-                // TODO: Add breakpoint
+                let (ty, addr_kind) = split_once(data, b',');
+                let ty = parse_int!(ty, u8, "type", "Z");
+                let (addr, kind) = parse_addr_kind!(addr_kind, "Z");
+                match ty {
+                    0 => {
+                        const ARM_UDF: u32 = 0xE7FF_FFFF;
+                        const THUMB_UDF: u16 = 0xDEFF;
+
+                        if self.g_thread.mask.contains_multiple() {
+                            reply!(b"E00");
+                        }
+
+                        if matches!(kind, 2 | 4) && !self.sw_breakpoints.contains_key(&addr) {
+                            macro_rules! write {
+                                    ($core: ident$(, $code: expr)?) => {
+                                        if kind == 2 {
+                                            let prev =
+                                                $core::bus::read_16::<DebugCpuAccess, _>(emu, addr)
+                                                    as u32;
+                                            $core::bus::write_16::<DebugCpuAccess, _>(
+                                                emu, addr, THUMB_UDF,
+                                            );
+                                            prev
+                                        } else {
+                                            let prev =
+                                                $core::bus::read_32::<DebugCpuAccess, _$(, $code)*>(emu, addr);
+                                            $core::bus::write_32::<DebugCpuAccess, _>(
+                                                emu, addr, ARM_UDF,
+                                            );
+                                            prev
+                                        }
+                                    };
+                                }
+                            self.sw_breakpoints.insert(
+                                addr,
+                                if self.g_thread.mask == ThreadMask::ARM9 {
+                                    (write!(arm9, false), 0)
+                                } else {
+                                    (0, write!(arm7))
+                                },
+                            );
+                            reply!(b"OK");
+                        }
+                    }
+                    1 => {
+                        self.toggle_breakpoint::<_, true>(emu, addr);
+                        reply!(b"OK");
+                    }
+                    2 => {}
+                    3 => {}
+                    4 => {}
+                    _ => {}
+                }
             }
 
             _ => {}

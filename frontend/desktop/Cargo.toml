@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [features]
-default = ["xq-audio", "discord-presence", "debug-views", "log"]
+default = ["xq-audio", "discord-presence", "debug-views", "log", "gdb-server"]
 
 debug-views = ["bitflags", "dust-core/disasm", "dust-core/channel-audio-capture"]
 log = ["slog", "slog-term", "slog-async", "dust-core/log"]
