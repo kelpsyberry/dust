@@ -320,6 +320,10 @@ impl GdbServer {
         }
     }
 
+    pub fn emu_shutdown<E: cpu::Engine>(&mut self, _emu: &mut Emu<E>) {
+        self.stop_causes.borrow_mut().push(StopCause::Shutdown);
+    }
+
     fn manually_stop<E: cpu::Engine>(&mut self, emu: &mut Emu<E>) {
         self.stop_causes.borrow_mut().push(StopCause::Break);
         self.target_stopped = true;
@@ -463,6 +467,37 @@ impl GdbServer {
             }};
         }
 
+        macro_rules! parse_reg_index {
+            ($index: expr, $packet_name: literal) => {{
+                let reg_index = parse_int!($index, u8, "reg index", $packet_name);
+                if !(0..=16).contains(&reg_index) {
+                    err!(
+                        (
+                            concat!("Received invalid ", $packet_name, " packet reg index: {}"),
+                            reg_index
+                        ),
+                        b"E00"
+                    );
+                }
+                reg_index
+            }};
+        }
+
+        macro_rules! check_not_multiple_threads {
+            ($packet_name: literal) => {
+                if self.g_thread.mask.contains_multiple() {
+                    err!(
+                        (concat!(
+                            "Received invalid ",
+                            $packet_name,
+                            " with multiple threads selected"
+                        )),
+                        b"E00"
+                    )
+                }
+            };
+        }
+
         let prefix = *unwrap_opt!(packet.get(0), ("Received empty packet"));
         let data = &packet[1..];
 
@@ -509,9 +544,7 @@ impl GdbServer {
             }
 
             b'g' => {
-                if self.g_thread.mask.contains_multiple() {
-                    reply!(b"E00");
-                }
+                check_not_multiple_threads!("g");
                 let mut reply = Vec::with_capacity(17 * 8);
                 let mut regs = if self.g_thread.mask == ThreadMask::ARM9 {
                     emu.arm9.regs()
@@ -534,13 +567,16 @@ impl GdbServer {
                 let op = *unwrap_opt!(data.get(0), ("Received invalid H packet"));
                 let thread_id = parse_thread_id!(&data[1..], "H");
                 match op {
-                    b'c' => self.c_thread = ThreadId::from_value(thread_id, self.c_thread),
-                    b'g' => self.g_thread = ThreadId::from_value(thread_id, self.g_thread),
-                    _ => {
-                        err!(("Received unknown \"H {} {:X}\" packet", op, thread_id));
+                    b'c' => {
+                        self.c_thread = ThreadId::from_value(thread_id, self.c_thread);
+                        reply!(b"OK");
                     }
+                    b'g' => {
+                        self.g_thread = ThreadId::from_value(thread_id, self.g_thread);
+                        reply!(b"OK");
+                    }
+                    _ => {}
                 }
-                reply!(b"OK");
             }
 
             b'i' => {
@@ -548,20 +584,17 @@ impl GdbServer {
             }
 
             b'k' => {
-                self.target_stopped = false;
-                self.server.close();
+                self.detach(emu);
                 emu.request_shutdown();
                 return false;
             }
 
             b'm' => {
                 let (mut addr, length) = parse_addr_length!(data, "m");
-                if self.g_thread.mask.contains_multiple() {
-                    reply!(b"E00");
-                }
+                check_not_multiple_threads!("m");
                 let mut reply = Vec::with_capacity(length as usize * 2);
                 for _ in 0..length {
-                    let byte = if self.g_thread.mask.contains(ThreadMask::ARM9) {
+                    let byte = if self.g_thread.mask == ThreadMask::ARM9 {
                         arm9::bus::read_8::<DebugCpuAccess, _>(emu, addr)
                     } else {
                         arm7::bus::read_8::<DebugCpuAccess, _>(emu, addr)
@@ -589,10 +622,8 @@ impl GdbServer {
             }
 
             b'p' => {
-                let reg_index = parse_int!(data, u8, "reg index", "p");
-                if !(0..=16).contains(&reg_index) {
-                    reply!(b"E00");
-                }
+                let reg_index = parse_reg_index!(data, "p");
+                check_not_multiple_threads!("p");
 
                 let mut regs = if self.g_thread.mask == ThreadMask::ARM9 {
                     emu.arm9.regs()
@@ -600,17 +631,20 @@ impl GdbServer {
                     emu.arm7.regs()
                 };
                 regs.gprs[15] = regs.gprs[15].wrapping_sub(8 >> regs.cpsr.thumb_state() as u8);
+
                 let value = if reg_index < 16 {
                     regs.gprs[reg_index as usize]
                 } else {
                     regs.cpsr.raw()
                 };
+
                 let mut reply = Vec::with_capacity(8);
                 let _ = write!(reply, "{:08X}", value.swap_bytes());
                 reply!(reply);
             }
 
             b'P' => {
+                let _reg_index = parse_reg_index!(data, "P");
                 // TODO: Write register
             }
 
@@ -625,13 +659,11 @@ impl GdbServer {
 
                     b"CRC" => {
                         let (mut addr, length) = parse_addr_length!(data, "qCRC");
-                        if self.g_thread.mask.contains_multiple() {
-                            reply!(b"E00");
-                        }
+                        check_not_multiple_threads!("qCRC");
                         let mut crc = 0xFFFF_FFFF;
                         let crc_table = &*CRC_TABLE;
                         for _ in 0..length {
-                            let byte = if self.g_thread.mask.contains(ThreadMask::ARM9) {
+                            let byte = if self.g_thread.mask == ThreadMask::ARM9 {
                                 arm9::bus::read_8::<DebugCpuAccess, _>(emu, addr)
                             } else {
                                 arm7::bus::read_8::<DebugCpuAccess, _>(emu, addr)
@@ -820,10 +852,13 @@ impl GdbServer {
                             }
                         }
                     }
+
                     b"Cont?" => reply!(b"vCont;c;s;t;r"),
+
                     b"CtrlC" => {
                         // TODO: Pause program (non-stop mode)
                     }
+
                     _ => {}
                 }
             }
@@ -880,9 +915,9 @@ impl GdbServer {
                         self.toggle_breakpoint::<_, false>(emu, addr);
                         reply!(b"OK");
                     }
-                    2 => {}
-                    3 => {}
-                    4 => {}
+                    2 | 3 | 4 => {
+                        // TODO: Memory watchpoints
+                    }
                     _ => {}
                 }
             }
@@ -895,11 +930,6 @@ impl GdbServer {
                     0 => {
                         const ARM_UDF: u32 = 0xE7FF_FFFF;
                         const THUMB_UDF: u16 = 0xDEFF;
-
-                        if self.g_thread.mask.contains_multiple() {
-                            reply!(b"E00");
-                        }
-
                         if matches!(kind, 2 | 4) && !self.sw_breakpoints.contains_key(&addr) {
                             macro_rules! write {
                                     ($core: ident$(, $code: expr)?) => {
@@ -923,11 +953,18 @@ impl GdbServer {
                                 }
                             self.sw_breakpoints.insert(
                                 addr,
-                                if self.g_thread.mask == ThreadMask::ARM9 {
-                                    (write!(arm9, false), 0)
-                                } else {
-                                    (0, write!(arm7))
-                                },
+                                (
+                                    if self.g_thread.mask.contains(ThreadMask::ARM9) {
+                                        write!(arm9, false)
+                                    } else {
+                                        0
+                                    },
+                                    if self.g_thread.mask.contains(ThreadMask::ARM7) {
+                                        write!(arm7)
+                                    } else {
+                                        0
+                                    },
+                                ),
                             );
                             reply!(b"OK");
                         }
@@ -936,9 +973,9 @@ impl GdbServer {
                         self.toggle_breakpoint::<_, true>(emu, addr);
                         reply!(b"OK");
                     }
-                    2 => {}
-                    3 => {}
-                    4 => {}
+                    2 | 3 | 4 => {
+                        // TODO: Memory watchpoints
+                    }
                     _ => {}
                 }
             }

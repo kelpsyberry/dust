@@ -455,6 +455,7 @@ pub(super) fn main(
             }
 
             emu = emu_builder.build(Interpreter);
+            #[cfg(feature = "gdb-server")]
             if let Some(server) = &mut gdb_server {
                 server.attach(&mut emu);
             }
@@ -469,6 +470,10 @@ pub(super) fn main(
                 RunOutput::FrameFinished => {}
                 RunOutput::Shutdown => {
                     shared_state.stopped.store(true, Ordering::Relaxed);
+                    #[cfg(feature = "gdb-server")]
+                    if let Some(gdb_server) = &mut gdb_server {
+                        gdb_server.emu_shutdown(&mut emu);
+                    }
                 }
                 #[cfg(feature = "gdb-server")]
                 RunOutput::StoppedByDebugHook => {
