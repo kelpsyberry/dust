@@ -5,13 +5,15 @@ pub use schedule::{
 pub mod input;
 pub mod swram;
 
+#[cfg(feature = "debugger-hooks")]
+use crate::cpu::{Arm7Data, Arm9Data, Schedule as _};
 use crate::{
     audio::{self, Audio},
     cpu::{
         self,
         arm7::{self, Arm7},
         arm9::{self, Arm9},
-        Arm7Data, Arm9Data, CoreData, Schedule as _,
+        CoreData,
     },
     ds_slot::{self, DsSlot},
     flash::Flash,
@@ -213,6 +215,8 @@ pub enum RunOutput {
     Shutdown,
     #[cfg(feature = "debugger-hooks")]
     StoppedByDebugHook,
+    #[cfg(feature = "debugger-hooks")]
+    CyclesOver,
 }
 
 impl<E: cpu::Engine> Emu<E> {
@@ -287,64 +291,6 @@ impl<E: cpu::Engine> Emu<E> {
         );
     }
 
-    #[inline(never)]
-    pub fn run_frame(&mut self) -> RunOutput {
-        #[cfg(feature = "debugger-hooks")]
-        {
-            self.arm7.stopped_by_debug_hook = false;
-            self.arm9.stopped_by_debug_hook = false;
-        }
-        loop {
-            let mut batch_end_time = self.schedule.batch_end_time();
-            if !self.gpu.engine_3d.gx_fifo_stalled() {
-                macro_rules! run_core {
-                    ($core: expr, $engine_data: ty, |$stopped_ident: ident| $run: expr) => {
-                        #[cfg(feature = "debugger-hooks")]
-                        let $stopped_ident = $core.stopped;
-                        #[cfg(not(feature = "debugger-hooks"))]
-                        let $stopped_ident = false;
-                        if $stopped_ident {
-                            $core.schedule.set_cur_time(batch_end_time.into());
-                        } else {
-                            <$engine_data>::run_until(self, batch_end_time.into());
-                            $run
-                        }
-                    };
-                }
-                run_core!(self.arm9, E::Arm9Data, |stopped| {});
-                batch_end_time = batch_end_time.min(Timestamp::from(self.arm9.schedule.cur_time()));
-                run_core!(self.arm7, E::Arm7Data, |stopped| {
-                    #[cfg(feature = "debugger-hooks")]
-                    {
-                        batch_end_time =
-                            batch_end_time.min(Timestamp::from(self.arm7.schedule.cur_time()));
-                    }
-                });
-            }
-            self.schedule.set_cur_time(batch_end_time);
-            while let Some((event, time)) = self.schedule.pop_pending_event() {
-                match event {
-                    Event::Gpu(event) => match event {
-                        gpu::Event::EndHDraw => Gpu::end_hdraw(self, time),
-                        gpu::Event::EndHBlank => Gpu::end_hblank(self, time),
-                        gpu::Event::FinishFrame => {
-                            Gpu::end_hblank(self, time);
-                            return RunOutput::FrameFinished;
-                        }
-                    },
-                    Event::Shutdown => {
-                        return RunOutput::Shutdown;
-                    }
-                    Event::Engine3dCommandFinished => Engine3d::process_next_command(self),
-                }
-            }
-            #[cfg(feature = "debugger-hooks")]
-            if self.arm7.stopped_by_debug_hook || self.arm9.stopped_by_debug_hook {
-                return RunOutput::StoppedByDebugHook;
-            }
-        }
-    }
-
     #[inline]
     pub fn main_mem(&self) -> &OwnedBytesCellPtr<0x40_0000> {
         &self.main_mem
@@ -376,5 +322,95 @@ impl<E: cpu::Engine> Emu<E> {
         self.spi
             .power
             .request_shutdown(&mut self.arm7.schedule, &mut self.schedule);
+    }
+}
+
+macro_rules! run {
+    ($emu: expr$(, $cycles: expr)?) => {
+        #[allow(unused_mut)]
+        let mut batch_end_time = $emu.schedule.batch_end_time();
+        #[cfg(feature = "debugger-hooks")]
+        $({
+            batch_end_time = batch_end_time.min($emu.schedule.cur_time() + Timestamp(*$cycles));
+            *$cycles -= batch_end_time.0 - $emu.schedule.cur_time().0;
+        })*
+        if !$emu.gpu.engine_3d.gx_fifo_stalled() {
+            macro_rules! run_core {
+                ($core: expr, $engine_data: ty, $run: expr) => {
+                    #[cfg(feature = "debugger-hooks")]
+                    let stopped = $core.stopped;
+                    #[cfg(not(feature = "debugger-hooks"))]
+                    let stopped = false;
+                    if stopped {
+                        $core.schedule.set_cur_time(batch_end_time.into());
+                    } else {
+                        <$engine_data>::run_until($emu, batch_end_time.into());
+                        $run
+                    }
+                };
+            }
+            run_core!($emu.arm9, E::Arm9Data, {
+                batch_end_time = batch_end_time.min(Timestamp::from($emu.arm9.schedule.cur_time()));
+            });
+            run_core!($emu.arm7, E::Arm7Data, {
+                #[cfg(feature = "debugger-hooks")]
+                {
+                    batch_end_time =
+                        batch_end_time.min(Timestamp::from($emu.arm7.schedule.cur_time()));
+                }
+            });
+        }
+        $emu.schedule.set_cur_time(batch_end_time);
+        while let Some((event, time)) = $emu.schedule.pop_pending_event() {
+            match event {
+                Event::Gpu(event) => match event {
+                    gpu::Event::EndHDraw => Gpu::end_hdraw($emu, time),
+                    gpu::Event::EndHBlank => Gpu::end_hblank($emu, time),
+                    gpu::Event::FinishFrame => {
+                        Gpu::end_hblank($emu, time);
+                        return RunOutput::FrameFinished;
+                    }
+                },
+                Event::Shutdown => {
+                    return RunOutput::Shutdown;
+                }
+                Event::Engine3dCommandFinished => Engine3d::process_next_command($emu),
+            }
+        }
+        #[cfg(feature = "debugger-hooks")]
+        if $emu.arm7.stopped_by_debug_hook || $emu.arm9.stopped_by_debug_hook {
+            return RunOutput::StoppedByDebugHook;
+        }
+    };
+}
+
+impl<E: cpu::Engine> Emu<E> {
+    #[cfg(feature = "debugger-hooks")]
+    #[inline(never)]
+    fn run_for_cycles(&mut self, cycles: &mut RawTimestamp) -> RunOutput {
+        loop {
+            run!(self, cycles);
+            if *cycles == 0 {
+                return RunOutput::CyclesOver;
+            }
+        }
+    }
+
+    #[inline(never)]
+    pub fn run(
+        &mut self,
+        #[cfg(feature = "debugger-hooks")] cycles: &mut RawTimestamp,
+    ) -> RunOutput {
+        #[cfg(feature = "debugger-hooks")]
+        {
+            self.arm7.stopped_by_debug_hook = false;
+            self.arm9.stopped_by_debug_hook = false;
+            if *cycles != 0 {
+                return self.run_for_cycles(cycles);
+            }
+        }
+        loop {
+            run!(self);
+        }
     }
 }

@@ -8,6 +8,8 @@ use super::debug_views;
 use super::{
     audio, config::CommonLaunchConfig, game_db::SaveType, input, triple_buffer, FrameData,
 };
+#[cfg(feature = "gdb-server")]
+use dust_core::utils::schedule::RawTimestamp;
 use dust_core::{
     audio::DummyBackend as DummyAudioBackend,
     cpu::{arm9, interpreter::Interpreter},
@@ -466,7 +468,18 @@ pub(super) fn main(
         let frame = frame_tx.start();
 
         if playing {
-            match emu.run_frame() {
+            #[cfg(feature = "gdb-server")]
+            let mut run_forever = 0;
+            #[cfg(feature = "gdb-server")]
+            let cycles = if let Some(gdb_server) = &mut gdb_server {
+                &mut gdb_server.remaining_step_cycles
+            } else {
+                &mut run_forever
+            };
+            match emu.run(
+                #[cfg(feature = "gdb-server")]
+                cycles,
+            ) {
                 RunOutput::FrameFinished => {}
                 RunOutput::Shutdown => {
                     shared_state.stopped.store(true, Ordering::Relaxed);
@@ -476,7 +489,7 @@ pub(super) fn main(
                     }
                 }
                 #[cfg(feature = "gdb-server")]
-                RunOutput::StoppedByDebugHook => {
+                RunOutput::StoppedByDebugHook | RunOutput::CyclesOver => {
                     if let Some(gdb_server) = &mut gdb_server {
                         gdb_server.emu_stopped(&mut emu);
                     }

@@ -2,6 +2,10 @@ use gdb_protocol::{
     packet::{CheckedPacket, Kind as PacketKind},
     parser::Parser,
 };
+#[cfg(target_family = "unix")]
+use std::os::unix::io::AsRawFd;
+#[cfg(target_family = "windows")]
+use std::os::windows::io::AsRawSocket;
 use std::{
     io::{self, BufRead, BufReader, ErrorKind, Write},
     net::{TcpListener, TcpStream, ToSocketAddrs},
@@ -173,6 +177,24 @@ impl Server {
     pub fn new(addr: impl ToSocketAddrs) -> Result<Self, gdb_protocol::Error> {
         let listener = TcpListener::bind(addr)?;
         listener.set_nonblocking(true)?;
+        unsafe {
+            #[cfg(target_family = "unix")]
+            libc::setsockopt(
+                listener.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_KEEPALIVE,
+                &1_u32 as *const _ as *const libc::c_void,
+                4,
+            );
+            #[cfg(target_family = "windows")]
+            libc::setsockopt(
+                listener.as_raw_socket() as libc::SOCKET,
+                0xFFFF, // SOL_SOCKET
+                0x0008, // SO_KEEPALIVE
+                &true as *const _ as *const libc::c_char,
+                1,
+            );
+        }
         Ok(Server {
             listener,
             state: State::Listening,

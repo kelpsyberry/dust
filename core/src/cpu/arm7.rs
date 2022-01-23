@@ -239,7 +239,7 @@ impl<E: Engine> Arm7<E> {
                 size: u8,
                 rw: debug::MemWatchpointRwMask,
             ) {
-                addr &= !(size - 1) as u32;
+                addr &= !((size - 1) as u32);
                 self.debug.mem_watchpoints.add(addr, size, rw);
                 if rw.contains(debug::MemWatchpointRwMask::READ) {
                     self.bus_ptrs.disable_read(addr, cpu::bus::r_disable_flags::WATCHPOINT);
@@ -258,10 +258,29 @@ impl<E: Engine> Arm7<E> {
                 size: u8,
                 rw: debug::MemWatchpointRwMask,
             ) {
-                addr &= !(size - 1) as u32;
+                addr &= !((size - 1) as u32);
                 self.debug.mem_watchpoints.remove(addr, size, rw);
                 self.engine_data.remove_mem_watchpoint(addr, size, rw);
-                todo!(); // TODO: "No remove, only add" isn't a valid strategy
+                let page_start_addr = addr & !bus::ptrs::Ptrs::PAGE_MASK;
+                let page_end_addr = page_start_addr | bus::ptrs::Ptrs::PAGE_MASK;
+                if rw.contains(debug::MemWatchpointRwMask::READ)
+                    && self.debug.mem_watchpoints.is_free(
+                        (page_start_addr, page_end_addr),
+                        debug::MemWatchpointRwMask::READ,
+                    )
+                {
+                    self.bus_ptrs
+                        .enable_read(page_start_addr, cpu::bus::r_disable_flags::WATCHPOINT);
+                }
+                if rw.contains(debug::MemWatchpointRwMask::WRITE)
+                    && self.debug.mem_watchpoints.is_free(
+                        (page_start_addr, page_end_addr),
+                        debug::MemWatchpointRwMask::WRITE,
+                    )
+                {
+                    self.bus_ptrs
+                        .enable_write(page_start_addr, cpu::bus::w_disable_flags::WATCHPOINT);
+                }
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
@@ -269,7 +288,8 @@ impl<E: Engine> Arm7<E> {
             pub fn clear_mem_watchpoints(&mut self) {
                 self.debug.mem_watchpoints.clear();
                 self.engine_data.clear_mem_watchpoints();
-                todo!(); // TODO: "No remove, only add" isn't a valid strategy
+                self.bus_ptrs.enable_read_all(cpu::bus::r_disable_flags::WATCHPOINT);
+                self.bus_ptrs.enable_write_all(cpu::bus::w_disable_flags::WATCHPOINT);
             }
         }
     }

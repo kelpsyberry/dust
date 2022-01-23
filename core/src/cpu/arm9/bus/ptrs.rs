@@ -158,6 +158,33 @@ impl Ptrs {
         }
     }
 
+    #[cfg(feature = "bft-r")]
+    pub fn enable_read_all(&mut self, flags: RDisableFlags) {
+        debug_assert!(flags != 0 && flags & !r_disable_flags::ALL == 0);
+        #[cfg(feature = "bft-w")]
+        {
+            let disable_attrs_mask = !(flags << disable_attrs::R_DISABLE_START);
+            for i in 0..Self::ENTRIES {
+                let disable_attrs = self.disable_attrs[i] & disable_attrs_mask;
+                self.disable_attrs[i] = disable_attrs;
+                if disable_attrs & disable_attrs::R_DISABLE_ALL == 0 {
+                    self.attrs[i] |= (self.attrs[i] & attrs::BAK_MASK_R) >> attrs::BAK_MASK_START;
+                }
+            }
+        }
+        #[cfg(not(feature = "bft-w"))]
+        {
+            let disable_attrs_mask = !(flags << attrs::R_DISABLE_START);
+            for i in 0..Self::ENTRIES {
+                let mut attrs = self.attrs[i] & disable_attrs_mask;
+                if attrs & attrs::R_DISABLE_ALL == 0 {
+                    attrs |= (attrs & attrs::BAK_MASK_R) >> attrs::BAK_MASK_START;
+                }
+                self.attrs[i] = attrs;
+            }
+        }
+    }
+
     #[cfg(feature = "bft-w")]
     pub fn disable_write(&mut self, addr: u32, flags: WDisableFlags) {
         debug_assert!(flags != 0 && flags & !w_disable_flags::ALL == 0);
@@ -194,6 +221,33 @@ impl Ptrs {
                 attrs |= (attrs & attrs::BAK_MASK_W) >> attrs::BAK_MASK_START;
             }
             self.attrs[i] = attrs;
+        }
+    }
+
+    #[cfg(feature = "bft-w")]
+    pub fn enable_write_all(&mut self, flags: WDisableFlags) {
+        debug_assert!(flags != 0 && flags & !w_disable_flags::ALL == 0);
+        #[cfg(feature = "bft-r")]
+        {
+            let disable_attrs_mask = !(flags << disable_attrs::W_DISABLE_START);
+            for i in 0..Self::ENTRIES {
+                let disable_attrs = self.disable_attrs[i] & disable_attrs_mask;
+                self.disable_attrs[i] = disable_attrs;
+                if disable_attrs & disable_attrs::W_DISABLE_ALL == 0 {
+                    self.attrs[i] |= (self.attrs[i] & attrs::BAK_MASK_W) >> attrs::BAK_MASK_START;
+                }
+            }
+        }
+        #[cfg(not(feature = "bft-r"))]
+        {
+            let disable_attrs_mask = !(flags << attrs::W_DISABLE_START);
+            for i in 0..Self::ENTRIES {
+                let mut attrs = self.attrs[i] & disable_attrs_mask;
+                if attrs & attrs::W_DISABLE_ALL == 0 {
+                    attrs |= (attrs & attrs::BAK_MASK_W) >> attrs::BAK_MASK_START;
+                }
+                self.attrs[i] = attrs;
+            }
         }
     }
 

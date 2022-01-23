@@ -41,7 +41,6 @@ macro_rules! check_watchpoints {
                 .as_ref()
                 .and_then(|sub_table| sub_table.0[($addr >> 10 & 0x7FF) as usize].as_ref())
             {
-                // NOTE: Bits will never be lost by shifting as accesses are assumed to be aligned
                 let leaf = leaf_table.0[($addr >> $crate::cpu::debug::MWLT_BYTES_PER_ENTRY_SHIFT
                     & ($crate::cpu::debug::MWLT_ENTRY_COUNT_MASK
                         & !($align_mask >> $crate::cpu::debug::MWLT_BYTES_PER_ENTRY_SHIFT)))
@@ -49,20 +48,19 @@ macro_rules! check_watchpoints {
                     >> (($addr & ($crate::cpu::debug::MWLT_BYTES_PER_ENTRY_MASK & !$align_mask))
                         << 1)
                     & $mask;
-                if leaf != 0 {
-                    use $crate::cpu::Schedule;
-                    if unsafe {
+                if leaf != 0
+                    && unsafe {
                         hook.get()(
                             $emu,
                             $addr & !$align_mask,
                             $align_mask + 1,
                             $crate::cpu::debug::MemWatchpointTriggerCause::$cause,
                         )
-                    } {
-                        $core.schedule.set_target_time($core.schedule.cur_time());
-                        $core.stopped_by_debug_hook = true;
                     }
+                {
+                    use $crate::cpu::Schedule;
                     $core.schedule.set_target_time($core.schedule.cur_time());
+                    $core.stopped_by_debug_hook = true;
                 }
             }
         }
@@ -115,6 +113,47 @@ impl MemWatchpointRootTable {
             return;
         }
         self.0[root_i] = None;
+    }
+
+    pub(super) fn is_free(
+        &self,
+        (start_addr, end_addr): (u32, u32),
+        rw: MemWatchpointRwMask,
+    ) -> bool {
+        // NOTE: start_addr and end_addr are assumed to be aligned to at least 32 bytes (which is
+        // true in practice as this method is only used to check entire bus pointer pages).
+        let mut mask = rw.bits() as usize;
+        for i in 0..MWLT_BYTES_PER_ENTRY_SHIFT {
+            mask |= mask << (2 << i);
+        }
+        for root_i in start_addr >> 21..=end_addr >> 21 {
+            if let Some(sub_table) = &self.0[root_i as usize] {
+                let (sub_table_start_addr, sub_table_end_addr) = (
+                    (root_i << 21).max(start_addr),
+                    (root_i << 21 | 0x1F_FC00).min(end_addr),
+                );
+                for sub_i in sub_table_start_addr >> 10 & 0x7FF..=sub_table_end_addr >> 10 & 0x7FF {
+                    if let Some(leaf_table) = &sub_table.0[sub_i as usize] {
+                        let (leaf_table_start_addr, leaf_table_end_addr) = (
+                            (sub_table_start_addr | sub_i << 10).max(start_addr),
+                            (sub_table_start_addr | sub_i << 10 | 0x3FF).min(end_addr),
+                        );
+                        for &entry in &leaf_table.0[(leaf_table_start_addr
+                            >> MWLT_BYTES_PER_ENTRY_SHIFT
+                            & MWLT_ENTRY_COUNT_MASK)
+                            as usize
+                            ..=(leaf_table_end_addr >> MWLT_BYTES_PER_ENTRY_SHIFT
+                                & MWLT_ENTRY_COUNT_MASK) as usize]
+                        {
+                            if entry & mask != 0 {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        true
     }
 
     pub(super) fn clear(&mut self) {

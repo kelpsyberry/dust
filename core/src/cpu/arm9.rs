@@ -9,8 +9,8 @@ pub mod dma;
 pub mod sqrt_engine;
 
 #[cfg(feature = "debugger-hooks")]
-use super::debug;
-use super::{psr::Cpsr, timers::Timers, Arm9Data, CoreData, Engine, Regs};
+use super::{debug, Arm9Data};
+use super::{psr::Cpsr, timers::Timers, CoreData, Engine, Regs};
 use crate::{
     cpu,
     emu::{swram::Swram, Emu, LocalExMemControl},
@@ -290,7 +290,7 @@ impl<E: Engine> Arm9<E> {
                 size: u8,
                 rw: debug::MemWatchpointRwMask,
             ) {
-                addr &= !(size - 1) as u32;
+                addr &= !((size - 1) as u32);
                 self.debug.mem_watchpoints.add(addr, size, rw);
                 if rw.contains(debug::MemWatchpointRwMask::READ) {
                     self.bus_ptrs.disable_read(addr, cpu::bus::r_disable_flags::WATCHPOINT);
@@ -311,10 +311,53 @@ impl<E: Engine> Arm9<E> {
                 size: u8,
                 rw: debug::MemWatchpointRwMask,
             ) {
-                addr &= !(size - 1) as u32;
+                addr &= !((size - 1) as u32);
                 self.debug.mem_watchpoints.remove(addr, size, rw);
                 self.engine_data.remove_mem_watchpoint(addr, size, rw);
-                todo!(); // TODO: "No remove, only add" isn't a valid strategy
+                let page_start_addr = addr & !bus::ptrs::Ptrs::PAGE_MASK;
+                let page_end_addr = page_start_addr | bus::ptrs::Ptrs::PAGE_MASK;
+                let cp15_page_start_addr = addr & !cp15::ptrs::Ptrs::PAGE_MASK;
+                let cp15_page_end_addr = cp15_page_start_addr | cp15::ptrs::Ptrs::PAGE_MASK;
+                if rw.contains(debug::MemWatchpointRwMask::READ) {
+                    let page_free = self.debug.mem_watchpoints.is_free(
+                        (page_start_addr, page_end_addr),
+                        debug::MemWatchpointRwMask::READ,
+                    );
+                    if page_free {
+                        self.bus_ptrs
+                            .enable_read(page_start_addr, cpu::bus::r_disable_flags::WATCHPOINT);
+                    }
+                    if page_free
+                        || self.debug.mem_watchpoints.is_free(
+                            (cp15_page_start_addr, cp15_page_end_addr),
+                            debug::MemWatchpointRwMask::READ,
+                        )
+                    {
+                        self.cp15
+                            .ptrs
+                            .enable_read(page_start_addr, cpu::bus::r_disable_flags::WATCHPOINT);
+                    }
+                }
+                if rw.contains(debug::MemWatchpointRwMask::WRITE) {
+                    let page_free = self.debug.mem_watchpoints.is_free(
+                        (page_start_addr, page_end_addr),
+                        debug::MemWatchpointRwMask::WRITE,
+                    );
+                    if page_free {
+                        self.bus_ptrs
+                            .enable_write(page_start_addr, cpu::bus::r_disable_flags::WATCHPOINT);
+                    }
+                    if page_free
+                        || self.debug.mem_watchpoints.is_free(
+                            (cp15_page_start_addr, cp15_page_end_addr),
+                            debug::MemWatchpointRwMask::WRITE,
+                        )
+                    {
+                        self.cp15
+                            .ptrs
+                            .enable_write(page_start_addr, cpu::bus::r_disable_flags::WATCHPOINT);
+                    }
+                }
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
@@ -322,7 +365,10 @@ impl<E: Engine> Arm9<E> {
             pub fn clear_mem_watchpoints(&mut self) {
                 self.debug.mem_watchpoints.clear();
                 self.engine_data.clear_mem_watchpoints();
-                todo!(); // TODO: "No remove, only add" isn't a valid strategy
+                self.bus_ptrs.enable_read_all(cpu::bus::r_disable_flags::WATCHPOINT);
+                self.bus_ptrs.enable_write_all(cpu::bus::w_disable_flags::WATCHPOINT);
+                self.cp15.ptrs.enable_read_all(cpu::bus::r_disable_flags::WATCHPOINT);
+                self.cp15.ptrs.enable_write_all(cpu::bus::w_disable_flags::WATCHPOINT);
             }
         }
     }

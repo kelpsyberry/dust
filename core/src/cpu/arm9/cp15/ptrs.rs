@@ -154,6 +154,20 @@ impl Ptrs {
         self.map_attrs[i] = map_attrs;
     }
 
+    #[cfg(feature = "bft-r")]
+    pub fn enable_read_all(&mut self, flags: RDisableFlags) {
+        debug_assert!(flags != 0 && flags & !r_disable_flags::ALL == 0);
+        let disable_attrs_mask = !(flags << map_attrs::R_DISABLE_START);
+        for i in 0..Self::ENTRIES {
+            let map_attrs = self.map_attrs[i] & disable_attrs_mask;
+            if map_attrs & map_attrs::R_DISABLE_ALL == 0 {
+                let attrs = self.attrs[i];
+                self.attrs[i] = attrs | (attrs & attrs::BAK_MASK_R) >> attrs::BAK_MASK_START;
+            }
+            self.map_attrs[i] = map_attrs;
+        }
+    }
+
     #[cfg(feature = "bft-w")]
     pub fn disable_write(&mut self, addr: u32, flags: WDisableFlags) {
         debug_assert!(flags != 0 && flags & !w_disable_flags::ALL == 0);
@@ -172,6 +186,20 @@ impl Ptrs {
             self.attrs[i] = attrs | (attrs & attrs::BAK_MASK_W) >> attrs::BAK_MASK_START;
         }
         self.map_attrs[i] = map_attrs;
+    }
+
+    #[cfg(feature = "bft-w")]
+    pub fn enable_write_all(&mut self, flags: Attrs) {
+        debug_assert!(flags != 0 && flags & !w_disable_flags::ALL == 0);
+        let disable_attrs_mask = !(flags << map_attrs::W_DISABLE_START);
+        for i in 0..Self::ENTRIES {
+            let map_attrs = self.map_attrs[i] & disable_attrs_mask;
+            if map_attrs & map_attrs::W_DISABLE_ALL == 0 {
+                let attrs = self.attrs[i];
+                self.attrs[i] = attrs | (attrs & attrs::BAK_MASK_W) >> attrs::BAK_MASK_START;
+            }
+            self.map_attrs[i] = map_attrs;
+        }
     }
 
     unsafe fn map_cpu_local_range_inner(

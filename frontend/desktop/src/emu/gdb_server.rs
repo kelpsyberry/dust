@@ -15,11 +15,12 @@ use dust_core::{
         self, arm7, arm9,
         bus::DebugCpuAccess,
         debug::{
-            BreakpointHook, DataAbortHook, MemWatchpointHook,
+            BreakpointHook, DataAbortHook, MemWatchpointHook, MemWatchpointRwMask,
             MemWatchpointTriggerCause as MemWatchpointCause, PrefetchAbortHook, UndefHook,
         },
     },
     emu::Emu,
+    utils::schedule::RawTimestamp,
 };
 use fxhash::FxHashMap;
 use gdb_protocol::packet::{CheckedPacket, Kind as PacketKind};
@@ -88,9 +89,10 @@ pub struct GdbServer {
     c_thread: ThreadId,
     g_thread: ThreadId,
     target_stopped: bool,
+    pub remaining_step_cycles: RawTimestamp,
     waiting_for_stop: bool,
     sw_breakpoints: FxHashMap<u32, (u32, u32)>,
-    stop_causes: Rc<RefCell<Vec<StopCause>>>,
+    stop_cause: Rc<RefCell<StopCause>>,
 }
 
 static CRC_TABLE: SyncLazy<[u32; 256]> = SyncLazy::new(|| {
@@ -145,9 +147,10 @@ impl GdbServer {
             c_thread: ThreadId::new(1, ThreadMask::ARM9),
             g_thread: ThreadId::new(1, ThreadMask::ARM9),
             target_stopped: false,
+            remaining_step_cycles: 0,
             waiting_for_stop: false,
             sw_breakpoints: FxHashMap::default(),
-            stop_causes: Rc::new(RefCell::new(Vec::new())),
+            stop_cause: Rc::new(RefCell::new(StopCause::Break)),
         })
     }
 
@@ -161,10 +164,10 @@ impl GdbServer {
             (
                 ($fn: ident, $hook_ty: ty),
                 [$(($core: ident, $core_enum: ident)),*],
-                |$core_enum_ident: ident, $stop_causes_ident: ident| $hook: expr
+                |$core_enum_ident: ident, $stop_cause_ident: ident| $hook: expr
             ) => {
                 $(
-                    let $stop_causes_ident = Rc::clone(&self.stop_causes);
+                    let $stop_cause_ident = Rc::clone(&self.stop_cause);
                     let $core_enum_ident = Core::$core_enum;
                     emu.$core.$fn(Some(<$hook_ty>::new(Box::new($hook))));
                 )*
@@ -174,8 +177,8 @@ impl GdbServer {
         set_hook!(
             (set_undef_hook, UndefHook<E>),
             [(arm7, Arm7), (arm9, Arm9)],
-            |core, stop_causes| move |_emu| {
-                stop_causes.borrow_mut().push(StopCause::Undefined(core));
+            |core, stop_cause| move |_emu| {
+                *stop_cause.borrow_mut() = StopCause::Undefined(core);
                 true
             }
         );
@@ -183,8 +186,8 @@ impl GdbServer {
         set_hook!(
             (set_prefetch_abort_hook, PrefetchAbortHook<E>),
             [(arm9, Arm9)],
-            |_core, stop_causes| move |_emu| {
-                stop_causes.borrow_mut().push(StopCause::PrefetchAbort);
+            |_core, stop_cause| move |_emu| {
+                *stop_cause.borrow_mut() = StopCause::PrefetchAbort;
                 true
             }
         );
@@ -192,8 +195,8 @@ impl GdbServer {
         set_hook!(
             (set_data_abort_hook, DataAbortHook<E>),
             [(arm9, Arm9)],
-            |_core, stop_causes| move |_emu, _addr| {
-                stop_causes.borrow_mut().push(StopCause::DataAbort);
+            |_core, stop_cause| move |_emu, _addr| {
+                *stop_cause.borrow_mut() = StopCause::DataAbort;
                 true
             }
         );
@@ -201,8 +204,8 @@ impl GdbServer {
         set_hook!(
             (set_breakpoint_hook, BreakpointHook<E>),
             [(arm7, Arm7), (arm9, Arm9)],
-            |core, stop_causes| move |_emu, _addr| {
-                stop_causes.borrow_mut().push(StopCause::Breakpoint(core));
+            |core, stop_cause| move |_emu, _addr| {
+                *stop_cause.borrow_mut() = StopCause::Breakpoint(core);
                 true
             }
         );
@@ -210,10 +213,8 @@ impl GdbServer {
         set_hook!(
             (set_mem_watchpoint_hook, MemWatchpointHook<E>),
             [(arm7, Arm7), (arm9, Arm9)],
-            |core, stop_causes| move |_emu, addr, _size, cause| {
-                stop_causes
-                    .borrow_mut()
-                    .push(StopCause::MemWatchpoint(core, addr, cause));
+            |core, stop_cause| move |_emu, addr, _size, cause| {
+                *stop_cause.borrow_mut() = StopCause::MemWatchpoint(core, addr, cause);
                 true
             }
         );
@@ -303,10 +304,7 @@ impl GdbServer {
     }
 
     fn send_stop_reason<E: cpu::Engine>(&mut self, _emu: &mut Emu<E>) {
-        let mut stop_causes = self.stop_causes.borrow_mut();
-        let stop_cause = stop_causes.get(0).copied().unwrap_or(StopCause::Break);
-        stop_causes.clear();
-        drop(stop_causes);
+        let stop_cause = *self.stop_cause.borrow();
         let mut reply = Vec::new();
         self.encode_stop_reply(stop_cause, &mut reply);
         self.send_packet(reply);
@@ -321,23 +319,19 @@ impl GdbServer {
     }
 
     pub fn emu_shutdown<E: cpu::Engine>(&mut self, _emu: &mut Emu<E>) {
-        self.stop_causes.borrow_mut().push(StopCause::Shutdown);
+        *self.stop_cause.borrow_mut() = StopCause::Shutdown;
     }
 
     fn manually_stop<E: cpu::Engine>(&mut self, emu: &mut Emu<E>) {
-        self.stop_causes.borrow_mut().push(StopCause::Break);
+        *self.stop_cause.borrow_mut() = StopCause::Break;
         self.target_stopped = true;
         self.waiting_for_stop = false;
         self.send_stop_reason(emu);
     }
 
-    fn wait_for_stop<E: cpu::Engine>(&mut self, emu: &mut Emu<E>) {
-        if self.stop_causes.borrow().is_empty() {
-            self.target_stopped = false;
-            self.waiting_for_stop = true;
-        } else {
-            self.send_stop_reason(emu);
-        }
+    fn wait_for_stop(&mut self) {
+        self.target_stopped = false;
+        self.waiting_for_stop = true;
     }
 
     fn toggle_breakpoint<E: cpu::Engine, const SET: bool>(&mut self, emu: &mut Emu<E>, addr: u32) {
@@ -353,6 +347,35 @@ impl GdbServer {
                 emu.arm7.add_breakpoint(addr);
             } else {
                 emu.arm7.remove_breakpoint(addr);
+            }
+        }
+    }
+
+    fn toggle_watchpoint<E: cpu::Engine, const READ: bool, const WRITE: bool, const SET: bool>(
+        &mut self,
+        emu: &mut Emu<E>,
+        addr: u32,
+        size: u8,
+    ) {
+        let mut mask = MemWatchpointRwMask::empty();
+        if READ {
+            mask |= MemWatchpointRwMask::READ;
+        }
+        if WRITE {
+            mask |= MemWatchpointRwMask::WRITE;
+        }
+        if self.g_thread.mask.contains(ThreadMask::ARM9) {
+            if SET {
+                emu.arm9.add_mem_watchpoint(addr, size, mask);
+            } else {
+                emu.arm9.remove_mem_watchpoint(addr, size, mask);
+            }
+        }
+        if self.g_thread.mask.contains(ThreadMask::ARM7) {
+            if SET {
+                emu.arm7.add_mem_watchpoint(addr, size, mask);
+            } else {
+                emu.arm7.remove_mem_watchpoint(addr, size, mask);
             }
         }
     }
@@ -534,7 +557,7 @@ impl GdbServer {
                         // TODO: Set r15
                     }
                 }
-                self.wait_for_stop(emu);
+                self.wait_for_stop();
                 return false;
             }
 
@@ -580,7 +603,23 @@ impl GdbServer {
             }
 
             b'i' => {
-                // TODO: Step by cycles
+                self.remaining_step_cycles = 1;
+                if !data.is_empty() {
+                    let (addr, cycles) = split_once(data, b',');
+                    let _addr = parse_int!(addr, u32, "addr", "s");
+                    if self.c_thread.mask.contains(ThreadMask::ARM9) {
+                        // TODO: Set r15
+                    }
+                    if self.c_thread.mask.contains(ThreadMask::ARM7) {
+                        // TODO: Set r15
+                    }
+                    if !cycles.is_empty() {
+                        let cycles = parse_int!(cycles, RawTimestamp, "cycles", "s");
+                        self.remaining_step_cycles = cycles;
+                    }
+                }
+                self.wait_for_stop();
+                return false;
             }
 
             b'k' => {
@@ -810,7 +849,19 @@ impl GdbServer {
             }
 
             b's' => {
-                // TODO: Single step
+                // TODO: This should step by one instruction, not one cycle
+                if !data.is_empty() {
+                    let _addr = parse_int!(data, u32, "addr", "s");
+                    if self.c_thread.mask.contains(ThreadMask::ARM9) {
+                        // TODO: Set r15
+                    }
+                    if self.c_thread.mask.contains(ThreadMask::ARM7) {
+                        // TODO: Set r15
+                    }
+                }
+                self.remaining_step_cycles = 1;
+                self.wait_for_stop();
+                return false;
             }
 
             b't' => {
@@ -915,8 +966,23 @@ impl GdbServer {
                         self.toggle_breakpoint::<_, false>(emu, addr);
                         reply!(b"OK");
                     }
-                    2 | 3 | 4 => {
-                        // TODO: Memory watchpoints
+                    2 => {
+                        if kind.is_power_of_two() && addr & (kind - 1) as u32 == 0 {
+                            self.toggle_watchpoint::<_, false, true, false>(emu, addr, kind);
+                            reply!(b"OK");
+                        }
+                    }
+                    3 => {
+                        if kind.is_power_of_two() && addr & (kind - 1) as u32 == 0 {
+                            self.toggle_watchpoint::<_, true, false, false>(emu, addr, kind);
+                            reply!(b"OK");
+                        }
+                    }
+                    4 => {
+                        if kind.is_power_of_two() && addr & (kind - 1) as u32 == 0 {
+                            self.toggle_watchpoint::<_, true, true, false>(emu, addr, kind);
+                            reply!(b"OK");
+                        }
                     }
                     _ => {}
                 }
@@ -973,8 +1039,23 @@ impl GdbServer {
                         self.toggle_breakpoint::<_, true>(emu, addr);
                         reply!(b"OK");
                     }
-                    2 | 3 | 4 => {
-                        // TODO: Memory watchpoints
+                    2 => {
+                        if kind.is_power_of_two() && addr & (kind - 1) as u32 == 0 {
+                            self.toggle_watchpoint::<_, false, true, true>(emu, addr, kind);
+                            reply!(b"OK");
+                        }
+                    }
+                    3 => {
+                        if kind.is_power_of_two() && addr & (kind - 1) as u32 == 0 {
+                            self.toggle_watchpoint::<_, true, false, true>(emu, addr, kind);
+                            reply!(b"OK");
+                        }
+                    }
+                    4 => {
+                        if kind.is_power_of_two() && addr & (kind - 1) as u32 == 0 {
+                            self.toggle_watchpoint::<_, true, true, true>(emu, addr, kind);
+                            reply!(b"OK");
+                        }
                     }
                     _ => {}
                 }
@@ -1008,6 +1089,7 @@ impl GdbServer {
                 }
                 Err(err) => {
                     eprintln!("[GDB] Couldn't receive data: {}", err);
+                    self.detach(emu);
                     false
                 }
             }
@@ -1031,6 +1113,7 @@ impl GdbServer {
 
                 Err(err) => {
                     eprintln!("[GDB] Couldn't receive data: {}", err);
+                    self.detach(emu);
                     break;
                 }
             }
