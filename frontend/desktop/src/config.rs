@@ -4,9 +4,8 @@ use super::{
     audio,
     utils::{config_base, data_base},
 };
-#[cfg(feature = "xq-audio")]
-use dust_core::audio::InterpMethod as AudioXqInterpMethod;
 use dust_core::{
+    audio::InterpMethod as AudioXqInterpMethod,
     cpu::{arm7, arm9},
     spi::firmware,
     utils::{zeroed_box, BoxedByteSlice, Bytes},
@@ -18,6 +17,7 @@ use std::{
     fmt, fs,
     io::{self, Read},
     iter,
+    net::SocketAddr,
     path::{Path, PathBuf},
 };
 
@@ -57,9 +57,7 @@ pub struct Global {
     pub limit_framerate: bool,
     pub screen_rotation: i16,
     pub sync_to_audio: bool,
-    #[cfg(feature = "xq-audio")]
     pub audio_xq_sample_rate_shift: u8,
-    #[cfg(feature = "xq-audio")]
     pub audio_xq_interp_method: AudioXqInterpMethod,
     pub audio_interp_method: audio::InterpMethod,
     pub pause_on_launch: bool,
@@ -78,6 +76,7 @@ pub struct Global {
     pub window_size: (u32, u32),
     pub imgui_config_path: Option<PathBuf>,
     pub hide_macos_title_bar: bool,
+    pub gdb_server_addr: SocketAddr,
 }
 
 impl Default for Global {
@@ -93,9 +92,7 @@ impl Default for Global {
             screen_rotation: 0,
             sync_to_audio: true,
             audio_interp_method: audio::InterpMethod::Nearest,
-            #[cfg(feature = "xq-audio")]
             audio_xq_sample_rate_shift: 0,
-            #[cfg(feature = "xq-audio")]
             audio_xq_interp_method: AudioXqInterpMethod::Nearest,
             pause_on_launch: false,
             autosave_interval_ms: 1000.0,
@@ -113,6 +110,7 @@ impl Default for Global {
             window_size: (1300, 800),
             imgui_config_path: Some(config_base.join("imgui.ini")),
             hide_macos_title_bar: true,
+            gdb_server_addr: ([127_u8, 0, 0, 1], 12345_u16).into(),
         }
     }
 }
@@ -128,9 +126,7 @@ pub struct Game {
     pub screen_rotation: Option<i16>,
     pub sync_to_audio: Option<bool>,
     pub audio_interp_method: Option<audio::InterpMethod>,
-    #[cfg(feature = "xq-audio")]
     pub audio_xq_sample_rate_shift: Option<u8>,
-    #[cfg(feature = "xq-audio")]
     pub audio_xq_interp_method: Option<AudioXqInterpMethod>,
     pub pause_on_launch: Option<bool>,
     pub autosave_interval_ms: Option<f32>,
@@ -150,9 +146,7 @@ impl Default for Game {
             screen_rotation: None,
             sync_to_audio: None,
             audio_interp_method: None,
-            #[cfg(feature = "xq-audio")]
             audio_xq_sample_rate_shift: None,
-            #[cfg(feature = "xq-audio")]
             audio_xq_interp_method: None,
             pause_on_launch: None,
             autosave_interval_ms: None,

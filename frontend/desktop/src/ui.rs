@@ -290,10 +290,10 @@ impl UiState {
             stopped: AtomicBool::new(false),
             #[cfg(feature = "gdb-server")]
             gdb_server_active: AtomicBool::new(false),
-            #[cfg(feature = "gdb-server")]
-            gdb_server_addr: RwLock::new(None),
         });
         self.emu_shared_state = Some(Arc::clone(&emu_shared_state));
+        #[cfg(feature = "gdb-server")]
+        let gdb_server_addr = self.global_config.contents.gdb_server_addr;
         self.emu_thread = Some(
             thread::Builder::new()
                 .name("emulation".to_string())
@@ -306,6 +306,8 @@ impl UiState {
                         frame_tx,
                         message_rx,
                         emu_shared_state,
+                        #[cfg(feature = "gdb-server")]
+                        gdb_server_addr,
                         #[cfg(feature = "log")]
                         logger,
                     )
@@ -1094,10 +1096,10 @@ pub fn main() {
                     }
 
                     #[cfg(feature = "gdb-server")]
-                    if let Some(state) = &state.emu_shared_state {
-                        let addr = *state.gdb_server_addr.read();
-                        if let Some(addr) = addr {
-                            let text = format!("GDB: {}", addr);
+                    if let Some(shared_state) = &state.emu_shared_state {
+                        if shared_state.gdb_server_active.load(Ordering::Relaxed) {
+                            let text =
+                                format!("GDB: {}", state.global_config.contents.gdb_server_addr);
                             let width =
                                 ui.calc_text_size(&text)[0] + unsafe { ui.style().item_spacing[0] };
                             ui.set_cursor_pos([

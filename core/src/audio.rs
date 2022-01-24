@@ -23,24 +23,24 @@ bitfield_debug! {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InterpMethod {
+    Nearest,
+    Cubic,
+}
+
 cfg_if! {
-    if #[cfg(not(feature = "xq-audio"))] {
-        pub type Sample = u16;
-        type InterpSample = i64;
-        const SAMPLE_ZERO: Sample = 0;
-        const INTERP_SAMPLE_ZERO: InterpSample = 0;
-    } else {
+    if #[cfg(feature = "xq-audio")] {
         pub type Sample = f32;
         type InterpSample = f64;
         const SAMPLE_ZERO: Sample = 0.0;
         const INTERP_SAMPLE_ZERO: InterpSample = 0.0;
-
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "kebab-case")]
-        pub enum InterpMethod {
-            Nearest,
-            Cubic,
-        }
+    } else {
+        pub type Sample = u16;
+        type InterpSample = i64;
+        const SAMPLE_ZERO: Sample = 0;
+        const INTERP_SAMPLE_ZERO: InterpSample = 0;
     }
 }
 

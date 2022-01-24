@@ -8,8 +8,6 @@ use super::debug_views;
 use super::{
     audio, config::CommonLaunchConfig, game_db::SaveType, input, triple_buffer, FrameData,
 };
-#[cfg(feature = "gdb-server")]
-use dust_core::utils::schedule::RawTimestamp;
 use dust_core::{
     audio::DummyBackend as DummyAudioBackend,
     cpu::{arm9, interpreter::Interpreter},
@@ -42,8 +40,6 @@ pub struct SharedState {
     pub stopped: AtomicBool,
     #[cfg(feature = "gdb-server")]
     pub gdb_server_active: AtomicBool,
-    #[cfg(feature = "gdb-server")]
-    pub gdb_server_addr: RwLock<Option<SocketAddr>>,
 }
 
 pub enum Message {
@@ -75,6 +71,7 @@ pub(super) fn main(
     mut frame_tx: triple_buffer::Sender<FrameData>,
     message_rx: crossbeam_channel::Receiver<Message>,
     shared_state: Arc<SharedState>,
+    #[cfg(feature = "gdb-server")] gdb_server_addr: SocketAddr,
     #[cfg(feature = "log")] logger: slog::Logger,
 ) -> triple_buffer::Sender<FrameData> {
     let direct_boot = config.skip_firmware && ds_slot.is_some();
@@ -390,22 +387,18 @@ pub(super) fn main(
         if shared_state.gdb_server_active.load(Ordering::Relaxed) != gdb_server.is_some() {
             if gdb_server.is_some() {
                 gdb_server = None;
-                *shared_state.gdb_server_addr.write() = None;
             } else {
-                // TODO: Allow address configuration
-                let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 12345_u16));
-                match gdb_server::GdbServer::new(addr) {
+                match gdb_server::GdbServer::new(gdb_server_addr) {
                     Ok(mut server) => {
                         server.attach(&mut emu);
                         gdb_server = Some(server);
-                        *shared_state.gdb_server_addr.write() = Some(addr);
                     }
                     Err(_err) => {
                         #[cfg(feature = "log")]
                         slog::error!(logger, "Couldn't start GDB server: {}", _err);
                         shared_state
                             .gdb_server_active
-                            .store(false, Ordering::Relaxed)
+                            .store(false, Ordering::Relaxed);
                     }
                 };
             }
