@@ -1,0 +1,28 @@
+{
+    "compilerOptions": {
+        "exactOptionalPropertyTypes": true,
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitOverride": true,
+        "noImplicitReturns": true,
+        "noPropertyAccessFromIndexSignature": true,
+        "noUncheckedIndexedAccess": true,
+        "strict": true,
+
+        "moduleResolution": "node",
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+
+        "baseUrl": "./src/scripts",
+        "module": "ES2020",
+        "types": [],
+
+        "noEmitOnError": true,
+
+        "forceConsistentCasingInFileNames": true,
+
+        "target": "ES6",
+        "lib": ["ES6", "WebWorker"]
+    },
+    "include": ["./*.ts"],
+    "exclude": [],
+}

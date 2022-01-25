@@ -2,6 +2,7 @@
 members = [
     "core",
     "frontend/desktop",
+    "frontend/web/crate",
 ]
 resolver = "2"
 

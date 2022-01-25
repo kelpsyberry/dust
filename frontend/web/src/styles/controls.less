@@ -1,0 +1,319 @@
+@controls-text-color: rgb(33, 33, 33);
+@controls-border-color: rgb(77, 77, 77);
+@controls-bg-color: rgb(127, 127, 127);
+@dpad-arrow-color: rgb(100, 100, 100);
+@controls-pressed-bg-color: darken(@controls-bg-color, 10%);
+@dpad-pressed-arrow-color: darken(@dpad-arrow-color, 10%);
+
+#controls {
+    font-size: 1.5em;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.5;
+    color: @controls-text-color;
+
+    & > * {
+        position: absolute;
+    }
+
+    &:not(.touch) .touch {
+        display: none;
+    }
+}
+
+.button-control {
+    transition: background-color 0.4s cubic-bezier(0, 0.9, 0.5, 1);
+    box-sizing: border-box;
+    border: 1px solid @controls-border-color;
+    background-color: @controls-bg-color;
+
+    &.pressed,
+    &:hover,
+    &:focus,
+    &:active {
+        background-color: @controls-pressed-bg-color;
+    }
+
+    button {
+        border-radius: inherit;
+        width: 100%;
+        height: 100%;
+
+        & when (@box-shadows) {
+            box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+        }
+    }
+}
+
+.interaction {
+    opacity: 0;
+    border-radius: inherit;
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border: 5px solid #0c0;
+}
+
+#btn-a,
+#btn-b,
+#btn-x,
+#btn-y {
+    width: 2em;
+    height: 2em;
+    border-radius: 100%;
+}
+
+.face-button(@color) {
+    @bg-color: mix(@controls-bg-color, @color, 50%);
+    background-color: @bg-color;
+    &.pressed {
+        background-color: darken(@bg-color, 10%);
+    }
+}
+
+#btn-a {
+    .face-button(#ff0000);
+}
+
+#btn-b {
+    .face-button(#ffc400);
+}
+
+#btn-x {
+    .face-button(#2020ff);
+}
+
+#btn-y {
+    .face-button(#00c000);
+}
+
+#btn-l,
+#btn-r {
+    width: 6.5em;
+    height: 2em;
+    line-height: 2em;
+    text-align: center;
+    border-radius: 0.2em;
+}
+
+#btn-l {
+    border-top-left-radius: 1em;
+}
+
+#btn-r {
+    border-top-right-radius: 1em;
+}
+
+#btn-start,
+#btn-select {
+    width: 5.5em;
+    height: 2em;
+    border-radius: 1em;
+    transform: rotate(-45deg);
+}
+
+#btn-pause {
+    width: 2em;
+    height: 2em;
+    border-radius: 100%;
+}
+
+#controls:not(.touch) #btn-pause {
+    top: 0.5em;
+    right: 0.5em;
+}
+
+@dir-length: 2.05em;
+@dir-width: 1.9em;
+@border-radius: 0.2em;
+
+@arr-width: 1.5em;
+@arr-par-border-width: @arr-width * 0.5;
+@arr-perp-border-width: @arr-width * 0.9;
+@arr-margin: 0.2em;
+
+@circle-diameter: @dir-width * 0.7;
+
+#dpad {
+    width: 2 * @dir-length + @dir-width;
+    height: 2 * @dir-length + @dir-width;
+
+    & > * {
+        position: absolute;
+    }
+
+    .arrow {
+        position: absolute;
+        width: 0;
+        height: 0;
+        border: 0 transparent solid;
+        border-radius: 0.1em;
+    }
+
+    .interaction {
+        border-radius: 100%;
+    }
+}
+
+#dpad-up,
+#dpad-down,
+#dpad-left,
+#dpad-right,
+#dpad-center {
+    box-sizing: border-box;
+    background-color: @controls-bg-color;
+}
+
+#dpad-center {
+    display: flex;
+    top: @dir-length;
+    left: @dir-length;
+    width: @dir-width;
+    height: @dir-width;
+    align-items: center;
+    justify-content: center;
+
+    .border-x,
+    .border-y {
+        position: absolute;
+        box-sizing: content-box;
+        background-color: @controls-bg-color;
+    }
+
+    .border-x {
+        width: @dir-width;
+        left: 0;
+        top: -1px;
+        bottom: -1px;
+    }
+
+    .border-y {
+        height: @dir-width;
+        top: 0;
+        left: -1px;
+        right: -1px;
+    }
+
+    .circle {
+        z-index: 2;
+        width: @circle-diameter;
+        height: @circle-diameter;
+        background-color: fade(@dpad-arrow-color, 33%);
+        border-radius: 100%;
+    }
+}
+
+#dpad-up,
+#dpad-down,
+#dpad-left,
+#dpad-right {
+    border: 1px solid @controls-border-color;
+
+    & when (@box-shadows) {
+        box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+    }
+
+    &.pressed {
+        background-color: @controls-pressed-bg-color;
+    }
+}
+
+#dpad-up,
+#dpad-down {
+    width: @dir-width;
+    height: @dir-length;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+}
+
+#dpad-left,
+#dpad-right {
+    width: @dir-length;
+    height: @dir-width;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+#dpad-up {
+    border-bottom: none;
+    top: 0;
+    left: @dir-length;
+    border-top-left-radius: @border-radius;
+    border-top-right-radius: @border-radius;
+
+    .arrow {
+        border-width: 0 @arr-par-border-width @arr-perp-border-width
+            @arr-par-border-width;
+        border-bottom-color: @dpad-arrow-color;
+        top: @arr-margin;
+    }
+
+    &.pressed .arrow {
+        border-bottom-color: @dpad-pressed-arrow-color;
+    }
+}
+
+#dpad-down {
+    border-top: none;
+    bottom: 0;
+    left: @dir-length;
+    border-bottom-left-radius: @border-radius;
+    border-bottom-right-radius: @border-radius;
+
+    .arrow {
+        border-width: @arr-perp-border-width @arr-par-border-width 0
+            @arr-par-border-width;
+        border-top-color: @dpad-arrow-color;
+        bottom: @arr-margin;
+    }
+
+    &.pressed .arrow {
+        border-top-color: @dpad-pressed-arrow-color;
+    }
+}
+
+#dpad-left {
+    border-right: none;
+    left: 0;
+    top: @dir-length;
+    border-top-left-radius: @border-radius;
+    border-bottom-left-radius: @border-radius;
+
+    .arrow {
+        border-width: @arr-par-border-width @arr-perp-border-width
+            @arr-par-border-width 0;
+        border-right-color: @dpad-arrow-color;
+        left: @arr-margin;
+    }
+
+    &.pressed .arrow {
+        border-right-color: @dpad-pressed-arrow-color;
+    }
+}
+
+#dpad-right {
+    border-left: none;
+    right: 0;
+    top: @dir-length;
+    border-top-right-radius: @border-radius;
+    border-bottom-right-radius: @border-radius;
+
+    .arrow {
+        border-width: @arr-par-border-width 0 @arr-par-border-width
+            @arr-perp-border-width;
+        border-left-color: @dpad-arrow-color;
+        right: @arr-margin;
+    }
+
+    &.pressed .arrow {
+        border-left-color: @dpad-pressed-arrow-color;
+    }
+}

@@ -1,0 +1,23 @@
+{
+    "compilerOptions": {
+        "exactOptionalPropertyTypes": true,
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitOverride": true,
+        "noImplicitReturns": true,
+        "noPropertyAccessFromIndexSignature": true,
+        "noUncheckedIndexedAccess": true,
+        "strict": true,
+
+        "baseUrl": "./src/scripts",
+        "module": "ES2020",
+        "types": ["./raw-loader.d.ts"],
+
+        "noEmitOnError": true,
+
+        "forceConsistentCasingInFileNames": true,
+
+        "target": "ES6",
+        "lib": ["ES6", "DOM"]
+    },
+    "exclude": ["src/scripts/emu/**/*"]
+}

@@ -17,6 +17,7 @@ pub struct FnPtrs<R: Role> {
 }
 
 impl<R: Role> FnPtrs<R> {
+    #[allow(unused_labels)]
     pub fn new() -> Self {
         macro_rules! fn_ptr {
             ($ident: ident $($generics: tt)*) => {
