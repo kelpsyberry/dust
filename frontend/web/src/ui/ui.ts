@@ -1,6 +1,6 @@
-import { UiToEmu, EmuToUi } from "../message";
-import { FileId, Files } from "./files";
-import { Input } from "./input";
+import { UiToEmu, EmuToUi, SaveType, saveTypes } from "../message";
+import { FileId, Files, dbLookup } from "./files";
+import { Input, Rect } from "./input";
 import vertShaderSource from "raw-loader!../shaders/screen.vert";
 import fragShaderSource from "raw-loader!../shaders/screen.frag";
 import { isMobileBrowser } from "./utils";
@@ -9,8 +9,6 @@ export class Ui {
     private canvasContainer: HTMLElement;
     private canvas: HTMLCanvasElement;
     private input: Input;
-    private inputState: number;
-    private menuContainer: HTMLElement;
     private playButton: HTMLButtonElement;
     private resetButton: HTMLButtonElement;
     private exportSaveButton: HTMLButtonElement;
@@ -34,10 +32,6 @@ export class Ui {
         ) as HTMLDivElement;
         this.canvas = document.getElementById("canvas") as HTMLCanvasElement;
         this.input = new Input(touch, this.pause.bind(this));
-        this.inputState = 0;
-        this.menuContainer = document.getElementById(
-            "menu-container"
-        ) as HTMLElement;
         this.playButton = document.getElementById("play") as HTMLButtonElement;
         this.resetButton = document.getElementById(
             "reset"
@@ -65,32 +59,23 @@ export class Ui {
                     }
                     case FileId.Bios7: {
                         this.bios7 = new Uint8Array(buffer);
+                        this.toggleRomEnabledIfSystemFilesLoaded();
                         break;
                     }
                     case FileId.Bios9: {
                         this.bios9 = new Uint8Array(buffer);
+                        this.toggleRomEnabledIfSystemFilesLoaded();
                         break;
                     }
                     case FileId.Firmware: {
                         this.firmware = new Uint8Array(buffer);
+                        this.toggleRomEnabledIfSystemFilesLoaded();
                         break;
                     }
-                    default:
-                        if (
-                            this.files.gameDb &&
-                            this.bios7 &&
-                            this.bios9 &&
-                            this.firmware
-                        ) {
-                            this.files.toggleEnabled(FileId.Rom, true);
-                        }
-                        break;
                 }
             },
             () => {
-                if (this.bios7 && this.bios9 && this.firmware) {
-                    this.files.toggleEnabled(FileId.Rom, true);
-                }
+                this.toggleRomEnabledIfSystemFilesLoaded();
             }
         );
 
@@ -188,10 +173,16 @@ export class Ui {
         this.frame();
     }
 
+    toggleRomEnabledIfSystemFilesLoaded() {
+        if (this.files?.gameDb && this.bios7 && this.bios9 && this.firmware) {
+            this.files.toggleEnabled(FileId.Rom, true);
+        }
+    }
+
     frame() {
         const containerWidth = this.canvasContainer.clientWidth;
         const containerHeight = this.canvasContainer.clientHeight;
-        const fbAspectRatio = 256 / 192;
+        const fbAspectRatio = 256 / 384;
         let width = Math.floor(
             Math.min(containerHeight * fbAspectRatio, containerWidth)
         );
@@ -218,13 +209,19 @@ export class Ui {
         this.gl.enableVertexAttribArray(this.fbCoordsAttrib);
         this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
 
-        const prevInputState = this.inputState;
-        this.inputState = this.input.process();
-        if (this.inputState != prevInputState) {
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const changes = this.input.update(
+            Rect.fromParts(
+                canvasRect.bottom,
+                canvasRect.left,
+                canvasRect.width,
+                canvasRect.height * 0.5
+            )
+        );
+        if (changes) {
             this.sendMessage({
                 type: UiToEmu.MessageType.UpdateInput,
-                pressed: this.inputState & ~prevInputState,
-                released: prevInputState & ~this.inputState,
+                ...changes,
             });
         }
 
@@ -265,12 +262,23 @@ export class Ui {
 
     start(romFilename: string, romBuffer: Uint8Array) {
         this.stop();
-        this.files.toggleEnabled(FileId.Save, true);
-        this.exportSaveButton.disabled = false;
-        this.playButton.disabled = false;
-        this.resetButton.disabled = false;
         this.worker = new Worker("emu.bundle.js");
         this.worker.onmessage = () => {
+            this.files.toggleEnabled(FileId.Save, true);
+            this.exportSaveButton.disabled = false;
+            this.playButton.disabled = false;
+            this.resetButton.disabled = false;
+            const gameCode = new Uint32Array(romBuffer.buffer)[0xc >> 2]!;
+            let saveType: SaveType | undefined;
+            const dbEntry = dbLookup(this.files.gameDb!, gameCode);
+            if (dbEntry) {
+                if (romBuffer.length !== dbEntry["rom-size"]) {
+                    console.warn(
+                        `Unexpected ROM size: expected ${dbEntry["rom-size"]} B, got ${romBuffer.length} B`
+                    );
+                }
+                saveType = saveTypes[dbEntry["save-type"]];
+            }
             this.sendMessage(
                 {
                     type: UiToEmu.MessageType.Start,
@@ -278,9 +286,10 @@ export class Ui {
                     bios7: this.bios7!,
                     bios9: this.bios9!,
                     firmware: this.firmware!,
-                    gameDb: this.files.gameDb!,
+                    saveType,
+                    hasIR: (gameCode & 0xff) === 0x49,
                 },
-                [romBuffer]
+                [romBuffer.buffer]
             );
             this.worker!.onmessage = (e) => {
                 this.handleWorkerEvent(e.data);

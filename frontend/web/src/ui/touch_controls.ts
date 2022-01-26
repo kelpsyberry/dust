@@ -7,7 +7,14 @@ export interface ControlLayoutData {
     interactionScale?: number;
 }
 
+export const enum TouchArea {
+    Controls,
+    BottomScreen,
+    None,
+}
+
 export interface Touch {
+    area: TouchArea;
     startX: number;
     startY: number;
     x: number;
@@ -269,6 +276,22 @@ export class TouchControls {
         this.dpad.resetTouches();
     }
 
+    containTouch(x: number, y: number): boolean {
+        const elements = document.elementsFromPoint(x, y);
+
+        for (const button of this.buttons.values()) {
+            if (elements.indexOf(button.interactionElement) !== -1) {
+                return true;
+            }
+        }
+
+        if (elements.indexOf(this.dpad.interactionElement) !== -1) {
+            return true;
+        }
+
+        return false;
+    }
+
     processTouch(touch: Touch, state: number): number {
         const elements = document.elementsFromPoint(touch.x, touch.y);
 
@@ -420,7 +443,7 @@ export class TouchControls {
     }
 
     set editing(editing: boolean) {
-        if (editing == this.editing_) {
+        if (editing === this.editing_) {
             return;
         }
         this.editing_ = editing;

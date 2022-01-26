@@ -1,4 +1,4 @@
-import { GameDbEntry } from "../message";
+import { saveTypes } from "../message";
 
 export const enum FileId {
     Rom = 1 << 0,
@@ -6,6 +6,12 @@ export const enum FileId {
     Bios7 = 1 << 2,
     Bios9 = 1 << 3,
     Firmware = 1 << 4,
+}
+
+export interface GameDbEntry {
+    code: number;
+    ["rom-size"]: number;
+    ["save-type"]: keyof typeof saveTypes;
 }
 
 export class FileInput {
@@ -170,4 +176,21 @@ export class Files {
     toggleEnabled(id: FileId, enabled: boolean) {
         this.fileInputs.get(id)!.enabled = enabled;
     }
+}
+
+export function dbLookup(db: GameDbEntry[], code: number): GameDbEntry | undefined {
+    let start = 0;
+    let end = db.length - 1;
+    while (start !== end) {
+        const i = (start + end) >> 1;
+        const possible = db[i]!;
+        if (possible.code > code) {
+            end = i;
+        } else if (possible.code < code) {
+            start = i + 1;
+        } else {
+            return possible;
+        }
+    }
+    return undefined;
 }

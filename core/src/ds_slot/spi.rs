@@ -4,11 +4,13 @@ pub mod eeprom_4k;
 pub mod eeprom_fram;
 pub mod flash;
 
-use crate::utils::ByteSlice;
+use crate::utils::{ByteMutSlice, ByteSlice};
 
 trait SpiDevice {
     fn contents(&self) -> ByteSlice;
+    fn contents_mut(&mut self) -> ByteMutSlice;
     fn contents_dirty(&self) -> bool;
+    fn mark_contents_dirty(&mut self);
     fn mark_contents_flushed(&mut self);
     fn write_data(&mut self, data: u8, first: bool, last: bool) -> u8;
 }
@@ -30,12 +32,28 @@ impl Spi {
         )
     }
 
+    pub fn contents_mut(&mut self) -> ByteMutSlice {
+        handle_variants!(
+            Spi;
+            Eeprom4k, EepromFram, Flash, Empty;
+            self, contents_mut()
+        )
+    }
+
     pub fn contents_dirty(&self) -> bool {
         handle_variants!(
             Spi;
             Eeprom4k, EepromFram, Flash, Empty;
             self, contents_dirty()
         )
+    }
+
+    pub fn mark_contents_dirty(&mut self) {
+        handle_variants!(
+            Spi;
+            Eeprom4k, EepromFram, Flash, Empty;
+            self, mark_contents_dirty()
+        );
     }
 
     pub fn mark_contents_flushed(&mut self) {

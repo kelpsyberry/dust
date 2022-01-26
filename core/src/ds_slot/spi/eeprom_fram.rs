@@ -1,5 +1,5 @@
 use crate::{
-    utils::{bitfield_debug, BoxedByteSlice, ByteSlice},
+    utils::{bitfield_debug, BoxedByteSlice, ByteMutSlice, ByteSlice},
     SaveContents,
 };
 
@@ -147,8 +147,16 @@ impl super::SpiDevice for EepromFram {
         self.contents.as_byte_slice()
     }
 
+    fn contents_mut(&mut self) -> ByteMutSlice {
+        self.contents.as_byte_mut_slice()
+    }
+
     fn contents_dirty(&self) -> bool {
         self.contents_dirty
+    }
+
+    fn mark_contents_dirty(&mut self) {
+        self.contents_dirty = true;
     }
 
     fn mark_contents_flushed(&mut self) {

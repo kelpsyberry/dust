@@ -1,22 +1,32 @@
+import type * as wasm from "../pkg";
+
 export const enum SaveType {
-    None = "none",
-    Eeprom4k = "eeprom-4k",
-    EepromFram64k = "eeprom-fram-64k",
-    EepromFram512k = "eeprom-fram-512k",
-    EepromFram1m = "eeprom-fram-1m",
-    Flash2m = "flash-2m",
-    Flash4m = "flash-4m",
-    Flash8m = "flash-8m",
-    Nand64m = "nand-64m",
-    Nand128m = "nand-128m",
-    Nand256m = "nand-256m",
+    None,
+    Eeprom4k,
+    EepromFram64k,
+    EepromFram512k,
+    EepromFram1m,
+    Flash2m,
+    Flash4m,
+    Flash8m,
+    Nand64m,
+    Nand128m,
+    Nand256m,
 }
 
-export interface GameDbEntry {
-    code: number;
-    rom_size: number;
-    save_type: SaveType;
-}
+export const saveTypes = {
+    "none": SaveType.None,
+    "eeprom-4k": SaveType.Eeprom4k,
+    "eeprom-fram-64k": SaveType.EepromFram64k,
+    "eeprom-fram-512k": SaveType.EepromFram512k,
+    "eeprom-fram-1m": SaveType.EepromFram1m,
+    "flash-2m": SaveType.Flash2m,
+    "flash-4m": SaveType.Flash4m,
+    "flash-8m": SaveType.Flash8m,
+    "nand-64m": SaveType.Nand64m,
+    "nand-128m": SaveType.Nand128m,
+    "nand-256m": SaveType.Nand256m,
+};
 
 export const enum InputBits {
     A = 1 << 0,
@@ -52,7 +62,8 @@ export namespace UiToEmu {
         bios7: Uint8Array;
         bios9: Uint8Array;
         firmware: Uint8Array;
-        gameDb: GameDbEntry[];
+        saveType: SaveType | undefined;
+        hasIR: boolean;
     }
 
     export interface RawMessage {
@@ -68,7 +79,7 @@ export namespace UiToEmu {
         type: MessageType.UpdateInput;
         pressed: number;
         released: number;
-        touchPos?: [number, number] | null;
+        touchPos: [number, number] | null | undefined;
     }
 
     export interface UpdateFlagMessage {
@@ -86,8 +97,13 @@ export namespace UiToEmu {
 
 export namespace EmuToUi {
     export const enum MessageType {
+        Loaded,
         ExportSave,
         RenderFrame,
+    }
+
+    export interface LoadedMessage {
+        type: MessageType.Loaded;
     }
 
     export interface ExportSaveMessage {
@@ -100,5 +116,5 @@ export namespace EmuToUi {
         buffer: Uint32Array;
     }
 
-    export type Message = ExportSaveMessage | RenderFrameMessage;
+    export type Message = LoadedMessage | ExportSaveMessage | RenderFrameMessage;
 }

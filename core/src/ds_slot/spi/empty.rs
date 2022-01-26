@@ -1,4 +1,4 @@
-use crate::utils::ByteSlice;
+use crate::utils::{ByteMutSlice, ByteSlice};
 
 #[derive(Clone)]
 pub struct Empty {
@@ -28,9 +28,15 @@ impl super::SpiDevice for Empty {
         ByteSlice::new(&[])
     }
 
+    fn contents_mut(&mut self) -> ByteMutSlice {
+        ByteMutSlice::new(&mut [])
+    }
+
     fn contents_dirty(&self) -> bool {
         false
     }
+
+    fn mark_contents_dirty(&mut self) {}
 
     fn mark_contents_flushed(&mut self) {}
 

@@ -94,8 +94,16 @@ impl super::SpiDevice for Flash {
         self.contents.contents()
     }
 
+    fn contents_mut(&mut self) -> emu_utils::ByteMutSlice {
+        self.contents.contents_mut()
+    }
+
     fn contents_dirty(&self) -> bool {
         self.contents.contents_dirty()
+    }
+
+    fn mark_contents_dirty(&mut self) {
+        self.contents.mark_contents_dirty();
     }
 
     fn mark_contents_flushed(&mut self) {

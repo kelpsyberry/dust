@@ -1,5 +1,5 @@
 use crate::{
-    utils::{bitfield_debug, zeroed_box, BoxedByteSlice, ByteSlice},
+    utils::{bitfield_debug, zeroed_box, BoxedByteSlice, ByteMutSlice, ByteSlice},
     SaveContents,
 };
 
@@ -99,8 +99,18 @@ impl Flash {
     }
 
     #[inline]
+    pub fn contents_mut(&mut self) -> ByteMutSlice {
+        self.contents.as_byte_mut_slice()
+    }
+
+    #[inline]
     pub fn contents_dirty(&self) -> bool {
         self.contents_dirty
+    }
+
+    #[inline]
+    pub fn mark_contents_dirty(&mut self) {
+        self.contents_dirty = true;
     }
 
     #[inline]

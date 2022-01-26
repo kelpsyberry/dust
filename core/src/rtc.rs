@@ -85,11 +85,27 @@ pub struct DummyBackend;
 
 impl Backend for DummyBackend {
     fn get_time(&mut self) -> Time {
-        Time::default()
+        Time {
+            hour: 9,
+            minute: 27,
+            second: 45,
+        }
     }
 
     fn get_date_time(&mut self) -> (Date, Time) {
-        (Date::default(), Time::default())
+        (
+            Date {
+                years_since_2000: 22,
+                month: 1,
+                day: 26,
+                days_from_sunday: 3,
+            },
+            Time {
+                hour: 9,
+                minute: 27,
+                second: 45,
+            },
+        )
     }
 
     fn set_date_time(&mut self, _: (Date, Time)) {}

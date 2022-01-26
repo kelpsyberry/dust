@@ -1,52 +1,52 @@
 import { UiToEmu, EmuToUi } from "../message";
 import type * as wasm from "../../pkg";
 
+function sendMessage(message: EmuToUi.Message, transfer?: Transferable[]) {
+    postMessage(message, transfer as any);
+}
+
+class FpsLimiter {
+    private limit_!: number | null;
+    private timeout!: number;
+    private expectedTimeoutTime!: number;
+    private timeoutId: number | undefined;
+
+    constructor(limit: number | null, public callback: () => void) {
+        this.limit = limit;
+    }
+
+    get limit(): number | null {
+        return this.limit_;
+    }
+
+    set limit(limit: number | null) {
+        if (limit === this.limit_) {
+            return;
+        }
+        this.limit_ = limit;
+
+        clearTimeout(this.timeoutId);
+        this.timeout = limit === null ? 0 : 1000 / limit;
+        this.expectedTimeoutTime = this.expectedTimeoutTime
+            ? this.expectedTimeoutTime + this.timeout
+            : performance.now() + this.timeout;
+        this.timeoutId = setTimeout(
+            this.handleTimeout.bind(this),
+            Math.max(0, this.expectedTimeoutTime - performance.now())
+        );
+    }
+
+    handleTimeout() {
+        this.callback();
+        this.expectedTimeoutTime += this.timeout;
+        this.timeoutId = setTimeout(
+            this.handleTimeout.bind(this),
+            Math.max(0, this.expectedTimeoutTime - performance.now())
+        );
+    }
+}
+
 (async () => {
-    function sendMessage(message: EmuToUi.Message, transfer?: Transferable[]) {
-        postMessage(message, transfer as any);
-    }
-
-    class FpsLimiter {
-        private limit_!: number | null;
-        private timeout!: number;
-        private expectedTimeoutTime!: number;
-        private timeoutId: number | undefined;
-
-        constructor(limit: number | null, public callback: () => void) {
-            this.limit = limit;
-        }
-
-        get limit(): number | null {
-            return this.limit_;
-        }
-
-        set limit(limit: number | null) {
-            if (limit == this.limit_) {
-                return;
-            }
-            this.limit_ = limit;
-
-            clearTimeout(this.timeoutId);
-            this.timeout = limit === null ? 0 : 1000 / limit;
-            this.expectedTimeoutTime = this.expectedTimeoutTime
-                ? this.expectedTimeoutTime + this.timeout
-                : performance.now() + this.timeout;
-            this.timeoutId = setTimeout(
-                this.handleTimeout.bind(this),
-                Math.max(0, this.expectedTimeoutTime - performance.now())
-            );
-        }
-
-        handleTimeout() {
-            this.callback();
-            this.expectedTimeoutTime += this.timeout;
-            this.timeoutId = setTimeout(
-                this.handleTimeout.bind(this),
-                Math.max(0, this.expectedTimeoutTime - performance.now())
-            );
-        }
-    }
-
     const wasm = await import("../../pkg");
     let playing = false;
     let fpsLimiter = new FpsLimiter(60, frame);
@@ -66,21 +66,24 @@ import type * as wasm from "../../pkg";
 
     self.onmessage = (e) => {
         const data = e.data as UiToEmu.Message;
+        console.log(data);
         switch (data.type) {
             case UiToEmu.MessageType.Start: {
-                // TODO: Use the game DB
                 emu = wasm.create_emu_state(
-                    data.rom,
                     data.bios7,
                     data.bios9,
                     data.firmware,
-                    wasm.SaveType.None,
+                    data.rom,
+                    undefined,
+                    data.saveType as number | undefined,
+                    data.hasIR,
+                    wasm.WbgModel.Lite
                 );
                 break;
             }
 
             case UiToEmu.MessageType.Reset: {
-                emu!.reset();
+                emu?.reset();
                 break;
             }
 
@@ -90,22 +93,22 @@ import type * as wasm from "../../pkg";
             }
 
             case UiToEmu.MessageType.LoadSave: {
-                emu!.load_save(new Uint8Array(data.buffer));
+                emu?.load_save(new Uint8Array(data.buffer));
                 break;
             }
 
             case UiToEmu.MessageType.ExportSave: {
                 sendMessage({
                     type: EmuToUi.MessageType.ExportSave,
-                    buffer: emu!.export_save(),
+                    buffer: emu?.export_save() ?? new Uint8Array(0),
                 });
                 break;
             }
 
             case UiToEmu.MessageType.UpdateInput: {
-                emu!.update_input(data.pressed, data.released);
+                emu?.update_input(data.pressed, data.released);
                 if (typeof data.touchPos !== "undefined") {
-                    emu!.update_touch(data.touchPos?.[0], data.touchPos?.[1]);
+                    emu?.update_touch(data.touchPos?.[0], data.touchPos?.[1]);
                 }
                 break;
             }
@@ -121,4 +124,8 @@ import type * as wasm from "../../pkg";
             }
         }
     };
+
+    sendMessage({
+        type: EmuToUi.MessageType.Loaded,
+    });
 })();
