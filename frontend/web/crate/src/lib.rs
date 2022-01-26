@@ -190,8 +190,8 @@ pub fn create_emu_state(
     let mut firmware = BoxedByteSlice::new_zeroed(firmware_arr.length() as usize);
     firmware_arr.copy_to(&mut firmware[..]);
 
-    let mut rom = BoxedByteSlice::new_zeroed(rom_arr.length() as usize);
-    rom_arr.copy_to(&mut rom[..]);
+    let mut rom = BoxedByteSlice::new_zeroed(rom_arr.length().next_power_of_two() as usize);
+    rom_arr.copy_to(&mut rom[..rom_arr.length() as usize]);
 
     let save_contents = save_contents_arr.map(|save_contents_arr| {
         let mut save_contents = BoxedByteSlice::new_zeroed(save_contents_arr.length() as usize);

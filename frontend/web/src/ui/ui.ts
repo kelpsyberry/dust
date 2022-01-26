@@ -268,7 +268,11 @@ export class Ui {
             this.exportSaveButton.disabled = false;
             this.playButton.disabled = false;
             this.resetButton.disabled = false;
-            const gameCode = new Uint32Array(romBuffer.buffer)[0xc >> 2]!;
+            const gameCode = new Uint32Array(
+                romBuffer.buffer,
+                0,
+                romBuffer.length >> 2
+            )[0xc >> 2]!;
             let saveType: SaveType | undefined;
             const dbEntry = dbLookup(this.files.gameDb!, gameCode);
             if (dbEntry) {

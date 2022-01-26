@@ -5,15 +5,13 @@ pub use schedule::{
 pub mod input;
 pub mod swram;
 
-#[cfg(feature = "debugger-hooks")]
-use crate::cpu::{Arm7Data, Arm9Data, Schedule as _};
 use crate::{
     audio::{self, Audio},
     cpu::{
         self,
         arm7::{self, Arm7},
         arm9::{self, Arm9},
-        CoreData,
+        Arm7Data, Arm9Data, CoreData, Schedule as _,
     },
     ds_slot::{self, DsSlot},
     flash::Flash,
@@ -327,13 +325,14 @@ impl<E: cpu::Engine> Emu<E> {
 
 macro_rules! run {
     ($emu: expr$(, $cycles: expr)?) => {
-        #[allow(unused_mut)]
         let mut batch_end_time = $emu.schedule.batch_end_time();
-        #[cfg(feature = "debugger-hooks")]
-        $({
-            batch_end_time = batch_end_time.min($emu.schedule.cur_time() + Timestamp(*$cycles));
-            *$cycles -= batch_end_time.0 - $emu.schedule.cur_time().0;
-        })*
+        $(
+            #[cfg(feature = "debugger-hooks")]
+            {
+                batch_end_time = batch_end_time.min($emu.schedule.cur_time() + Timestamp(*$cycles));
+                *$cycles -= batch_end_time.0 - $emu.schedule.cur_time().0;
+            }
+        )*
         if !$emu.gpu.engine_3d.gx_fifo_stalled() {
             macro_rules! run_core {
                 ($core: expr, $engine_data: ty, $run: expr) => {
