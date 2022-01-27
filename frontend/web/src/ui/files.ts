@@ -161,7 +161,7 @@ export class Files {
             fileInput.loadFromStorage();
         }
 
-        fetch("/resources/game_db.json")
+        fetch("resources/game_db.json")
             .then((r) => r.text())
             .then((db) => {
                 this.gameDb = JSON.parse(db);

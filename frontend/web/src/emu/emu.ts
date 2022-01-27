@@ -1,5 +1,5 @@
 import { UiToEmu, EmuToUi } from "../message";
-import type * as wasm from "../../dist/pkg";
+import type * as wasm from "../../pkg";
 
 function sendMessage(message: EmuToUi.Message, transfer?: Transferable[]) {
     postMessage(message, transfer as any);
@@ -47,7 +47,7 @@ class FpsLimiter {
 }
 
 (async () => {
-    const wasm = await import("../../dist/pkg");
+    const wasm = await import("../../pkg");
     let playing = false;
     let fpsLimiter = new FpsLimiter(60, frame);
     let emu: wasm.EmuState | undefined;

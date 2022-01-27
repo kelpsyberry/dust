@@ -1,19 +1,14 @@
 const WasmPackPlugin = require("@wasm-tool/wasm-pack-plugin");
 const { CleanWebpackPlugin } = require("clean-webpack-plugin");
-const { resolve, join } = require("path");
-const { mkdirSync, existsSync } = require("fs");
+const { resolve } = require("path");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const CopyPlugin = require("copy-webpack-plugin");
 
 const fontawesomePath = require.resolve("@fortawesome/fontawesome-free");
 
 const src = resolve(__dirname, "src");
-const emuSrc = resolve(src, "emu");
+const pkg = resolve(__dirname, "pkg");
 const dist = resolve(__dirname, "dist");
-
-if (!existsSync(dist)) {
-    mkdirSync(dist, { recursive: true });
-}
 
 const mode = "development";
 const sourceMap = mode === "development";
@@ -23,23 +18,26 @@ const plugins = [
     new WasmPackPlugin({
         crateDirectory: resolve(__dirname, "crate"),
         watchDirectories: [resolve(__dirname, "../../core")],
-        outDir: resolve(dist, "pkg"),
+        outDir: resolve(__dirname, pkg),
         forceMode: "production",
         pluginLogLevel: "warn",
     }),
-    new CleanWebpackPlugin(),
     new MiniCssExtractPlugin(),
     new CopyPlugin({
         patterns: [
             resolve(src, "index.html"),
             resolve(src, "resources"),
+            { from: pkg, to: "pkg" },
             {
                 from: resolve(__dirname, "../../game_db.json"),
                 to: "resources/game_db.json",
             },
-            { from: join(fontawesomePath, "../../css"), to: "fontawesome/css" },
             {
-                from: join(fontawesomePath, "../../webfonts"),
+                from: resolve(fontawesomePath, "../../css"),
+                to: "fontawesome/css",
+            },
+            {
+                from: resolve(fontawesomePath, "../../webfonts"),
                 to: "fontawesome/webfonts",
             },
         ],
@@ -63,7 +61,7 @@ function pluginsForDir(dir) {
     return plugins.concat(
         new (require("fork-ts-checker-webpack-plugin"))({
             typescript: {
-                configFile: join(dir, "tsconfig.json"),
+                configFile: resolve(dir, "tsconfig.json"),
             },
         })
     );
@@ -72,7 +70,6 @@ function pluginsForDir(dir) {
 const baseConfig = {
     context: resolve(__dirname),
     devtool: sourceMap ? "source-map" : undefined,
-    plugins,
     module: {
         rules: [
             {
@@ -155,7 +152,10 @@ const baseConfig = {
 module.exports = [
     Object.assign(
         {
-            plugins: pluginsForDir(resolve(src, "ui")),
+            name: "ui",
+            plugins: pluginsForDir(resolve(src, "ui")).concat(
+                new CleanWebpackPlugin()
+            ),
             entry: {
                 ui: [
                     resolve(src, "styles/main.less"),
@@ -176,11 +176,13 @@ module.exports = [
     ),
     Object.assign(
         {
+            name: "emu",
             plugins: pluginsForDir(resolve(src, "emu")),
             entry: {
                 emu: resolve(src, "emu/emu.ts"),
             },
             target: "webworker",
+            dependencies: ["ui"],
         },
         baseConfig
     ),

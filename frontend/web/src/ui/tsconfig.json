@@ -8,9 +8,8 @@
         "noUncheckedIndexedAccess": true,
         "strict": true,
 
-        "baseUrl": "./src/scripts",
         "module": "ES2020",
-        "types": ["./raw-loader.d.ts"],
+        "types": [],
 
         "noEmitOnError": true,
 
@@ -18,6 +17,5 @@
 
         "target": "ES6",
         "lib": ["ES6", "DOM"]
-    },
-    "exclude": ["src/scripts/emu/**/*"]
+    }
 }

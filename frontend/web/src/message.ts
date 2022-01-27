@@ -1,5 +1,3 @@
-import type * as wasm from "../dist/pkg";
-
 export const enum SaveType {
     None,
     Eeprom4k,
