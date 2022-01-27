@@ -1,4 +1,4 @@
-import type * as wasm from "../pkg";
+import type * as wasm from "../dist/pkg";
 
 export const enum SaveType {
     None,

@@ -27,7 +27,7 @@ pub fn adc_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
         .with_carry(result >> 32 != 0)
         .with_overflow(!(a ^ b) & (a ^ result as u32) & 1 << 31 != 0)
         .with_negative(result & 1 << 31 != 0)
-        .with_zero(result == 0);
+        .with_zero(result as u32 == 0);
     result as u32
 }
 

@@ -136,10 +136,26 @@ export class Input {
         this.touch_ = touch;
         this.controls.classList.toggle("touch", touch);
         if (touch) {
+            this.pauseButton.removeEventListener("click", this.pauseCallback);
+
             this.touchControls = new TouchControls(this.controls);
             this.touchControls.layoutData = this.touchControls.defaultLayout; // TODO: Remove
+
+            this.touchControls.pause.interactionElement.addEventListener(
+                "click",
+                this.pauseCallback
+            );
         } else {
-            delete this.touchControls;
+            if (this.touchControls) {
+                this.touchControls.pause.interactionElement.removeEventListener(
+                    "click",
+                    this.pauseCallback
+                );
+
+                delete this.touchControls;
+            }
+
+            this.pauseButton.addEventListener("click", this.pauseCallback);
         }
     }
 
@@ -224,35 +240,36 @@ export class Input {
             ) {
                 touch.area = TouchArea.BottomScreen;
             }
-            if (touch.area === TouchArea.BottomScreen) {
-                const x = touch.x - botScreenCenterX;
-                const y = touch.y - botScreenCenterY;
-                const scale = Math.min(
-                    Math.abs(botScreenHalfWidth / x),
-                    Math.abs(botScreenHalfHeight / y),
-                    1
-                );
-                botScreenTouchSumX += botScreenHalfWidth + x * scale;
-                botScreenTouchSumY += botScreenHalfHeight + y * scale;
-                botScreenTouches++;
+            if (touch.area !== TouchArea.BottomScreen) {
+                continue;
             }
+            const x = touch.x - botScreenCenterX;
+            const y = touch.y - botScreenCenterY;
+            const scale = Math.min(
+                Math.abs(botScreenHalfWidth / x),
+                Math.abs(botScreenHalfHeight / y),
+                1
+            );
+            botScreenTouchSumX += botScreenHalfWidth + x * scale;
+            botScreenTouchSumY += botScreenHalfHeight + y * scale;
+            botScreenTouches++;
         }
 
         const touchPos: [number, number] | null = botScreenTouches
             ? [
-                  Math.floor(
-                      Math.min(
-                          ((botScreenTouchSumX / botScreenTouches) * 256) /
-                              botScreenRect.width,
-                          255
-                      )
+                  Math.min(
+                      Math.floor(
+                          (botScreenTouchSumX * 4096) /
+                              (botScreenTouches * botScreenRect.width)
+                      ),
+                      4095
                   ),
-                  Math.floor(
-                      Math.min(
-                          ((botScreenTouchSumY / botScreenTouches) * 192) /
-                              botScreenRect.height,
-                          191
-                      )
+                  Math.min(
+                      Math.floor(
+                          (botScreenTouchSumY * 3072) /
+                              (botScreenTouches * botScreenRect.height)
+                      ),
+                      3071
                   ),
               ]
             : null;

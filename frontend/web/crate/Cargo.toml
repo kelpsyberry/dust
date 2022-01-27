@@ -8,7 +8,6 @@ publish = false
 crate-type = ["cdylib"]
 
 [features]
-default = ["log"]
 log = ["slog", "dust-core/log"]
 
 [dependencies]

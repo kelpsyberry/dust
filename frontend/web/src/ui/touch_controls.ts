@@ -157,13 +157,6 @@ export class Button extends Control {
     }
 }
 
-export class RotatedButton extends Button {
-    override updateScale() {
-        this.element.style.transform = `rotate(-45deg) scale(${this.scale})`;
-        this.updateInteractionScale();
-    }
-}
-
 export class Dpad extends Control {
     private up: HTMLElement;
     private down: HTMLElement;
@@ -232,16 +225,10 @@ export class TouchControls {
         public element: HTMLElement,
         layoutData: ControlsLayoutData = {}
     ) {
-        function button<T = Button>(
-            key: ButtonKey,
-            bit: number,
-            type: {
-                new (e: HTMLElement, b: number, d?: ControlLayoutData): T;
-            }
-        ): [ButtonKey, T] {
+        function button(key: ButtonKey, bit: number): [ButtonKey, Button] {
             return [
                 key,
-                new type(
+                new Button(
                     document.getElementById(`btn-${key}`)!,
                     bit,
                     layoutData[key]
@@ -250,14 +237,14 @@ export class TouchControls {
         }
 
         this.buttons = new Map([
-            button("a", InputBits.A, Button),
-            button("b", InputBits.B, Button),
-            button("x", InputBits.X, Button),
-            button("y", InputBits.Y, Button),
-            button("l", InputBits.L, Button),
-            button("r", InputBits.R, Button),
-            button("start", InputBits.Start, RotatedButton),
-            button("select", InputBits.Select, RotatedButton),
+            button("a", InputBits.A),
+            button("b", InputBits.B),
+            button("x", InputBits.X),
+            button("y", InputBits.Y),
+            button("l", InputBits.L),
+            button("r", InputBits.R),
+            button("start", InputBits.Start),
+            button("select", InputBits.Select),
         ]);
 
         this.dpad = new Dpad(document.getElementById("dpad")!, layoutData.dpad);
@@ -278,6 +265,10 @@ export class TouchControls {
 
     containTouch(x: number, y: number): boolean {
         const elements = document.elementsFromPoint(x, y);
+
+        if (elements.indexOf(this.pause.interactionElement) !== -1) {
+            return true;
+        }
 
         for (const button of this.buttons.values()) {
             if (elements.indexOf(button.interactionElement) !== -1) {
@@ -339,6 +330,11 @@ export class TouchControls {
         const width = document.body.clientWidth;
         const height = document.body.clientHeight;
 
+        const aspectRatio = width / height;
+        const baseY =
+            (aspectRatio < 5 / 4 ? 0.4 : aspectRatio < 4 / 3 ? 0.3 : 0.1) *
+            height;
+
         const a = this.buttons.get("a")!;
         const b = this.buttons.get("b")!;
         const x = this.buttons.get("x")!;
@@ -357,11 +353,6 @@ export class TouchControls {
         const pauseInteractionRadius =
             this.pause.halfWidth * this.pause.interactionScale;
 
-        const startHalfSize =
-            (start.halfWidth + start.halfHeight) * Math.SQRT1_2;
-        const selectHalfSize =
-            (select.halfWidth + select.halfHeight) * Math.SQRT1_2;
-
         const centerX = 0.5 * width;
 
         const dpadRight = 2 * this.dpad.halfWidth + 2 * margin;
@@ -369,17 +360,18 @@ export class TouchControls {
             width - (6 * faceButtonsAvgHalfWidth + 2 * margin);
 
         const startX =
-            centerX + pauseInteractionRadius + startHalfSize + margin;
+            centerX + pauseInteractionRadius + start.halfWidth + margin;
         const selectX =
-            centerX - (pauseInteractionRadius + selectHalfSize + margin);
+            centerX - (pauseInteractionRadius + select.halfWidth + margin);
 
-        const startRight = startX - startHalfSize;
-        const selectLeft = selectX - selectHalfSize;
+        const startRight = startX - start.halfWidth;
+        const selectLeft = selectX - select.halfWidth;
 
         const dpadFaceButtonsBase =
             dpadRight >= selectLeft || faceButtonsLeft <= startRight
                 ? height -
-                  (2 * Math.max(startHalfSize, selectHalfSize) + 2 * margin)
+                  (2 * Math.max(start.halfHeight, select.halfHeight) +
+                      2 * margin)
                 : height - margin;
 
         return {
@@ -409,19 +401,19 @@ export class TouchControls {
             },
             l: {
                 x: margin + l.halfWidth,
-                y: margin + l.halfHeight,
+                y: baseY + margin + l.halfHeight,
             },
             r: {
                 x: width - (margin + r.halfWidth),
-                y: margin + r.halfHeight,
+                y: baseY + margin + r.halfHeight,
             },
             start: {
                 x: startX,
-                y: height - (startHalfSize + margin),
+                y: height - (start.halfHeight + margin),
             },
             select: {
                 x: selectX,
-                y: height - (selectHalfSize + margin),
+                y: height - (select.halfHeight + margin),
             },
             pause: {
                 x: centerX,
@@ -430,7 +422,7 @@ export class TouchControls {
                     ((this.element.classList.contains("touch")
                         ? Math.max(
                               this.pause.halfHeight,
-                              (startHalfSize + selectHalfSize) / 2
+                              (start.halfHeight + select.halfHeight) / 2
                           )
                         : this.pause.halfHeight) +
                         margin),

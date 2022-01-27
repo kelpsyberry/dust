@@ -326,4 +326,4 @@ export class Ui {
     }
 }
 
-export const ui = new Ui(isMobileBrowser());
+export const ui = new Ui(true);

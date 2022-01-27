@@ -1,6 +1,7 @@
 const WasmPackPlugin = require("@wasm-tool/wasm-pack-plugin");
 const { CleanWebpackPlugin } = require("clean-webpack-plugin");
 const { resolve, join } = require("path");
+const { mkdirSync, existsSync } = require("fs");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const CopyPlugin = require("copy-webpack-plugin");
 
@@ -10,6 +11,10 @@ const src = resolve(__dirname, "src");
 const emuSrc = resolve(src, "emu");
 const dist = resolve(__dirname, "dist");
 
+if (!existsSync(dist)) {
+    mkdirSync(dist, { recursive: true });
+}
+
 const mode = "development";
 const sourceMap = mode === "development";
 const optimize = mode === "production";
@@ -18,7 +23,7 @@ const plugins = [
     new WasmPackPlugin({
         crateDirectory: resolve(__dirname, "crate"),
         watchDirectories: [resolve(__dirname, "../../core")],
-        outDir: resolve(__dirname, "pkg"),
+        outDir: resolve(dist, "pkg"),
         forceMode: "production",
         pluginLogLevel: "warn",
     }),
@@ -28,7 +33,10 @@ const plugins = [
         patterns: [
             resolve(src, "index.html"),
             resolve(src, "resources"),
-            { from: resolve(__dirname, "../../game_db.json"), to: "resources/game_db.json" },
+            {
+                from: resolve(__dirname, "../../game_db.json"),
+                to: "resources/game_db.json",
+            },
             { from: join(fontawesomePath, "../../css"), to: "fontawesome/css" },
             {
                 from: join(fontawesomePath, "../../webfonts"),

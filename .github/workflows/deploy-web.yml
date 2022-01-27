@@ -1,0 +1,53 @@
+name: Deploy web frontend
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install nightly toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly-2022-01-17
+        override: true
+
+    - name: Setup Node
+      uses: actions/setup-node@v2
+      with:
+        node-version: '17'
+    
+    - name: Cache dependencies and build directory
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/bin
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+          target/
+        key: web
+
+    - name: Build
+      working-directory: frontend/web
+      run: |
+        npm install
+        npm run build
+
+    - name: Deploy
+      uses: peaceiris/actions-gh-pages@v3
+      if: ${{ github.ref == 'refs/heads/main' }}
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: dist
+        force_orphan: true

@@ -92,7 +92,7 @@ impl State {
         }
         self.touch_pos = Some([
             ((diff[0] / self.touchscreen_half_size.width + 1.0) * 2048.0).clamp(0.0, 4095.0) as u16,
-            ((diff[1] / self.touchscreen_half_size.height + 1.0) * 2048.0).clamp(0.0, 4095.0)
+            ((diff[1] / self.touchscreen_half_size.height + 1.0) * 1536.0).clamp(0.0, 3072.0)
                 as u16,
         ]);
     }
