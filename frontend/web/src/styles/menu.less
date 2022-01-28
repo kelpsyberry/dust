@@ -1,18 +1,40 @@
 @light-menu-bg-color: rgb(127, 127, 127);
 @light-menu-color: rgba(0, 0, 0, 0.75);
-@light-button-disabled-color: rgba(0, 0, 0, 0.25);
-@light-button-bg-color: rgba(220, 220, 220, 0.5);
-@light-button-hover-bg-color: rgba(180, 180, 180, 0.5);
+
 @light-group-label-color: rgba(0, 0, 0, 0.5);
 @light-entry-label-color: rgba(0, 0, 0, 0.6);
 
+@light-button-disabled-color: rgba(0, 0, 0, 0.25);
+@light-button-bg-color: rgba(220, 220, 220, 0.5);
+@light-button-hover-bg-color: rgba(180, 180, 180, 0.5);
+
+@light-toggle-disabled-bg-color: rgba(60, 60, 60, 0.5);
+@light-toggle-disabled-fg-color: rgba(160, 160, 160, 0.5);
+@light-toggle-off-bg-color: rgba(0, 0, 0, 0.5);
+@light-toggle-off-fg-color: rgba(220, 220, 220, 0.5);
+@light-toggle-on-bg-color: rgba(110, 200, 95, 0.75);
+@light-toggle-on-fg-color: rgba(40, 40, 40, 0.75);
+@light-toggle-off-hover-bg-color: rgba(10, 10, 10, 0.5);
+@light-toggle-on-hover-bg-color: rgba(90, 165, 80, 0.5);
+
 @dark-menu-bg-color: rgb(70, 70, 70);
 @dark-menu-color: rgba(245, 245, 245, 0.75);
+
+@dark-group-label-color: rgba(255, 255, 255, 0.5);
+@dark-entry-label-color: rgba(255, 255, 255, 0.6);
+
 @dark-button-disabled-color: rgba(245, 245, 245, 0.25);
 @dark-button-bg-color: rgba(30, 30, 30, 0.5);
 @dark-button-hover-bg-color: rgba(60, 60, 60, 0.5);
-@dark-group-label-color: rgba(255, 255, 255, 0.5);
-@dark-entry-label-color: rgba(255, 255, 255, 0.6);
+
+@dark-toggle-disabled-bg-color: rgba(160, 160, 160, 0.5);
+@dark-toggle-disabled-fg-color: rgba(60, 60, 60, 0.5);
+@dark-toggle-off-bg-color: rgba(245, 245, 245, 0.5);
+@dark-toggle-off-fg-color: rgba(30, 30, 30, 0.5);
+@dark-toggle-on-bg-color: rgba(100, 180, 90, 0.75);
+@dark-toggle-on-fg-color: rgba(220, 220, 220, 0.75);
+@dark-toggle-off-hover-bg-color: rgba(160, 160, 160, 0.5);
+@dark-toggle-on-hover-bg-color: rgba(60, 110, 50, 0.5);
 
 @normal-bg-opacity: 80%;
 @blurred-bg-opacity: 60%;
@@ -110,6 +132,7 @@
 
     .group-label,
     .entry-label {
+        transition: background-color 500ms;
         .themed(background-color, button-bg-color);
     }
 
@@ -190,7 +213,71 @@
     }
 }
 
-#play-reset {
+.toggle {
+    input[type="checkbox"] {
+        display: none;
+    }
+
+    label {
+        .box-shadow();
+
+        position: relative;
+        display: inline-block;
+        cursor: pointer;
+        .themed(background-color, toggle-off-bg-color);
+        transition: background-color 0.3s;
+        width: 2em;
+        height: 1em;
+        border-radius: 0.5em;
+
+        &::after {
+            content: "";
+            display: block;
+            position: absolute;
+            left: 0.05em;
+            bottom: 0.05em;
+            .themed(background-color, toggle-off-fg-color);
+            transition: background-color 0.3s, left 0.3s;
+            width: 0.9em;
+            height: 0.9em;
+            border-radius: 50%;
+        }
+    }
+
+    input[type="checkbox"]:enabled:checked + label {
+        .themed(background-color, toggle-on-bg-color);
+
+        &::after {
+            .themed(background-color, toggle-on-fg-color);
+            left: 1.05em;
+        }
+
+        &:focus,
+        &:hover,
+        &:active {
+            .themed(background-color, toggle-on-hover-bg-color);
+        }
+    }
+
+    input[type="checkbox"]:enabled:not(:checked) + label {
+        &:focus,
+        &:hover,
+        &:active {
+            .themed(background-color, toggle-off-hover-bg-color);
+        }
+    }
+
+    input[type="checkbox"]:not(:enabled) + label {
+        cursor: default;
+        .themed(background-color, toggle-disabled-bg-color);
+
+        &::after {
+            .themed(background-color, toggle-disabled-fg-color);
+        }
+    }
+}
+
+#game-controls {
     flex: 0 0 auto;
     display: flex;
     flex-wrap: wrap;

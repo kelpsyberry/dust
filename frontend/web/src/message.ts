@@ -13,7 +13,7 @@ export const enum SaveType {
 }
 
 export const saveTypes = {
-    "none": SaveType.None,
+    none: SaveType.None,
     "eeprom-4k": SaveType.Eeprom4k,
     "eeprom-fram-64k": SaveType.EepromFram64k,
     "eeprom-fram-512k": SaveType.EepromFram512k,
@@ -51,7 +51,7 @@ export namespace UiToEmu {
         ExportSave,
         UpdateInput,
         UpdatePlaying,
-        UpdateLimitFramerate,
+        UpdateFramerateLimit,
     }
 
     export interface StartMessage {
@@ -70,7 +70,7 @@ export namespace UiToEmu {
 
     export interface LoadSaveMessage {
         type: MessageType.LoadSave;
-        buffer: Uint8Array;
+        buffer: ArrayBuffer;
     }
 
     export interface UpdateInputMessage {
@@ -81,7 +81,7 @@ export namespace UiToEmu {
     }
 
     export interface UpdateFlagMessage {
-        type: MessageType.UpdatePlaying | MessageType.UpdateLimitFramerate;
+        type: MessageType.UpdatePlaying | MessageType.UpdateFramerateLimit;
         value: boolean;
     }
 
@@ -98,15 +98,22 @@ export namespace EmuToUi {
         Loaded,
         ExportSave,
         RenderFrame,
+        Stopped,
     }
 
     export interface LoadedMessage {
         type: MessageType.Loaded;
     }
 
+    export interface StopMessage {
+        type: MessageType.Stopped;
+        buffer: Uint8Array;
+    }
+
     export interface ExportSaveMessage {
         type: MessageType.ExportSave;
         buffer: Uint8Array;
+        triggerDownload: boolean;
     }
 
     export interface RenderFrameMessage {
@@ -114,5 +121,9 @@ export namespace EmuToUi {
         buffer: Uint32Array;
     }
 
-    export type Message = LoadedMessage | ExportSaveMessage | RenderFrameMessage;
+    export type Message =
+        | LoadedMessage
+        | StopMessage
+        | ExportSaveMessage
+        | RenderFrameMessage;
 }

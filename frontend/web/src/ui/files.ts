@@ -40,6 +40,8 @@ export class FileInput {
         this.loadCallback(name, buffer);
     }
 
+    unload() {}
+
     loadFromInput(file: File) {
         const reader = new FileReader();
         reader.onload = () => {
@@ -47,8 +49,10 @@ export class FileInput {
             if (this.storageKey) {
                 reader.onload = () => {
                     this.load(file.name, resultBuffer);
-                    localStorage[this.storageKey!] =
-                        file.name + "," + reader.result;
+                    this.storeDataURLToStorage(
+                        file.name,
+                        reader.result as string
+                    );
                 };
                 reader.readAsDataURL(file);
             } else {
@@ -58,10 +62,11 @@ export class FileInput {
         reader.readAsArrayBuffer(file);
     }
 
-    loadFromStorage() {
-        if (!this.storageKey) return;
+    loadFromStorage(storageKey?: string) {
+        storageKey ??= this.storageKey;
+        if (!storageKey) return;
 
-        const base64 = localStorage[this.storageKey];
+        const base64 = localStorage[storageKey];
         if (base64) {
             const parts = base64.split(",");
             if (!parts[2]) {
@@ -74,6 +79,31 @@ export class FileInput {
             }
             this.load(parts[0], buffer.buffer);
         }
+    }
+
+    storeDataURLToStorage(
+        filename: string,
+        dataURL: string,
+        storageKey?: string
+    ) {
+        storageKey ??= this.storageKey;
+        if (!storageKey) return;
+        localStorage[storageKey] = filename + "," + dataURL;
+    }
+
+    storeToStorage(filename: string, data: ArrayBuffer, storageKey?: string) {
+        storageKey ??= this.storageKey;
+        if (!storageKey) return;
+        let dataString = "";
+        const data_ = new Uint8Array(data);
+        for (let i = 0; i < data_.length; i++) {
+            dataString += String.fromCharCode(data_[i]!);
+        }
+        this.storeDataURLToStorage(
+            filename,
+            "data:application/octet-stream;base64," + btoa(dataString),
+            storageKey
+        );
     }
 }
 
@@ -105,6 +135,16 @@ export class FileInputWithIndicator extends FileInput {
             "http://www.w3.org/1999/xlink",
             "xlink:href",
             "file-check.svg#icon"
+        );
+    }
+
+    override unload(): void {
+        super.unload();
+        this.fileNameElement.textContent = "";
+        this.loadIndicatorUse.setAttributeNS(
+            "http://www.w3.org/1999/xlink",
+            "xlink:href",
+            "file-cross.svg#icon"
         );
     }
 }
@@ -151,8 +191,13 @@ export class Files {
         };
         this.fileInputs = new Map([
             input(FileInputWithIndicator, FileId.Rom, "rom-input"),
-            // TODO: Use per-game storage keys for saves
-            input(FileInput, FileId.Save, "import-save-input", "save", false),
+            input(
+                FileInput,
+                FileId.Save,
+                "import-save-input",
+                undefined,
+                false
+            ),
             input(FileInputWithIndicator, FileId.Bios7, "bios7-input", "bios7"),
             input(FileInputWithIndicator, FileId.Bios9, "bios9-input", "bios9"),
             input(FileInputWithIndicator, FileId.Firmware, "fw-input", "fw"),
@@ -176,9 +221,27 @@ export class Files {
     toggleEnabled(id: FileId, enabled: boolean) {
         this.fileInputs.get(id)!.enabled = enabled;
     }
+
+    unloadRom() {
+        this.loadedFiles &= ~FileId.Rom;
+        this.fileInputs.get(FileId.Rom)!.unload();
+    }
+
+    loadSaveFromStorage(gameTitle: string) {
+        this.fileInputs.get(FileId.Save)!.loadFromStorage(`save-${gameTitle}`);
+    }
+
+    storeSaveToStorage(filename: string, data: ArrayBuffer, gameTitle: string) {
+        this.fileInputs
+            .get(FileId.Save)!
+            .storeToStorage(filename, data, `save-${gameTitle}`);
+    }
 }
 
-export function dbLookup(db: GameDbEntry[], code: number): GameDbEntry | undefined {
+export function dbLookup(
+    db: GameDbEntry[],
+    code: number
+): GameDbEntry | undefined {
     let start = 0;
     let end = db.length - 1;
     while (start !== end) {

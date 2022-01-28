@@ -98,11 +98,19 @@
     width: 2em;
     height: 2em;
     border-radius: 100%;
+
+    button {
+        pointer-events: all;
+    }
 }
 
 #controls:not(.touch) #btn-pause {
-    top: 0.5em;
-    right: 0.5em;
+    // The touch control layout overrides these in the style attribute, so !important is needed;
+    // maybe that class should handle cleaning its own styles up, though.
+    left: unset !important;
+    top: 0.5em !important;
+    right: 0.5em !important;
+    transform: none !important;
 }
 
 @dir-length: 2.125em;

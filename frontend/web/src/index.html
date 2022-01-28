@@ -130,10 +130,29 @@
                         </button>
                     </div>
                 </section>
+                <section class="group">
+                    <h1 class="group-label">
+                        <span class="arrow fas fa-chevron-down"></span>Emulation
+                    </h1>
+                    <span class="entry-label">Limit framerate</span>
+                    <div class="entry-contents toggle"><input disabled type="checkbox" autocomplete="off"
+                            id="toggle-framerate-limit" /><label for="toggle-framerate-limit"></label></div>
+                </section>
+                <section class="group">
+                    <h1 class="group-label">
+                        <span class="arrow fas fa-chevron-down"></span>Other
+                    </h1>
+                    <span class="entry-label">Touch controls</span>
+                    <div class="entry-contents toggle"><input type="checkbox" autocomplete="off"
+                            id="toggle-touch-controls" /><label for="toggle-touch-controls"></label></div>
+                </section>
             </section>
-            <section id="play-reset" aria-label="play/reset">
+            <section id="game-controls" aria-label="Game controls">
                 <button disabled autocomplete="off" id="reset">
                     <span class="fas fa-undo" title="Reset"></span>
+                </button>
+                <button disabled autocomplete="off" id="stop">
+                    <span class="fas fa-stop" title="Stop"></span>
                 </button>
                 <button disabled autocomplete="off" id="play">
                     <span class="fas fa-play" title="Play"></span>
