@@ -1,3 +1,5 @@
+#![allow(clippy::unused_unit)]
+
 #[cfg(feature = "log")]
 mod console_log;
 mod renderer_3d;

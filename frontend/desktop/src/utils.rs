@@ -61,6 +61,7 @@ macro_rules! config_error {
     };
 }
 
+#[allow(dead_code)]
 pub fn scale_to_fit(aspect_ratio: f32, frame_size: [f32; 2]) -> ([f32; 2], [f32; 2]) {
     let width = (frame_size[1] * aspect_ratio).min(frame_size[0]);
     let height = width / aspect_ratio;

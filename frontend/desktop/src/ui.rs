@@ -1052,7 +1052,7 @@ pub fn main() {
                         || imgui_log_enabled
                     {
                         ui.menu("Debug", || {
-                            #[allow(unused_mut)]
+                            #[allow(unused_mut, unused_variables)]
                             let mut separator_needed = false;
                             #[cfg(feature = "log")]
                             if let Some((_, _, console_visible)) = &mut state.imgui_log {

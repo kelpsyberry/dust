@@ -202,6 +202,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
             )
         },
 
+        #[allow(clippy::match_same_arms)]
         0x04 => match addr & 0x00FF_FFFE {
             0x000..=0x002 | 0x008..=0x056 | 0x06C => emu.gpu.engine_2d_a.read_16::<A>(addr),
             0x004 => emu.gpu.disp_status_9().0,
