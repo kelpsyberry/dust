@@ -9,7 +9,7 @@ use dust_core::{
     cpu,
     emu::Emu,
 };
-use imgui::{PlotLines, Slider, SliderFlags, StyleVar, TableFlags, Ui};
+use imgui::{PlotLines, SliderFlags, StyleVar, TableFlags, Ui};
 
 #[derive(Clone)]
 struct RingBuffer<T: Copy> {
@@ -168,9 +168,10 @@ impl View for AudioChannels {
 
         let mut raw_channel_index = self.cur_channel.get();
         ui.set_next_item_width(sliders_width);
-        let selection_updated = Slider::new("##channel", 0, 15)
+        let selection_updated = ui
+            .slider_config("##channel", 0, 15)
             .display_format("Channel %d")
-            .build(ui, &mut raw_channel_index);
+            .build(&mut raw_channel_index);
 
         let new_state = if selection_updated {
             self.samples.fill(0.0);
@@ -182,10 +183,11 @@ impl View for AudioChannels {
 
         ui.same_line();
         ui.set_next_item_width(sliders_width);
-        if Slider::new("##visible_samples", 512, 256 * 1024)
+        if ui
+            .slider_config("##visible_samples", 512, 256 * 1024)
             .flags(SliderFlags::LOGARITHMIC)
             .display_format("Last %d samples")
-            .build(ui, &mut self.samples_to_show)
+            .build(&mut self.samples_to_show)
         {
             self.samples.resize(self.samples_to_show as usize, 0.0);
         }

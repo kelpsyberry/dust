@@ -13,7 +13,7 @@ use dust_core::{
     },
     utils::{zeroed_box, ByteMutSlice, Bytes},
 };
-use imgui::{Image, Slider, SliderFlags, StyleColor, TextureId, Ui};
+use imgui::{Image, SliderFlags, StyleColor, TextureId, Ui};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Engine2d {
@@ -478,13 +478,14 @@ impl View for BgMaps2d {
 
         ui.set_next_item_width(two_widgets_total_width * (1.0 / 3.0));
         let mut cur_engine = self.cur_selection.engine as u8;
-        selection_updated |= Slider::new("##engine", 0_u8, 1)
+        selection_updated |= ui
+            .slider_config("##engine", 0_u8, 1)
             .display_format(match self.cur_selection.engine {
                 Engine2d::A => "Engine A",
                 Engine2d::B => "Engine B",
             })
             .flags(SliderFlags::NO_INPUT)
-            .build(ui, &mut cur_engine);
+            .build(&mut cur_engine);
         self.cur_selection.engine = match cur_engine {
             0 => Engine2d::A,
             _ => Engine2d::B,
@@ -493,10 +494,11 @@ impl View for BgMaps2d {
         ui.same_line();
         ui.set_next_item_width(two_widgets_total_width * (2.0 / 3.0));
         let mut cur_bg_index = self.cur_selection.bg_index.get();
-        selection_updated |= Slider::new("##bg_index", 0_u8, 3)
+        selection_updated |= ui
+            .slider_config("##bg_index", 0_u8, 3)
             .display_format("BG%d")
             .flags(SliderFlags::NO_INPUT)
-            .build(ui, &mut cur_bg_index);
+            .build(&mut cur_bg_index);
         self.cur_selection.bg_index = BgIndex::new(cur_bg_index);
 
         if selection_updated {

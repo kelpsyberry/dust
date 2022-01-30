@@ -793,9 +793,10 @@ pub fn main() {
                     ui.menu("Config", || {
                         ui.menu("Audio volume", || {
                             let mut volume = state.audio_volume * 100.0;
-                            if imgui::Slider::new("##audio_volume", 0.0, 100.0)
+                            if ui
+                                .slider_config("##audio_volume", 0.0, 100.0)
                                 .display_format("%.02f%%")
-                                .build(ui, &mut volume)
+                                .build(&mut volume)
                             {
                                 state.audio_volume =
                                     (volume * 100.0).round().clamp(0.0, 10000.0) / 10000.0;
@@ -829,12 +830,13 @@ pub fn main() {
 
                         #[cfg(feature = "xq-audio")]
                         ui.menu("Core audio interpolation", || {
-                            if imgui::Slider::new("Sample rate multiplier", 0, 10)
+                            if ui
+                                .slider_config("Sample rate multiplier", 0, 10)
                                 .display_format(&format!(
                                     "{}x",
                                     1 << state.audio_xq_sample_rate_shift.value
                                 ))
-                                .build(ui, &mut state.audio_xq_sample_rate_shift.value)
+                                .build(&mut state.audio_xq_sample_rate_shift.value)
                             {
                                 if let Some(audio_channel) = state.audio_channel.as_mut() {
                                     audio_channel.set_xq_sample_rate_shift(
