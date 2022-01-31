@@ -41,7 +41,12 @@ impl Normal {
             return Err(CreationError::SizeNotPowerOfTwo);
         }
         let rom_mask = (rom.len() - 1) as u32;
-        let chip_id = (rom.len() >> 20 << 8) as u32 | 0x0000_00C2;
+        let chip_id = 0x0000_00C2
+            | match rom.len() as u32 {
+                0..=0xF_FFFF => 0,
+                len @ 0x10_0000..=0xFFF_FFFF => (len >> 20) - 1,
+                len @ 0x1000_0000..=0xFFFF_FFFF => 0x100 - (len >> 28),
+            };
         let game_code = rom.read_le::<u32>(0xC);
         Ok(Normal {
             #[cfg(feature = "log")]

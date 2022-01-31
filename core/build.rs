@@ -167,13 +167,12 @@ mod interpreter {
                         writeback,
                         s_bit,
                     } => {
-                        let upwards = increment;
                         let preinc = base_excluded ^ !increment;
                         write!(
                             file,
                             "{}::<{}, {}, {}, {}>",
                             if load { "ldm" } else { "stm" },
-                            upwards,
+                            increment,
                             preinc,
                             writeback,
                             s_bit
@@ -547,13 +546,12 @@ mod jit {
                         writeback,
                         s_bit,
                     } => {
-                        let upwards = increment;
                         let preinc = base_excluded ^ !increment;
                         write!(
                             file,
                             "{}::<_, {}, {}, {}, {}>",
                             if load { "ldm" } else { "stm" },
-                            upwards,
+                            increment,
                             preinc,
                             writeback,
                             s_bit

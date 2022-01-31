@@ -48,6 +48,14 @@ bitfield_debug! {
     }
 }
 
+bitfield_debug! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub struct AudioWifiPowerControl(pub u8) {
+        pub speaker_enabled: bool @ 0,
+        pub wifi_enabled: bool @ 1,
+    }
+}
+
 pub struct Emu<E: cpu::Engine> {
     pub(crate) global_engine_data: E::GlobalData,
     pub arm7: Arm7<E>,
@@ -62,6 +70,7 @@ pub struct Emu<E: cpu::Engine> {
     pub rtc: Rtc,
     pub gpu: Gpu,
     pub input: Input,
+    pub audio_wifi_power_control: AudioWifiPowerControl,
     pub audio: Audio,
     rcnt: u16, // TODO: Move to SIO
 }
@@ -178,6 +187,7 @@ impl Builder {
                 &self.logger.new(slog::o!("gpu" => "")),
             ),
             input: Input(0x007F_03FF),
+            audio_wifi_power_control: AudioWifiPowerControl(0),
             audio: Audio::new(
                 self.audio_backend,
                 &mut arm7.schedule,
@@ -303,6 +313,16 @@ impl<E: cpu::Engine> Emu<E> {
     pub fn set_global_ex_mem_control(&mut self, value: GlobalExMemControl) {
         self.global_ex_mem_control.0 = (value.0 & 0xC88) | 0x400;
         self.ds_slot.update_access(value.arm7_ds_slot_access());
+    }
+
+    #[inline]
+    pub fn audio_wifi_power_control(&self) -> AudioWifiPowerControl {
+        self.audio_wifi_power_control
+    }
+
+    #[inline]
+    pub fn set_audio_wifi_power_control(&mut self, value: AudioWifiPowerControl) {
+        self.audio_wifi_power_control.0 = value.0 & 3;
     }
 
     #[inline]

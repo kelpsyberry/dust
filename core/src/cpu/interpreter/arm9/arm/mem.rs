@@ -619,7 +619,7 @@ pub fn swp(emu: &mut Emu<Engine>, instr: u32) {
     apply_reg_interlock_1::<false>(emu, addr_reg);
     add_bus_cycles(emu, 2);
     let addr = reg!(emu.arm9, addr_reg);
-    prefetch_arm::<true, true>(emu);
+    prefetch_arm::<false, true>(emu);
     // can_write implies can_read
     if unlikely(!can_write(
         emu,
@@ -652,7 +652,7 @@ pub fn swpb(emu: &mut Emu<Engine>, instr: u32) {
     apply_reg_interlock_1::<false>(emu, addr_reg);
     add_bus_cycles(emu, 2);
     let addr = reg!(emu.arm9, addr_reg);
-    prefetch_arm::<true, true>(emu);
+    prefetch_arm::<false, true>(emu);
     // can_write implies can_read
     if unlikely(!can_write(
         emu,
@@ -693,7 +693,7 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
     apply_reg_interlock_1::<false>(emu, base_reg);
     add_bus_cycles(emu, 2);
     let base = reg!(emu.arm9, base_reg);
-    prefetch_arm::<true, true>(emu);
+    prefetch_arm::<false, true>(emu);
     if unlikely(instr as u16 == 0) {
         add_cycles(emu, 1);
         if WRITEBACK {
@@ -703,6 +703,7 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
                 base.wrapping_sub(0x40)
             };
         }
+        emu.arm9.engine_data.data_cycles = 1;
         return;
     }
     let start_addr = if UPWARDS {
@@ -837,7 +838,7 @@ pub fn stm<
         add_bus_cycles(emu, 2);
     }
     let base = reg!(emu.arm9, base_reg);
-    prefetch_arm::<true, true>(emu);
+    prefetch_arm::<false, true>(emu);
     if unlikely(instr as u16 == 0) {
         if !BANK_SWITCH {
             add_bus_cycles(emu, 2);
@@ -850,6 +851,7 @@ pub fn stm<
                 base.wrapping_sub(0x40)
             };
         }
+        emu.arm9.engine_data.data_cycles = 1;
         return;
     }
     let start_addr = if UPWARDS {

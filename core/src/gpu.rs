@@ -136,7 +136,19 @@ impl Gpu {
 
     #[inline]
     pub fn set_power_control(&mut self, value: PowerControl) {
-        // TODO: What to do with bit 0?
+        // TODO: What to do with bit 0? The current handling code is just a guess
+        if !value.display_enabled() {
+            self.disp_status_7 = self
+                .disp_status_7
+                .with_hblank(false)
+                .with_vblank(false)
+                .with_vcount_match(false);
+            self.disp_status_9 = self
+                .disp_status_9
+                .with_hblank(false)
+                .with_vblank(false)
+                .with_vcount_match(false);
+        }
         self.power_control.0 = value.0 & 0x820F;
         self.swap_screens = value.swap_screens();
         self.engine_2d_a.enabled = value.engine_2d_a_enabled();
@@ -200,31 +212,30 @@ impl Gpu {
         self.vcount_compare_9 = value.vcount_compare();
     }
 
-    pub(crate) fn start_hdraw(emu: &mut Emu<impl Engine>) {
-        emu.gpu.disp_status_7.set_hblank(false);
-        emu.gpu.disp_status_9.set_hblank(false);
-    }
-
     pub(crate) fn end_hdraw(emu: &mut Emu<impl Engine>, time: Timestamp) {
-        emu.gpu.disp_status_7.set_hblank(true);
-        if emu.gpu.disp_status_7.hblank_irq_enabled() {
-            emu.arm7
-                .irqs
-                .set_requested(emu.arm7.irqs.requested().with_hblank(true), ());
-        }
-        emu.gpu.disp_status_9.set_hblank(true);
-        if emu.gpu.disp_status_9.hblank_irq_enabled() {
-            emu.arm9
-                .irqs
-                .set_requested(emu.arm9.irqs.requested().with_hblank(true), ());
+        if emu.gpu.power_control.display_enabled() {
+            emu.gpu.disp_status_7.set_hblank(true);
+            if emu.gpu.disp_status_7.hblank_irq_enabled() {
+                emu.arm7
+                    .irqs
+                    .set_requested(emu.arm7.irqs.requested().with_hblank(true), ());
+            }
+            emu.gpu.disp_status_9.set_hblank(true);
+            if emu.gpu.disp_status_9.hblank_irq_enabled() {
+                emu.arm9
+                    .irqs
+                    .set_requested(emu.arm9.irqs.requested().with_hblank(true), ());
+            }
         }
 
         emu.gpu.engine_2d_a.update_windows(emu.gpu.vcount);
         emu.gpu.engine_2d_b.update_windows(emu.gpu.vcount);
 
         if emu.gpu.vcount < SCREEN_HEIGHT as u16 {
-            emu.arm9
-                .start_dma_transfers_with_timing::<{ arm9::dma::Timing::HBlank }>();
+            if emu.gpu.power_control.display_enabled() {
+                emu.arm9
+                    .start_dma_transfers_with_timing::<{ arm9::dma::Timing::HBlank }>();
+            }
             if emu.gpu.cur_scanline < SCREEN_HEIGHT as u32 {
                 let scanline_base = (emu.gpu.cur_scanline as usize) * SCREEN_WIDTH;
                 unsafe {
@@ -275,7 +286,6 @@ impl Gpu {
     }
 
     pub(crate) fn end_hblank(emu: &mut Emu<impl Engine>, time: Timestamp) {
-        Self::start_hdraw(emu);
         emu.gpu.cur_scanline = emu.gpu.cur_scanline.wrapping_add(1);
         emu.gpu.vcount = emu
             .gpu
@@ -290,25 +300,29 @@ impl Gpu {
                 emu.gpu.engine_3d.renderer.start_frame();
             }
         }
-        if emu.gpu.vcount == emu.gpu.vcount_compare_7 {
-            emu.gpu.disp_status_7.set_vcount_match(true);
-            if emu.gpu.disp_status_7.vcount_match_irq_enabled() {
-                emu.arm7
-                    .irqs
-                    .set_requested(emu.arm7.irqs.requested().with_vcount_match(true), ());
+        if emu.gpu.power_control.display_enabled() {
+            emu.gpu.disp_status_7.set_hblank(false);
+            emu.gpu.disp_status_9.set_hblank(false);
+            if emu.gpu.vcount == emu.gpu.vcount_compare_7 {
+                emu.gpu.disp_status_7.set_vcount_match(true);
+                if emu.gpu.disp_status_7.vcount_match_irq_enabled() {
+                    emu.arm7
+                        .irqs
+                        .set_requested(emu.arm7.irqs.requested().with_vcount_match(true), ());
+                }
+            } else {
+                emu.gpu.disp_status_7.set_vcount_match(false);
             }
-        } else {
-            emu.gpu.disp_status_7.set_vcount_match(false);
-        }
-        if emu.gpu.vcount == emu.gpu.vcount_compare_9 {
-            emu.gpu.disp_status_9.set_vcount_match(true);
-            if emu.gpu.disp_status_9.vcount_match_irq_enabled() {
-                emu.arm9
-                    .irqs
-                    .set_requested(emu.arm9.irqs.requested().with_vcount_match(true), ());
+            if emu.gpu.vcount == emu.gpu.vcount_compare_9 {
+                emu.gpu.disp_status_9.set_vcount_match(true);
+                if emu.gpu.disp_status_9.vcount_match_irq_enabled() {
+                    emu.arm9
+                        .irqs
+                        .set_requested(emu.arm9.irqs.requested().with_vcount_match(true), ());
+                }
+            } else {
+                emu.gpu.disp_status_9.set_vcount_match(false);
             }
-        } else {
-            emu.gpu.disp_status_9.set_vcount_match(false);
         }
         emu.gpu.next_vcount = None;
         if emu.gpu.vcount == SCREEN_HEIGHT as u16 {
@@ -318,23 +332,27 @@ impl Gpu {
             } else {
                 emu.gpu.engine_3d.swap_buffers_missed(&emu.gpu.vram);
             }
-            emu.gpu.disp_status_7.set_vblank(true);
-            if emu.gpu.disp_status_7.vblank_irq_enabled() {
+            if emu.gpu.power_control.display_enabled() {
+                emu.gpu.disp_status_7.set_vblank(true);
+                if emu.gpu.disp_status_7.vblank_irq_enabled() {
+                    emu.arm7
+                        .irqs
+                        .set_requested(emu.arm7.irqs.requested().with_vblank(true), ());
+                }
+                emu.gpu.disp_status_9.set_vblank(true);
+                if emu.gpu.disp_status_9.vblank_irq_enabled() {
+                    emu.arm9
+                        .irqs
+                        .set_requested(emu.arm9.irqs.requested().with_vblank(true), ());
+                }
                 emu.arm7
-                    .irqs
-                    .set_requested(emu.arm7.irqs.requested().with_vblank(true), ());
-            }
-            emu.gpu.disp_status_9.set_vblank(true);
-            if emu.gpu.disp_status_9.vblank_irq_enabled() {
+                    .start_dma_transfers_with_timing::<{ arm7::dma::Timing::VBlank }>();
                 emu.arm9
-                    .irqs
-                    .set_requested(emu.arm9.irqs.requested().with_vblank(true), ());
+                    .start_dma_transfers_with_timing::<{ arm9::dma::Timing::VBlank }>();
             }
-            emu.arm7
-                .start_dma_transfers_with_timing::<{ arm7::dma::Timing::VBlank }>();
-            emu.arm9
-                .start_dma_transfers_with_timing::<{ arm9::dma::Timing::VBlank }>();
-        } else if emu.gpu.vcount == (TOTAL_SCANLINES - 1) as u16 {
+        } else if emu.gpu.vcount == (TOTAL_SCANLINES - 1) as u16
+            && emu.gpu.power_control.display_enabled()
+        {
             // The VBlank flag gets cleared one scanline earlier than the actual VBlank end.
             emu.gpu.disp_status_7.set_vblank(false);
             emu.gpu.disp_status_9.set_vblank(false);

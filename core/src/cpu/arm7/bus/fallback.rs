@@ -4,7 +4,7 @@ use crate::utils::MemValue;
 use crate::{
     cpu::{bus::AccessType, dma, timers, CoreData, Engine},
     ds_slot,
-    emu::{Emu, LocalExMemControl},
+    emu::{AudioWifiPowerControl, Emu, LocalExMemControl},
     gpu, ipc, rtc, spi,
 };
 
@@ -135,6 +135,7 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
                     0x240 => emu.gpu.vram.arm7_status().0,
                     0x241 => emu.swram.control().0,
                     0x300 => emu.arm7.post_boot_flag as u8,
+                    0x304 => emu.audio_wifi_power_control().0,
                     0x400..=0x51F => emu.audio.read_8::<A>(addr),
                     _ => {
                         #[cfg(feature = "log")]
@@ -303,6 +304,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
                         emu.gpu.vram.arm7_status().0 as u16 | (emu.swram.control().0 as u16) << 8
                     }
                     0x300 => emu.arm7.post_boot_flag as u16,
+                    0x304 => emu.audio_wifi_power_control().0 as u16,
                     0x400..=0x51E => emu.audio.read_16::<A>(addr),
                     _ => {
                         #[cfg(feature = "log")]
@@ -432,6 +434,8 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
                     0x240 => {
                         emu.gpu.vram.arm7_status().0 as u32 | (emu.swram.control().0 as u32) << 8
                     }
+                    0x300 => emu.arm7.post_boot_flag as u32,
+                    0x304 => emu.audio_wifi_power_control().0 as u32,
                     0x10_0000 => {
                         if A::IS_DEBUG {
                             emu.ipc.peek_7()
@@ -617,6 +621,7 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
                             todo!("Sleep mode switch");
                         }
                     },
+                    0x304 => emu.set_audio_wifi_power_control(AudioWifiPowerControl(value)),
                     0x400..=0x51F => emu.audio.write_8::<A>(addr, value),
                     _ =>
                     {
@@ -879,6 +884,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                         .arm7
                         .irqs
                         .set_master_enable(value & 1 != 0, &mut emu.arm7.schedule),
+                    0x304 => emu.set_audio_wifi_power_control(AudioWifiPowerControl(value as u8)),
                     0x400..=0x51E => emu.audio.write_16::<A>(addr, value),
                     _ =>
                     {
@@ -1068,6 +1074,7 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                         .arm7
                         .irqs
                         .set_requested(IrqFlags(emu.arm7.irqs.requested().0 & !value), ()),
+                    0x304 => emu.set_audio_wifi_power_control(AudioWifiPowerControl(value as u8)),
                     0x308 => {
                         if emu.arm7.bios_prot == 0 {
                             emu.arm7.set_bios_prot(value as u16);

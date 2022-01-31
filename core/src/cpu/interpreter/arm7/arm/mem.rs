@@ -468,10 +468,10 @@ pub fn stm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
         } else {
             start_addr
         };
-        bus::write_32::<CpuAccess, _>(emu, addr, reg!(emu.arm7, 15).wrapping_add(4));
+        inc_r15!(emu.arm7, 4);
+        bus::write_32::<CpuAccess, _>(emu, addr, reg!(emu.arm7, 15));
         let cycles = bus::timing_32::<_, false>(emu, addr);
         add_cycles(emu, cycles as RawTimestamp);
-        inc_r15!(emu.arm7, 4);
         return;
     }
 

@@ -283,7 +283,7 @@ impl Channel {
     #[inline]
     fn check_loop_start(&self) {
         #[cfg(feature = "log")]
-        if self.format == Format::Adpcm && self.loop_start == 0 {
+        if self.control.running() && self.format == Format::Adpcm && self.loop_start == 0 {
             slog::warn!(self.logger, "Using loop start == 0 in ADPCM mode");
         }
     }
@@ -291,7 +291,10 @@ impl Channel {
     #[inline]
     fn check_total_size(&self) {
         #[cfg(feature = "log")]
-        if !matches!(self.format, Format::PsgWave | Format::PsgNoise) && self.total_size < 16 {
+        if self.control.running()
+            && !matches!(self.format, Format::PsgWave | Format::PsgNoise)
+            && self.total_size < 16
+        {
             slog::warn!(self.logger, "Using total size < 16 bytes in PCM mode");
         }
     }
