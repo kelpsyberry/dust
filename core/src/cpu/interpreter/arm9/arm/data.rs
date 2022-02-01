@@ -129,6 +129,7 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
                 src & op
             }
         }
+
         DpOpTy::Eor => {
             if SET_FLAGS {
                 bit_ops::eor_s(&mut emu.arm9.engine_data.regs, src, op)
@@ -136,6 +137,7 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
                 src ^ op
             }
         }
+
         DpOpTy::Sub => {
             if SET_FLAGS {
                 arithmetic::sub_s(&mut emu.arm9.engine_data.regs, src, op)
@@ -143,6 +145,7 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
                 src.wrapping_sub(op)
             }
         }
+
         DpOpTy::Rsb => {
             if SET_FLAGS {
                 arithmetic::sub_s(&mut emu.arm9.engine_data.regs, op, src)
@@ -150,6 +153,7 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
                 op.wrapping_sub(src)
             }
         }
+
         DpOpTy::Add => {
             if SET_FLAGS {
                 arithmetic::add_s(&mut emu.arm9.engine_data.regs, src, op)
@@ -157,6 +161,7 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
                 src.wrapping_add(op)
             }
         }
+
         DpOpTy::Adc => {
             if SET_FLAGS {
                 arithmetic::adc_s(&mut emu.arm9.engine_data.regs, src, op)
@@ -164,6 +169,7 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
                 arithmetic::adc(&emu.arm9.engine_data.regs, src, op)
             }
         }
+
         DpOpTy::Sbc => {
             if SET_FLAGS {
                 arithmetic::adc_s(&mut emu.arm9.engine_data.regs, src, !op)
@@ -171,6 +177,7 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
                 arithmetic::adc(&emu.arm9.engine_data.regs, src, !op)
             }
         }
+
         DpOpTy::Rsc => {
             if SET_FLAGS {
                 arithmetic::adc_s(&mut emu.arm9.engine_data.regs, op, !src)
@@ -178,22 +185,27 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
                 arithmetic::adc(&emu.arm9.engine_data.regs, op, !src)
             }
         }
+
         DpOpTy::Tst => {
             bit_ops::tst(&mut emu.arm9.engine_data.regs, src, op);
             0
         }
+
         DpOpTy::Teq => {
             bit_ops::teq(&mut emu.arm9.engine_data.regs, src, op);
             0
         }
+
         DpOpTy::Cmp => {
             arithmetic::cmp(&mut emu.arm9.engine_data.regs, src, op);
             0
         }
+
         DpOpTy::Cmn => {
             arithmetic::cmn(&mut emu.arm9.engine_data.regs, src, op);
             0
         }
+
         DpOpTy::Orr => {
             if SET_FLAGS {
                 bit_ops::orr_s(&mut emu.arm9.engine_data.regs, src, op)
@@ -201,12 +213,14 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
                 src | op
             }
         }
+
         DpOpTy::Mov => {
             if SET_FLAGS {
                 bit_ops::set_nz(&mut emu.arm9.engine_data.regs, op);
             }
             op
         }
+
         DpOpTy::Bic => {
             if SET_FLAGS {
                 bit_ops::bic_s(&mut emu.arm9.engine_data.regs, src, op)
@@ -214,6 +228,7 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
                 src & !op
             }
         }
+
         DpOpTy::Mvn => {
             let result = !op;
             if SET_FLAGS {

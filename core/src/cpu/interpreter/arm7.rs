@@ -207,9 +207,7 @@ fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Engine>) {
         .with_mode(Mode::Undefined)
         .with_thumb_state(false)
         .with_irqs_disabled(true);
-    emu.arm7
-        .irqs
-        .set_enabled_in_cpsr(false, &mut emu.arm7.schedule);
+    emu.arm7.irqs.set_enabled_in_cpsr(false, ());
     #[cfg(feature = "interp-pipeline-accurate-reloads")]
     {
         emu.arm7.engine_data.r15_increment = 4;
@@ -246,9 +244,7 @@ fn handle_swi<const THUMB: bool>(
         .with_mode(Mode::Supervisor)
         .with_thumb_state(false)
         .with_irqs_disabled(true);
-    emu.arm7
-        .irqs
-        .set_enabled_in_cpsr(false, &mut emu.arm7.schedule);
+    emu.arm7.irqs.set_enabled_in_cpsr(false, ());
     #[cfg(feature = "interp-pipeline-accurate-reloads")]
     {
         emu.arm7.engine_data.r15_increment = 4;
@@ -435,9 +431,7 @@ impl Arm7Data for EngineData {
                         .with_mode(Mode::Irq)
                         .with_thumb_state(false)
                         .with_irqs_disabled(true);
-                    emu.arm7
-                        .irqs
-                        .set_enabled_in_cpsr(false, &mut emu.arm7.schedule);
+                    emu.arm7.irqs.set_enabled_in_cpsr(false, ());
                     #[cfg(feature = "interp-pipeline-accurate-reloads")]
                     {
                         emu.arm7.engine_data.r15_increment = 4;

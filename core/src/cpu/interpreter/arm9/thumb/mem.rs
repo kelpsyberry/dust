@@ -300,8 +300,9 @@ pub fn str_sp_rel(emu: &mut Emu<Engine>, instr: u16) {
 // TODO: Check timing after data aborts and with empty reg lists.
 
 pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Engine>, instr: u16) {
-    prefetch_thumb::<true, true>(emu);
+    prefetch_thumb::<false, true>(emu);
     if unlikely(!PUSH_R14 && instr as u8 == 0) {
+        emu.arm9.engine_data.data_cycles = 1;
         add_bus_cycles(emu, 2);
         add_cycles(emu, 1);
         reg!(emu.arm9, 13) = reg!(emu.arm9, 13).wrapping_sub(0x40);
@@ -389,8 +390,9 @@ pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Engine>, instr: u16) {
 
 pub fn pop<const POP_R15: bool>(emu: &mut Emu<Engine>, instr: u16) {
     add_bus_cycles(emu, 2);
-    prefetch_thumb::<true, true>(emu);
+    prefetch_thumb::<false, true>(emu);
     if unlikely(!POP_R15 && instr as u8 == 0) {
+        emu.arm9.engine_data.data_cycles = 1;
         add_cycles(emu, 1);
         reg!(emu.arm9, 13) = reg!(emu.arm9, 13).wrapping_add(0x40);
         return;
@@ -475,8 +477,9 @@ pub fn ldmia(emu: &mut Emu<Engine>, instr: u16) {
     let base_reg = (instr >> 8 & 7) as u8;
     apply_reg_interlock_1::<false>(emu, base_reg);
     let mut cur_addr = reg!(emu.arm9, base_reg);
-    prefetch_thumb::<true, true>(emu);
+    prefetch_thumb::<false, true>(emu);
     if unlikely(instr as u8 == 0) {
+        emu.arm9.engine_data.data_cycles = 1;
         add_cycles(emu, 1);
         reg!(emu.arm9, base_reg) = cur_addr.wrapping_add(0x40);
         return;
@@ -537,8 +540,9 @@ pub fn stmia(emu: &mut Emu<Engine>, instr: u16) {
     let base_reg = (instr >> 8 & 7) as u8;
     apply_reg_interlock_1::<false>(emu, base_reg);
     let mut cur_addr = reg!(emu.arm9, base_reg);
-    prefetch_thumb::<true, true>(emu);
+    prefetch_thumb::<false, true>(emu);
     if unlikely(instr as u8 == 0) {
+        emu.arm9.engine_data.data_cycles = 1;
         add_cycles(emu, 1);
         reg!(emu.arm9, base_reg) = cur_addr.wrapping_add(0x40);
         return;

@@ -159,13 +159,13 @@ impl DsSlot {
         // TODO: What happens if ROMCTRL is modified while busy? (Particularly bit31, which might or
         // might not abort the previous transfer and start a new one if set while busy)
         // TODO: What's the actual behavior if AUXSPICNT.bit15 is 0?
-        self.rom_control.0 = (self.rom_control.0 & 0x2080_0000) | (value.0 & !0x0080_8000);
+        self.rom_control.0 = (self.rom_control.0 & 0xA080_0000) | (value.0 & !0x0080_8000);
         self.rom_clk_pulse_duration = if self.rom_control.transfer_clock_rate() {
             8
         } else {
             5
         };
-        if !self.aux_spi_control.ds_slot_enabled() || !value.busy() {
+        if !self.aux_spi_control.ds_slot_enabled() || !self.rom_control.busy() {
             return;
         }
         self.rom_control.set_data_ready(false);

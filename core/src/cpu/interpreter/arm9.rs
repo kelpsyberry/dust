@@ -540,7 +540,15 @@ fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Engine>) {
             emu.arm9.stopped_by_debug_hook = true;
         }
     }
-    prefetch_arm::<true, false>(emu);
+    if THUMB {
+        prefetch_thumb::<false, false>(emu);
+    } else {
+        prefetch_arm::<false, false>(emu);
+    }
+    #[cfg(feature = "interp-arm9-interlocks")]
+    {
+        emu.arm9.engine_data.data_cycles = 1;
+    }
     add_bus_cycles(emu, 2);
     let old_cpsr = emu.arm9.engine_data.regs.cpsr;
     emu.arm9.engine_data.regs.cpsr = emu
@@ -551,9 +559,7 @@ fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Engine>) {
         .with_mode(Mode::Undefined)
         .with_thumb_state(false)
         .with_irqs_disabled(true);
-    emu.arm9
-        .irqs
-        .set_enabled_in_cpsr(false, &mut emu.arm9.schedule);
+    emu.arm9.irqs.set_enabled_in_cpsr(false, ());
     #[cfg(feature = "interp-pipeline-accurate-reloads")]
     {
         emu.arm9.engine_data.r15_increment = 4;
@@ -581,7 +587,15 @@ fn handle_swi<const THUMB: bool>(
             emu.arm9.stopped_by_debug_hook = true;
         }
     }
-    prefetch_arm::<true, false>(emu);
+    if THUMB {
+        prefetch_thumb::<false, false>(emu);
+    } else {
+        prefetch_arm::<false, false>(emu);
+    }
+    #[cfg(feature = "interp-arm9-interlocks")]
+    {
+        emu.arm9.engine_data.data_cycles = 1;
+    }
     add_bus_cycles(emu, 2);
     let old_cpsr = emu.arm9.engine_data.regs.cpsr;
     emu.arm9.engine_data.regs.cpsr = emu
@@ -592,9 +606,7 @@ fn handle_swi<const THUMB: bool>(
         .with_mode(Mode::Supervisor)
         .with_thumb_state(false)
         .with_irqs_disabled(true);
-    emu.arm9
-        .irqs
-        .set_enabled_in_cpsr(false, &mut emu.arm9.schedule);
+    emu.arm9.irqs.set_enabled_in_cpsr(false, ());
     #[cfg(feature = "interp-pipeline-accurate-reloads")]
     {
         emu.arm9.engine_data.r15_increment = 4;
@@ -626,7 +638,15 @@ fn handle_prefetch_abort<const THUMB: bool>(emu: &mut Emu<Engine>) {
             emu.arm9.stopped_by_debug_hook = true;
         }
     }
-    prefetch_arm::<true, false>(emu);
+    if THUMB {
+        prefetch_thumb::<false, false>(emu);
+    } else {
+        prefetch_arm::<false, false>(emu);
+    }
+    #[cfg(feature = "interp-arm9-interlocks")]
+    {
+        emu.arm9.engine_data.data_cycles = 1;
+    }
     add_bus_cycles(emu, 2);
     let old_cpsr = emu.arm9.engine_data.regs.cpsr;
     emu.arm9.engine_data.regs.cpsr = emu
@@ -637,9 +657,7 @@ fn handle_prefetch_abort<const THUMB: bool>(emu: &mut Emu<Engine>) {
         .with_mode(Mode::Abort)
         .with_thumb_state(false)
         .with_irqs_disabled(true);
-    emu.arm9
-        .irqs
-        .set_enabled_in_cpsr(false, &mut emu.arm9.schedule);
+    emu.arm9.irqs.set_enabled_in_cpsr(false, ());
     #[cfg(feature = "interp-pipeline-accurate-reloads")]
     {
         emu.arm9.engine_data.r15_increment = 4;
@@ -682,9 +700,7 @@ fn handle_data_abort<const THUMB: bool>(emu: &mut Emu<Engine>, _addr: u32) {
         .with_mode(Mode::Abort)
         .with_thumb_state(false)
         .with_irqs_disabled(true);
-    emu.arm9
-        .irqs
-        .set_enabled_in_cpsr(false, &mut emu.arm9.schedule);
+    emu.arm9.irqs.set_enabled_in_cpsr(false, ());
     #[cfg(feature = "interp-pipeline-accurate-reloads")]
     {
         emu.arm9.engine_data.r15_increment = 4;
@@ -960,9 +976,7 @@ impl Arm9Data for EngineData {
                         .with_mode(Mode::Irq)
                         .with_thumb_state(false)
                         .with_irqs_disabled(true);
-                    emu.arm9
-                        .irqs
-                        .set_enabled_in_cpsr(false, &mut emu.arm9.schedule);
+                    emu.arm9.irqs.set_enabled_in_cpsr(false, ());
                     #[cfg(feature = "interp-pipeline-accurate-reloads")]
                     {
                         emu.arm9.engine_data.r15_increment = 4;
