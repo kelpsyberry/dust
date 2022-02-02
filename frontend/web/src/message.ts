@@ -99,6 +99,7 @@ export namespace EmuToUi {
         ExportSave,
         RenderFrame,
         Stopped,
+        PlayAudioChunk,
     }
 
     export interface LoadedMessage {
@@ -121,9 +122,16 @@ export namespace EmuToUi {
         buffer: Uint32Array;
     }
 
+    export interface PlayAudioChunkMessage {
+        type: MessageType.PlayAudioChunk;
+        l: Float32Array;
+        r: Float32Array;
+    }
+
     export type Message =
         | LoadedMessage
         | StopMessage
         | ExportSaveMessage
-        | RenderFrameMessage;
+        | RenderFrameMessage
+        | PlayAudioChunkMessage;
 }

@@ -1,5 +1,6 @@
 #![allow(clippy::unused_unit)]
 
+mod audio;
 #[cfg(feature = "log")]
 mod console_log;
 mod renderer_3d;
@@ -15,7 +16,7 @@ use dust_core::{
     utils::{zeroed_box, BoxedByteSlice, Bytes},
     Model, SaveContents,
 };
-use js_sys::{Uint32Array, Uint8Array};
+use js_sys::{Function, Uint32Array, Uint8Array};
 use wasm_bindgen::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -177,6 +178,7 @@ pub fn create_emu_state(
     save_type: Option<SaveType>,
     has_ir: bool,
     model: WbgModel,
+    audio_callback: Function,
 ) -> EmuState {
     console_error_panic_hook::set_once();
 
@@ -349,7 +351,7 @@ pub fn create_emu_state(
         .expect("Couldn't build firmware"),
         ds_slot_rom,
         ds_slot_spi,
-        Box::new(dust_core::audio::DummyBackend),
+        Box::new(audio::Backend::new(audio_callback)),
         Box::new(dust_core::rtc::DummyBackend),
         Box::new(renderer_3d::Renderer::new()),
         #[cfg(feature = "log")]

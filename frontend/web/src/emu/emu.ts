@@ -41,10 +41,14 @@ class FpsLimiter {
     handleTimeout() {
         this.callback();
         if (this.timeout) {
-            this.expectedTimeoutTime += this.timeout;
+            const now = performance.now();
+            this.expectedTimeoutTime = Math.max(
+                this.expectedTimeoutTime + this.timeout,
+                now
+            );
             this.timeoutId = setTimeout(
                 this.handleTimeoutCallback,
-                Math.max(0, this.expectedTimeoutTime - performance.now())
+                this.expectedTimeoutTime - now
             );
         } else {
             setTimeout(this.handleTimeoutCallback, 0);
@@ -93,7 +97,17 @@ class FpsLimiter {
                     undefined,
                     message.saveType as number | undefined,
                     message.hasIR,
-                    wasm.WbgModel.Lite
+                    wasm.WbgModel.Lite,
+                    (l: Float32Array, r: Float32Array) => {
+                        sendMessage(
+                            {
+                                type: EmuToUi.MessageType.PlayAudioChunk,
+                                l,
+                                r,
+                            },
+                            [l.buffer, r.buffer]
+                        );
+                    }
                 );
                 break;
             }

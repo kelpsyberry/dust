@@ -10,6 +10,8 @@ export class Ui {
     private canvas: HTMLCanvasElement;
 
     private input: Input;
+    private audio: AudioContext;
+    private audioTime: number;
 
     private exportSaveButton: HTMLButtonElement;
     private playButton: HTMLButtonElement;
@@ -42,6 +44,28 @@ export class Ui {
         this.canvas = document.getElementById("canvas") as HTMLCanvasElement;
 
         this.input = new Input(touch, this.pause.bind(this));
+        this.audio = new (window.AudioContext ||
+            (window as any).webkitAudioContext)();
+        this.audioTime = 0;
+
+        const startAudioContext = () => {
+            this.audio.resume();
+            document.removeEventListener("touchstart", startAudioContext);
+            document.removeEventListener("touchend", startAudioContext);
+        };
+        document.addEventListener("touchstart", startAudioContext);
+        document.addEventListener("touchend", startAudioContext);
+
+        document.addEventListener("visibilitychange", () => {
+            if (!this.worker) {
+                return;
+            }
+            if (document.visibilityState === "visible") {
+                this.play();
+            } else {
+                this.pause();
+            }
+        });
 
         this.exportSaveButton = document.getElementById(
             "export-save"
@@ -292,6 +316,48 @@ export class Ui {
                     this.gl.UNSIGNED_BYTE,
                     new Uint8Array(message.buffer.buffer)
                 );
+                break;
+            }
+
+            case EmuToUi.MessageType.PlayAudioChunk: {
+                const sysClockFreq = 1 << 25;
+                const origFrameRate = sysClockFreq / (6.0 * 355.0 * 263.0);
+                const inputSampleRate =
+                    ((sysClockFreq / 1024.0) * 60.0) / origFrameRate;
+
+                const currentTime =
+                    this.audio.currentTime + (this.audio.baseLatency || 1 / 60);
+                if (
+                    this.audioTime >
+                    currentTime + message.l.length / inputSampleRate
+                ) {
+                    break;
+                }
+                if (this.audioTime < currentTime) {
+                    this.audioTime = currentTime;
+                }
+                const buffer = this.audio.createBuffer(
+                    2,
+                    message.l.length,
+                    inputSampleRate
+                );
+                if (buffer.copyToChannel) {
+                    buffer.copyToChannel(message.l, 0);
+                    buffer.copyToChannel(message.r, 1);
+                } else {
+                    buffer.getChannelData(0).set(message.l);
+                    buffer.getChannelData(1).set(message.r);
+                }
+                const src = this.audio.createBufferSource();
+                src.buffer = buffer;
+                src.connect(this.audio.destination);
+                if (src.start) {
+                    src.start(this.audioTime);
+                } else if ((src as any).noteOn) {
+                    (src as any).noteOn(this.audioTime);
+                }
+                this.audioTime += message.l.length / inputSampleRate;
+                break;
             }
         }
     }

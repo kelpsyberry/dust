@@ -39,7 +39,7 @@ cfg_if! {
     } else {
         pub type Sample = u16;
         type InterpSample = i64;
-        const SAMPLE_ZERO: Sample = 0;
+        const SAMPLE_ZERO: Sample = 0x200;
         const INTERP_SAMPLE_ZERO: InterpSample = 0;
     }
 }
@@ -51,6 +51,7 @@ const CYCLES_PER_SAMPLE: RawTimestamp = 1024;
 pub const DEFAULT_SAMPLE_CHUNK_SIZE: usize = 0x200;
 
 pub trait Backend {
+    #[allow(clippy::ptr_arg)] // Intended behavior, the Vec gets drained
     fn handle_sample_chunk(&mut self, samples: &mut Vec<[Sample; 2]>);
 }
 
