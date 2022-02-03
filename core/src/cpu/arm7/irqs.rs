@@ -145,19 +145,19 @@ impl Irqs {
     }
 
     #[inline]
-    pub fn set_enabled<S: ScheduleUpdate>(&mut self, value: IrqFlags, schedule: S) {
+    pub fn write_enabled<S: ScheduleUpdate>(&mut self, value: IrqFlags, schedule: S) {
         self.enabled = IrqFlags(value.0 & 0x01DF_3FFF);
         self.update_pending(schedule);
     }
 
     #[inline]
-    pub fn set_requested<S: ScheduleUpdate>(&mut self, value: IrqFlags, schedule: S) {
+    pub fn write_requested<S: ScheduleUpdate>(&mut self, value: IrqFlags, schedule: S) {
         self.requested = IrqFlags(value.0 & 0x01DF_3FFF);
         self.update_pending(schedule);
     }
 
     #[inline]
-    pub fn set_master_enable<S: ScheduleUpdate>(&mut self, value: bool, schedule: S) {
+    pub fn write_master_enable<S: ScheduleUpdate>(&mut self, value: bool, schedule: S) {
         self.master_enable = value;
         self.set_irq_line(value && self.enabled.0 & self.requested.0 != 0, schedule);
     }
@@ -167,10 +167,10 @@ impl cpu::Irqs for Irqs {
     type Schedule = Schedule;
 
     fn request_timer(&mut self, i: timers::Index, schedule: &mut Schedule) {
-        self.set_requested(IrqFlags(self.requested().0 | 8 << i.get()), schedule);
+        self.write_requested(IrqFlags(self.requested().0 | 8 << i.get()), schedule);
     }
 
     fn request_dma(&mut self, i: dma::Index) {
-        self.set_requested(IrqFlags(self.requested().0 | 0x100 << i.get()), ());
+        self.write_requested(IrqFlags(self.requested().0 | 0x100 << i.get()), ());
     }
 }

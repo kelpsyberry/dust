@@ -58,11 +58,11 @@ impl Ipc {
         self.sync_7
     }
 
-    pub fn set_sync_7(&mut self, value: Sync, arm9_irqs: &mut arm9::Irqs) {
+    pub fn write_sync_7(&mut self, value: Sync, arm9_irqs: &mut arm9::Irqs) {
         self.sync_7.0 = (self.sync_7.0 & 0x000F) | (value.0 & 0x4F00);
         self.sync_9.0 = (self.sync_9.0 & 0x4F00) | (value.0 >> 8 & 0xF);
         if value.send_irq() && self.sync_9.irq_enabled() {
-            arm9_irqs.set_requested(arm9_irqs.requested().with_ipc_sync(true), ());
+            arm9_irqs.write_requested(arm9_irqs.requested().with_ipc_sync(true), ());
         }
     }
 
@@ -71,11 +71,11 @@ impl Ipc {
         self.sync_9
     }
 
-    pub fn set_sync_9(&mut self, value: Sync, arm7_irqs: &mut arm7::Irqs) {
+    pub fn write_sync_9(&mut self, value: Sync, arm7_irqs: &mut arm7::Irqs) {
         self.sync_9.0 = (self.sync_9.0 & 0x000F) | (value.0 & 0x4F00);
         self.sync_7.0 = (self.sync_7.0 & 0x4F00) | (value.0 >> 8 & 0xF);
         if value.send_irq() && self.sync_7.irq_enabled() {
-            arm7_irqs.set_requested(arm7_irqs.requested().with_ipc_sync(true), ());
+            arm7_irqs.write_requested(arm7_irqs.requested().with_ipc_sync(true), ());
         }
     }
 
@@ -84,7 +84,7 @@ impl Ipc {
         self.fifo_control_7
     }
 
-    pub fn set_fifo_control_7(
+    pub fn write_fifo_control_7(
         &mut self,
         value: FifoControl,
         arm7_irqs: &mut arm7::Irqs,
@@ -109,7 +109,7 @@ impl Ipc {
             && self.fifo_control_7.send_fifo_empty()
             && (!prev_value.send_fifo_empty_irq_enabled() || !prev_value.send_fifo_empty())
         {
-            arm7_irqs.set_requested(
+            arm7_irqs.write_requested(
                 arm7_irqs.requested().with_ipc_send_fifo_empty(true),
                 &mut *arm7_schedule,
             );
@@ -118,7 +118,7 @@ impl Ipc {
             && !prev_value.recv_fifo_empty()
             && !prev_value.recv_fifo_not_empty_irq_enabled()
         {
-            arm7_irqs.set_requested(
+            arm7_irqs.write_requested(
                 arm7_irqs.requested().with_ipc_recv_fifo_not_empty(true),
                 arm7_schedule,
             );
@@ -143,7 +143,7 @@ impl Ipc {
             .with_recv_fifo_empty(false)
             .with_recv_fifo_full(self.send_fifo_7.is_full());
         if self.fifo_control_9.recv_fifo_not_empty_irq_enabled() && was_empty {
-            arm9_irqs.set_requested(arm9_irqs.requested().with_ipc_recv_fifo_not_empty(true), ());
+            arm9_irqs.write_requested(arm9_irqs.requested().with_ipc_recv_fifo_not_empty(true), ());
         }
     }
 
@@ -168,7 +168,7 @@ impl Ipc {
                 if self.fifo_control_9.send_fifo_empty_irq_enabled() && self.send_fifo_9.is_empty()
                 {
                     arm9_irqs
-                        .set_requested(arm9_irqs.requested().with_ipc_send_fifo_empty(true), ());
+                        .write_requested(arm9_irqs.requested().with_ipc_send_fifo_empty(true), ());
                 }
                 self.last_word_received_from_arm9 = value;
                 value
@@ -188,7 +188,7 @@ impl Ipc {
         self.fifo_control_9
     }
 
-    pub fn set_fifo_control_9(
+    pub fn write_fifo_control_9(
         &mut self,
         value: FifoControl,
         arm9_irqs: &mut arm9::Irqs,
@@ -213,7 +213,7 @@ impl Ipc {
             && self.fifo_control_9.send_fifo_empty()
             && (!prev_value.send_fifo_empty_irq_enabled() || !prev_value.send_fifo_empty())
         {
-            arm9_irqs.set_requested(
+            arm9_irqs.write_requested(
                 arm9_irqs.requested().with_ipc_send_fifo_empty(true),
                 &mut *arm9_schedule,
             );
@@ -222,7 +222,7 @@ impl Ipc {
             && !prev_value.recv_fifo_empty()
             && !prev_value.recv_fifo_not_empty_irq_enabled()
         {
-            arm9_irqs.set_requested(
+            arm9_irqs.write_requested(
                 arm9_irqs.requested().with_ipc_recv_fifo_not_empty(true),
                 arm9_schedule,
             );
@@ -247,7 +247,7 @@ impl Ipc {
             .with_recv_fifo_empty(false)
             .with_recv_fifo_full(self.send_fifo_9.is_full());
         if self.fifo_control_7.recv_fifo_not_empty_irq_enabled() && was_empty {
-            arm7_irqs.set_requested(arm7_irqs.requested().with_ipc_recv_fifo_not_empty(true), ());
+            arm7_irqs.write_requested(arm7_irqs.requested().with_ipc_recv_fifo_not_empty(true), ());
         }
     }
 
@@ -272,7 +272,7 @@ impl Ipc {
                 if self.fifo_control_7.send_fifo_empty_irq_enabled() && self.send_fifo_7.is_empty()
                 {
                     arm7_irqs
-                        .set_requested(arm7_irqs.requested().with_ipc_send_fifo_empty(true), ());
+                        .write_requested(arm7_irqs.requested().with_ipc_send_fifo_empty(true), ());
                 }
                 self.last_word_received_from_arm7 = value;
                 value

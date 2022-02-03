@@ -229,7 +229,7 @@ impl Channel {
         self.control
     }
 
-    pub fn set_control(&mut self, value: Control) {
+    pub fn write_control(&mut self, value: Control) {
         let prev = self.control;
         self.control.0 = value.0 & 0xFF7F_837F;
 
@@ -323,7 +323,7 @@ impl Channel {
     }
 
     #[inline]
-    pub fn set_src_addr(&mut self, value: u32) {
+    pub fn write_src_addr(&mut self, value: u32) {
         self.src_addr = value & 0x07FF_FFFC;
     }
 
@@ -333,7 +333,7 @@ impl Channel {
     }
 
     #[inline]
-    pub fn set_timer_reload(&mut self, value: u16) {
+    pub fn write_timer_reload(&mut self, value: u16) {
         self.timer_reload = value;
         #[cfg(feature = "xq-audio")]
         {
@@ -347,7 +347,7 @@ impl Channel {
     }
 
     #[inline]
-    pub fn set_loop_start(&mut self, value: u16) {
+    pub fn write_loop_start(&mut self, value: u16) {
         self.loop_start = value;
         self.loop_start_sample_index = self.calc_loop_start_sample_index();
         self.total_size = (self.loop_start as u32 + self.loop_len) << 2;
@@ -362,7 +362,7 @@ impl Channel {
     }
 
     #[inline]
-    pub fn set_loop_len(&mut self, value: u32) {
+    pub fn write_loop_len(&mut self, value: u32) {
         self.loop_len = value & 0x3F_FFFF;
         self.total_size = (self.loop_start as u32 + self.loop_len) << 2;
         self.total_samples = self.calc_total_samples();

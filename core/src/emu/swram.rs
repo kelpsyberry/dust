@@ -68,7 +68,7 @@ impl Swram {
     }
 
     #[inline]
-    pub fn set_control<E: cpu::Engine>(
+    pub fn write_control<E: cpu::Engine>(
         &mut self,
         value: Control,
         arm7: &mut Arm7<E>,

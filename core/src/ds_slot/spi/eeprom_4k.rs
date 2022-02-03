@@ -67,7 +67,7 @@ impl Eeprom4k {
             cur_command_pos: 0,
             cur_addr: 0,
         };
-        result.set_status(Status(0xF0 | saved_status.unwrap_or(SavedStatus(0)).0));
+        result.write_status(Status(0xF0 | saved_status.unwrap_or(SavedStatus(0)).0));
         Ok(result)
     }
 
@@ -95,7 +95,7 @@ impl Eeprom4k {
     }
 
     #[inline]
-    pub fn set_status(&mut self, value: Status) {
+    pub fn write_status(&mut self, value: Status) {
         self.status.0 = (self.status.0 & 0xF3) | (value.0 & 0x0C);
         self.write_protect_start = match value.write_protect() {
             0 => 0x200,
@@ -178,7 +178,7 @@ impl super::SpiDevice for Eeprom4k {
             0x01 | 0x09 => {
                 // Write status register
                 if self.status.write_enabled() {
-                    self.set_status(Status(value));
+                    self.write_status(Status(value));
                     if last {
                         self.status.set_write_enabled(false);
                     }

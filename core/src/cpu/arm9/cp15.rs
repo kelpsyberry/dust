@@ -321,7 +321,7 @@ impl Cp15 {
 
 impl<E: Engine> Arm9<E> {
     #[allow(clippy::similar_names)]
-    pub fn set_cp15_control(emu: &mut Emu<E>, value: Control) {
+    pub fn write_cp15_control(emu: &mut Emu<E>, value: Control) {
         let prev_value = emu.arm9.cp15.control;
         emu.arm9.cp15.control.0 =
             (emu.arm9.cp15.control.0 & !0x000F_F085) | (value.0 & 0x000F_F085);
@@ -740,7 +740,7 @@ impl<E: Engine> Arm9<E> {
     }
 
     #[allow(clippy::similar_names)]
-    pub fn set_cp15_dtcm_control(emu: &mut Emu<E>, value: TcmControl) {
+    pub fn write_cp15_dtcm_control(emu: &mut Emu<E>, value: TcmControl) {
         let prev_control = emu.arm9.cp15.dtcm_control;
         emu.arm9.cp15.dtcm_control.0 = value.0 & 0xFFFF_F03E;
 
@@ -837,7 +837,7 @@ impl<E: Engine> Arm9<E> {
     }
 
     #[allow(clippy::similar_names)]
-    pub fn set_cp15_itcm_control(emu: &mut Emu<E>, value: TcmControl) {
+    pub fn write_cp15_itcm_control(emu: &mut Emu<E>, value: TcmControl) {
         let prev_control = emu.arm9.cp15.itcm_control;
         emu.arm9.cp15.itcm_control.0 = value.0 & 0x3E;
 
@@ -1056,7 +1056,7 @@ impl<E: Engine> Arm9<E> {
             value,
         );
         match (cn, cm, opcode_2) {
-            (1, 0, 0) => Self::set_cp15_control(emu, Control(value)), // Control
+            (1, 0, 0) => Self::write_cp15_control(emu, Control(value)), // Control
 
             // Data cache configuration
             (2, 0, 0) => {
@@ -1421,8 +1421,8 @@ impl<E: Engine> Arm9<E> {
                 emu.arm9.cp15.code_cache_lockdown_control.0 = value & 0x8000_0003;
             }
 
-            (9, 1, 0) => Self::set_cp15_dtcm_control(emu, TcmControl(value)), // DTCM base and size
-            (9, 1, 1) => Self::set_cp15_itcm_control(emu, TcmControl(value)), // ITCM base and size
+            (9, 1, 0) => Self::write_cp15_dtcm_control(emu, TcmControl(value)), // DTCM base and size
+            (9, 1, 1) => Self::write_cp15_itcm_control(emu, TcmControl(value)), // ITCM base and size
 
             (13, 0..=1, 1) => emu.arm9.cp15.trace_process_id = value, // Trace process identifier
 

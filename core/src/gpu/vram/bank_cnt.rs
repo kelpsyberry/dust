@@ -666,7 +666,7 @@ impl Vram {
         );
     }
 
-    pub fn set_bank_control_a<E: cpu::Engine>(
+    pub fn write_bank_control_a<E: cpu::Engine>(
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
@@ -734,7 +734,7 @@ impl Vram {
         }
     }
 
-    pub fn set_bank_control_b<E: cpu::Engine>(
+    pub fn write_bank_control_b<E: cpu::Engine>(
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
@@ -802,7 +802,7 @@ impl Vram {
         }
     }
 
-    pub fn set_bank_control_c<E: cpu::Engine>(
+    pub fn write_bank_control_c<E: cpu::Engine>(
         &mut self,
         mut value: BankControl,
         arm7: &mut Arm7<E>,
@@ -877,7 +877,7 @@ impl Vram {
         }
     }
 
-    pub fn set_bank_control_d<E: cpu::Engine>(
+    pub fn write_bank_control_d<E: cpu::Engine>(
         &mut self,
         mut value: BankControl,
         arm7: &mut Arm7<E>,
@@ -950,7 +950,7 @@ impl Vram {
         }
     }
 
-    pub fn set_bank_control_e<E: cpu::Engine>(
+    pub fn write_bank_control_e<E: cpu::Engine>(
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
@@ -996,7 +996,7 @@ impl Vram {
         }
     }
 
-    pub fn set_bank_control_f<E: cpu::Engine>(
+    pub fn write_bank_control_f<E: cpu::Engine>(
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
@@ -1097,7 +1097,7 @@ impl Vram {
         }
     }
 
-    pub fn set_bank_control_g<E: cpu::Engine>(
+    pub fn write_bank_control_g<E: cpu::Engine>(
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
@@ -1198,7 +1198,7 @@ impl Vram {
         }
     }
 
-    pub fn set_bank_control_h<E: cpu::Engine>(
+    pub fn write_bank_control_h<E: cpu::Engine>(
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,
@@ -1238,7 +1238,7 @@ impl Vram {
         }
     }
 
-    pub fn set_bank_control_i<E: cpu::Engine>(
+    pub fn write_bank_control_i<E: cpu::Engine>(
         &mut self,
         mut value: BankControl,
         arm9: &mut Arm9<E>,

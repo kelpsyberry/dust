@@ -212,7 +212,7 @@ impl AffineBgData {
     }
 
     #[inline]
-    pub fn set_ref_points(&mut self, value: [i32; 2]) {
+    pub fn write_ref_points(&mut self, value: [i32; 2]) {
         self.ref_points = value;
         self.pos = value;
     }
@@ -353,7 +353,7 @@ impl<R: Role> Engine2d<R> {
     }
 
     #[inline]
-    pub fn set_control(&mut self, value: Control) {
+    pub fn write_control(&mut self, value: Control) {
         if R::IS_A {
             self.control = value;
         } else {
@@ -376,13 +376,13 @@ impl<R: Role> Engine2d<R> {
     }
 
     #[inline]
-    pub fn set_master_brightness_control(&mut self, value: BrightnessControl) {
+    pub fn write_master_brightness_control(&mut self, value: BrightnessControl) {
         self.master_brightness_control.0 = value.0 & 0xC01F;
         self.master_brightness_factor = (value.factor() as u32).min(16);
     }
 
     #[inline]
-    pub fn set_bg_control(&mut self, i: BgIndex, value: BgControl) {
+    pub fn write_bg_control(&mut self, i: BgIndex, value: BgControl) {
         let bg = &mut self.bgs[i.get() as usize];
         bg.control = value;
         if bg.priority != 4 {
@@ -396,7 +396,7 @@ impl<R: Role> Engine2d<R> {
     }
 
     #[inline]
-    pub fn set_window_control(&mut self, i: usize, value: WindowControl) {
+    pub fn write_window_control(&mut self, i: usize, value: WindowControl) {
         self.window_control[i].0 = value.0 & 0x3F;
     }
 
@@ -406,7 +406,7 @@ impl<R: Role> Engine2d<R> {
     }
 
     #[inline]
-    pub fn set_color_effects_control(&mut self, value: ColorEffectsControl) {
+    pub fn write_color_effects_control(&mut self, value: ColorEffectsControl) {
         self.color_effects_control.0 = value.0 & 0x3FFF;
     }
 
@@ -416,7 +416,7 @@ impl<R: Role> Engine2d<R> {
     }
 
     #[inline]
-    pub fn set_blend_coeffs_raw(&mut self, value: BlendCoeffsRaw) {
+    pub fn write_blend_coeffs_raw(&mut self, value: BlendCoeffsRaw) {
         self.blend_coeffs_raw.0 = value.0 & 0x1F1F;
         self.blend_coeffs = (
             self.blend_coeffs_raw.a_coeff().min(16),
@@ -430,7 +430,7 @@ impl<R: Role> Engine2d<R> {
     }
 
     #[inline]
-    pub fn set_blend_coeffs(&mut self, value: (u8, u8)) {
+    pub fn write_blend_coeffs(&mut self, value: (u8, u8)) {
         self.blend_coeffs = value;
         self.blend_coeffs_raw = self
             .blend_coeffs_raw
@@ -444,7 +444,7 @@ impl<R: Role> Engine2d<R> {
     }
 
     #[inline]
-    pub fn set_brightness_coeff(&mut self, value: u8) {
+    pub fn write_brightness_coeff(&mut self, value: u8) {
         self.brightness_coeff = (value & 0x1F).min(value);
     }
 

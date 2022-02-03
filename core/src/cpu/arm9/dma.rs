@@ -26,7 +26,7 @@ pub enum Timing {
 }
 
 impl<E: Engine> Arm9<E> {
-    pub fn set_dma_channel_control(&mut self, i: Index, value: Control, engine_3d: &Engine3d) {
+    pub fn write_dma_channel_control(&mut self, i: Index, value: Control, engine_3d: &Engine3d) {
         let channel = &mut self.dma.channels[i.get() as usize];
         let prev_value = channel.control;
         channel.control = value;

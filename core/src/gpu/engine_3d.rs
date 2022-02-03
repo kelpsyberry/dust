@@ -403,7 +403,7 @@ impl Engine3d {
         };
         if self.gx_fifo_irq_requested {
             arm9.irqs
-                .set_requested(arm9.irqs.requested().with_gx_fifo(true), &mut arm9.schedule);
+                .write_requested(arm9.irqs.requested().with_gx_fifo(true), &mut arm9.schedule);
         }
     }
 

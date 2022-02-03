@@ -30,7 +30,7 @@ use swram::Swram;
 
 bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct LocalExMemControl(pub u16) {
+    pub struct LocalExMemControl(pub u8) {
         pub gba_slot_sram_access_time: u8 @ 0..=1,
         pub gba_slot_rom_1st_access_time: u8 @ 2..=3,
         pub gba_slot_rom_2nd_access_time: bool @ 4,
@@ -258,16 +258,16 @@ impl<E: cpu::Engine> Emu<E> {
             self.main_mem.as_byte_mut_slice()[0x3F_FE00..0x3F_FF70].copy_from_slice(&header[..]);
         };
         self.arm7.wram.write_le(0xF980, 0xFBDD_37BB_u32);
-        self.arm7.set_bios_prot(0x1204);
+        self.arm7.write_bios_prot(0x1204);
         self.arm7.set_post_boot_flag(true);
         self.arm9.set_post_boot_flag(arm9::PostBootFlag(1));
-        self.audio.set_bias(0x200);
-        Arm9::set_cp15_dtcm_control(self, arm9::cp15::TcmControl(0x0300_000A));
-        Arm9::set_cp15_itcm_control(self, arm9::cp15::TcmControl(0x20));
-        Arm9::set_cp15_control(self, arm9::cp15::Control(0x0005_2078));
+        self.audio.write_bias(0x200);
+        Arm9::write_cp15_dtcm_control(self, arm9::cp15::TcmControl(0x0300_000A));
+        Arm9::write_cp15_itcm_control(self, arm9::cp15::TcmControl(0x20));
+        Arm9::write_cp15_control(self, arm9::cp15::Control(0x0005_2078));
         self.swram
-            .set_control(swram::Control(3), &mut self.arm7, &mut self.arm9);
-        self.gpu.set_power_control(gpu::PowerControl(0x820F));
+            .write_control(swram::Control(3), &mut self.arm7, &mut self.arm9);
+        self.gpu.write_power_control(gpu::PowerControl(0x820F));
 
         let arm9_rom_offset = header.read_le::<u32>(0x20);
         let arm9_entry_addr = header.read_le::<u32>(0x24);
@@ -310,7 +310,7 @@ impl<E: cpu::Engine> Emu<E> {
     }
 
     #[inline]
-    pub fn set_global_ex_mem_control(&mut self, value: GlobalExMemControl) {
+    pub fn write_global_ex_mem_control(&mut self, value: GlobalExMemControl) {
         self.global_ex_mem_control.0 = (value.0 & 0xC88) | 0x400;
         self.ds_slot.update_access(value.arm7_ds_slot_access());
     }
@@ -321,7 +321,7 @@ impl<E: cpu::Engine> Emu<E> {
     }
 
     #[inline]
-    pub fn set_audio_wifi_power_control(&mut self, value: AudioWifiPowerControl) {
+    pub fn write_audio_wifi_power_control(&mut self, value: AudioWifiPowerControl) {
         self.audio_wifi_power_control.0 = value.0 & 3;
     }
 
@@ -331,7 +331,7 @@ impl<E: cpu::Engine> Emu<E> {
     }
 
     #[inline]
-    pub fn set_rcnt(&mut self, value: u16) {
+    pub fn write_rcnt(&mut self, value: u16) {
         self.rcnt = value & 0xC1FF;
     }
 

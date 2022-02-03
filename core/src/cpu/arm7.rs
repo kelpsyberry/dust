@@ -310,7 +310,7 @@ impl<E: Engine> Arm7<E> {
     }
 
     #[inline]
-    pub fn set_local_ex_mem_control(&mut self, value: LocalExMemControl) {
+    pub fn write_local_ex_mem_control(&mut self, value: LocalExMemControl) {
         self.local_ex_mem_control.0 = value.0 & 0x7F;
     }
 
@@ -330,7 +330,7 @@ impl<E: Engine> Arm7<E> {
     }
 
     #[inline]
-    pub fn set_bios_prot(&mut self, value: u16) {
+    pub fn write_bios_prot(&mut self, value: u16) {
         self.bios_prot = value & 0x3FFE;
     }
 

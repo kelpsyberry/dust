@@ -206,11 +206,11 @@ impl Rtc {
     }
 
     #[inline]
-    pub fn set_status1(&mut self, value: Status1) {
+    pub fn write_status1(&mut self, value: Status1) {
         self.status1.0 = (self.status1.0 & 0xF0) | (value.0 & 0x0E);
         if value.reset() {
             self.status1.0 &= 0x0E;
-            self.set_status2(Status2(0));
+            self.write_status2(Status2(0));
             self.int1 = [0; 3];
             self.int2 = [0; 3];
             self.clock_adjust = 0;
@@ -230,7 +230,7 @@ impl Rtc {
     }
 
     #[inline]
-    pub fn set_status2(&mut self, value: Status2) {
+    pub fn write_status2(&mut self, value: Status2) {
         if value.test_mode() {
             #[cfg(feature = "log")]
             slog::warn!(self.logger, "Tried to enter unimplemented test mode");
@@ -411,13 +411,13 @@ impl Rtc {
         match self.cur_reg {
             RegIndex::STATUS1 => {
                 if self.data_pos == 1 {
-                    return self.set_status1(Status1(value));
+                    return self.write_status1(Status1(value));
                 }
             }
 
             RegIndex::STATUS2 => {
                 if self.data_pos == 1 {
-                    return self.set_status2(Status2(value));
+                    return self.write_status2(Status2(value));
                 }
             }
 
@@ -490,7 +490,7 @@ impl Rtc {
     }
 
     #[inline]
-    pub fn set_control(&mut self, value: Control) {
+    pub fn write_control(&mut self, value: Control) {
         // TODO: What happens if the data direction is changed in the middle of a byte transfer or
         //       during a command?
         if !value.clock_write() || !value.chipselect_write() {

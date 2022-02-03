@@ -389,7 +389,7 @@ impl<E: Engine> Arm9<E> {
     }
 
     #[inline]
-    pub fn set_local_ex_mem_control(&mut self, value: LocalExMemControl) {
+    pub fn write_local_ex_mem_control(&mut self, value: LocalExMemControl) {
         self.local_ex_mem_control.0 = value.0 & 0x7F;
     }
 

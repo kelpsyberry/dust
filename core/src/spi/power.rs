@@ -132,7 +132,7 @@ impl Power {
     }
 
     #[inline]
-    pub fn set_control(
+    pub fn write_control(
         &mut self,
         value: Control,
         arm7_schedule: &mut arm7::Schedule,
@@ -372,7 +372,7 @@ impl Power {
             }
         } else {
             match self.cur_reg_index.0 & self.reg_mask {
-                0 => self.set_control(Control(value), arm7_schedule, emu_schedule),
+                0 => self.write_control(Control(value), arm7_schedule, emu_schedule),
                 1 => {}
                 2 => self.set_mic_amplifier_enabled(value & 1 != 0),
                 3 => self.set_mic_amplifier_gain_control(MicAmplifierGainControl(value)),

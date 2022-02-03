@@ -127,33 +127,36 @@ impl Audio {
             let i = addr as usize >> 4 & 0xF;
             let channel = &mut self.channels[i];
             match addr & 0xF {
-                0x0 => channel.set_control(channel::Control(
+                0x0 => channel.write_control(channel::Control(
                     (channel.control().0 & 0xFFFF_FF00) | value as u32,
                 )),
-                0x1 => channel.set_control(channel::Control(
+                0x1 => channel.write_control(channel::Control(
                     (channel.control().0 & 0xFFFF_00FF) | (value as u32) << 8,
                 )),
-                0x2 => channel.set_control(channel::Control(
+                0x2 => channel.write_control(channel::Control(
                     (channel.control().0 & 0xFF00_FFFF) | (value as u32) << 16,
                 )),
-                0x3 => channel.set_control(channel::Control(
+                0x3 => channel.write_control(channel::Control(
                     (channel.control().0 & 0x00FF_FFFF) | (value as u32) << 24,
                 )),
 
-                0x4 => channel.set_src_addr((channel.src_addr() & 0xFFFF_FF00) | value as u32),
+                0x4 => channel.write_src_addr((channel.src_addr() & 0xFFFF_FF00) | value as u32),
                 0x5 => {
-                    channel.set_src_addr((channel.src_addr() & 0xFFFF_00FF) | (value as u32) << 8);
+                    channel
+                        .write_src_addr((channel.src_addr() & 0xFFFF_00FF) | (value as u32) << 8);
                 }
                 0x6 => {
-                    channel.set_src_addr((channel.src_addr() & 0xFF00_FFFF) | (value as u32) << 16);
+                    channel
+                        .write_src_addr((channel.src_addr() & 0xFF00_FFFF) | (value as u32) << 16);
                 }
                 0x7 => {
-                    channel.set_src_addr((channel.src_addr() & 0x00FF_FFFF) | (value as u32) << 24);
+                    channel
+                        .write_src_addr((channel.src_addr() & 0x00FF_FFFF) | (value as u32) << 24);
                 }
 
                 0x8 => {
                     let new_timer_reload = (channel.timer_reload() & 0xFF00) as u16 | value as u16;
-                    channel.set_timer_reload(new_timer_reload);
+                    channel.write_timer_reload(new_timer_reload);
                     match i {
                         1 => self.capture[0].timer_reload = new_timer_reload,
                         3 => self.capture[1].timer_reload = new_timer_reload,
@@ -163,68 +166,73 @@ impl Audio {
                 0x9 => {
                     let new_timer_reload =
                         (channel.timer_reload() & 0x00FF) as u16 | (value as u16) << 8;
-                    channel.set_timer_reload(new_timer_reload);
+                    channel.write_timer_reload(new_timer_reload);
                     match i {
                         1 => self.capture[0].timer_reload = new_timer_reload,
                         3 => self.capture[1].timer_reload = new_timer_reload,
                         _ => {}
                     }
                 }
-                0xA => channel.set_loop_start((channel.loop_start() & 0xFF00) | value as u16),
+                0xA => channel.write_loop_start((channel.loop_start() & 0xFF00) | value as u16),
                 0xB => {
-                    channel.set_loop_start((channel.loop_start() & 0x00FF) | (value as u16) << 8);
+                    channel.write_loop_start((channel.loop_start() & 0x00FF) | (value as u16) << 8);
                 }
 
-                0xC => channel.set_loop_len((channel.loop_len() & 0xFFFF_FF00) | value as u32),
+                0xC => channel.write_loop_len((channel.loop_len() & 0xFFFF_FF00) | value as u32),
                 0xD => {
-                    channel.set_loop_len((channel.loop_len() & 0xFFFF_00FF) | (value as u32) << 8);
+                    channel
+                        .write_loop_len((channel.loop_len() & 0xFFFF_00FF) | (value as u32) << 8);
                 }
-                0xE => channel.set_loop_len((channel.loop_len() & 0xFFFF) | (value as u32) << 16),
+                0xE => channel.write_loop_len((channel.loop_len() & 0xFFFF) | (value as u32) << 16),
 
                 _ => {}
             }
         } else {
             match addr & 0x1F {
-                0x00 => self.set_control(Control((self.control.0 & 0xFF00) | value as u16)),
-                0x01 => self.set_control(Control((self.control.0 & 0x00FF) | (value as u16) << 8)),
+                0x00 => self.write_control(Control((self.control.0 & 0xFF00) | value as u16)),
+                0x01 => {
+                    self.write_control(Control((self.control.0 & 0x00FF) | (value as u16) << 8));
+                }
 
-                0x04 => self.set_bias((self.bias & 0xFF00) | value as u16),
-                0x05 => self.set_bias((self.bias & 0x00FF) | (value as u16) << 8),
+                0x04 => self.write_bias((self.bias & 0xFF00) | value as u16),
+                0x05 => self.write_bias((self.bias & 0x00FF) | (value as u16) << 8),
 
-                0x08 => self.capture[0].set_control(capture::Control(value)),
-                0x09 => self.capture[1].set_control(capture::Control(value)),
+                0x08 => self.capture[0].write_control(capture::Control(value)),
+                0x09 => self.capture[1].write_control(capture::Control(value)),
 
                 0x10 => self.capture[0]
-                    .set_dst_addr((self.capture[0].dst_addr() & 0xFFFF_FF00) | value as u32),
-                0x11 => self.capture[0]
-                    .set_dst_addr((self.capture[0].dst_addr() & 0xFFFF_00FF) | (value as u32) << 8),
-                0x12 => self.capture[0].set_dst_addr(
+                    .write_dst_addr((self.capture[0].dst_addr() & 0xFFFF_FF00) | value as u32),
+                0x11 => self.capture[0].write_dst_addr(
+                    (self.capture[0].dst_addr() & 0xFFFF_00FF) | (value as u32) << 8,
+                ),
+                0x12 => self.capture[0].write_dst_addr(
                     (self.capture[0].dst_addr() & 0xFF00_FFFF) | (value as u32) << 16,
                 ),
-                0x13 => self.capture[0].set_dst_addr(
+                0x13 => self.capture[0].write_dst_addr(
                     (self.capture[0].dst_addr() & 0x00FF_FFFF) | (value as u32) << 24,
                 ),
 
                 0x14 => self.capture[0]
-                    .set_buffer_words((self.capture[0].buffer_words() & 0xFF00) | value as u16),
-                0x15 => self.capture[0].set_buffer_words(
+                    .write_buffer_words((self.capture[0].buffer_words() & 0xFF00) | value as u16),
+                0x15 => self.capture[0].write_buffer_words(
                     (self.capture[0].buffer_words() & 0x00FF) | (value as u16) << 8,
                 ),
 
                 0x18 => self.capture[1]
-                    .set_dst_addr((self.capture[1].dst_addr() & 0xFFFF_FF00) | value as u32),
-                0x19 => self.capture[1]
-                    .set_dst_addr((self.capture[1].dst_addr() & 0xFFFF_00FF) | (value as u32) << 8),
-                0x1A => self.capture[1].set_dst_addr(
+                    .write_dst_addr((self.capture[1].dst_addr() & 0xFFFF_FF00) | value as u32),
+                0x19 => self.capture[1].write_dst_addr(
+                    (self.capture[1].dst_addr() & 0xFFFF_00FF) | (value as u32) << 8,
+                ),
+                0x1A => self.capture[1].write_dst_addr(
                     (self.capture[1].dst_addr() & 0xFF00_FFFF) | (value as u32) << 16,
                 ),
-                0x1B => self.capture[1].set_dst_addr(
+                0x1B => self.capture[1].write_dst_addr(
                     (self.capture[1].dst_addr() & 0x00FF_FFFF) | (value as u32) << 24,
                 ),
 
                 0x1C => self.capture[1]
-                    .set_buffer_words((self.capture[1].buffer_words() & 0xFF00) | value as u16),
-                0x1D => self.capture[1].set_buffer_words(
+                    .write_buffer_words((self.capture[1].buffer_words() & 0xFF00) | value as u16),
+                0x1D => self.capture[1].write_buffer_words(
                     (self.capture[1].buffer_words() & 0x00FF) | (value as u16) << 8,
                 ),
 
@@ -251,20 +259,21 @@ impl Audio {
             let i = addr as usize >> 4 & 0xF;
             let channel = &mut self.channels[i];
             match addr & 0xE {
-                0x0 => channel.set_control(channel::Control(
+                0x0 => channel.write_control(channel::Control(
                     (channel.control().0 & 0xFFFF_0000) | value as u32,
                 )),
-                0x2 => channel.set_control(channel::Control(
+                0x2 => channel.write_control(channel::Control(
                     (channel.control().0 & 0x0000_FFFF) | (value as u32) << 16,
                 )),
 
-                0x4 => channel.set_src_addr((channel.src_addr() & 0xFFFF_0000) | value as u32),
+                0x4 => channel.write_src_addr((channel.src_addr() & 0xFFFF_0000) | value as u32),
                 0x6 => {
-                    channel.set_src_addr((channel.src_addr() & 0x0000_FFFF) | (value as u32) << 16);
+                    channel
+                        .write_src_addr((channel.src_addr() & 0x0000_FFFF) | (value as u32) << 16);
                 }
 
                 0x8 => {
-                    channel.set_timer_reload(value);
+                    channel.write_timer_reload(value);
                     match i {
                         1 => self.capture[0].timer_reload = value,
                         3 => self.capture[1].timer_reload = value,
@@ -272,38 +281,39 @@ impl Audio {
                     }
                 }
 
-                0xA => channel.set_loop_start(value),
+                0xA => channel.write_loop_start(value),
 
-                0xC => channel.set_loop_len((channel.loop_len() & 0xFFFF_0000) | value as u32),
+                0xC => channel.write_loop_len((channel.loop_len() & 0xFFFF_0000) | value as u32),
                 _ => {
-                    channel.set_loop_len((channel.loop_len() & 0x0000_FFFF) | (value as u32) << 16);
+                    channel
+                        .write_loop_len((channel.loop_len() & 0x0000_FFFF) | (value as u32) << 16);
                 }
             }
         } else {
             match addr & 0x1E {
-                0x00 => self.set_control(Control(value)),
-                0x04 => self.set_bias(value),
+                0x00 => self.write_control(Control(value)),
+                0x04 => self.write_bias(value),
 
                 0x08 => {
-                    self.capture[0].set_control(capture::Control(value as u8));
-                    self.capture[1].set_control(capture::Control((value >> 8) as u8));
+                    self.capture[0].write_control(capture::Control(value as u8));
+                    self.capture[1].write_control(capture::Control((value >> 8) as u8));
                 }
 
                 0x10 => self.capture[0]
-                    .set_dst_addr((self.capture[0].dst_addr() & 0xFFFF_0000) | value as u32),
-                0x12 => self.capture[0].set_dst_addr(
+                    .write_dst_addr((self.capture[0].dst_addr() & 0xFFFF_0000) | value as u32),
+                0x12 => self.capture[0].write_dst_addr(
                     (self.capture[0].dst_addr() & 0x0000_FFFF) | (value as u32) << 16,
                 ),
 
-                0x14 => self.capture[0].set_buffer_words(value),
+                0x14 => self.capture[0].write_buffer_words(value),
 
                 0x18 => self.capture[1]
-                    .set_dst_addr((self.capture[1].dst_addr() & 0xFFFF_0000) | value as u32),
-                0x1A => self.capture[1].set_dst_addr(
+                    .write_dst_addr((self.capture[1].dst_addr() & 0xFFFF_0000) | value as u32),
+                0x1A => self.capture[1].write_dst_addr(
                     (self.capture[1].dst_addr() & 0x0000_FFFF) | (value as u32) << 16,
                 ),
 
-                0x1C => self.capture[1].set_buffer_words(value),
+                0x1C => self.capture[1].write_buffer_words(value),
 
                 0x2 | 0x6 | 0x16 | 0x1E => {}
 
@@ -328,33 +338,33 @@ impl Audio {
             let i = addr as usize >> 4 & 0xF;
             let channel = &mut self.channels[i];
             match addr & 0xC {
-                0 => channel.set_control(channel::Control(value)),
-                4 => channel.set_src_addr(value),
+                0 => channel.write_control(channel::Control(value)),
+                4 => channel.write_src_addr(value),
                 8 => {
-                    channel.set_timer_reload(value as u16);
-                    channel.set_loop_start((value >> 16) as u16);
+                    channel.write_timer_reload(value as u16);
+                    channel.write_loop_start((value >> 16) as u16);
                     match i {
                         1 => self.capture[0].timer_reload = value as u16,
                         3 => self.capture[1].timer_reload = value as u16,
                         _ => {}
                     }
                 }
-                _ => channel.set_loop_len(value),
+                _ => channel.write_loop_len(value),
             }
         } else {
             match addr & 0x1C {
-                0x00 => self.set_control(Control(value as u16)),
-                0x04 => self.set_bias(value as u16),
+                0x00 => self.write_control(Control(value as u16)),
+                0x04 => self.write_bias(value as u16),
 
                 0x08 => {
-                    self.capture[0].set_control(capture::Control(value as u8));
-                    self.capture[1].set_control(capture::Control((value >> 8) as u8));
+                    self.capture[0].write_control(capture::Control(value as u8));
+                    self.capture[1].write_control(capture::Control((value >> 8) as u8));
                 }
 
-                0x10 => self.capture[0].set_dst_addr(value),
-                0x14 => self.capture[0].set_buffer_words(value as u16),
-                0x18 => self.capture[1].set_dst_addr(value),
-                0x1C => self.capture[1].set_buffer_words(value as u16),
+                0x10 => self.capture[0].write_dst_addr(value),
+                0x14 => self.capture[0].write_buffer_words(value as u16),
+                0x18 => self.capture[1].write_dst_addr(value),
+                0x1C => self.capture[1].write_buffer_words(value as u16),
 
                 _ =>
                 {

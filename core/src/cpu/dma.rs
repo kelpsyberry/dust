@@ -73,9 +73,9 @@ impl<T: Copy, BU> Channel<T, BU> {
         self.control
     }
 
-    pub(crate) fn set_control_low(&mut self, value: u16) {
+    pub(crate) fn write_control_low(&mut self, value: u16) {
         self.control.0 = (self.control.0 & 0xFFFF_0000) | (value as u32 & self.unit_count_mask);
-        self.unit_count = (self.unit_count & 0xFFFF_0000) | (value as u32 & self.unit_count_mask);
+        self.unit_count = ((self.unit_count & 0xFFFF_0000) | value as u32) & self.unit_count_mask;
         if self.unit_count == 0 {
             self.unit_count = self.unit_count_mask + 1;
         }
@@ -102,7 +102,7 @@ impl<T: Copy, BU> Channel<T, BU> {
     }
 
     #[inline]
-    pub fn set_src_addr(&mut self, value: u32) {
+    pub fn write_src_addr(&mut self, value: u32) {
         self.src_addr = value & self.src_addr_mask;
     }
 
@@ -117,7 +117,7 @@ impl<T: Copy, BU> Channel<T, BU> {
     }
 
     #[inline]
-    pub fn set_dst_addr(&mut self, value: u32) {
+    pub fn write_dst_addr(&mut self, value: u32) {
         self.dst_addr = value & self.dst_addr_mask;
     }
 }

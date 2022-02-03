@@ -21,7 +21,7 @@ pub enum Timing {
 }
 
 impl<E: Engine> Arm7<E> {
-    pub fn set_dma_channel_control(&mut self, i: Index, value: Control) {
+    pub fn write_dma_channel_control(&mut self, i: Index, value: Control) {
         let channel = &mut self.dma.channels[i.get() as usize];
         let prev_value = channel.control;
         channel.control.0 = value.0 & (0xF7E0_0000 | channel.unit_count_mask());

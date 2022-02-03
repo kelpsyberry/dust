@@ -77,7 +77,7 @@ pub use bounded::{RomOutputLen, RomOutputPos};
 pub struct DsSlot {
     pub rom: rom::Rom,
     pub spi: spi::Spi,
-    aux_spi_control: AuxSpiControl,
+    spi_control: AuxSpiControl,
     rom_control: RomControl,
     pub rom_cmd: Bytes<8>,
     arm7_access: bool,
@@ -118,7 +118,7 @@ impl DsSlot {
         DsSlot {
             rom,
             spi,
-            aux_spi_control: AuxSpiControl(0),
+            spi_control: AuxSpiControl(0),
             rom_control: RomControl(0),
             rom_cmd: Bytes::new([0; 8]),
             arm7_access: false,
@@ -135,14 +135,14 @@ impl DsSlot {
     }
 
     #[inline]
-    pub const fn aux_spi_control(&self) -> AuxSpiControl {
-        self.aux_spi_control
+    pub const fn spi_control(&self) -> AuxSpiControl {
+        self.spi_control
     }
 
     #[inline]
-    pub fn set_aux_spi_control(&mut self, value: AuxSpiControl) {
+    pub fn write_spi_control(&mut self, value: AuxSpiControl) {
         // TODO: What happens if AUXSPICNT is changed while busy?
-        self.aux_spi_control.0 = (self.aux_spi_control.0 & 0x0080) | (value.0 & 0xE043);
+        self.spi_control.0 = (self.spi_control.0 & 0x0080) | (value.0 & 0xE043);
     }
 
     #[inline]
@@ -150,7 +150,7 @@ impl DsSlot {
         self.rom_control
     }
 
-    pub fn set_rom_control(
+    pub fn write_rom_control(
         &mut self,
         value: RomControl,
         arm7_schedule: &mut arm7::Schedule,
@@ -165,7 +165,7 @@ impl DsSlot {
         } else {
             5
         };
-        if !self.aux_spi_control.ds_slot_enabled() || !self.rom_control.busy() {
+        if !self.spi_control.ds_slot_enabled() || !self.rom_control.busy() {
             return;
         }
         self.rom_control.set_data_ready(false);
@@ -221,13 +221,9 @@ impl DsSlot {
             // Clear the busy bit and trigger the "end of ROM transfer" IRQ immediately (since no
             // data should be read)
             emu.ds_slot.rom_control.set_busy(false);
-            if emu
-                .ds_slot
-                .aux_spi_control
-                .rom_transfer_complete_irq_enabled()
-            {
+            if emu.ds_slot.spi_control.rom_transfer_complete_irq_enabled() {
                 if emu.ds_slot.arm7_access {
-                    emu.arm7.irqs.set_requested(
+                    emu.arm7.irqs.write_requested(
                         emu.arm7
                             .irqs
                             .requested()
@@ -235,7 +231,7 @@ impl DsSlot {
                         (),
                     );
                 } else {
-                    emu.arm9.irqs.set_requested(
+                    emu.arm9.irqs.write_requested(
                         emu.arm9
                             .irqs
                             .requested()
@@ -266,7 +262,7 @@ impl DsSlot {
         self.rom_data_out
     }
 
-    pub(crate) fn consume_rom_data_arm7(
+    pub(crate) fn read_rom_data_arm7(
         &mut self,
         irqs: &mut arm7::Irqs,
         schedule: &mut arm7::Schedule,
@@ -287,8 +283,8 @@ impl DsSlot {
                 schedule.schedule_event(arm7::event_slots::DS_SLOT_ROM, target);
             } else {
                 self.rom_control.set_busy(false);
-                if self.aux_spi_control.rom_transfer_complete_irq_enabled() {
-                    irqs.set_requested(
+                if self.spi_control.rom_transfer_complete_irq_enabled() {
+                    irqs.write_requested(
                         irqs.requested().with_ds_slot_transfer_complete(true),
                         schedule,
                     );
@@ -298,7 +294,7 @@ impl DsSlot {
         self.rom_data_out
     }
 
-    pub(crate) fn consume_rom_data_arm9(
+    pub(crate) fn read_rom_data_arm9(
         &mut self,
         irqs: &mut arm9::Irqs,
         schedule: &mut arm9::Schedule,
@@ -319,8 +315,8 @@ impl DsSlot {
                 schedule.schedule_event(arm9::event_slots::DS_SLOT_ROM, target);
             } else {
                 self.rom_control.set_busy(false);
-                if self.aux_spi_control.rom_transfer_complete_irq_enabled() {
-                    irqs.set_requested(
+                if self.spi_control.rom_transfer_complete_irq_enabled() {
+                    irqs.write_requested(
                         irqs.requested().with_ds_slot_transfer_complete(true),
                         schedule,
                     );
@@ -342,17 +338,17 @@ impl DsSlot {
         arm7_schedule: &mut arm7::Schedule,
         arm9_schedule: &mut arm9::Schedule,
     ) {
-        if self.aux_spi_control.spi_busy() {
+        if self.spi_control.spi_busy() {
             // TODO: What's supposed to happen if AUXSPIDATA is written while busy?
             return;
         }
         let first = !self.spi_last_hold;
-        self.spi_last_hold = self.aux_spi_control.spi_hold();
+        self.spi_last_hold = self.spi_control.spi_hold();
         let last = !self.spi_last_hold;
         self.spi_data_out = self.spi.write_data(value, first, last);
         // 8 bits at 33 / (8 << baud_rate) MHz (each bit takes 8 << baud_rate cycles to be
         // transferred)
-        let byte_delay_cycles = Timestamp(64 << self.aux_spi_control.spi_baud_rate());
+        let byte_delay_cycles = Timestamp(64 << self.spi_control.spi_baud_rate());
         if self.arm7_access {
             arm7_schedule.schedule_event(
                 arm7::event_slots::DS_SLOT_SPI,
@@ -364,11 +360,11 @@ impl DsSlot {
                 arm9_schedule.cur_time() + arm9::Timestamp::from(byte_delay_cycles),
             );
         }
-        self.aux_spi_control.set_spi_busy(true);
+        self.spi_control.set_spi_busy(true);
     }
 
     pub(crate) fn handle_spi_data_ready(&mut self) {
-        self.aux_spi_control.set_spi_busy(false);
+        self.spi_control.set_spi_busy(false);
     }
 
     #[inline]

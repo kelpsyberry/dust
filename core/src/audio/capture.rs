@@ -65,7 +65,7 @@ impl CaptureUnit {
         self.control
     }
 
-    pub fn set_control(&mut self, value: Control) {
+    pub fn write_control(&mut self, value: Control) {
         let prev = self.control;
         self.control.0 = value.0 & 0x8F;
         self.addition_enabled = self.control.addition() && self.control.running();
@@ -91,7 +91,7 @@ impl CaptureUnit {
     }
 
     #[inline]
-    pub fn set_dst_addr(&mut self, value: u32) {
+    pub fn write_dst_addr(&mut self, value: u32) {
         self.dst_start_addr = value & 0x0FFF_FFFC;
         self.dst_end_addr = (self.dst_start_addr + self.buffer_len) & 0x0FFF_FFFC;
     }
@@ -102,7 +102,7 @@ impl CaptureUnit {
     }
 
     #[inline]
-    pub fn set_buffer_words(&mut self, value: u16) {
+    pub fn write_buffer_words(&mut self, value: u16) {
         self.buffer_len = (value.max(1) as u32) << 2;
         self.dst_end_addr = self.dst_start_addr + self.buffer_len;
     }

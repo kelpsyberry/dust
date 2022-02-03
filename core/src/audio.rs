@@ -190,7 +190,7 @@ impl Audio {
     }
 
     #[inline]
-    pub fn set_control(&mut self, value: Control) {
+    pub fn write_control(&mut self, value: Control) {
         self.control.0 = value.0 & 0xBF7F;
         self.master_volume = self.control.master_volume_raw();
         if self.master_volume == 127 {
@@ -204,7 +204,7 @@ impl Audio {
     }
 
     #[inline]
-    pub fn set_bias(&mut self, value: u16) {
+    pub fn write_bias(&mut self, value: u16) {
         self.bias = value & 0x3FF;
     }
 

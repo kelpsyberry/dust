@@ -43,13 +43,13 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             0x007 => (emu.gpu.vcount() >> 8) as u8,
             0x060 => emu.gpu.engine_3d.rendering_control().0 as u8,
             0x061 => (emu.gpu.engine_3d.rendering_control().0 >> 8) as u8,
-            0x100 => emu.arm9.timers.counter(
+            0x100 => emu.arm9.timers.read_counter(
                 timers::Index::new(0),
                 &mut emu.arm9.schedule,
                 &mut emu.arm9.irqs,
             ) as u8,
             0x101 => {
-                (emu.arm9.timers.counter(
+                (emu.arm9.timers.read_counter(
                     timers::Index::new(0),
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
@@ -57,13 +57,13 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             }
             0x102 => emu.arm9.timers.0[0].control().0 as u8,
             0x103 => 0,
-            0x104 => emu.arm9.timers.counter(
+            0x104 => emu.arm9.timers.read_counter(
                 timers::Index::new(1),
                 &mut emu.arm9.schedule,
                 &mut emu.arm9.irqs,
             ) as u8,
             0x105 => {
-                (emu.arm9.timers.counter(
+                (emu.arm9.timers.read_counter(
                     timers::Index::new(1),
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
@@ -71,13 +71,13 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             }
             0x106 => emu.arm9.timers.0[1].control().0 as u8,
             0x107 => 0,
-            0x108 => emu.arm9.timers.counter(
+            0x108 => emu.arm9.timers.read_counter(
                 timers::Index::new(2),
                 &mut emu.arm9.schedule,
                 &mut emu.arm9.irqs,
             ) as u8,
             0x109 => {
-                (emu.arm9.timers.counter(
+                (emu.arm9.timers.read_counter(
                     timers::Index::new(2),
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
@@ -85,13 +85,13 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             }
             0x10A => emu.arm9.timers.0[2].control().0 as u8,
             0x10B => 0,
-            0x10C => emu.arm9.timers.counter(
+            0x10C => emu.arm9.timers.read_counter(
                 timers::Index::new(3),
                 &mut emu.arm9.schedule,
                 &mut emu.arm9.irqs,
             ) as u8,
             0x10D => {
-                (emu.arm9.timers.counter(
+                (emu.arm9.timers.read_counter(
                     timers::Index::new(3),
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
@@ -99,8 +99,8 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             }
             0x10E => emu.arm9.timers.0[3].control().0 as u8,
             0x10F => 0,
-            0x1A0 => emu.ds_slot.aux_spi_control().0 as u8,
-            0x1A1 => (emu.ds_slot.aux_spi_control().0 >> 8) as u8,
+            0x1A0 => emu.ds_slot.spi_control().0 as u8,
+            0x1A1 => (emu.ds_slot.spi_control().0 >> 8) as u8,
             0x1A2 => emu.ds_slot.spi_data_out(),
             0x1A8..=0x1AF => {
                 if emu.ds_slot.arm9_access() {
@@ -232,25 +232,25 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
             0x0DA => (emu.arm9.dma.channels[3].dst_addr >> 16) as u16,
             0x0DC => emu.arm9.dma.channels[3].control.0 as u16,
             0x0DE => (emu.arm9.dma.channels[3].control.0 >> 16) as u16,
-            0x100 => emu.arm9.timers.counter(
+            0x100 => emu.arm9.timers.read_counter(
                 timers::Index::new(0),
                 &mut emu.arm9.schedule,
                 &mut emu.arm9.irqs,
             ),
             0x102 => emu.arm9.timers.0[0].control().0 as u16,
-            0x104 => emu.arm9.timers.counter(
+            0x104 => emu.arm9.timers.read_counter(
                 timers::Index::new(1),
                 &mut emu.arm9.schedule,
                 &mut emu.arm9.irqs,
             ),
             0x106 => emu.arm9.timers.0[1].control().0 as u16,
-            0x108 => emu.arm9.timers.counter(
+            0x108 => emu.arm9.timers.read_counter(
                 timers::Index::new(2),
                 &mut emu.arm9.schedule,
                 &mut emu.arm9.irqs,
             ),
             0x10A => emu.arm9.timers.0[2].control().0 as u16,
-            0x10C => emu.arm9.timers.counter(
+            0x10C => emu.arm9.timers.read_counter(
                 timers::Index::new(3),
                 &mut emu.arm9.schedule,
                 &mut emu.arm9.irqs,
@@ -259,9 +259,9 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
             0x130 => emu.input.0 as u16,
             0x180 => emu.ipc.sync_9().0,
             0x184 => emu.ipc.fifo_control_9().0,
-            0x1A0 => emu.ds_slot.aux_spi_control().0,
+            0x1A0 => emu.ds_slot.spi_control().0,
             0x1A2 => emu.ds_slot.spi_data_out() as u16,
-            0x204 => emu.arm9.local_ex_mem_control.0 | emu.global_ex_mem_control().0,
+            0x204 => emu.arm9.local_ex_mem_control.0 as u16 | emu.global_ex_mem_control().0,
             0x208 => emu.arm9.irqs.master_enable() as u16,
             0x280 => emu.arm9.div_engine.control().0,
             0x2B0 => emu.arm9.sqrt_engine.control().0,
@@ -366,22 +366,20 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
             0x0DC => emu.arm9.dma.channels[3].control.0,
             0x0E0..=0x0EC => emu.arm9.dma_fill.read_le(addr as usize & 0xC),
             0x180 => emu.ipc.sync_9().0 as u32,
-            0x1A0 => {
-                emu.ds_slot.aux_spi_control().0 as u32 | (emu.ds_slot.spi_data_out() as u32) << 16
-            }
+            0x1A0 => emu.ds_slot.spi_control().0 as u32 | (emu.ds_slot.spi_data_out() as u32) << 16,
             0x1A4 => emu.ds_slot.rom_control().0,
             0x208 => emu.arm9.irqs.master_enable() as u32,
             0x210 => emu.arm9.irqs.enabled().0,
             0x214 => emu.arm9.irqs.requested().0,
             0x280 => emu.arm9.div_engine.control().0 as u32,
-            0x290 => emu.arm9.div_engine.numerator() as u32,
-            0x294 => (emu.arm9.div_engine.numerator() >> 32) as u32,
-            0x298 => emu.arm9.div_engine.denominator() as u32,
-            0x29C => (emu.arm9.div_engine.denominator() >> 32) as u32,
-            0x2A0 => emu.arm9.div_engine.quotient() as u32,
-            0x2A4 => (emu.arm9.div_engine.quotient() >> 32) as u32,
-            0x2A8 => emu.arm9.div_engine.remainder() as u32,
-            0x2AC => (emu.arm9.div_engine.remainder() >> 32) as u32,
+            0x290 => emu.arm9.div_engine.num() as u32,
+            0x294 => (emu.arm9.div_engine.num() >> 32) as u32,
+            0x298 => emu.arm9.div_engine.denom() as u32,
+            0x29C => (emu.arm9.div_engine.denom() >> 32) as u32,
+            0x2A0 => emu.arm9.div_engine.quot() as u32,
+            0x2A4 => (emu.arm9.div_engine.quot() >> 32) as u32,
+            0x2A8 => emu.arm9.div_engine.rem() as u32,
+            0x2AC => (emu.arm9.div_engine.rem() >> 32) as u32,
             0x2B0 => emu.arm9.sqrt_engine.control().0 as u32,
             0x2B4 => emu.arm9.sqrt_engine.result(),
             0x2B8 => emu.arm9.sqrt_engine.input() as u32,
@@ -401,7 +399,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
                         emu.ds_slot.peek_rom_data()
                     } else {
                         emu.ds_slot
-                            .consume_rom_data_arm9(&mut emu.arm9.irqs, &mut emu.arm9.schedule)
+                            .read_rom_data_arm9(&mut emu.arm9.irqs, &mut emu.arm9.schedule)
                     }
                 } else {
                     0
@@ -501,8 +499,8 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
                 )),
             0x1A0 => {
                 if emu.ds_slot.arm9_access() {
-                    emu.ds_slot.set_aux_spi_control(ds_slot::AuxSpiControl(
-                        (emu.ds_slot.aux_spi_control().0 & 0xFF00) | value as u16,
+                    emu.ds_slot.write_spi_control(ds_slot::AuxSpiControl(
+                        (emu.ds_slot.spi_control().0 & 0xFF00) | value as u16,
                     ));
                 } else {
                     #[cfg(feature = "log")]
@@ -516,8 +514,8 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
             }
             0x1A1 => {
                 if emu.ds_slot.arm9_access() {
-                    emu.ds_slot.set_aux_spi_control(ds_slot::AuxSpiControl(
-                        (emu.ds_slot.aux_spi_control().0 & 0x00FF) | (value as u16) << 8,
+                    emu.ds_slot.write_spi_control(ds_slot::AuxSpiControl(
+                        (emu.ds_slot.spi_control().0 & 0x00FF) | (value as u16) << 8,
                     ));
                 } else {
                     #[cfg(feature = "log")]
@@ -562,55 +560,55 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
             0x208 => emu
                 .arm9
                 .irqs
-                .set_master_enable(value & 1 != 0, &mut emu.arm9.schedule),
-            0x240 => emu.gpu.vram.set_bank_control_a(
+                .write_master_enable(value & 1 != 0, &mut emu.arm9.schedule),
+            0x240 => emu.gpu.vram.write_bank_control_a(
                 gpu::vram::BankControl(value),
                 &mut emu.arm9,
                 &mut emu.gpu.engine_3d,
             ),
-            0x241 => emu.gpu.vram.set_bank_control_b(
+            0x241 => emu.gpu.vram.write_bank_control_b(
                 gpu::vram::BankControl(value),
                 &mut emu.arm9,
                 &mut emu.gpu.engine_3d,
             ),
-            0x242 => emu.gpu.vram.set_bank_control_c(
-                gpu::vram::BankControl(value),
-                &mut emu.arm7,
-                &mut emu.arm9,
-                &mut emu.gpu.engine_3d,
-            ),
-            0x243 => emu.gpu.vram.set_bank_control_d(
+            0x242 => emu.gpu.vram.write_bank_control_c(
                 gpu::vram::BankControl(value),
                 &mut emu.arm7,
                 &mut emu.arm9,
                 &mut emu.gpu.engine_3d,
             ),
-            0x244 => emu.gpu.vram.set_bank_control_e(
+            0x243 => emu.gpu.vram.write_bank_control_d(
+                gpu::vram::BankControl(value),
+                &mut emu.arm7,
+                &mut emu.arm9,
+                &mut emu.gpu.engine_3d,
+            ),
+            0x244 => emu.gpu.vram.write_bank_control_e(
                 gpu::vram::BankControl(value),
                 &mut emu.arm9,
                 &mut emu.gpu.engine_3d,
             ),
-            0x245 => emu.gpu.vram.set_bank_control_f(
+            0x245 => emu.gpu.vram.write_bank_control_f(
                 gpu::vram::BankControl(value),
                 &mut emu.arm9,
                 &mut emu.gpu.engine_3d,
             ),
-            0x246 => emu.gpu.vram.set_bank_control_g(
+            0x246 => emu.gpu.vram.write_bank_control_g(
                 gpu::vram::BankControl(value),
                 &mut emu.arm9,
                 &mut emu.gpu.engine_3d,
             ),
             0x247 => emu
                 .swram
-                .set_control(swram::Control(value), &mut emu.arm7, &mut emu.arm9),
+                .write_control(swram::Control(value), &mut emu.arm7, &mut emu.arm9),
             0x248 => emu
                 .gpu
                 .vram
-                .set_bank_control_h(gpu::vram::BankControl(value), &mut emu.arm9),
+                .write_bank_control_h(gpu::vram::BankControl(value), &mut emu.arm9),
             0x249 => emu
                 .gpu
                 .vram
-                .set_bank_control_i(gpu::vram::BankControl(value), &mut emu.arm9),
+                .write_bank_control_i(gpu::vram::BankControl(value), &mut emu.arm9),
             0x300 => emu.arm9.post_boot_flag.0 = (emu.arm9.post_boot_flag.0 & 1) | (value & 3),
             0x320..=0x6A3 => gpu::engine_3d::Engine3d::write_8::<A, _>(emu, addr as u16, value),
             0x1000..=0x1003 | 0x1008..=0x1057 | 0x106C..=0x106D => {
@@ -668,142 +666,149 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                 0x000..=0x002 | 0x008..=0x056 | 0x06C => {
                     emu.gpu.engine_2d_a.write_16::<A>(addr, value);
                 }
-                0x004 => emu.gpu.set_disp_status_9(gpu::DispStatus(value)),
-                0x006 => emu.gpu.set_vcount(value),
+                0x004 => emu.gpu.write_disp_status_9(gpu::DispStatus(value)),
+                0x006 => emu.gpu.write_vcount(value),
                 0x060 => emu
                     .gpu
                     .engine_3d
                     .write_rendering_control(engine_3d::RenderingControl(value)),
-                0x0B0 => emu.arm9.dma.channels[0]
-                    .set_src_addr((emu.arm9.dma.channels[0].src_addr & 0xFFFF_0000) | value as u32),
-                0x0B2 => emu.arm9.dma.channels[0].set_src_addr(
+                0x0B0 => emu.arm9.dma.channels[0].write_src_addr(
+                    (emu.arm9.dma.channels[0].src_addr & 0xFFFF_0000) | value as u32,
+                ),
+                0x0B2 => emu.arm9.dma.channels[0].write_src_addr(
                     (emu.arm9.dma.channels[0].src_addr & 0x0000_FFFF) | (value as u32) << 16,
                 ),
-                0x0B4 => emu.arm9.dma.channels[0]
-                    .set_dst_addr((emu.arm9.dma.channels[0].dst_addr & 0xFFFF_0000) | value as u32),
-                0x0B6 => emu.arm9.dma.channels[0].set_dst_addr(
+                0x0B4 => emu.arm9.dma.channels[0].write_dst_addr(
+                    (emu.arm9.dma.channels[0].dst_addr & 0xFFFF_0000) | value as u32,
+                ),
+                0x0B6 => emu.arm9.dma.channels[0].write_dst_addr(
                     (emu.arm9.dma.channels[0].dst_addr & 0x0000_FFFF) | (value as u32) << 16,
                 ),
-                0x0B8 => emu.arm9.dma.channels[0].set_control_low(value),
-                0x0BA => emu.arm9.set_dma_channel_control(
+                0x0B8 => emu.arm9.dma.channels[0].write_control_low(value),
+                0x0BA => emu.arm9.write_dma_channel_control(
                     dma::Index::new(0),
                     dma::Control(
                         (emu.arm9.dma.channels[0].control.0 & 0x0000_FFFF) | (value as u32) << 16,
                     ),
                     &emu.gpu.engine_3d,
                 ),
-                0x0BC => emu.arm9.dma.channels[1]
-                    .set_src_addr((emu.arm9.dma.channels[1].src_addr & 0xFFFF_0000) | value as u32),
-                0x0BE => emu.arm9.dma.channels[1].set_src_addr(
+                0x0BC => emu.arm9.dma.channels[1].write_src_addr(
+                    (emu.arm9.dma.channels[1].src_addr & 0xFFFF_0000) | value as u32,
+                ),
+                0x0BE => emu.arm9.dma.channels[1].write_src_addr(
                     (emu.arm9.dma.channels[1].src_addr & 0x0000_FFFF) | (value as u32) << 16,
                 ),
-                0x0C0 => emu.arm9.dma.channels[1]
-                    .set_dst_addr((emu.arm9.dma.channels[1].dst_addr & 0xFFFF_0000) | value as u32),
-                0x0C2 => emu.arm9.dma.channels[1].set_dst_addr(
+                0x0C0 => emu.arm9.dma.channels[1].write_dst_addr(
+                    (emu.arm9.dma.channels[1].dst_addr & 0xFFFF_0000) | value as u32,
+                ),
+                0x0C2 => emu.arm9.dma.channels[1].write_dst_addr(
                     (emu.arm9.dma.channels[1].dst_addr & 0x0000_FFFF) | (value as u32) << 16,
                 ),
-                0x0C4 => emu.arm9.dma.channels[1].set_control_low(value),
-                0x0C6 => emu.arm9.set_dma_channel_control(
+                0x0C4 => emu.arm9.dma.channels[1].write_control_low(value),
+                0x0C6 => emu.arm9.write_dma_channel_control(
                     dma::Index::new(1),
                     dma::Control(
                         (emu.arm9.dma.channels[1].control.0 & 0x0000_FFFF) | (value as u32) << 16,
                     ),
                     &emu.gpu.engine_3d,
                 ),
-                0x0C8 => emu.arm9.dma.channels[2]
-                    .set_src_addr((emu.arm9.dma.channels[2].src_addr & 0xFFFF_0000) | value as u32),
-                0x0CA => emu.arm9.dma.channels[2].set_src_addr(
+                0x0C8 => emu.arm9.dma.channels[2].write_src_addr(
+                    (emu.arm9.dma.channels[2].src_addr & 0xFFFF_0000) | value as u32,
+                ),
+                0x0CA => emu.arm9.dma.channels[2].write_src_addr(
                     (emu.arm9.dma.channels[2].src_addr & 0x0000_FFFF) | (value as u32) << 16,
                 ),
-                0x0CC => emu.arm9.dma.channels[2]
-                    .set_dst_addr((emu.arm9.dma.channels[2].dst_addr & 0xFFFF_0000) | value as u32),
-                0x0CE => emu.arm9.dma.channels[2].set_dst_addr(
+                0x0CC => emu.arm9.dma.channels[2].write_dst_addr(
+                    (emu.arm9.dma.channels[2].dst_addr & 0xFFFF_0000) | value as u32,
+                ),
+                0x0CE => emu.arm9.dma.channels[2].write_dst_addr(
                     (emu.arm9.dma.channels[2].dst_addr & 0x0000_FFFF) | (value as u32) << 16,
                 ),
-                0x0D0 => emu.arm9.dma.channels[2].set_control_low(value),
-                0x0D2 => emu.arm9.set_dma_channel_control(
+                0x0D0 => emu.arm9.dma.channels[2].write_control_low(value),
+                0x0D2 => emu.arm9.write_dma_channel_control(
                     dma::Index::new(2),
                     dma::Control(
                         (emu.arm9.dma.channels[2].control.0 & 0x0000_FFFF) | (value as u32) << 16,
                     ),
                     &emu.gpu.engine_3d,
                 ),
-                0x0D4 => emu.arm9.dma.channels[3]
-                    .set_src_addr((emu.arm9.dma.channels[3].src_addr & 0xFFFF_0000) | value as u32),
-                0x0D6 => emu.arm9.dma.channels[3].set_src_addr(
+                0x0D4 => emu.arm9.dma.channels[3].write_src_addr(
+                    (emu.arm9.dma.channels[3].src_addr & 0xFFFF_0000) | value as u32,
+                ),
+                0x0D6 => emu.arm9.dma.channels[3].write_src_addr(
                     (emu.arm9.dma.channels[3].src_addr & 0x0000_FFFF) | (value as u32) << 16,
                 ),
-                0x0D8 => emu.arm9.dma.channels[3]
-                    .set_dst_addr((emu.arm9.dma.channels[3].dst_addr & 0xFFFF_0000) | value as u32),
-                0x0DA => emu.arm9.dma.channels[3].set_dst_addr(
+                0x0D8 => emu.arm9.dma.channels[3].write_dst_addr(
+                    (emu.arm9.dma.channels[3].dst_addr & 0xFFFF_0000) | value as u32,
+                ),
+                0x0DA => emu.arm9.dma.channels[3].write_dst_addr(
                     (emu.arm9.dma.channels[3].dst_addr & 0x0000_FFFF) | (value as u32) << 16,
                 ),
-                0x0DC => emu.arm9.dma.channels[3].set_control_low(value),
-                0x0DE => emu.arm9.set_dma_channel_control(
+                0x0DC => emu.arm9.dma.channels[3].write_control_low(value),
+                0x0DE => emu.arm9.write_dma_channel_control(
                     dma::Index::new(3),
                     dma::Control(
                         (emu.arm9.dma.channels[3].control.0 & 0x0000_FFFF) | (value as u32) << 16,
                     ),
                     &emu.gpu.engine_3d,
                 ),
-                0x100 => emu.arm9.timers.set_reload(
+                0x100 => emu.arm9.timers.write_reload(
                     timers::Index::new(0),
                     value,
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
                 ),
-                0x102 => emu.arm9.timers.set_control(
+                0x102 => emu.arm9.timers.write_control(
                     timers::Index::new(0),
                     timers::Control(value as u8),
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
                 ),
-                0x104 => emu.arm9.timers.set_reload(
+                0x104 => emu.arm9.timers.write_reload(
                     timers::Index::new(1),
                     value,
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
                 ),
-                0x106 => emu.arm9.timers.set_control(
+                0x106 => emu.arm9.timers.write_control(
                     timers::Index::new(1),
                     timers::Control(value as u8),
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
                 ),
-                0x108 => emu.arm9.timers.set_reload(
+                0x108 => emu.arm9.timers.write_reload(
                     timers::Index::new(2),
                     value,
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
                 ),
-                0x10A => emu.arm9.timers.set_control(
+                0x10A => emu.arm9.timers.write_control(
                     timers::Index::new(2),
                     timers::Control(value as u8),
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
                 ),
-                0x10C => emu.arm9.timers.set_reload(
+                0x10C => emu.arm9.timers.write_reload(
                     timers::Index::new(3),
                     value,
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
                 ),
-                0x10E => emu.arm9.timers.set_control(
+                0x10E => emu.arm9.timers.write_control(
                     timers::Index::new(3),
                     timers::Control(value as u8),
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
                 ),
-                0x180 => emu.ipc.set_sync_9(ipc::Sync(value), &mut emu.arm7.irqs),
-                0x184 => emu.ipc.set_fifo_control_9(
+                0x180 => emu.ipc.write_sync_9(ipc::Sync(value), &mut emu.arm7.irqs),
+                0x184 => emu.ipc.write_fifo_control_9(
                     ipc::FifoControl(value),
                     &mut emu.arm9.irqs,
                     &mut emu.arm9.schedule,
                 ),
                 0x1A0 => {
                     if emu.ds_slot.arm9_access() {
-                        emu.ds_slot
-                            .set_aux_spi_control(ds_slot::AuxSpiControl(value));
+                        emu.ds_slot.write_spi_control(ds_slot::AuxSpiControl(value));
                     } else {
                         #[cfg(feature = "log")]
                         if !A::IS_DEBUG {
@@ -845,33 +850,34 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     }
                 }
                 0x204 => {
-                    emu.arm9.set_local_ex_mem_control(LocalExMemControl(value));
-                    emu.set_global_ex_mem_control(GlobalExMemControl(value));
+                    emu.arm9
+                        .write_local_ex_mem_control(LocalExMemControl(value as u8));
+                    emu.write_global_ex_mem_control(GlobalExMemControl(value));
                 }
                 0x208 => emu
                     .arm9
                     .irqs
-                    .set_master_enable(value & 1 != 0, &mut emu.arm9.schedule),
+                    .write_master_enable(value & 1 != 0, &mut emu.arm9.schedule),
                 0x240 => {
-                    emu.gpu.vram.set_bank_control_a(
+                    emu.gpu.vram.write_bank_control_a(
                         gpu::vram::BankControl(value as u8),
                         &mut emu.arm9,
                         &mut emu.gpu.engine_3d,
                     );
-                    emu.gpu.vram.set_bank_control_b(
+                    emu.gpu.vram.write_bank_control_b(
                         gpu::vram::BankControl((value >> 8) as u8),
                         &mut emu.arm9,
                         &mut emu.gpu.engine_3d,
                     );
                 }
                 0x242 => {
-                    emu.gpu.vram.set_bank_control_c(
+                    emu.gpu.vram.write_bank_control_c(
                         gpu::vram::BankControl(value as u8),
                         &mut emu.arm7,
                         &mut emu.arm9,
                         &mut emu.gpu.engine_3d,
                     );
-                    emu.gpu.vram.set_bank_control_d(
+                    emu.gpu.vram.write_bank_control_d(
                         gpu::vram::BankControl((value >> 8) as u8),
                         &mut emu.arm7,
                         &mut emu.arm9,
@@ -879,24 +885,24 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     );
                 }
                 0x244 => {
-                    emu.gpu.vram.set_bank_control_e(
+                    emu.gpu.vram.write_bank_control_e(
                         gpu::vram::BankControl(value as u8),
                         &mut emu.arm9,
                         &mut emu.gpu.engine_3d,
                     );
-                    emu.gpu.vram.set_bank_control_f(
+                    emu.gpu.vram.write_bank_control_f(
                         gpu::vram::BankControl((value >> 8) as u8),
                         &mut emu.arm9,
                         &mut emu.gpu.engine_3d,
                     );
                 }
                 0x246 => {
-                    emu.gpu.vram.set_bank_control_g(
+                    emu.gpu.vram.write_bank_control_g(
                         gpu::vram::BankControl(value as u8),
                         &mut emu.arm9,
                         &mut emu.gpu.engine_3d,
                     );
-                    emu.swram.set_control(
+                    emu.swram.write_control(
                         swram::Control((value >> 8) as u8),
                         &mut emu.arm7,
                         &mut emu.arm9,
@@ -905,8 +911,8 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                 0x248 => {
                     emu.gpu
                         .vram
-                        .set_bank_control_h(gpu::vram::BankControl(value as u8), &mut emu.arm9);
-                    emu.gpu.vram.set_bank_control_i(
+                        .write_bank_control_h(gpu::vram::BankControl(value as u8), &mut emu.arm9);
+                    emu.gpu.vram.write_bank_control_i(
                         gpu::vram::BankControl((value >> 8) as u8),
                         &mut emu.arm9,
                     );
@@ -914,15 +920,15 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                 0x280 => emu
                     .arm9
                     .div_engine
-                    .set_control(div_engine::Control(value), &mut emu.arm9.schedule),
+                    .write_control(div_engine::Control(value), &mut emu.arm9.schedule),
                 0x2B0 => emu
                     .arm9
                     .sqrt_engine
-                    .set_control(sqrt_engine::Control(value as u16), &mut emu.arm9.schedule),
+                    .write_control(sqrt_engine::Control(value as u16), &mut emu.arm9.schedule),
                 0x300 => {
                     emu.arm9.post_boot_flag.0 = (emu.arm9.post_boot_flag.0 & 1) | (value as u8 & 3);
                 }
-                0x304 => emu.gpu.set_power_control(gpu::PowerControl(value)),
+                0x304 => emu.gpu.write_power_control(gpu::PowerControl(value)),
                 0x320..=0x6A2 => {
                     gpu::engine_3d::Engine3d::write_16::<A, _>(emu, addr as u16, value);
                 }
@@ -996,64 +1002,64 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                     emu.gpu.engine_2d_a.write_32::<A>(addr, value);
                 }
                 0x004 => {
-                    emu.gpu.set_disp_status_9(gpu::DispStatus(value as u16));
-                    emu.gpu.set_vcount((value >> 16) as u16);
+                    emu.gpu.write_disp_status_9(gpu::DispStatus(value as u16));
+                    emu.gpu.write_vcount((value >> 16) as u16);
                 }
                 0x060 => emu
                     .gpu
                     .engine_3d
                     .write_rendering_control(engine_3d::RenderingControl(value as u16)),
-                0x0B0 => emu.arm9.dma.channels[0].set_src_addr(value),
-                0x0B4 => emu.arm9.dma.channels[0].set_dst_addr(value),
-                0x0B8 => emu.arm9.set_dma_channel_control(
+                0x0B0 => emu.arm9.dma.channels[0].write_src_addr(value),
+                0x0B4 => emu.arm9.dma.channels[0].write_dst_addr(value),
+                0x0B8 => emu.arm9.write_dma_channel_control(
                     dma::Index::new(0),
                     dma::Control(value),
                     &emu.gpu.engine_3d,
                 ),
-                0x0BC => emu.arm9.dma.channels[1].set_src_addr(value),
-                0x0C0 => emu.arm9.dma.channels[1].set_dst_addr(value),
-                0x0C4 => emu.arm9.set_dma_channel_control(
+                0x0BC => emu.arm9.dma.channels[1].write_src_addr(value),
+                0x0C0 => emu.arm9.dma.channels[1].write_dst_addr(value),
+                0x0C4 => emu.arm9.write_dma_channel_control(
                     dma::Index::new(1),
                     dma::Control(value),
                     &emu.gpu.engine_3d,
                 ),
-                0x0C8 => emu.arm9.dma.channels[2].set_src_addr(value),
-                0x0CC => emu.arm9.dma.channels[2].set_dst_addr(value),
-                0x0D0 => emu.arm9.set_dma_channel_control(
+                0x0C8 => emu.arm9.dma.channels[2].write_src_addr(value),
+                0x0CC => emu.arm9.dma.channels[2].write_dst_addr(value),
+                0x0D0 => emu.arm9.write_dma_channel_control(
                     dma::Index::new(2),
                     dma::Control(value),
                     &emu.gpu.engine_3d,
                 ),
-                0x0D4 => emu.arm9.dma.channels[3].set_src_addr(value),
-                0x0D8 => emu.arm9.dma.channels[3].set_dst_addr(value),
-                0x0DC => emu.arm9.set_dma_channel_control(
+                0x0D4 => emu.arm9.dma.channels[3].write_src_addr(value),
+                0x0D8 => emu.arm9.dma.channels[3].write_dst_addr(value),
+                0x0DC => emu.arm9.write_dma_channel_control(
                     dma::Index::new(3),
                     dma::Control(value),
                     &emu.gpu.engine_3d,
                 ),
                 0x0E0..=0x0EC => emu.arm9.dma_fill.write_le(addr as usize & 0xC, value),
-                0x100 => emu.arm9.timers.set_control_reload(
+                0x100 => emu.arm9.timers.write_control_reload(
                     timers::Index::new(0),
                     value as u16,
                     timers::Control((value >> 16) as u8),
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
                 ),
-                0x104 => emu.arm9.timers.set_control_reload(
+                0x104 => emu.arm9.timers.write_control_reload(
                     timers::Index::new(1),
                     value as u16,
                     timers::Control((value >> 16) as u8),
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
                 ),
-                0x108 => emu.arm9.timers.set_control_reload(
+                0x108 => emu.arm9.timers.write_control_reload(
                     timers::Index::new(2),
                     value as u16,
                     timers::Control((value >> 16) as u8),
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
                 ),
-                0x10C => emu.arm9.timers.set_control_reload(
+                0x10C => emu.arm9.timers.write_control_reload(
                     timers::Index::new(3),
                     value as u16,
                     timers::Control((value >> 16) as u8),
@@ -1062,12 +1068,12 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                 ),
                 0x180 => emu
                     .ipc
-                    .set_sync_9(ipc::Sync(value as u16), &mut emu.arm7.irqs),
+                    .write_sync_9(ipc::Sync(value as u16), &mut emu.arm7.irqs),
                 0x188 => emu.ipc.send_9(value, &mut emu.arm7.irqs),
                 0x1A0 => {
                     if emu.ds_slot.arm9_access() {
                         emu.ds_slot
-                            .set_aux_spi_control(ds_slot::AuxSpiControl(value as u16));
+                            .write_spi_control(ds_slot::AuxSpiControl(value as u16));
                         emu.ds_slot.write_spi_data(
                             (value >> 16) as u8,
                             &mut emu.arm7.schedule,
@@ -1089,7 +1095,7 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                 }
                 0x1A4 => {
                     if emu.ds_slot.arm9_access() {
-                        emu.ds_slot.set_rom_control(
+                        emu.ds_slot.write_rom_control(
                             ds_slot::RomControl(value),
                             &mut emu.arm7.schedule,
                             &mut emu.arm9.schedule,
@@ -1122,11 +1128,11 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                 0x208 => emu
                     .arm9
                     .irqs
-                    .set_master_enable(value & 1 != 0, &mut emu.arm9.schedule),
+                    .write_master_enable(value & 1 != 0, &mut emu.arm9.schedule),
                 0x210 => emu
                     .arm9
                     .irqs
-                    .set_enabled(IrqFlags(value), &mut emu.arm9.schedule),
+                    .write_enabled(IrqFlags(value), &mut emu.arm9.schedule),
                 0x214 => {
                     if emu.gpu.engine_3d.gx_fifo_irq_requested() {
                         // The GXFIFO IRQ can't be acknowledged through IF as long as the trigger
@@ -1135,26 +1141,26 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                     }
                     emu.arm9
                         .irqs
-                        .set_requested(IrqFlags(emu.arm9.irqs.requested().0 & !value), ());
+                        .write_requested(IrqFlags(emu.arm9.irqs.requested().0 & !value), ());
                 }
                 0x240 => {
-                    emu.gpu.vram.set_bank_control_a(
+                    emu.gpu.vram.write_bank_control_a(
                         gpu::vram::BankControl(value as u8),
                         &mut emu.arm9,
                         &mut emu.gpu.engine_3d,
                     );
-                    emu.gpu.vram.set_bank_control_b(
+                    emu.gpu.vram.write_bank_control_b(
                         gpu::vram::BankControl((value >> 8) as u8),
                         &mut emu.arm9,
                         &mut emu.gpu.engine_3d,
                     );
-                    emu.gpu.vram.set_bank_control_c(
+                    emu.gpu.vram.write_bank_control_c(
                         gpu::vram::BankControl((value >> 16) as u8),
                         &mut emu.arm7,
                         &mut emu.arm9,
                         &mut emu.gpu.engine_3d,
                     );
-                    emu.gpu.vram.set_bank_control_d(
+                    emu.gpu.vram.write_bank_control_d(
                         gpu::vram::BankControl((value >> 24) as u8),
                         &mut emu.arm7,
                         &mut emu.arm9,
@@ -1162,22 +1168,22 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                     );
                 }
                 0x244 => {
-                    emu.gpu.vram.set_bank_control_e(
+                    emu.gpu.vram.write_bank_control_e(
                         gpu::vram::BankControl(value as u8),
                         &mut emu.arm9,
                         &mut emu.gpu.engine_3d,
                     );
-                    emu.gpu.vram.set_bank_control_f(
+                    emu.gpu.vram.write_bank_control_f(
                         gpu::vram::BankControl((value >> 8) as u8),
                         &mut emu.arm9,
                         &mut emu.gpu.engine_3d,
                     );
-                    emu.gpu.vram.set_bank_control_g(
+                    emu.gpu.vram.write_bank_control_g(
                         gpu::vram::BankControl((value >> 16) as u8),
                         &mut emu.arm9,
                         &mut emu.gpu.engine_3d,
                     );
-                    emu.swram.set_control(
+                    emu.swram.write_control(
                         swram::Control((value >> 24) as u8),
                         &mut emu.arm7,
                         &mut emu.arm9,
@@ -1186,8 +1192,8 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                 0x248 => {
                     emu.gpu
                         .vram
-                        .set_bank_control_h(gpu::vram::BankControl(value as u8), &mut emu.arm9);
-                    emu.gpu.vram.set_bank_control_i(
+                        .write_bank_control_h(gpu::vram::BankControl(value as u8), &mut emu.arm9);
+                    emu.gpu.vram.write_bank_control_i(
                         gpu::vram::BankControl((value >> 8) as u8),
                         &mut emu.arm9,
                     );
@@ -1195,36 +1201,36 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                 0x280 => emu
                     .arm9
                     .div_engine
-                    .set_control(div_engine::Control(value as u16), &mut emu.arm9.schedule),
-                0x290 => emu.arm9.div_engine.set_numerator(
-                    (emu.arm9.div_engine.numerator() & 0xFFFF_FFFF << 32) | value as i64,
+                    .write_control(div_engine::Control(value as u16), &mut emu.arm9.schedule),
+                0x290 => emu.arm9.div_engine.write_num(
+                    (emu.arm9.div_engine.num() & 0xFFFF_FFFF << 32) | value as i64,
                     &mut emu.arm9.schedule,
                 ),
-                0x294 => emu.arm9.div_engine.set_numerator(
-                    (emu.arm9.div_engine.numerator() & 0xFFFF_FFFF) | (value as i64) << 32,
+                0x294 => emu.arm9.div_engine.write_num(
+                    (emu.arm9.div_engine.num() & 0xFFFF_FFFF) | (value as i64) << 32,
                     &mut emu.arm9.schedule,
                 ),
-                0x298 => emu.arm9.div_engine.set_denominator(
-                    (emu.arm9.div_engine.denominator() & 0xFFFF_FFFF << 32) | value as i64,
+                0x298 => emu.arm9.div_engine.write_denom(
+                    (emu.arm9.div_engine.denom() & 0xFFFF_FFFF << 32) | value as i64,
                     &mut emu.arm9.schedule,
                 ),
-                0x29C => emu.arm9.div_engine.set_denominator(
-                    (emu.arm9.div_engine.denominator() & 0xFFFF_FFFF) | (value as i64) << 32,
+                0x29C => emu.arm9.div_engine.write_denom(
+                    (emu.arm9.div_engine.denom() & 0xFFFF_FFFF) | (value as i64) << 32,
                     &mut emu.arm9.schedule,
                 ),
                 0x2B0 => emu
                     .arm9
                     .sqrt_engine
-                    .set_control(sqrt_engine::Control(value as u16), &mut emu.arm9.schedule),
-                0x2B8 => emu.arm9.sqrt_engine.set_input(
+                    .write_control(sqrt_engine::Control(value as u16), &mut emu.arm9.schedule),
+                0x2B8 => emu.arm9.sqrt_engine.write_input(
                     (emu.arm9.sqrt_engine.input() & 0xFFFF_FFFF << 32) | value as u64,
                     &mut emu.arm9.schedule,
                 ),
-                0x2BC => emu.arm9.sqrt_engine.set_input(
+                0x2BC => emu.arm9.sqrt_engine.write_input(
                     (emu.arm9.sqrt_engine.input() & 0xFFFF_FFFF) | (value as u64) << 32,
                     &mut emu.arm9.schedule,
                 ),
-                0x304 => emu.gpu.set_power_control(gpu::PowerControl(value as u16)),
+                0x304 => emu.gpu.write_power_control(gpu::PowerControl(value as u16)),
                 0x320..=0x6A0 => {
                     gpu::engine_3d::Engine3d::write_32::<A, _>(emu, addr as u16, value);
                 }

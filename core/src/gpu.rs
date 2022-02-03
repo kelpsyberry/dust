@@ -135,7 +135,7 @@ impl Gpu {
     }
 
     #[inline]
-    pub fn set_power_control(&mut self, value: PowerControl) {
+    pub fn write_power_control(&mut self, value: PowerControl) {
         // TODO: What to do with bit 0? The current handling code is just a guess
         if !value.display_enabled() {
             self.disp_status_7 = self
@@ -164,7 +164,7 @@ impl Gpu {
     }
 
     #[inline]
-    pub fn set_vcount(&mut self, value: u16) {
+    pub fn write_vcount(&mut self, value: u16) {
         // VCOUNT writes are allowed on the DS, though according to melonDS, its value doesn't
         // control where rendered scanlines end up, but just which BG scanlines the engines think
         // they're rendering, while still rendering OBJs in the same place, as well as modifying
@@ -191,7 +191,7 @@ impl Gpu {
     }
 
     #[inline]
-    pub fn set_disp_status_7(&mut self, value: DispStatus) {
+    pub fn write_disp_status_7(&mut self, value: DispStatus) {
         self.disp_status_7.0 = (self.disp_status_7.0 & 7) | (value.0 & 0xFFB8);
         self.vcount_compare_7 = value.vcount_compare();
     }
@@ -207,7 +207,7 @@ impl Gpu {
     }
 
     #[inline]
-    pub fn set_disp_status_9(&mut self, value: DispStatus) {
+    pub fn write_disp_status_9(&mut self, value: DispStatus) {
         self.disp_status_9.0 = (self.disp_status_9.0 & 7) | (value.0 & 0xFFB8);
         self.vcount_compare_9 = value.vcount_compare();
     }
@@ -218,13 +218,13 @@ impl Gpu {
             if emu.gpu.disp_status_7.hblank_irq_enabled() {
                 emu.arm7
                     .irqs
-                    .set_requested(emu.arm7.irqs.requested().with_hblank(true), ());
+                    .write_requested(emu.arm7.irqs.requested().with_hblank(true), ());
             }
             emu.gpu.disp_status_9.set_hblank(true);
             if emu.gpu.disp_status_9.hblank_irq_enabled() {
                 emu.arm9
                     .irqs
-                    .set_requested(emu.arm9.irqs.requested().with_hblank(true), ());
+                    .write_requested(emu.arm9.irqs.requested().with_hblank(true), ());
             }
         }
 
@@ -308,7 +308,7 @@ impl Gpu {
                 if emu.gpu.disp_status_7.vcount_match_irq_enabled() {
                     emu.arm7
                         .irqs
-                        .set_requested(emu.arm7.irqs.requested().with_vcount_match(true), ());
+                        .write_requested(emu.arm7.irqs.requested().with_vcount_match(true), ());
                 }
             } else {
                 emu.gpu.disp_status_7.set_vcount_match(false);
@@ -318,7 +318,7 @@ impl Gpu {
                 if emu.gpu.disp_status_9.vcount_match_irq_enabled() {
                     emu.arm9
                         .irqs
-                        .set_requested(emu.arm9.irqs.requested().with_vcount_match(true), ());
+                        .write_requested(emu.arm9.irqs.requested().with_vcount_match(true), ());
                 }
             } else {
                 emu.gpu.disp_status_9.set_vcount_match(false);
@@ -337,13 +337,13 @@ impl Gpu {
                 if emu.gpu.disp_status_7.vblank_irq_enabled() {
                     emu.arm7
                         .irqs
-                        .set_requested(emu.arm7.irqs.requested().with_vblank(true), ());
+                        .write_requested(emu.arm7.irqs.requested().with_vblank(true), ());
                 }
                 emu.gpu.disp_status_9.set_vblank(true);
                 if emu.gpu.disp_status_9.vblank_irq_enabled() {
                     emu.arm9
                         .irqs
-                        .set_requested(emu.arm9.irqs.requested().with_vblank(true), ());
+                        .write_requested(emu.arm9.irqs.requested().with_vblank(true), ());
                 }
                 emu.arm7
                     .start_dma_transfers_with_timing::<{ arm7::dma::Timing::VBlank }>();

@@ -87,7 +87,7 @@ impl EepromFram {
             cur_command_pos: 0,
             cur_addr: 0,
         };
-        result.set_status(Status(saved_status.unwrap_or(SavedStatus(0)).0));
+        result.write_status(Status(saved_status.unwrap_or(SavedStatus(0)).0));
         Ok(result)
     }
 
@@ -115,7 +115,7 @@ impl EepromFram {
     }
 
     #[inline]
-    pub fn set_status(&mut self, value: Status) {
+    pub fn write_status(&mut self, value: Status) {
         self.status.0 = (self.status.0 & 0x73) | (value.0 & 0x8C);
         let len = self.contents.len() as u32;
         self.write_protect_start = match value.write_protect() {
@@ -200,7 +200,7 @@ impl super::SpiDevice for EepromFram {
             0x01 => {
                 // Write status register
                 if self.status.write_enabled() {
-                    self.set_status(Status(value));
+                    self.write_status(Status(value));
                     if last {
                         self.status.set_write_enabled(false);
                     }

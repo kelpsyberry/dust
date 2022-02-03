@@ -76,7 +76,7 @@ impl Controller {
     }
 
     #[inline]
-    pub fn set_control(&mut self, value: Control) {
+    pub fn write_control(&mut self, value: Control) {
         // TODO: What happens if SPICNT is modified while busy?
         if !value.enabled() && self.control.enabled() {
             // Turning off SPI should clear all chipselect pins
@@ -97,7 +97,7 @@ impl Controller {
     pub(crate) fn handle_data_ready(&mut self, arm7_irqs: &mut arm7::Irqs) {
         self.control.set_busy(false);
         if self.control.irq_enabled() {
-            arm7_irqs.set_requested(arm7_irqs.requested().with_spi_data_ready(true), ());
+            arm7_irqs.write_requested(arm7_irqs.requested().with_spi_data_ready(true), ());
         }
     }
 

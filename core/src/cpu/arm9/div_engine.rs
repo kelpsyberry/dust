@@ -15,10 +15,10 @@ bitfield_debug! {
 
 pub struct DivEngine {
     control: Control,
-    numerator: i64,
-    denominator: i64,
-    quotient: i64,
-    remainder: i64,
+    num: i64,
+    denom: i64,
+    quot: i64,
+    rem: i64,
 }
 
 impl DivEngine {
@@ -26,10 +26,10 @@ impl DivEngine {
         schedule.set_event(event_slots::DIV, Event::DivResultReady);
         DivEngine {
             control: Control(0),
-            numerator: 0,
-            denominator: 0,
-            quotient: 0,
-            remainder: 0,
+            num: 0,
+            denom: 0,
+            quot: 0,
+            rem: 0,
         }
     }
 
@@ -51,95 +51,91 @@ impl DivEngine {
     }
 
     #[inline]
-    pub fn set_control(&mut self, value: Control, schedule: &mut Schedule) {
+    pub fn write_control(&mut self, value: Control, schedule: &mut Schedule) {
         self.control.0 = (self.control.0 & 0xC000) | (value.0 & 0x0003);
         self.schedule_data_ready(schedule);
     }
 
     #[inline]
-    pub fn numerator(&self) -> i64 {
-        self.numerator
+    pub fn num(&self) -> i64 {
+        self.num
     }
 
     #[inline]
-    pub fn set_numerator(&mut self, value: i64, schedule: &mut Schedule) {
-        self.numerator = value;
+    pub fn write_num(&mut self, value: i64, schedule: &mut Schedule) {
+        self.num = value;
         self.schedule_data_ready(schedule);
     }
 
     #[inline]
-    pub fn denominator(&self) -> i64 {
-        self.denominator
+    pub fn denom(&self) -> i64 {
+        self.denom
     }
 
     #[inline]
-    pub fn set_denominator(&mut self, value: i64, schedule: &mut Schedule) {
-        self.denominator = value;
+    pub fn write_denom(&mut self, value: i64, schedule: &mut Schedule) {
+        self.denom = value;
         self.schedule_data_ready(schedule);
     }
 
     #[inline]
-    pub fn quotient(&self) -> i64 {
-        self.quotient
+    pub fn quot(&self) -> i64 {
+        self.quot
     }
 
     #[inline]
-    pub fn remainder(&self) -> i64 {
-        self.remainder
+    pub fn rem(&self) -> i64 {
+        self.rem
     }
 
     pub(crate) fn handle_result_ready(&mut self) {
-        self.control = self
-            .control
-            .with_busy(false)
-            .with_div_by_0(self.denominator == 0);
+        self.control = self.control.with_busy(false).with_div_by_0(self.denom == 0);
         match self.control.mode() {
             0 => {
                 // 32/32
-                let numerator = self.numerator as i32;
-                let denominator = self.denominator as i32;
-                if denominator == 0 {
-                    self.quotient =
-                        if numerator >= 0 { -1 } else { 1 } ^ 0xFFFF_FFFF_0000_0000_u64 as i64;
-                    self.remainder = numerator as i64;
-                } else if numerator == i32::MIN && denominator == -1 {
-                    self.quotient = numerator as u32 as i64;
-                    self.remainder = 0;
+                let num = self.num as i32;
+                let denom = self.denom as i32;
+                if denom == 0 {
+                    self.quot = if num >= 0 { -1 } else { 1 } ^ 0xFFFF_FFFF_0000_0000_u64 as i64;
+                    self.rem = num as i64;
+                } else if num == i32::MIN && denom == -1 {
+                    self.quot = num as u32 as i64;
+                    self.rem = 0;
                 } else {
-                    self.quotient = (numerator / denominator) as i64;
-                    self.remainder = (numerator % denominator) as i64;
+                    self.quot = (num / denom) as i64;
+                    self.rem = (num % denom) as i64;
                 }
             }
 
             1 | 3 => {
                 // 64/32
-                let numerator = self.numerator;
-                let denominator = self.denominator as i32;
-                if denominator == 0 {
-                    self.quotient = if numerator >= 0 { -1 } else { 1 };
-                    self.remainder = self.numerator;
-                } else if numerator == i64::MIN && denominator == -1 {
-                    self.quotient = numerator;
-                    self.remainder = 0;
+                let num = self.num;
+                let denom = self.denom as i32;
+                if denom == 0 {
+                    self.quot = if num >= 0 { -1 } else { 1 };
+                    self.rem = self.num;
+                } else if num == i64::MIN && denom == -1 {
+                    self.quot = num;
+                    self.rem = 0;
                 } else {
-                    self.quotient = numerator / denominator as i64;
-                    self.remainder = numerator % denominator as i64;
+                    self.quot = num / denom as i64;
+                    self.rem = num % denom as i64;
                 }
             }
 
             _ => {
                 // 64/64
-                let numerator = self.numerator;
-                let denominator = self.denominator;
-                if self.denominator == 0 {
-                    self.quotient = if numerator >= 0 { -1 } else { 1 };
-                    self.remainder = self.numerator;
-                } else if numerator == i64::MIN && denominator == -1 {
-                    self.quotient = numerator;
-                    self.remainder = 0;
+                let num = self.num;
+                let denom = self.denom;
+                if self.denom == 0 {
+                    self.quot = if num >= 0 { -1 } else { 1 };
+                    self.rem = self.num;
+                } else if num == i64::MIN && denom == -1 {
+                    self.quot = num;
+                    self.rem = 0;
                 } else {
-                    self.quotient = numerator / denominator;
-                    self.remainder = numerator % denominator;
+                    self.quot = num / denom;
+                    self.rem = num % denom;
                 }
             }
         }

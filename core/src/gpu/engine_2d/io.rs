@@ -80,45 +80,45 @@ impl<R: Role> Engine2d<R> {
     pub(crate) fn write_8<A: AccessType>(&mut self, addr: u32, value: u8) {
         let addr = addr & 0x7F;
         match addr {
-            0x00 => self.set_control(Control((self.control.0 & 0xFFFF_FF00) | value as u32)),
-            0x01 => self.set_control(Control(
+            0x00 => self.write_control(Control((self.control.0 & 0xFFFF_FF00) | value as u32)),
+            0x01 => self.write_control(Control(
                 (self.control.0 & 0xFFFF_00FF) | (value as u32) << 8,
             )),
-            0x02 => self.set_control(Control(
+            0x02 => self.write_control(Control(
                 (self.control.0 & 0xFF00_FFFF) | (value as u32) << 16,
             )),
-            0x03 => self.set_control(Control(
+            0x03 => self.write_control(Control(
                 (self.control.0 & 0x00FF_FFFF) | (value as u32) << 24,
             )),
-            0x08 => self.set_bg_control(
+            0x08 => self.write_bg_control(
                 BgIndex::new(0),
                 BgControl((self.bgs[0].control.0 & 0xFF00) | value as u16),
             ),
-            0x09 => self.set_bg_control(
+            0x09 => self.write_bg_control(
                 BgIndex::new(0),
                 BgControl((self.bgs[0].control.0 & 0x00FF) | (value as u16) << 8),
             ),
-            0x0A => self.set_bg_control(
+            0x0A => self.write_bg_control(
                 BgIndex::new(1),
                 BgControl((self.bgs[1].control.0 & 0xFF00) | value as u16),
             ),
-            0x0B => self.set_bg_control(
+            0x0B => self.write_bg_control(
                 BgIndex::new(1),
                 BgControl((self.bgs[1].control.0 & 0x00FF) | (value as u16) << 8),
             ),
-            0x0C => self.set_bg_control(
+            0x0C => self.write_bg_control(
                 BgIndex::new(2),
                 BgControl((self.bgs[2].control.0 & 0xFF00) | value as u16),
             ),
-            0x0D => self.set_bg_control(
+            0x0D => self.write_bg_control(
                 BgIndex::new(2),
                 BgControl((self.bgs[2].control.0 & 0x00FF) | (value as u16) << 8),
             ),
-            0x0E => self.set_bg_control(
+            0x0E => self.write_bg_control(
                 BgIndex::new(3),
                 BgControl((self.bgs[3].control.0 & 0xFF00) | value as u16),
             ),
-            0x0F => self.set_bg_control(
+            0x0F => self.write_bg_control(
                 BgIndex::new(3),
                 BgControl((self.bgs[3].control.0 & 0x00FF) | (value as u16) << 8),
             ),
@@ -180,14 +180,14 @@ impl<R: Role> Engine2d<R> {
     pub(crate) fn write_16<A: AccessType>(&mut self, addr: u32, value: u16) {
         let addr = addr & 0x7E;
         match addr {
-            0x00 => self.set_control(Control((self.control.0 & 0xFFFF_0000) | value as u32)),
-            0x02 => self.set_control(Control(
+            0x00 => self.write_control(Control((self.control.0 & 0xFFFF_0000) | value as u32)),
+            0x02 => self.write_control(Control(
                 (self.control.0 & 0x0000_FFFF) | (value as u32) << 16,
             )),
-            0x08 => self.set_bg_control(BgIndex::new(0), BgControl(value)),
-            0x0A => self.set_bg_control(BgIndex::new(1), BgControl(value)),
-            0x0C => self.set_bg_control(BgIndex::new(2), BgControl(value)),
-            0x0E => self.set_bg_control(BgIndex::new(3), BgControl(value)),
+            0x08 => self.write_bg_control(BgIndex::new(0), BgControl(value)),
+            0x0A => self.write_bg_control(BgIndex::new(1), BgControl(value)),
+            0x0C => self.write_bg_control(BgIndex::new(2), BgControl(value)),
+            0x0E => self.write_bg_control(BgIndex::new(3), BgControl(value)),
             0x10 => self.bgs[0].scroll[0] = value & 0x1FF,
             0x12 => self.bgs[0].scroll[1] = value & 0x1FF,
             0x14 => self.bgs[1].scroll[0] = value & 0x1FF,
@@ -249,17 +249,17 @@ impl<R: Role> Engine2d<R> {
             0x44 => self.window_ranges[0].y = (value >> 8) as u8..value as u8,
             0x46 => self.window_ranges[1].y = (value >> 8) as u8..value as u8,
             0x48 => {
-                self.set_window_control(0, WindowControl(value as u8));
-                self.set_window_control(1, WindowControl((value >> 8) as u8));
+                self.write_window_control(0, WindowControl(value as u8));
+                self.write_window_control(1, WindowControl((value >> 8) as u8));
             }
             0x4A => {
-                self.set_window_control(2, WindowControl(value as u8));
-                self.set_window_control(3, WindowControl((value >> 8) as u8));
+                self.write_window_control(2, WindowControl(value as u8));
+                self.write_window_control(3, WindowControl((value >> 8) as u8));
             }
-            0x50 => self.set_color_effects_control(ColorEffectsControl(value)),
-            0x52 => self.set_blend_coeffs_raw(BlendCoeffsRaw(value)),
-            0x54 => self.set_brightness_coeff(value as u8),
-            0x6C => self.set_master_brightness_control(BrightnessControl(value)),
+            0x50 => self.write_color_effects_control(ColorEffectsControl(value)),
+            0x52 => self.write_blend_coeffs_raw(BlendCoeffsRaw(value)),
+            0x54 => self.write_brightness_coeff(value as u8),
+            0x6C => self.write_master_brightness_control(BrightnessControl(value)),
             _ =>
             {
                 #[cfg(feature = "log")]
@@ -278,14 +278,14 @@ impl<R: Role> Engine2d<R> {
     pub(crate) fn write_32<A: AccessType>(&mut self, addr: u32, value: u32) {
         let addr = addr & 0x7C;
         match addr {
-            0x00 => self.set_control(Control(value)),
+            0x00 => self.write_control(Control(value)),
             0x08 => {
-                self.set_bg_control(BgIndex::new(0), BgControl(value as u16));
-                self.set_bg_control(BgIndex::new(1), BgControl((value >> 16) as u16));
+                self.write_bg_control(BgIndex::new(0), BgControl(value as u16));
+                self.write_bg_control(BgIndex::new(1), BgControl((value >> 16) as u16));
             }
             0x0C => {
-                self.set_bg_control(BgIndex::new(2), BgControl(value as u16));
-                self.set_bg_control(BgIndex::new(3), BgControl((value >> 16) as u16));
+                self.write_bg_control(BgIndex::new(2), BgControl(value as u16));
+                self.write_bg_control(BgIndex::new(3), BgControl((value >> 16) as u16));
             }
             0x10 => {
                 self.bgs[0].scroll[0] = value as u16 & 0x1FF;
@@ -344,17 +344,17 @@ impl<R: Role> Engine2d<R> {
                 self.window_ranges[1].y = (value >> 24) as u8..(value >> 16) as u8;
             }
             0x48 => {
-                self.set_window_control(0, WindowControl(value as u8));
-                self.set_window_control(1, WindowControl((value >> 8) as u8));
-                self.set_window_control(2, WindowControl((value >> 16) as u8));
-                self.set_window_control(3, WindowControl((value >> 24) as u8));
+                self.write_window_control(0, WindowControl(value as u8));
+                self.write_window_control(1, WindowControl((value >> 8) as u8));
+                self.write_window_control(2, WindowControl((value >> 16) as u8));
+                self.write_window_control(3, WindowControl((value >> 24) as u8));
             }
             0x50 => {
-                self.set_color_effects_control(ColorEffectsControl(value as u16));
-                self.set_blend_coeffs_raw(BlendCoeffsRaw((value >> 16) as u16));
+                self.write_color_effects_control(ColorEffectsControl(value as u16));
+                self.write_blend_coeffs_raw(BlendCoeffsRaw((value >> 16) as u16));
             }
-            0x54 => self.set_brightness_coeff(value as u8),
-            0x6C => self.set_master_brightness_control(BrightnessControl(value as u16)),
+            0x54 => self.write_brightness_coeff(value as u8),
+            0x6C => self.write_master_brightness_control(BrightnessControl(value as u16)),
             _ =>
             {
                 #[cfg(feature = "log")]

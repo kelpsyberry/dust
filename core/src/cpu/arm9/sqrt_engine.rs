@@ -39,7 +39,7 @@ impl SqrtEngine {
     }
 
     #[inline]
-    pub fn set_control(&mut self, value: Control, schedule: &mut Schedule) {
+    pub fn write_control(&mut self, value: Control, schedule: &mut Schedule) {
         self.control.0 = (self.control.0 & 0x8000) | (value.0 & 0x0001);
         self.schedule_data_ready(schedule);
     }
@@ -50,7 +50,7 @@ impl SqrtEngine {
     }
 
     #[inline]
-    pub fn set_input(&mut self, value: u64, schedule: &mut Schedule) {
+    pub fn write_input(&mut self, value: u64, schedule: &mut Schedule) {
         self.input = value;
         self.schedule_data_ready(schedule);
     }

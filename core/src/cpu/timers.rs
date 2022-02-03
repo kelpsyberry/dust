@@ -181,7 +181,14 @@ impl<S: Schedule> Timers<S> {
         self.inc_timer(i, increments, time, schedule, irqs);
     }
 
-    pub fn counter<I: Irqs>(&mut self, i: Index, schedule: &mut I::Schedule, irqs: &mut I) -> u16 {
+    // NOTE: This is theoretically safe to call in memory handlers even for debug accesses, as it
+    // doesn't change state visible to the emulated program
+    pub fn read_counter<I: Irqs>(
+        &mut self,
+        i: Index,
+        schedule: &mut I::Schedule,
+        irqs: &mut I,
+    ) -> u16 {
         let mut j = i;
         // Find the closest non-count-up timer and make it run
         loop {
@@ -198,7 +205,7 @@ impl<S: Schedule> Timers<S> {
     }
 
     #[inline]
-    pub fn set_reload<I: Irqs>(
+    pub fn write_reload<I: Irqs>(
         &mut self,
         i: Index,
         value: u16,
@@ -264,7 +271,7 @@ impl<S: Schedule> Timers<S> {
         }
     }
 
-    pub fn set_control(
+    pub fn write_control(
         &mut self,
         i: Index,
         mut value: Control,
@@ -312,7 +319,7 @@ impl<S: Schedule> Timers<S> {
         self.update_control(i, value, schedule);
     }
 
-    pub fn set_control_reload(
+    pub fn write_control_reload(
         &mut self,
         i: Index,
         reload: u16,
