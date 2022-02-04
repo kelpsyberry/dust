@@ -54,7 +54,7 @@ impl Ipc {
     }
 
     #[inline]
-    pub const fn sync_7(&self) -> Sync {
+    pub fn sync_7(&self) -> Sync {
         self.sync_7
     }
 
@@ -67,7 +67,7 @@ impl Ipc {
     }
 
     #[inline]
-    pub const fn sync_9(&self) -> Sync {
+    pub fn sync_9(&self) -> Sync {
         self.sync_9
     }
 
@@ -80,7 +80,7 @@ impl Ipc {
     }
 
     #[inline]
-    pub const fn fifo_control_7(&self) -> FifoControl {
+    pub fn fifo_control_7(&self) -> FifoControl {
         self.fifo_control_7
     }
 
@@ -104,7 +104,7 @@ impl Ipc {
             self.last_word_received_from_arm7 = 0;
         }
         self.fifo_control_7.0 =
-            ((self.fifo_control_7.0 & 0x4303) | (value.0 & 0x8404)) & !(value.0 & 0x4000);
+            (self.fifo_control_7.0 & 0x4303 & !(value.0 & 0x4000)) | (value.0 & 0x8404);
         if value.send_fifo_empty_irq_enabled()
             && self.fifo_control_7.send_fifo_empty()
             && (!prev_value.send_fifo_empty_irq_enabled() || !prev_value.send_fifo_empty())
@@ -184,7 +184,7 @@ impl Ipc {
     }
 
     #[inline]
-    pub const fn fifo_control_9(&self) -> FifoControl {
+    pub fn fifo_control_9(&self) -> FifoControl {
         self.fifo_control_9
     }
 
@@ -208,7 +208,7 @@ impl Ipc {
         }
         let prev_value = self.fifo_control_9;
         self.fifo_control_9.0 =
-            ((self.fifo_control_9.0 & 0x4303) | (value.0 & 0x8404)) & !(value.0 & 0x4000);
+            (self.fifo_control_9.0 & 0x4303 & !(value.0 & 0x4000)) | (value.0 & 0x8404);
         if value.send_fifo_empty_irq_enabled()
             && self.fifo_control_9.send_fifo_empty()
             && (!prev_value.send_fifo_empty_irq_enabled() || !prev_value.send_fifo_empty())

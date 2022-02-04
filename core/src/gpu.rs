@@ -56,8 +56,8 @@ pub const SCREEN_HEIGHT: usize = 192;
 
 const TOTAL_SCANLINES: usize = 263;
 const DOT_CYCLES: RawTimestamp = 6;
-const HDRAW_DURATION: Timestamp = Timestamp(SCREEN_WIDTH as RawTimestamp * DOT_CYCLES);
-const HBLANK_DURATION: Timestamp = Timestamp(99 * DOT_CYCLES);
+const HDRAW_DURATION: Timestamp = Timestamp(SCREEN_WIDTH as RawTimestamp * DOT_CYCLES + 48);
+const HBLANK_DURATION: Timestamp = Timestamp(99 * DOT_CYCLES - 48);
 
 #[repr(C, align(64))]
 #[derive(Clone, Copy)]
@@ -291,6 +291,7 @@ impl Gpu {
             .gpu
             .next_vcount
             .unwrap_or_else(|| emu.gpu.vcount.wrapping_add(1));
+        emu.gpu.next_vcount = None;
         if emu.gpu.vcount == TOTAL_SCANLINES as u16 {
             emu.gpu.vcount = 0;
             emu.gpu.cur_scanline = 0;
@@ -324,7 +325,6 @@ impl Gpu {
                 emu.gpu.disp_status_9.set_vcount_match(false);
             }
         }
-        emu.gpu.next_vcount = None;
         if emu.gpu.vcount == SCREEN_HEIGHT as u16 {
             // Unlock the 3D engine if it was waiting for VBlank
             if emu.gpu.engine_3d.swap_buffers_waiting() {

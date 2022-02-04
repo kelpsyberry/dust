@@ -87,13 +87,9 @@ impl<E: Engine> Arm9<E> {
         channel.next_access_is_nseq = true;
 
         if channel.timing == Timing::Immediate {
-            self.start_dma_transfer::<true>(i);
+            self.start_dma_transfer::<true, { Timing::Immediate }>(i);
         } else if channel.timing == Timing::GxFifo && engine_3d.gx_fifo_half_empty() {
-            channel.remaining_batch_units = channel
-                .remaining_units
-                .min(112 << channel.control.is_32_bit() as u8);
-            channel.remaining_units -= channel.remaining_batch_units;
-            self.start_dma_transfer::<true>(i);
+            self.start_dma_transfer::<true, { Timing::GxFifo }>(i);
         }
     }
 
@@ -107,7 +103,17 @@ impl<E: Engine> Arm9<E> {
         }
     }
 
-    fn start_dma_transfer<const NEED_SCHED_UPDATE: bool>(&mut self, i: Index) {
+    fn start_dma_transfer<const NEED_SCHED_UPDATE: bool, const TIMING: Timing>(
+        &mut self,
+        i: Index,
+    ) {
+        if TIMING == Timing::GxFifo {
+            let channel = &mut self.dma.channels[i.get() as usize];
+            channel.remaining_batch_units = channel
+                .remaining_units
+                .min(112 << channel.control.is_32_bit() as u8);
+            channel.remaining_units -= channel.remaining_batch_units;
+        }
         self.dma.running_channels |= 1 << i.get();
         if let Some(cur_i) = self.dma.cur_channel {
             if cur_i < i {
@@ -123,17 +129,8 @@ impl<E: Engine> Arm9<E> {
     pub(crate) fn start_dma_transfers_with_timing<const TIMING: Timing>(&mut self) {
         for i in 0..4 {
             let channel = &mut self.dma.channels[i as usize];
-            if channel.timing == TIMING {
-                if TIMING == Timing::GxFifo {
-                    if self.dma.running_channels & 1 << i != 0 {
-                        continue;
-                    }
-                    channel.remaining_batch_units = channel
-                        .remaining_units
-                        .min(112 << channel.control.is_32_bit() as u8);
-                    channel.remaining_units -= channel.remaining_batch_units;
-                }
-                self.start_dma_transfer::<false>(Index::new(i));
+            if channel.timing == TIMING && self.dma.running_channels & 1 << i == 0 {
+                self.start_dma_transfer::<false, TIMING>(Index::new(i));
             }
         }
     }
@@ -206,8 +203,8 @@ impl<E: Engine> Arm9<E> {
                     .cur_dst_addr
                     .wrapping_add(channel.dst_addr_incr as u32);
 
-                if (channel.cur_src_addr ^ prev_src_addr)
-                    | (channel.cur_dst_addr ^ prev_dst_addr) >> Timings::PAGE_SHIFT
+                if ((channel.cur_src_addr ^ prev_src_addr) | (channel.cur_dst_addr ^ prev_dst_addr))
+                    >> Timings::PAGE_SHIFT
                     != 0
                 {
                     seq_timing = Timestamp(
@@ -260,8 +257,8 @@ impl<E: Engine> Arm9<E> {
                     .cur_dst_addr
                     .wrapping_add(channel.dst_addr_incr as u32);
 
-                if (channel.cur_src_addr ^ prev_src_addr)
-                    | (channel.cur_dst_addr ^ prev_dst_addr) >> Timings::PAGE_SHIFT
+                if ((channel.cur_src_addr ^ prev_src_addr) | (channel.cur_dst_addr ^ prev_dst_addr))
+                    >> Timings::PAGE_SHIFT
                     != 0
                 {
                     seq_timing = Timestamp(

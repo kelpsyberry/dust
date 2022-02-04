@@ -185,8 +185,8 @@ impl<E: Engine> Arm7<E> {
                     .cur_dst_addr
                     .wrapping_add(channel.dst_addr_incr as u32);
 
-                if (channel.cur_src_addr ^ prev_src_addr)
-                    | (channel.cur_dst_addr ^ prev_dst_addr) >> Timings::PAGE_SHIFT
+                if ((channel.cur_src_addr ^ prev_src_addr) | (channel.cur_dst_addr ^ prev_dst_addr))
+                    >> Timings::PAGE_SHIFT
                     != 0
                 {
                     seq_timing = Timestamp(
@@ -243,8 +243,8 @@ impl<E: Engine> Arm7<E> {
                     .cur_dst_addr
                     .wrapping_add(channel.dst_addr_incr as u32);
 
-                if (channel.cur_src_addr ^ prev_src_addr)
-                    | (channel.cur_dst_addr ^ prev_dst_addr) >> Timings::PAGE_SHIFT
+                if ((channel.cur_src_addr ^ prev_src_addr) | (channel.cur_dst_addr ^ prev_dst_addr))
+                    >> Timings::PAGE_SHIFT
                     != 0
                 {
                     seq_timing = Timestamp(

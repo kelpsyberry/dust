@@ -354,10 +354,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
                     0x1A2 => emu.ds_slot.spi_data_out() as u16,
                     0x1A4 => emu.ds_slot.rom_control().0 as u16,
                     0x1A6 => (emu.ds_slot.rom_control().0 >> 16) as u16,
-                    0x1A8 => emu.ds_slot.rom_cmd.read_le(0),
-                    0x1AA => emu.ds_slot.rom_cmd.read_le(2),
-                    0x1AC => emu.ds_slot.rom_cmd.read_le(4),
-                    0x1AE => emu.ds_slot.rom_cmd.read_le(6),
+                    0x1A8..=0x1AE => emu.ds_slot.rom_cmd.read_le((addr & 6) as usize),
 
                     0x1C0 => emu.spi.control().0,
                     0x1C2 => emu.spi.read_data() as u16,
@@ -555,8 +552,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
                             | (emu.ds_slot.spi_data_out() as u32) << 16
                     }
                     0x1A4 => emu.ds_slot.rom_control().0,
-                    0x1A8 => emu.ds_slot.rom_cmd.read_le(0),
-                    0x1AC => emu.ds_slot.rom_cmd.read_le(4),
+                    0x1A8 | 0x1AC => emu.ds_slot.rom_cmd.read_le((addr & 4) as usize),
 
                     0x1C0 => emu.spi.control().0 as u32 | (emu.spi.read_data() as u32) << 16,
 

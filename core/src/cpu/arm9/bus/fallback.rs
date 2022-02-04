@@ -102,20 +102,7 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             0x1A0 => emu.ds_slot.spi_control().0 as u8,
             0x1A1 => (emu.ds_slot.spi_control().0 >> 8) as u8,
             0x1A2 => emu.ds_slot.spi_data_out(),
-            0x1A8..=0x1AF => {
-                if emu.ds_slot.arm9_access() {
-                    emu.ds_slot.rom_cmd[(addr & 7) as usize]
-                } else {
-                    #[cfg(feature = "log")]
-                    if !A::IS_DEBUG {
-                        slog::warn!(
-                            emu.arm9.logger,
-                            "Tried to read from DS slot ROM command while inaccessible"
-                        );
-                    }
-                    0
-                }
-            }
+            0x1A8..=0x1AF => emu.ds_slot.rom_cmd[(addr & 7) as usize],
             0x208 => emu.arm9.irqs.master_enable() as u8,
             0x247 => emu.swram.control().0,
             0x300 => emu.arm9.post_boot_flag.0,
@@ -232,6 +219,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
             0x0DA => (emu.arm9.dma.channels[3].dst_addr >> 16) as u16,
             0x0DC => emu.arm9.dma.channels[3].control.0 as u16,
             0x0DE => (emu.arm9.dma.channels[3].control.0 >> 16) as u16,
+            0x0E0..=0x0EE => emu.arm9.dma_fill.read_le(addr as usize & 0xE),
             0x100 => emu.arm9.timers.read_counter(
                 timers::Index::new(0),
                 &mut emu.arm9.schedule,
