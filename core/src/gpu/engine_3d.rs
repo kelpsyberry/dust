@@ -17,7 +17,6 @@ use crate::{
 };
 use core::mem::{replace, transmute};
 use matrix::{Matrix, MatrixBuffer};
-use packed_simd::FromCast;
 use vertex::{ConversionScreenCoords, Vertex};
 
 bitfield_debug! {
@@ -274,12 +273,12 @@ pub struct Engine3d {
 }
 
 fn decode_rgb_5(value: u16) -> Color {
-    Color::new(
+    Color::from_array([
         value as i8 & 0x1F,
         (value >> 5) as i8 & 0x1F,
         (value >> 10) as i8 & 0x1F,
         1,
-    )
+    ])
 }
 
 impl Engine3d {
@@ -726,8 +725,8 @@ impl Engine3d {
                 ($compare: expr, $numer: expr, $coord_diff: expr,),
             ) => {
                 let other = $other;
-                let $other_coord = other.coords.extract($axis_i) as i64;
-                let $other_w = other.coords.extract(3) as i64;
+                let $other_coord = other.coords[$axis_i] as i64;
+                let $other_w = other.coords[3] as i64;
                 if $compare {
                     // For the positive side of the frustum:
                     //          w0 - x0
@@ -754,8 +753,8 @@ impl Engine3d {
             ($axis_i: expr, $input: expr => $output: expr) => {
                 let input_len = replace(&mut clipped_verts_len, shared_verts);
                 for (i, vert) in $input[..input_len].iter().enumerate().skip(shared_verts) {
-                    let coord = vert.coords.extract($axis_i) as i64;
-                    let w = vert.coords.extract(3) as i64;
+                    let coord = vert.coords[$axis_i] as i64;
+                    let w = vert.coords[3] as i64;
                     if coord > w {
                         self.connect_to_last_strip_prim = false;
                         interpolate!(
@@ -851,35 +850,35 @@ impl Engine3d {
         let mut top_y = 0xFF;
         let mut bot_y = 0;
 
-        let viewport_origin = ConversionScreenCoords::new(
+        let viewport_origin = ConversionScreenCoords::from_array([
             self.viewport[0] as i32,
             191_u8.wrapping_sub(self.viewport[3]) as i32,
-        );
-        let viewport_size = ConversionScreenCoords::new(
+        ]);
+        let viewport_size = ConversionScreenCoords::from_array([
             (self.viewport[2] as i32 - self.viewport[0] as i32 + 1) & 0x1FF,
             self.viewport[3]
                 .wrapping_sub(self.viewport[1])
                 .wrapping_add(1) as i32,
-        );
+        ]);
 
         for (vert, vert_addr) in buffer_0[shared_verts..clipped_verts_len]
             .iter()
             .zip(&mut poly.vertices[shared_verts..clipped_verts_len])
         {
-            let w = vert.coords.extract(3);
+            let w = vert.coords[3];
             let coords = if w == 0 {
                 // TODO: What should actually happen for W == 0?
                 ScreenCoords::splat(0)
             } else {
-                ScreenCoords::from_cast(
-                    (ConversionScreenCoords::new(vert.coords.extract(0), -vert.coords.extract(1))
-                        + w)
-                        * viewport_size
-                        / (w << 1)
-                        + viewport_origin,
-                ) & ScreenCoords::new(0x1FF, 0xFF)
+                let w_2 = ConversionScreenCoords::splat(w);
+                ((ConversionScreenCoords::from_array([vert.coords[0], -vert.coords[1]]) + w_2)
+                    * viewport_size
+                    / (w_2 << ConversionScreenCoords::splat(1))
+                    + viewport_origin)
+                    .cast::<u16>()
+                    & ScreenCoords::from_array([0x1FF, 0xFF])
             };
-            let y = coords.extract(1) as u8;
+            let y = coords[1] as u8;
             top_y = top_y.min(y);
             bot_y = bot_y.max(y);
             self.vert_ram[self.vert_ram_level as usize] = ScreenVertex {
@@ -892,7 +891,7 @@ impl Engine3d {
         }
 
         for &vert_addr in &poly.vertices[..shared_verts] {
-            let y = self.vert_ram[vert_addr.get() as usize].coords.extract(1) as u8;
+            let y = self.vert_ram[vert_addr.get() as usize].coords[1] as u8;
             top_y = top_y.min(y);
             bot_y = bot_y.max(y);
         }
@@ -903,13 +902,12 @@ impl Engine3d {
         let mut leading_zeros = 32;
 
         for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
-            let w = vert.coords.extract(3);
+            let w = vert.coords[3];
             leading_zeros = leading_zeros.min(w.leading_zeros());
             poly.depth_values[i] = if self.swap_buffers_attrs.w_buffering() {
                 w & 0xFF_FFFF
             } else if w != 0 {
-                (((((vert.coords.extract(2) as i64) << 14) / w as i64) + 0x3FFF) << 9) as i32
-                    & 0xFF_FFFF
+                (((((vert.coords[2] as i64) << 14) / w as i64) + 0x3FFF) << 9) as i32 & 0xFF_FFFF
             } else {
                 // TODO: What should this value be? This is using 0 as (z << 14) / w
                 0x7F_FE00
@@ -920,12 +918,12 @@ impl Engine3d {
         if leading_zeros >= 16 {
             let shift = leading_zeros - 16;
             for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
-                poly.w_values[i] = vert.coords.extract(3) << shift;
+                poly.w_values[i] = vert.coords[3] << shift;
             }
         } else {
             let shift = 16 - leading_zeros;
             for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
-                poly.w_values[i] = vert.coords.extract(3) >> shift;
+                poly.w_values[i] = vert.coords[3] >> shift;
             }
         }
 
@@ -1361,7 +1359,7 @@ impl Engine3d {
                 0x22 => {
                     // TEXCOORD
                     emu.gpu.engine_3d.tex_coords =
-                        TexCoords::new(first_param as i16, (first_param >> 16) as i16);
+                        TexCoords::from_array([first_param as i16, (first_param >> 16) as i16]);
                 }
 
                 0x23 => {

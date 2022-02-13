@@ -32,9 +32,6 @@ bitflags = "1.2"
 cfg-if = "1.0"
 slog = { version = "2.7", optional = true }
 serde = { version = "1.0", features = ["derive"] }
-# TODO: Migrate to core::simd when it's usable for this emulator's purposes
-# (mainly missing casts)
-packed_simd = { version = "0.3", package = "packed_simd_2" }
 
 [build-dependencies]
 arm-decoder = { git = "https://github.com/Kelpsy/arm-decoder" }

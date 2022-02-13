@@ -211,10 +211,10 @@ impl Edge {
     fn new(a: ScreenVertex, b: ScreenVertex) -> Self {
         // Slope calculation based on https://github.com/StrikerX3/nds-interp
 
-        let a_x = a.coords.extract(0) as i32;
-        let b_x = b.coords.extract(0) as i32;
-        let a_y = a.coords.extract(1) as u8;
-        let b_y = b.coords.extract(1) as u8;
+        let a_x = a.coords[0] as i32;
+        let b_x = b.coords[0] as i32;
+        let a_y = a.coords[1] as u8;
+        let b_y = b.coords[1] as u8;
         let mut x_diff = b_x - a_x;
         let y_diff = b_y as i32 - a_y as i32;
 
@@ -347,7 +347,7 @@ impl RenderingState {
                         .enumerate()
                         .find_map(|(i, vert_addr)| {
                             let vert = &rendering_data.vert_ram[vert_addr.get() as usize];
-                            if vert.coords.extract(1) == top_y {
+                            if vert.coords[1] == top_y {
                                 Some((i, vert))
                             } else {
                                 None
@@ -368,11 +368,7 @@ impl RenderingState {
                     )
                 });
 
-                let left_edge_decreasing = other_verts[0]
-                    .1
-                    .coords
-                    .le(other_verts[1].1.coords)
-                    .extract(0);
+                let left_edge_decreasing = other_verts[0].1.coords[0] < other_verts[1].1.coords[0];
 
                 if !left_edge_decreasing {
                     other_verts.swap(0, 1);
@@ -426,7 +422,7 @@ impl RenderingState {
                                     };
                                     let new_end_vert = rendering_data.vert_ram
                                         [poly.poly.vertices[i.get() as usize].get() as usize];
-                                    let new_y_end = new_end_vert.coords.extract(1) as u8;
+                                    let new_y_end = new_end_vert.coords[1] as u8;
 
                                     if new_y_end >= y_start {
                                         $edge = Edge::new(start_vert, new_end_vert);

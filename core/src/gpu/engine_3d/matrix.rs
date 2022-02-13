@@ -1,5 +1,5 @@
 use core::ops::Mul;
-use packed_simd::{i32x4, i64x4, FromCast};
+use core::simd::{i32x4, i64x4};
 
 #[derive(Clone, Copy, Debug)]
 #[repr(align(16))]
@@ -16,52 +16,54 @@ impl Matrix {
 
     pub const fn identity() -> Self {
         Matrix([
-            i32x4::new(0x1000, 0, 0, 0),
-            i32x4::new(0, 0x1000, 0, 0),
-            i32x4::new(0, 0, 0x1000, 0),
-            i32x4::new(0, 0, 0, 0x1000),
+            i32x4::from_array([0x1000, 0, 0, 0]),
+            i32x4::from_array([0, 0x1000, 0, 0]),
+            i32x4::from_array([0, 0, 0x1000, 0]),
+            i32x4::from_array([0, 0, 0, 0x1000]),
         ])
     }
 
     pub fn new(arr: MatrixBuffer<16>) -> Self {
         Matrix([
-            i32x4::from_slice_aligned(&arr.0[..4]),
-            i32x4::from_slice_aligned(&arr.0[4..8]),
-            i32x4::from_slice_aligned(&arr.0[8..12]),
-            i32x4::from_slice_aligned(&arr.0[12..]),
+            i32x4::from_slice(&arr.0[..4]),
+            i32x4::from_slice(&arr.0[4..8]),
+            i32x4::from_slice(&arr.0[8..12]),
+            i32x4::from_slice(&arr.0[12..]),
         ])
     }
 
     pub fn get(&self, i: usize) -> i32 {
-        self.0[i >> 2].extract(i & 3)
+        self.0[i >> 2][i & 3]
     }
 
     pub fn scale(&mut self, vec: [i32; 3]) {
-        for (i, coeff) in vec.into_iter().enumerate() {
-            self.0[i] =
-                i32x4::from_cast((i64x4::splat(coeff as i64) * i64x4::from_cast(self.0[i])) >> 12);
-        }
+        self.0[0] =
+            ((i64x4::splat(vec[0] as i64) * self.0[0].cast::<i64>()) >> i64x4::splat(12)).cast();
+        self.0[1] =
+            ((i64x4::splat(vec[1] as i64) * self.0[1].cast::<i64>()) >> i64x4::splat(12)).cast();
+        self.0[2] =
+            ((i64x4::splat(vec[2] as i64) * self.0[2].cast::<i64>()) >> i64x4::splat(12)).cast();
     }
 
     pub fn translate(&mut self, vec: [i32; 3]) {
-        let mut last_row = i64x4::from_cast(self.0[3]) << 12;
-        for (i, coeff) in vec.into_iter().enumerate() {
-            last_row += i64x4::splat(coeff as i64) * i64x4::from_cast(self.0[i]);
-        }
-        self.0[3] = i32x4::from_cast(last_row >> 12);
+        self.0[3] = (((self.0[3].cast::<i64>() << i64x4::splat(12))
+            + i64x4::splat(vec[0] as i64) * self.0[0].cast::<i64>()
+            + i64x4::splat(vec[1] as i64) * self.0[1].cast::<i64>()
+            + i64x4::splat(vec[2] as i64) * self.0[2].cast::<i64>())
+            >> i64x4::splat(12))
+        .cast();
     }
 
     pub fn mul_left_4x4(&mut self, other: MatrixBuffer<16>) {
         macro_rules! rows {
             ($($i: expr),*) => {
                 [$(
-                    i32x4::from_cast(
-                        (i64x4::from_cast(self.0[0]) * other.0[$i * 4] as i64
-                            + i64x4::from_cast(self.0[1]) * other.0[$i * 4 + 1] as i64
-                            + i64x4::from_cast(self.0[2]) * other.0[$i * 4 + 2] as i64
-                            + i64x4::from_cast(self.0[3]) * other.0[$i * 4 + 3] as i64)
-                            >> 12,
-                    )
+                    ((self.0[0].cast::<i64>() * i64x4::splat(other.0[$i * 4] as i64)
+                        + self.0[1].cast::<i64>() * i64x4::splat(other.0[$i * 4 + 1] as i64)
+                        + self.0[2].cast::<i64>() * i64x4::splat(other.0[$i * 4 + 2] as i64)
+                        + self.0[3].cast::<i64>() * i64x4::splat(other.0[$i * 4 + 3] as i64))
+                        >> i64x4::splat(12))
+                    .cast()
                 ),*]
             };
         }
@@ -72,14 +74,12 @@ impl Matrix {
         macro_rules! rows {
             ($($i: expr$(; $last_lhs_row_index: expr)?),*) => {
                 [$(
-                    i32x4::from_cast(
-                        (
-                            i64x4::from_cast(self.0[0]) * other.0[$i * 3] as i64
-                                + i64x4::from_cast(self.0[1]) * other.0[$i * 3 + 1] as i64
-                                + i64x4::from_cast(self.0[2]) * other.0[$i * 3 + 2] as i64
-                               $( + (i64x4::from_cast(self.0[$last_lhs_row_index]) << 12))*
-                        ) >> 12,
-                    )
+                    ((self.0[0].cast::<i64>() * i64x4::splat(other.0[$i * 3] as i64)
+                        + self.0[1].cast::<i64>() * i64x4::splat(other.0[$i * 3 + 1] as i64)
+                        + self.0[2].cast::<i64>() * i64x4::splat(other.0[$i * 3 + 2] as i64)
+                        $( + (self.0[$last_lhs_row_index].cast::<i64>() << i64x4::splat(12)))*)
+                        >> i64x4::splat(12))
+                    .cast()
                 ),*]
             };
         }
@@ -89,25 +89,23 @@ impl Matrix {
     pub fn mul_left_3x3(&mut self, other: MatrixBuffer<9>) {
         macro_rules! row {
             ($i: expr) => {
-                i32x4::from_cast(
-                    (i64x4::from_cast(self.0[0]) * other.0[$i * 3] as i64
-                        + i64x4::from_cast(self.0[1]) * other.0[$i * 3 + 1] as i64
-                        + i64x4::from_cast(self.0[2]) * other.0[$i * 3 + 2] as i64)
-                        >> 12,
-                )
+                ((self.0[0].cast::<i64>() * i64x4::splat(other.0[$i * 3] as i64)
+                    + self.0[1].cast::<i64>() * i64x4::splat(other.0[$i * 3 + 1] as i64)
+                    + self.0[2].cast::<i64>() * i64x4::splat(other.0[$i * 3 + 2] as i64))
+                    >> i64x4::splat(12))
+                .cast()
             };
         }
         self.0 = [row!(0), row!(1), row!(2), self.0[3]];
     }
 
     pub fn mul_left_vec_i16(&self, vec: [i16; 3]) -> i32x4 {
-        i32x4::from_cast(
-            (i64x4::from_cast(self.0[0]) * vec[0] as i64
-                + i64x4::from_cast(self.0[1]) * vec[1] as i64
-                + i64x4::from_cast(self.0[2]) * vec[2] as i64
-                + (i64x4::from_cast(self.0[3]) << 12))
-                >> 12,
-        )
+        ((self.0[0].cast::<i64>() * i64x4::splat(vec[0] as i64)
+            + self.0[1].cast::<i64>() * i64x4::splat(vec[1] as i64)
+            + self.0[2].cast::<i64>() * i64x4::splat(vec[2] as i64)
+            + (self.0[3].cast::<i64>() << i64x4::splat(12)))
+            >> i64x4::splat(12))
+        .cast()
     }
 }
 
@@ -117,15 +115,15 @@ impl Mul for Matrix {
     fn mul(self, rhs: Self) -> Self::Output {
         macro_rules! rows {
             ($($i: expr),*) => {
-                [$(
-                    i32x4::from_cast(
-                        (i64x4::from_cast(rhs.0[0]) * self.0[$i].extract(0) as i64
-                            + i64x4::from_cast(rhs.0[1]) * self.0[$i].extract(1) as i64
-                            + i64x4::from_cast(rhs.0[2]) * self.0[$i].extract(2) as i64
-                            + i64x4::from_cast(rhs.0[3]) * self.0[$i].extract(3) as i64)
-                            >> 12,
-                    )
-                ),*]
+                [$({
+                    let [x, y, z, w] = self.0[$i].cast::<i64>().to_array();
+                    ((rhs.0[0].cast::<i64>() * i64x4::splat(x)
+                        + rhs.0[1].cast::<i64>() * i64x4::splat(y)
+                        + rhs.0[2].cast::<i64>() * i64x4::splat(z)
+                        + rhs.0[3].cast::<i64>() * i64x4::splat(w))
+                        >> i64x4::splat(12))
+                    .cast()
+                }),*]
             };
         }
         Matrix(rows!(0, 1, 2, 3))
