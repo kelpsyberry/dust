@@ -33,7 +33,7 @@ jobs:
     - name: Install nightly toolchain
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2022-01-17
+        toolchain: nightly
         override: true
         components: clippy
     

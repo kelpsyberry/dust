@@ -8,10 +8,13 @@ use crate::{
     gpu, ipc, rtc, spi,
 };
 
-// TODO: Fix GBA slot open bus values, depending on the selected access time they're ORed with
-// another value according to GBATEK
-// TODO: Check what happens to the DS slot registers when ROMCTRL.bit15 is 0 and when they're
-// allocated to the other CPU
+// TODO:
+// - Fix GBA slot open bus values, depending on the selected access time they're ORed with another
+//   value according to GBATEK
+// - Check what happens to the DS slot registers when ROMCTRL.bit15 is 0 and when they're allocated
+//   to the other CPU
+// - GBATEK says HALTCNT is R/W...? Maybe the last written value should get read (i.e. 0x80 after
+//   halting)
 
 #[inline(never)]
 pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
@@ -27,7 +30,7 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             let pc = emu.arm7.engine_data.r15();
             if pc < max_pc || A::IS_DEBUG {
                 if !A::IS_DEBUG {
-                    emu.arm7.last_bios_word = emu.arm7.bios.read_le((addr & !3) as usize);
+                    emu.arm7.last_bios_word = emu.arm7.bios.read_le(addr as usize & !3);
                 }
                 emu.arm7.bios.read(addr as usize)
             } else {
@@ -142,6 +145,7 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
 
                     0x138 => emu.rtc.control().0 as u8,
                     0x139 => (emu.rtc.control().0 >> 8) as u8,
+                    0x13A..=0x13B => 0,
 
                     0x1A0 => emu.ds_slot.spi_control().0 as u8,
                     0x1A1 => (emu.ds_slot.spi_control().0 >> 8) as u8,
@@ -149,7 +153,12 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
                     0x1A2 => emu.ds_slot.spi_data_out(),
                     0x1A3 => 0,
 
-                    0x1A8..=0x1AF => emu.ds_slot.rom_cmd[(addr & 7) as usize],
+                    0x1A4 => emu.ds_slot.rom_control().0 as u8,
+                    0x1A5 => (emu.ds_slot.rom_control().0 >> 8) as u8,
+                    0x1A6 => (emu.ds_slot.rom_control().0 >> 16) as u8,
+                    0x1A7 => (emu.ds_slot.rom_control().0 >> 24) as u8,
+
+                    0x1A8..=0x1AF => emu.ds_slot.rom_cmd[addr as usize & 7],
 
                     0x1C0 => emu.spi.control().0 as u8,
                     0x1C1 => (emu.spi.control().0 >> 8) as u8,
@@ -168,12 +177,14 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
                     0x241 => emu.swram.control().0,
 
                     0x300 => emu.arm7.post_boot_flag as u8,
+                    0x302..=0x303 => 0,
 
                     0x304 => emu.audio_wifi_power_control().0,
                     0x305..=0x307 => 0,
 
                     0x308 => emu.arm7.bios_prot as u8,
                     0x309 => (emu.arm7.bios_prot >> 8) as u8,
+                    0x30A..=0x30B => 0,
 
                     0x400..=0x51F => emu.audio.read_8::<A>(addr),
 
@@ -239,7 +250,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
             let pc = emu.arm7.engine_data.r15();
             if pc < max_pc || A::IS_DEBUG {
                 if !A::IS_DEBUG {
-                    emu.arm7.last_bios_word = emu.arm7.bios.read_le((addr & !3) as usize);
+                    emu.arm7.last_bios_word = emu.arm7.bios.read_le(addr as usize & !3);
                 }
                 emu.arm7.bios.read_le(addr as usize)
             } else {
@@ -345,16 +356,18 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
                     0x136 => (emu.input.0 >> 16) as u16,
 
                     0x138 => emu.rtc.control().0,
+                    0x13A => 0,
 
                     0x180 => emu.ipc.sync_7().0,
                     0x182 => 0,
                     0x184 => emu.ipc.fifo_control_7().0,
+                    0x186 => 0,
 
                     0x1A0 => emu.ds_slot.spi_control().0,
                     0x1A2 => emu.ds_slot.spi_data_out() as u16,
                     0x1A4 => emu.ds_slot.rom_control().0 as u16,
                     0x1A6 => (emu.ds_slot.rom_control().0 >> 16) as u16,
-                    0x1A8..=0x1AE => emu.ds_slot.rom_cmd.read_le((addr & 6) as usize),
+                    0x1A8..=0x1AE => emu.ds_slot.rom_cmd.read_le(addr as usize & 6),
 
                     0x1C0 => emu.spi.control().0,
                     0x1C2 => emu.spi.read_data() as u16,
@@ -375,10 +388,13 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
                     }
 
                     0x300 => emu.arm7.post_boot_flag as u16,
+                    0x302 => 0,
 
                     0x304 => emu.audio_wifi_power_control().0 as u16,
+                    0x306 => 0,
 
                     0x308 => emu.arm7.bios_prot,
+                    0x30A => 0,
 
                     0x400..=0x51E => emu.audio.read_16::<A>(addr),
 
@@ -552,7 +568,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
                             | (emu.ds_slot.spi_data_out() as u32) << 16
                     }
                     0x1A4 => emu.ds_slot.rom_control().0,
-                    0x1A8 | 0x1AC => emu.ds_slot.rom_cmd.read_le((addr & 4) as usize),
+                    0x1A8..=0x1AC => emu.ds_slot.rom_cmd.read_le(addr as usize & 4),
 
                     0x1C0 => emu.spi.control().0 as u32 | (emu.spi.read_data() as u32) << 16,
 
@@ -704,7 +720,6 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
                             }
                         }
                     }
-
                     0x1A1 => {
                         if emu.ds_slot.arm7_access() {
                             emu.ds_slot.write_spi_control(ds_slot::AuxSpiControl(
@@ -738,7 +753,6 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
                             }
                         }
                     }
-
                     0x1A3 => {
                         if !emu.ds_slot.arm7_access() {
                             #[cfg(feature = "log")]
@@ -753,7 +767,7 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
 
                     0x1A8..=0x1AF => {
                         if emu.ds_slot.arm7_access() {
-                            emu.ds_slot.rom_cmd[(addr & 7) as usize] = value;
+                            emu.ds_slot.rom_cmd[addr as usize & 7] = value;
                         } else {
                             #[cfg(feature = "log")]
                             if !A::IS_DEBUG {
@@ -1081,7 +1095,6 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                             }
                         }
                     }
-
                     0x1A6 => {
                         if emu.ds_slot.arm7_access() {
                             emu.ds_slot.write_rom_control(
@@ -1105,7 +1118,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
 
                     0x1A8..=0x1AE => {
                         if emu.ds_slot.arm7_access() {
-                            emu.ds_slot.rom_cmd.write_le((addr & 6) as usize, value);
+                            emu.ds_slot.rom_cmd.write_le(addr as usize & 6, value);
                         } else {
                             #[cfg(feature = "log")]
                             if !A::IS_DEBUG {
@@ -1333,7 +1346,7 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
 
                     0x1A8 | 0x1AC => {
                         if emu.ds_slot.arm7_access() {
-                            emu.ds_slot.rom_cmd.write_le((addr & 4) as usize, value);
+                            emu.ds_slot.rom_cmd.write_le(addr as usize & 4, value);
                         } else {
                             #[cfg(feature = "log")]
                             if !A::IS_DEBUG {

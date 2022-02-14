@@ -36,7 +36,8 @@ bitfield_debug! {
         pub spi_baud_rate: u8 @ 0..=1,
         pub spi_hold: bool @ 6,
         pub spi_busy: bool @ 7,
-        // TODO: What does bit 13 do?
+        // TODO: What's the effect of toggling the current device with bit 13 and accessing the
+        //       deselected one?
         pub ds_slot_mode: bool @ 13,
         pub rom_transfer_complete_irq_enabled: bool @ 14,
         pub ds_slot_enabled: bool @ 15,
@@ -49,7 +50,7 @@ bitfield_debug! {
         // Applied after the command is sent (unless bit 30 is set)
         pub leading_gap_length: u16 @ 0..=12,
         pub data_key2_enabled: bool @ 13,
-        // TODO: 14: "SE", unknown
+        pub security_enabled: bool @ 14,
         pub apply_key2_seed: bool @ 15,
         // Applied before every first word of a 512-byte block (unless bit 30 is set)
         pub first_block_byte_gap_length: u8 @ 16..=21,
@@ -60,9 +61,8 @@ bitfield_debug! {
         // 1/true: 4.2 MHz (8 cycles/word)
         pub transfer_clock_rate: bool @ 27,
         pub gap_clks: bool @ 28,
-        pub resb_release_reset: bool @ 29,
-        // "WR", unknown, disables both gaps according to melonDS
-        pub gaps_disabled: bool @ 30,
+        pub not_reset: bool @ 29,
+        pub write_enabled: bool @ 30,
         pub busy: bool @ 31,
     }
 }
@@ -159,7 +159,7 @@ impl DsSlot {
         // TODO: What happens if ROMCTRL is modified while busy? (Particularly bit31, which might or
         // might not abort the previous transfer and start a new one if set while busy)
         // TODO: What's the actual behavior if AUXSPICNT.bit15 is 0?
-        self.rom_control.0 = (self.rom_control.0 & 0xA080_0000) | (value.0 & !0x0080_8000);
+        self.rom_control.0 = (self.rom_control.0 & 0x8080_0000) | (value.0 & !0x0080_8000);
         self.rom_clk_pulse_duration = if self.rom_control.transfer_clock_rate() {
             8
         } else {
@@ -183,7 +183,7 @@ impl DsSlot {
         // The command itself takes 8 CLK pulses to transfer, while every data byte takes 4 pulses
         // (the DS game card slot can only transfer 8 bits on every CLK cycle)
         let mut first_word_delay = 8 + (((self.rom_output_len.get() != 0) as u16) << 2);
-        if !self.rom_control.gaps_disabled() {
+        if !self.rom_control.write_enabled() {
             first_word_delay += self.rom_control.leading_gap_length();
             if self.rom_output_len.get() != 0 {
                 first_word_delay += self.rom_control.first_block_byte_gap_length() as u16;
@@ -273,7 +273,7 @@ impl DsSlot {
             if new_rom_output_pos < self.rom_output_len.get() {
                 self.rom_output_pos = RomOutputPos::new(new_rom_output_pos);
                 let mut word_delay = 4;
-                if !self.rom_control.gaps_disabled() && new_rom_output_pos & 0x1FF == 0 {
+                if !self.rom_control.write_enabled() && new_rom_output_pos & 0x1FF == 0 {
                     word_delay += self.rom_control.first_block_byte_gap_length();
                 }
                 let target = schedule.cur_time()
@@ -305,7 +305,7 @@ impl DsSlot {
             if new_rom_output_pos < self.rom_output_len.get() {
                 self.rom_output_pos = RomOutputPos::new(new_rom_output_pos);
                 let mut word_delay = 4;
-                if !self.rom_control.gaps_disabled() && new_rom_output_pos & 0x1FF == 0 {
+                if !self.rom_control.write_enabled() && new_rom_output_pos & 0x1FF == 0 {
                     word_delay += self.rom_control.first_block_byte_gap_length();
                 }
                 let target = schedule.cur_time()

@@ -311,7 +311,7 @@ impl<E: cpu::Engine> Emu<E> {
 
     #[inline]
     pub fn write_global_ex_mem_control(&mut self, value: GlobalExMemControl) {
-        self.global_ex_mem_control.0 = (value.0 & 0xC88) | 0x400;
+        self.global_ex_mem_control.0 = (value.0 & 0x8880) | 0x6000;
         self.ds_slot.update_access(value.arm7_ds_slot_access());
     }
 
