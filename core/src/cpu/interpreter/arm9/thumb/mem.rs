@@ -41,7 +41,7 @@ pub fn ldr<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
         return handle_data_abort::<true>(emu, addr);
     }
     let result = bus::read_32::<CpuAccess, _, false>(emu, addr).rotate_right((addr & 3) << 3);
-    emu.arm9.engine_data.data_cycles = bus::timing_32::<_, true, false>(emu, addr);
+    emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).r_n32_data;
     add_bus_cycles(emu, 1);
     write_reg_interlock(
         emu,
@@ -75,7 +75,7 @@ pub fn str<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
         return handle_data_abort::<true>(emu, addr);
     }
     bus::write_32::<CpuAccess, _>(emu, addr, reg!(emu.arm9, src_reg));
-    emu.arm9.engine_data.data_cycles = bus::timing_32::<_, false, false>(emu, addr);
+    emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).w_n32_data;
     add_bus_cycles(emu, 1);
 }
 
@@ -101,7 +101,7 @@ pub fn ldrh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
         return handle_data_abort::<true>(emu, addr);
     }
     let result = bus::read_16::<CpuAccess, _>(emu, addr) as u32;
-    emu.arm9.engine_data.data_cycles = bus::timing_16::<_, true>(emu, addr);
+    emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).r_n16_data;
     add_bus_cycles(emu, 1);
     write_reg_interlock(emu, (instr & 7) as u8, result, 2, 1);
 }
@@ -129,7 +129,7 @@ pub fn strh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
         return handle_data_abort::<true>(emu, addr);
     }
     bus::write_16::<CpuAccess, _>(emu, addr, reg!(emu.arm9, src_reg) as u16);
-    emu.arm9.engine_data.data_cycles = bus::timing_16::<_, false>(emu, addr);
+    emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).w_n16_data;
     add_bus_cycles(emu, 1);
 }
 
@@ -155,7 +155,7 @@ pub fn ldrb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
         return handle_data_abort::<true>(emu, addr);
     }
     let result = bus::read_8::<CpuAccess, _>(emu, addr) as u32;
-    emu.arm9.engine_data.data_cycles = bus::timing_16::<_, true>(emu, addr);
+    emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).r_n16_data;
     add_bus_cycles(emu, 1);
     write_reg_interlock(emu, (instr & 7) as u8, result, 2, 1);
 }
@@ -183,7 +183,7 @@ pub fn strb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
         return handle_data_abort::<true>(emu, addr);
     }
     bus::write_8::<CpuAccess, _>(emu, addr, reg!(emu.arm9, src_reg) as u8);
-    emu.arm9.engine_data.data_cycles = bus::timing_16::<_, false>(emu, addr);
+    emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).w_n16_data;
     add_bus_cycles(emu, 1);
 }
 
@@ -204,7 +204,7 @@ pub fn ldrsh(emu: &mut Emu<Engine>, instr: u16) {
         return handle_data_abort::<true>(emu, addr);
     }
     let result = bus::read_16::<CpuAccess, _>(emu, addr) as i16 as u32;
-    emu.arm9.engine_data.data_cycles = bus::timing_16::<_, true>(emu, addr);
+    emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).r_n16_data;
     add_bus_cycles(emu, 1);
     write_reg_interlock(emu, (instr & 7) as u8, result, 2, 1);
 }
@@ -226,7 +226,7 @@ pub fn ldrsb(emu: &mut Emu<Engine>, instr: u16) {
         return handle_data_abort::<true>(emu, addr);
     }
     let result = bus::read_8::<CpuAccess, _>(emu, addr) as i8 as u32;
-    emu.arm9.engine_data.data_cycles = bus::timing_16::<_, true>(emu, addr);
+    emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).r_n16_data;
     add_bus_cycles(emu, 1);
     write_reg_interlock(emu, (instr & 7) as u8, result, 2, 1);
 }
@@ -245,7 +245,7 @@ pub fn ldr_pc_rel(emu: &mut Emu<Engine>, instr: u16) {
         return handle_data_abort::<true>(emu, addr);
     }
     let result = bus::read_32::<CpuAccess, _, false>(emu, addr);
-    emu.arm9.engine_data.data_cycles = bus::timing_32::<_, true, false>(emu, addr);
+    emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).r_n32_data;
     add_bus_cycles(emu, 1);
     write_reg_interlock(emu, (instr >> 8 & 7) as u8, result, 1, 1);
 }
@@ -264,7 +264,7 @@ pub fn ldr_sp_rel(emu: &mut Emu<Engine>, instr: u16) {
         return handle_data_abort::<true>(emu, addr);
     }
     let result = bus::read_32::<CpuAccess, _, false>(emu, addr).rotate_right((addr & 3) << 3);
-    emu.arm9.engine_data.data_cycles = bus::timing_32::<_, true, false>(emu, addr);
+    emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).r_n32_data;
     add_bus_cycles(emu, 1);
     write_reg_interlock(
         emu,
@@ -291,7 +291,7 @@ pub fn str_sp_rel(emu: &mut Emu<Engine>, instr: u16) {
         return handle_data_abort::<true>(emu, addr);
     }
     bus::write_32::<CpuAccess, _>(emu, addr, reg!(emu.arm9, src_reg));
-    emu.arm9.engine_data.data_cycles = bus::timing_32::<_, false, false>(emu, addr);
+    emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).w_n32_data;
     add_bus_cycles(emu, 1);
 }
 
@@ -369,11 +369,7 @@ pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Engine>, instr: u16) {
             return handle_data_abort::<false>(emu, cur_addr);
         }
         bus::write_32::<CpuAccess, _>(emu, cur_addr, reg!(emu.arm9, 14));
-        emu.arm9.engine_data.data_cycles = bus::timing_data_32_maybe_seq::<_, false>(
-            emu,
-            cur_addr,
-            not_first && cur_addr & 0x3FC != 0,
-        );
+        emu.arm9.engine_data.data_cycles = access_cycles;
     }
     add_bus_cycles(emu, 2);
     if if PUSH_R14 {

@@ -5,7 +5,7 @@ use dust_core::{
     emu::Emu,
     utils::{zeroed_box, ByteSlice, Bytes},
 };
-use imgui::{ColorButton, StyleVar, TableFlags, Ui};
+use imgui::{StyleVar, TableFlags, Ui};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Engine2d {
@@ -216,11 +216,11 @@ impl View for Palettes2D {
                 for i in 0..colors.len() >> 1 {
                     ui.table_next_column();
                     let color = colors.read_le::<u16>(i << 1);
-                    ColorButton::new(&format!("Color {:#05X}", i), rgb_5_to_rgba_f32(color))
+                    ui.color_button_config(&format!("Color {:#05X}", i), rgb_5_to_rgba_f32(color))
                         .border(false)
                         .alpha(false)
                         .size([16.0, 16.0])
-                        .build(ui);
+                        .build();
                 }
             }
 

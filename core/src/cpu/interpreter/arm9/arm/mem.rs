@@ -30,14 +30,14 @@ macro_rules! wb_handler {
         |
             $emu: ident,
             $instr: ident,
-            $off_ty: ident,
+            $off_imm: ident,
             $addressing: ident,
             $addr: ident
-            $(, src = $src_reg: ident)?
-            $(, dst = $dst_reg: ident)?$(,)?
-        | $inner: block$(,)?
+            $(, src = ($src_reg: ident, $src: ident: $src_ty: ty))?
+            $(, dst = $dst_reg: ident)?
+        | $check: block $do_access: block
     ) => {
-        pub fn $ident<const $off_ty: WbOffTy, const UPWARDS: bool, const $addressing: WbAddressing>(
+        pub fn $ident<const OFF_TY: WbOffTy, const UPWARDS: bool, const $addressing: WbAddressing>(
             $emu: &mut Emu<Engine>,
             $instr: u32,
         ) {
@@ -46,7 +46,7 @@ macro_rules! wb_handler {
 
             let base_reg = ($instr >> 16 & 0xF) as u8;
             let offset = {
-                let abs_off = match $off_ty {
+                let abs_off = match OFF_TY {
                     WbOffTy::Imm => {
                         $( apply_reg_interlocks_2::<0, true>($emu, base_reg, $src_reg); )*
                         $( apply_reg_interlock_1::<false>($emu, base_reg); let _ = $dst_reg; )*
@@ -88,11 +88,16 @@ macro_rules! wb_handler {
                 reg!($emu.arm9, base_reg)
             };
             prefetch_arm::<false, true>($emu);
-            if matches!($off_ty, WbOffTy::Reg(_)) {
+            if matches!(OFF_TY, WbOffTy::Reg(_)) {
                 add_cycles($emu, 1);
             }
 
-            $inner
+            let $off_imm = OFF_TY == WbOffTy::Imm;
+
+            $check
+
+            $(let $src = reg!($emu.arm9, $src_reg) as $src_ty;)*
+            $do_access
 
             if $addressing.writeback() $(&& $dst_reg != base_reg)* {
                 #[cfg(feature = "interp-r15-write-checks")]
@@ -111,24 +116,25 @@ macro_rules! wb_handler {
 
 wb_handler! {
     ldr,
-    |emu, instr, OFF_TY, ADDRESSING, addr, dst = dst_reg| {
+    |emu, instr, off_imm, ADDRESSING, addr, dst = dst_reg| {
         if unlikely(!can_read(
             emu,
             addr,
             ADDRESSING != WbAddressing::PostUser && emu.arm9.engine_data.regs.is_in_priv_mode(),
         )) {
             emu.arm9.engine_data.data_cycles = 1;
-            if OFF_TY == WbOffTy::Imm {
+            if off_imm {
                 add_bus_cycles(emu, 1);
             }
             add_cycles(emu, 1);
             return handle_data_abort::<false>(emu, addr);
         }
+    } {
         let result = bus::read_32::<CpuAccess, _, false>(emu, addr).rotate_right((addr & 3) << 3);
-        let cycles = bus::timing_32::<_, true, false>(emu, addr);
+        let cycles = emu.arm9.cp15.timings.get(addr).r_n32_data;
         if dst_reg == 15 {
             emu.arm9.engine_data.data_cycles = 1;
-            if OFF_TY == WbOffTy::Imm {
+            if off_imm {
                 add_bus_cycles(emu, 1);
             }
             add_cycles(emu, cycles as RawTimestamp + 1);
@@ -148,49 +154,51 @@ wb_handler! {
                 1,
             );
         }
-    },
+    }
 }
 
 wb_handler! {
     str,
-    |emu, instr, OFF_TY, ADDRESSING, addr, src = src_reg| {
+    |emu, instr, off_imm, ADDRESSING, addr, src = (src_reg, src: u32)| {
         if unlikely(!can_write(
             emu,
             addr,
             ADDRESSING != WbAddressing::PostUser && emu.arm9.engine_data.regs.is_in_priv_mode(),
         )) {
             emu.arm9.engine_data.data_cycles = 1;
-            if OFF_TY == WbOffTy::Imm {
+            if off_imm {
                 add_bus_cycles(emu, 1);
             }
             add_cycles(emu, 1);
             return handle_data_abort::<false>(emu, addr);
         }
-        bus::write_32::<CpuAccess, _>(emu, addr, reg!(emu.arm9, src_reg));
-        emu.arm9.engine_data.data_cycles = bus::timing_32::<_, false, false>(emu, addr);
-    },
+    } {
+        bus::write_32::<CpuAccess, _>(emu, addr, src);
+        emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).w_n32_data;
+    }
 }
 
 wb_handler! {
     ldrb,
-    |emu, instr, OFF_TY, ADDRESSING, addr, dst = dst_reg| {
+    |emu, instr, off_imm, ADDRESSING, addr, dst = dst_reg| {
         if unlikely(!can_read(
             emu,
             addr,
             ADDRESSING != WbAddressing::PostUser && emu.arm9.engine_data.regs.is_in_priv_mode(),
         )) {
             emu.arm9.engine_data.data_cycles = 1;
-            if OFF_TY == WbOffTy::Imm {
+            if off_imm {
                 add_bus_cycles(emu, 1);
             }
             add_cycles(emu, 1);
             return handle_data_abort::<false>(emu, addr);
         }
+    } {
         let result = bus::read_8::<CpuAccess, _>(emu, addr) as u32;
-        let cycles = bus::timing_16::<_, true>(emu, addr);
+        let cycles = emu.arm9.cp15.timings.get(addr).r_n16_data;
         if dst_reg == 15 {
             emu.arm9.engine_data.data_cycles = 1;
-            if OFF_TY == WbOffTy::Imm {
+            if off_imm {
                 add_bus_cycles(emu, 1);
             }
             add_cycles(emu, cycles as RawTimestamp + 1);
@@ -204,27 +212,28 @@ wb_handler! {
             emu.arm9.engine_data.data_cycles = cycles;
             write_reg_interlock(emu, dst_reg, result, 2, 1);
         }
-    },
+    }
 }
 
 wb_handler! {
     strb,
-    |emu, instr, OFF_TY, ADDRESSING, addr, src = src_reg| {
+    |emu, instr, off_imm, ADDRESSING, addr, src = (src_reg, src: u8)| {
         if unlikely(!can_write(
             emu,
             addr,
             ADDRESSING != WbAddressing::PostUser && emu.arm9.engine_data.regs.is_in_priv_mode(),
         )) {
             emu.arm9.engine_data.data_cycles = 1;
-            if OFF_TY == WbOffTy::Imm {
+            if off_imm {
                 add_bus_cycles(emu, 1);
             }
             add_cycles(emu, 1);
             return handle_data_abort::<false>(emu, addr);
         }
-        bus::write_8::<CpuAccess, _>(emu, addr, reg!(emu.arm9, src_reg) as u8);
-        emu.arm9.engine_data.data_cycles = bus::timing_16::<_, false>(emu, addr);
-    },
+    } {
+        bus::write_8::<CpuAccess, _>(emu, addr, src);
+        emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).w_n16_data;
+    }
 }
 
 macro_rules! misc_handler {
@@ -234,9 +243,9 @@ macro_rules! misc_handler {
             $emu: ident,
             $instr: ident,
             $addr: ident
-            $(, src = $src_reg: ident)?
-            $(, dst = $dst_reg: ident)?$(,)?
-        | $inner: block$(,)?
+            $(, src = ($src_reg: ident, $src: ident: $src_ty: ty))?
+            $(, dst = $dst_reg: ident)?
+        | $check: block $do_access: block
     ) => {
         pub fn $ident<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddressing>(
             $emu: &mut Emu<Engine>,
@@ -275,7 +284,10 @@ macro_rules! misc_handler {
             };
             prefetch_arm::<false, true>($emu);
 
-            $inner
+            $check
+
+            $(let $src = reg!($emu.arm9, $src_reg) as $src_ty;)*
+            $do_access
 
             if ADDRESSING.writeback() $(&& $dst_reg != base_reg)* {
                 #[cfg(feature = "interp-r15-write-checks")]
@@ -305,8 +317,9 @@ misc_handler! {
             add_cycles(emu, 1);
             return handle_data_abort::<false>(emu, addr);
         }
+    } {
         let result = bus::read_16::<CpuAccess, _>(emu, addr) as u32;
-        let cycles = bus::timing_16::<_, true>(emu, addr);
+        let cycles = emu.arm9.cp15.timings.get(addr).r_n16_data;
         if dst_reg == 15 {
             emu.arm9.engine_data.data_cycles = 1;
             add_bus_cycles(emu, 1);
@@ -321,12 +334,12 @@ misc_handler! {
             emu.arm9.engine_data.data_cycles = cycles;
             write_reg_interlock(emu, dst_reg, result, 2, 1);
         }
-    },
+    }
 }
 
 misc_handler! {
     strh,
-    |emu, instr, addr, src = src_reg| {
+    |emu, instr, addr, src = (src_reg, src: u16)| {
         if unlikely(!can_write(
             emu,
             addr,
@@ -337,13 +350,10 @@ misc_handler! {
             add_cycles(emu, 1);
             return handle_data_abort::<false>(emu, addr);
         }
-        bus::write_16::<CpuAccess, _>(
-            emu,
-            addr,
-            reg!(emu.arm9, src_reg) as u16,
-        );
-        emu.arm9.engine_data.data_cycles = bus::timing_16::<_, false>(emu, addr);
-    },
+    } {
+        bus::write_16::<CpuAccess, _>(emu, addr, src);
+        emu.arm9.engine_data.data_cycles = emu.arm9.cp15.timings.get(addr).w_n16_data;
+    }
 }
 
 pub fn ldrd<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddressing>(
@@ -409,6 +419,7 @@ pub fn ldrd<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddr
                 timings.r_s32_data
             };
             if $is_r15 {
+                $data_cycles = 1;
                 add_cycles(emu, cycles as RawTimestamp + 1);
                 if emu.arm9.cp15.control().t_bit_load_disabled() {
                     reload_pipeline::<{ StateSource::Arm }>(emu);
@@ -421,12 +432,12 @@ pub fn ldrd<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddr
         }
     }
 
-    #[allow(clippy::needless_late_init)]
-    let mut first_data_cycles = 0;
+    let first_data_cycles;
     do_read!(
         0, false,
         start_addr => (dst_base_reg, first_data_cycles)
     );
+
     do_read!(
         1, dst_base_reg == 14,
         start_addr.wrapping_add(4) => (dst_base_reg | 1, emu.arm9.engine_data.data_cycles),
@@ -525,6 +536,7 @@ pub fn strd<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddr
         0,
         src_base_reg => start_addr => first_data_cycles
     );
+
     do_write!(
         1,
         src_base_reg | 1 => start_addr.wrapping_add(4) => emu.arm9.engine_data.data_cycles,
@@ -563,8 +575,9 @@ misc_handler! {
             add_cycles(emu, 1);
             return handle_data_abort::<false>(emu, addr);
         }
+    } {
         let result = bus::read_8::<CpuAccess, _>(emu, addr) as i8 as u32;
-        let cycles = bus::timing_16::<_, true>(emu, addr);
+        let cycles = emu.arm9.cp15.timings.get(addr).r_n16_data;
         if dst_reg == 15 {
             emu.arm9.engine_data.data_cycles = 1;
             add_bus_cycles(emu, 1);
@@ -579,7 +592,7 @@ misc_handler! {
             emu.arm9.engine_data.data_cycles = cycles;
             write_reg_interlock(emu, dst_reg, result, 2, 1);
         }
-    },
+    }
 }
 
 misc_handler! {
@@ -595,8 +608,9 @@ misc_handler! {
             add_cycles(emu, 1);
             return handle_data_abort::<false>(emu, addr);
         }
+    } {
         let result = bus::read_16::<CpuAccess, _>(emu, addr) as i16 as u32;
-        let cycles = bus::timing_16::<_, true>(emu, addr);
+        let cycles = emu.arm9.cp15.timings.get(addr).r_n16_data;
         if dst_reg == 15 {
             emu.arm9.engine_data.data_cycles = 1;
             add_bus_cycles(emu, 1);
@@ -611,66 +625,85 @@ misc_handler! {
             emu.arm9.engine_data.data_cycles = cycles;
             write_reg_interlock(emu, dst_reg, result, 2, 1);
         }
-    },
-}
-
-pub fn swp(emu: &mut Emu<Engine>, instr: u32) {
-    let addr_reg = (instr >> 16 & 0xF) as u8;
-    apply_reg_interlock_1::<false>(emu, addr_reg);
-    add_bus_cycles(emu, 2);
-    let addr = reg!(emu.arm9, addr_reg);
-    prefetch_arm::<false, true>(emu);
-    // can_write implies can_read
-    if unlikely(!can_write(
-        emu,
-        addr,
-        emu.arm9.engine_data.regs.is_in_priv_mode(),
-    )) {
-        emu.arm9.engine_data.data_cycles = 1;
-        add_cycles(emu, 1);
-        return handle_data_abort::<false>(emu, addr);
-    }
-    let loaded_value = bus::read_32::<CpuAccess, _, false>(emu, addr).rotate_right((addr & 3) << 3);
-    let load_cycles = bus::timing_32::<_, true, false>(emu, addr);
-    add_cycles(emu, load_cycles as RawTimestamp);
-    bus::write_32::<CpuAccess, _>(emu, addr, reg!(emu.arm9, instr & 0xF));
-    emu.arm9.engine_data.data_cycles = bus::timing_32::<_, false, false>(emu, addr);
-    let dst_reg = (instr >> 12 & 0xF) as u8;
-    if likely(!cfg!(feature = "interp-r15-write-checks") || dst_reg != 15) {
-        write_reg_interlock(
-            emu,
-            dst_reg,
-            loaded_value,
-            1 + (addr & 3 != 0) as RawTimestamp,
-            1,
-        );
     }
 }
 
-pub fn swpb(emu: &mut Emu<Engine>, instr: u32) {
-    let addr_reg = (instr >> 16 & 0xF) as u8;
-    apply_reg_interlock_1::<false>(emu, addr_reg);
-    add_bus_cycles(emu, 2);
-    let addr = reg!(emu.arm9, addr_reg);
-    prefetch_arm::<false, true>(emu);
-    // can_write implies can_read
-    if unlikely(!can_write(
-        emu,
-        addr,
-        emu.arm9.engine_data.regs.is_in_priv_mode(),
-    )) {
-        emu.arm9.engine_data.data_cycles = 1;
-        add_cycles(emu, 1);
-        return handle_data_abort::<false>(emu, addr);
+macro_rules! swp_handler {
+    (
+        $ident: ident,
+        |
+            $emu: ident,
+            $instr: ident,
+            $addr: ident,
+            $timings: ident,
+            $loaded_value: ident: $loaded_value_ty: ty
+        |
+        $read: block $write: block
+    ) => {
+        pub fn $ident($emu: &mut Emu<Engine>, $instr: u32) {
+            let addr_reg = ($instr >> 16 & 0xF) as u8;
+            apply_reg_interlock_1::<false>($emu, addr_reg);
+            add_bus_cycles($emu, 2);
+            let $addr = reg!($emu.arm9, addr_reg);
+            prefetch_arm::<false, true>($emu);
+            // can_write implies can_read
+            if unlikely(!can_write(
+                $emu,
+                $addr,
+                $emu.arm9.engine_data.regs.is_in_priv_mode(),
+            )) {
+                $emu.arm9.engine_data.data_cycles = 1;
+                add_cycles($emu, 1);
+                return handle_data_abort::<false>($emu, $addr);
+            }
+            let $timings = $emu.arm9.cp15.timings.get($addr);
+            let $loaded_value = $read;
+            $write
+        }
+    };
+}
+
+swp_handler! {
+    swp,
+    |emu, instr, addr, timings, loaded_value: u32| {
+        let loaded_value = bus::read_32::<CpuAccess, _, false>(emu, addr).rotate_right((addr & 3) << 3);
+        add_cycles(emu, timings.r_n32_data as RawTimestamp);
+        loaded_value
+    } {
+        bus::write_32::<CpuAccess, _>(emu, addr, reg!(emu.arm9, instr & 0xF));
+        emu.arm9.engine_data.data_cycles = timings.w_n32_data;
+        let dst_reg = (instr >> 12 & 0xF) as u8;
+        if likely(!cfg!(feature = "interp-r15-write-checks") || dst_reg != 15) {
+            write_reg_interlock(
+                emu,
+                dst_reg,
+                loaded_value,
+                1 + (addr & 3 != 0) as RawTimestamp,
+                1,
+            );
+        }
     }
-    let loaded_value = bus::read_8::<CpuAccess, _>(emu, addr) as u32;
-    let load_cycles = bus::timing_16::<_, true>(emu, addr);
-    add_cycles(emu, load_cycles as RawTimestamp);
-    bus::write_8::<CpuAccess, _>(emu, addr, reg!(emu.arm9, instr & 0xF) as u8);
-    emu.arm9.engine_data.data_cycles = bus::timing_16::<_, false>(emu, addr);
-    let dst_reg = (instr >> 12 & 0xF) as u8;
-    if likely(!cfg!(feature = "interp-r15-write-checks") || dst_reg != 15) {
-        write_reg_interlock(emu, dst_reg, loaded_value, 2, 1);
+}
+
+swp_handler! {
+    swpb,
+    |emu, instr, addr, timings, loaded_value: u8| {
+        let loaded_value = bus::read_8::<CpuAccess, _>(emu, addr);
+        add_cycles(emu, timings.r_n16_data as RawTimestamp);
+        loaded_value
+    } {
+        bus::write_8::<CpuAccess, _>(emu, addr, reg!(emu.arm9, instr & 0xF) as u8);
+        emu.arm9.engine_data.data_cycles = timings.w_n16_data;
+        let dst_reg = (instr >> 12 & 0xF) as u8;
+        if likely(!cfg!(feature = "interp-r15-write-checks") || dst_reg != 15) {
+            write_reg_interlock(
+                emu,
+                dst_reg,
+                loaded_value as u32,
+                2,
+                1,
+            );
+        }
     }
 }
 
@@ -939,5 +972,5 @@ pub fn stm<
 }
 
 pub fn pld(_emu: &mut Emu<Engine>, _instr: u32) {
-    todo!("PLD");
+    todo!("pld");
 }

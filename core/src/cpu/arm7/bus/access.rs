@@ -6,26 +6,6 @@ use crate::{
 };
 
 #[inline]
-pub fn timing_16<E: Engine, const SEQ: bool>(emu: &Emu<E>, addr: u32) -> u8 {
-    let timings = emu.arm7.bus_timings.get(addr);
-    if SEQ {
-        timings.s16
-    } else {
-        timings.n16
-    }
-}
-
-#[inline]
-pub fn timing_32<E: Engine, const SEQ: bool>(emu: &Emu<E>, addr: u32) -> u8 {
-    let timings = emu.arm7.bus_timings.get(addr);
-    if SEQ {
-        timings.s32
-    } else {
-        timings.n32
-    }
-}
-
-#[inline]
 pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
     if let Some(ptr) = emu.arm7.bus_ptrs.read(addr) {
         unsafe { ptr.add((addr & Ptrs::PAGE_MASK) as usize).read() }

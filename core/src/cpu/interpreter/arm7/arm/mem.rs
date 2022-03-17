@@ -23,8 +23,8 @@ macro_rules! wb_handler {
             $instr: ident,
             $addr: ident
             $(, src = $src_reg: ident)?
-            $(, dst = $dst_reg: ident)?$(,)?
-        | $inner: block$(,)?
+            $(, dst = $dst_reg: ident)?
+        | $inner: block
     ) => {
         pub fn $ident<const OFF_TY: WbOffTy, const UPWARDS: bool, const ADDRESSING: WbAddressing>(
             $emu: &mut Emu<Engine>,
@@ -105,48 +105,48 @@ wb_handler! {
     ldr,
     |emu, instr, addr, dst = dst_reg| {
         let result = bus::read_32::<CpuAccess, _>(emu, addr).rotate_right((addr & 3) << 3);
-        let cycles = bus::timing_32::<_, false>(emu, addr);
+        let cycles = emu.arm7.bus_timings.get(addr).n32;
         add_cycles(emu, cycles as RawTimestamp + 1);
         emu.arm7.engine_data.prefetch_nseq = true;
         reg!(emu.arm7, dst_reg) = result;
         if dst_reg == 15 {
             reload_pipeline::<{ StateSource::Arm }>(emu);
         }
-    },
+    }
 }
 
 wb_handler! {
     str,
     |emu, instr, addr, src = src_reg| {
         bus::write_32::<CpuAccess, _>(emu, addr, reg!(emu.arm7, src_reg));
-        let cycles = bus::timing_32::<_, false>(emu, addr);
+        let cycles = emu.arm7.bus_timings.get(addr).n32;
         add_cycles(emu, cycles as RawTimestamp);
         emu.arm7.engine_data.prefetch_nseq = true;
-    },
+    }
 }
 
 wb_handler! {
     ldrb,
     |emu, instr, addr, dst = dst_reg| {
         let result = bus::read_8::<CpuAccess, _>(emu, addr) as u32;
-        let cycles = bus::timing_16::<_, false>(emu, addr);
+        let cycles = emu.arm7.bus_timings.get(addr).n16;
         add_cycles(emu, cycles as RawTimestamp + 1);
         emu.arm7.engine_data.prefetch_nseq = true;
         reg!(emu.arm7, dst_reg) = result;
         if dst_reg == 15 {
             reload_pipeline::<{ StateSource::Arm }>(emu);
         }
-    },
+    }
 }
 
 wb_handler! {
     strb,
     |emu, instr, addr, src = src_reg| {
         bus::write_8::<CpuAccess, _>(emu, addr, reg!(emu.arm7, src_reg) as u8);
-        let cycles = bus::timing_16::<_, false>(emu, addr);
+        let cycles = emu.arm7.bus_timings.get(addr).n16;
         add_cycles(emu, cycles as RawTimestamp);
         emu.arm7.engine_data.prefetch_nseq = true;
-    },
+    }
 }
 
 macro_rules! misc_handler {
@@ -157,8 +157,8 @@ macro_rules! misc_handler {
             $instr: ident,
             $addr: ident
             $(, src = $src_reg: ident)?
-            $(, dst = $dst_reg: ident)?$(,)?
-        | $inner: block$(,)?
+            $(, dst = $dst_reg: ident)?
+        | $inner: block
     ) => {
         pub fn $ident<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddressing>(
             $emu: &mut Emu<Engine>,
@@ -226,14 +226,14 @@ misc_handler! {
     ldrh,
     |emu, instr, addr, dst = dst_reg| {
         let result = (bus::read_16::<CpuAccess, _>(emu, addr) as u32).rotate_right((addr & 1) << 3);
-        let cycles = bus::timing_16::<_, false>(emu, addr);
+        let cycles = emu.arm7.bus_timings.get(addr).n16;
         add_cycles(emu, cycles as RawTimestamp + 1);
         emu.arm7.engine_data.prefetch_nseq = true;
         reg!(emu.arm7, dst_reg) = result;
         if dst_reg == 15 {
             reload_pipeline::<{ StateSource::Arm }>(emu);
         }
-    },
+    }
 }
 
 misc_handler! {
@@ -244,10 +244,10 @@ misc_handler! {
             addr,
             reg!(emu.arm7, src_reg) as u16,
         );
-        let cycles = bus::timing_16::<_, false>(emu, addr);
+        let cycles = emu.arm7.bus_timings.get(addr).n16;
         add_cycles(emu, cycles as RawTimestamp);
         emu.arm7.engine_data.prefetch_nseq = true;
-    },
+    }
 }
 
 // TODO: Check LDRD/STRD timings
@@ -257,7 +257,7 @@ misc_handler! {
     |emu, instr, addr, dst = _dst_reg| {
         add_cycles(emu, 2);
         emu.arm7.engine_data.prefetch_nseq = true;
-    },
+    }
 }
 
 misc_handler! {
@@ -265,21 +265,21 @@ misc_handler! {
     |emu, instr, add, src = _src_reg| {
         add_cycles(emu, 1);
         emu.arm7.engine_data.prefetch_nseq = true;
-    },
+    }
 }
 
 misc_handler! {
     ldrsb,
     |emu, instr, addr, dst = dst_reg| {
         let result = bus::read_8::<CpuAccess, _>(emu, addr) as i8 as u32;
-        let cycles = bus::timing_16::<_, false>(emu, addr);
+        let cycles = emu.arm7.bus_timings.get(addr).n16;
         add_cycles(emu, cycles as RawTimestamp + 1);
         emu.arm7.engine_data.prefetch_nseq = true;
         reg!(emu.arm7, dst_reg) = result;
         if dst_reg == 15 {
             reload_pipeline::<{ StateSource::Arm }>(emu);
         }
-    },
+    }
 }
 
 misc_handler! {
@@ -289,20 +289,20 @@ misc_handler! {
             let aligned = bus::read_16::<CpuAccess, _>(emu, addr);
             ((aligned as i32) << 16 >> (((addr & 1) | 2) << 3)) as u32
         };
-        let cycles = bus::timing_16::<_, false>(emu, addr);
+        let cycles = emu.arm7.bus_timings.get(addr).n16;
         add_cycles(emu, cycles as RawTimestamp + 1);
         emu.arm7.engine_data.prefetch_nseq = true;
         reg!(emu.arm7, dst_reg) = result;
         if dst_reg == 15 {
             reload_pipeline::<{ StateSource::Arm }>(emu);
         }
-    },
+    }
 }
 
 pub fn swp(emu: &mut Emu<Engine>, instr: u32) {
     let addr = reg!(emu.arm7, instr >> 16 & 0xF);
     inc_r15!(emu.arm7, 4);
-    let access_timings = bus::timing_32::<_, false>(emu, addr) as RawTimestamp;
+    let access_timings = emu.arm7.bus_timings.get(addr).n32 as RawTimestamp;
     let loaded_value = bus::read_32::<CpuAccess, _>(emu, addr).rotate_right((addr & 3) << 3);
     add_cycles(emu, access_timings);
     bus::write_32::<CpuAccess, _>(emu, addr, reg!(emu.arm7, instr & 0xF));
@@ -319,7 +319,7 @@ pub fn swp(emu: &mut Emu<Engine>, instr: u32) {
 pub fn swpb(emu: &mut Emu<Engine>, instr: u32) {
     let addr = reg!(emu.arm7, instr >> 16 & 0xF);
     inc_r15!(emu.arm7, 4);
-    let access_timings = bus::timing_16::<_, false>(emu, addr) as RawTimestamp;
+    let access_timings = emu.arm7.bus_timings.get(addr).n16 as RawTimestamp;
     let loaded_value = bus::read_8::<CpuAccess, _>(emu, addr) as u32;
     add_cycles(emu, access_timings);
     bus::write_8::<CpuAccess, _>(emu, addr, reg!(emu.arm7, instr & 0xF) as u8);
@@ -367,7 +367,7 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
             start_addr
         };
         let result = bus::read_32::<CpuAccess, _>(emu, addr);
-        let cycles = bus::timing_32::<_, false>(emu, addr);
+        let cycles = emu.arm7.bus_timings.get(addr).n32;
         add_cycles(emu, cycles as RawTimestamp + 1);
         reg!(emu.arm7, 15) = result;
         return if S_BIT {
@@ -470,7 +470,7 @@ pub fn stm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
         };
         inc_r15!(emu.arm7, 4);
         bus::write_32::<CpuAccess, _>(emu, addr, reg!(emu.arm7, 15));
-        let cycles = bus::timing_32::<_, false>(emu, addr);
+        let cycles = emu.arm7.bus_timings.get(addr).n32;
         add_cycles(emu, cycles as RawTimestamp);
         return;
     }

@@ -24,7 +24,7 @@ macro_rules! handle_mirroring {
     (
         $self: ident,
         $usage: ident, $value: ident, $T: ty, $mirror_addr: ident, $mirror_mapped: expr;
-        $($bit: literal => $bank: ident),*$(,)?
+        $($bit: literal => $bank: ident,)*
     ) => {
         let writeback = unsafe {
             *$self.writeback.$usage.get_mut().get_unchecked($mirror_addr / usize::BITS as usize)

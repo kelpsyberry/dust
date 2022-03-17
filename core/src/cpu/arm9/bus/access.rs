@@ -8,59 +8,8 @@ use crate::{
     utils::MemValue,
 };
 
-#[inline]
-pub fn timing_16<E: Engine, const READ: bool>(emu: &Emu<E>, addr: u32) -> u8 {
-    let timings = emu.arm9.cp15.timings.get(addr);
-    if READ {
-        timings.r_n16_data
-    } else {
-        timings.w_n16_data
-    }
-}
-
-#[inline]
-pub fn timing_32<E: Engine, const READ: bool, const SEQ: bool>(emu: &Emu<E>, addr: u32) -> u8 {
-    let timings = emu.arm9.cp15.timings.get(addr);
-    if READ {
-        if SEQ {
-            timings.r_s32_data
-        } else {
-            timings.r_n32_data
-        }
-    } else if SEQ {
-        timings.w_s32_data
-    } else {
-        timings.w_n32_data
-    }
-}
-
-#[inline]
-pub fn timing_32_code<E: Engine>(emu: &Emu<E>, addr: u32) -> u8 {
-    emu.arm9.cp15.timings.get(addr).code
-}
-
-#[inline]
-pub fn timing_data_32_maybe_seq<E: Engine, const READ: bool>(
-    emu: &Emu<E>,
-    addr: u32,
-    seq: bool,
-) -> u8 {
-    let timings = emu.arm9.cp15.timings.get(addr);
-    if READ {
-        if seq {
-            timings.r_s32_data
-        } else {
-            timings.r_n32_data
-        }
-    } else if seq {
-        timings.w_s32_data
-    } else {
-        timings.w_n32_data
-    }
-}
-
 macro_rules! check_tcm_read {
-    ($emu: expr, $addr: ident, $code: expr, $align_mask: expr$(,)?) => {
+    ($emu: expr, $addr: ident, $code: expr, $align_mask: expr) => {
         #[cfg(feature = "bft-r")]
         {
             if $addr & $emu.arm9.cp15.itcm_addr_check_mask()
@@ -87,7 +36,7 @@ macro_rules! check_tcm_read {
 }
 
 macro_rules! check_tcm_write {
-    ($emu: expr, $addr: ident, $value: expr, $align_mask: expr$(,)?) => {
+    ($emu: expr, $addr: ident, $value: expr, $align_mask: expr) => {
         #[cfg(feature = "bft-w")]
         {
             if $addr & $emu.arm9.cp15.itcm_addr_check_mask()

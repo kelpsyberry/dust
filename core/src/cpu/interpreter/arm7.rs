@@ -107,7 +107,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
             add_cycles(
                 emu,
                 if addr & 0x3FE == 0 {
-                    bus::timing_16::<_, false>(emu, addr)
+                    emu.arm7.bus_timings.get(addr).n16
                 } else {
                     code_timings.s16
                 } as RawTimestamp,
@@ -396,162 +396,162 @@ impl Arm7Data for EngineData {
             emu.arm7
                 .schedule
                 .set_target_time(emu.arm7.schedule.schedule().next_event_time().min(end_time));
-            if let Some(channel) = emu.arm7.dma.cur_channel() {
+            if let Some(channel) = emu.arm7.dma.cur_channel {
                 Arm7::run_dma_transfer(emu, channel);
-            } else {
-                if emu.arm7.irqs.triggered() {
-                    // Perform an extra instruction fetch before branching, like real hardware does,
-                    // according to the ARM7TDMI reference manual
-                    #[cfg(feature = "interp-pipeline")]
-                    {
-                        let fetch_addr = reg!(emu.arm7, 15);
-                        let timings = emu.arm7.bus_timings.get(fetch_addr);
+                continue;
+            }
+            if emu.arm7.irqs.triggered() {
+                // Perform an extra instruction fetch before branching, like real hardware does,
+                // according to the ARM7TDMI reference manual
+                #[cfg(feature = "interp-pipeline")]
+                {
+                    let fetch_addr = reg!(emu.arm7, 15);
+                    let timings = emu.arm7.bus_timings.get(fetch_addr);
+                    add_cycles(
+                        emu,
+                        if emu.arm7.engine_data.regs.cpsr.thumb_state() {
+                            if fetch_addr & 0x3FF == 0 || emu.arm7.engine_data.prefetch_nseq {
+                                timings.n16
+                            } else {
+                                timings.s16
+                            }
+                        } else if fetch_addr & 0x3FF == 0 || emu.arm7.engine_data.prefetch_nseq {
+                            timings.n32
+                        } else {
+                            timings.s32
+                        } as RawTimestamp,
+                    );
+                }
+                let old_cpsr = emu.arm7.engine_data.regs.cpsr;
+                emu.arm7.engine_data.regs.cpsr = emu
+                    .arm7
+                    .engine_data
+                    .regs
+                    .cpsr
+                    .with_mode(Mode::Irq)
+                    .with_thumb_state(false)
+                    .with_irqs_disabled(true);
+                emu.arm7.irqs.set_enabled_in_cpsr(false, ());
+                #[cfg(feature = "interp-pipeline-accurate-reloads")]
+                {
+                    emu.arm7.engine_data.r15_increment = 4;
+                }
+                emu.arm7
+                    .engine_data
+                    .regs
+                    .update_mode::<false>(old_cpsr.mode(), Mode::Irq);
+                emu.arm7.engine_data.regs.spsr = old_cpsr.into();
+                reg!(emu.arm7, 14) =
+                    reg!(emu.arm7, 15).wrapping_sub((!old_cpsr.thumb_state() as u32) << 2);
+                reg!(emu.arm7, 15) = 0x0000_0018;
+                reload_pipeline::<{ StateSource::Arm }>(emu);
+            } else if emu.arm7.irqs.halted() {
+                emu.arm7
+                    .schedule
+                    .set_cur_time(emu.arm7.schedule.target_time());
+                continue;
+            }
+            while emu.arm7.schedule.cur_time() < emu.arm7.schedule.target_time() {
+                #[cfg(feature = "debugger-hooks")]
+                {
+                    let r15 = reg!(emu.arm7, 15)
+                        .wrapping_sub(8 >> emu.arm7.engine_data.regs.cpsr.thumb_state() as u8);
+                    if emu.arm7.engine_data.next_breakpoint_addr == r15 {
+                        if let Some(breakpoint_hook) = emu.arm7.breakpoint_hook().as_ref() {
+                            if unsafe { breakpoint_hook.get()(emu, r15) } {
+                                emu.arm7
+                                    .schedule
+                                    .set_target_time(emu.arm7.schedule.cur_time());
+                                emu.arm7.stopped_by_debug_hook = true;
+                                return;
+                            }
+                        }
+                    }
+                }
+                #[cfg(feature = "interp-pipeline")]
+                {
+                    let addr = reg!(emu.arm7, 15);
+                    let instr = emu.arm7.engine_data.pipeline[0];
+                    emu.arm7.engine_data.pipeline[0] = emu.arm7.engine_data.pipeline[1];
+                    if emu.arm7.engine_data.regs.cpsr.thumb_state() {
+                        emu.arm7.engine_data.pipeline[1] =
+                            thumb_pipeline_entry(
+                                bus::read_16::<CpuAccess, _>(emu, addr) as PipelineEntry
+                            );
+                        let timings = emu.arm7.bus_timings.get(addr);
                         add_cycles(
                             emu,
-                            if emu.arm7.engine_data.regs.cpsr.thumb_state() {
-                                if fetch_addr & 0x3FF == 0 || emu.arm7.engine_data.prefetch_nseq {
-                                    timings.n16
-                                } else {
-                                    timings.s16
-                                }
-                            } else if fetch_addr & 0x3FF == 0 || emu.arm7.engine_data.prefetch_nseq
-                            {
+                            if addr & 0x3FE == 0 || emu.arm7.engine_data.prefetch_nseq {
+                                timings.n16
+                            } else {
+                                timings.s16
+                            } as RawTimestamp,
+                        );
+                        #[cfg(not(feature = "interp-pipeline-accurate-reloads"))]
+                        {
+                            emu.arm7.engine_data.prefetch_nseq = false;
+                            thumb::handle_instr(emu, instr as u16);
+                        }
+                    } else {
+                        emu.arm7.engine_data.pipeline[1] =
+                            bus::read_32::<CpuAccess, _>(emu, addr) as PipelineEntry;
+                        let timings = emu.arm7.bus_timings.get(addr);
+                        add_cycles(
+                            emu,
+                            if addr & 0x3FC == 0 || emu.arm7.engine_data.prefetch_nseq {
                                 timings.n32
                             } else {
                                 timings.s32
                             } as RawTimestamp,
                         );
-                    }
-                    let old_cpsr = emu.arm7.engine_data.regs.cpsr;
-                    emu.arm7.engine_data.regs.cpsr = emu
-                        .arm7
-                        .engine_data
-                        .regs
-                        .cpsr
-                        .with_mode(Mode::Irq)
-                        .with_thumb_state(false)
-                        .with_irqs_disabled(true);
-                    emu.arm7.irqs.set_enabled_in_cpsr(false, ());
-                    #[cfg(feature = "interp-pipeline-accurate-reloads")]
-                    {
-                        emu.arm7.engine_data.r15_increment = 4;
-                    }
-                    emu.arm7
-                        .engine_data
-                        .regs
-                        .update_mode::<false>(old_cpsr.mode(), Mode::Irq);
-                    emu.arm7.engine_data.regs.spsr = old_cpsr.into();
-                    reg!(emu.arm7, 14) =
-                        reg!(emu.arm7, 15).wrapping_sub((!old_cpsr.thumb_state() as u32) << 2);
-                    reg!(emu.arm7, 15) = 0x0000_0018;
-                    reload_pipeline::<{ StateSource::Arm }>(emu);
-                } else if emu.arm7.irqs.halted() {
-                    emu.arm7
-                        .schedule
-                        .set_cur_time(emu.arm7.schedule.target_time());
-                    continue;
-                }
-                while emu.arm7.schedule.cur_time() < emu.arm7.schedule.target_time() {
-                    #[cfg(feature = "debugger-hooks")]
-                    {
-                        let r15 = reg!(emu.arm7, 15)
-                            .wrapping_sub(8 >> emu.arm7.engine_data.regs.cpsr.thumb_state() as u8);
-                        if emu.arm7.engine_data.next_breakpoint_addr == r15 {
-                            if let Some(breakpoint_hook) = emu.arm7.breakpoint_hook().as_ref() {
-                                if unsafe { breakpoint_hook.get()(emu, r15) } {
-                                    emu.arm7
-                                        .schedule
-                                        .set_target_time(emu.arm7.schedule.cur_time());
-                                    emu.arm7.stopped_by_debug_hook = true;
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                    #[cfg(feature = "interp-pipeline")]
-                    {
-                        let addr = reg!(emu.arm7, 15);
-                        let instr = emu.arm7.engine_data.pipeline[0];
-                        emu.arm7.engine_data.pipeline[0] = emu.arm7.engine_data.pipeline[1];
-                        if emu.arm7.engine_data.regs.cpsr.thumb_state() {
-                            emu.arm7.engine_data.pipeline[1] = thumb_pipeline_entry(
-                                bus::read_16::<CpuAccess, _>(emu, addr) as PipelineEntry,
-                            );
-                            let timings = emu.arm7.bus_timings.get(addr);
-                            add_cycles(
-                                emu,
-                                if addr & 0x3FE == 0 || emu.arm7.engine_data.prefetch_nseq {
-                                    timings.n16
-                                } else {
-                                    timings.s16
-                                } as RawTimestamp,
-                            );
-                            #[cfg(not(feature = "interp-pipeline-accurate-reloads"))]
-                            {
-                                emu.arm7.engine_data.prefetch_nseq = false;
-                                thumb::handle_instr(emu, instr as u16);
-                            }
-                        } else {
-                            emu.arm7.engine_data.pipeline[1] =
-                                bus::read_32::<CpuAccess, _>(emu, addr) as PipelineEntry;
-                            let timings = emu.arm7.bus_timings.get(addr);
-                            add_cycles(
-                                emu,
-                                if addr & 0x3FC == 0 || emu.arm7.engine_data.prefetch_nseq {
-                                    timings.n32
-                                } else {
-                                    timings.s32
-                                } as RawTimestamp,
-                            );
-                            #[cfg(not(feature = "interp-pipeline-accurate-reloads"))]
-                            {
-                                emu.arm7.engine_data.prefetch_nseq = false;
-                                arm::handle_instr(emu, instr);
-                            }
-                        }
-                        #[cfg(feature = "interp-pipeline-accurate-reloads")]
+                        #[cfg(not(feature = "interp-pipeline-accurate-reloads"))]
                         {
                             emu.arm7.engine_data.prefetch_nseq = false;
-                            if instr & 1 << 32 == 0 {
-                                arm::handle_instr(emu, instr as u32);
-                            } else {
-                                thumb::handle_instr(emu, instr as u16);
-                            }
+                            arm::handle_instr(emu, instr);
                         }
                     }
-                    #[cfg(not(feature = "interp-pipeline"))]
-                    if emu.arm7.engine_data.regs.cpsr.thumb_state() {
-                        let addr = reg!(emu.arm7, 15).wrapping_sub(4);
-                        let timings = emu.arm7.bus_timings.get(addr);
-                        add_cycles(
-                            emu,
-                            timings.s16 as RawTimestamp
-                                + if emu.arm7.engine_data.prefetch_nseq {
-                                    timings.n16
-                                } else {
-                                    timings.s16
-                                } as RawTimestamp,
-                        );
-                        let instr = bus::read_16::<CpuAccess, _>(emu, addr);
+                    #[cfg(feature = "interp-pipeline-accurate-reloads")]
+                    {
                         emu.arm7.engine_data.prefetch_nseq = false;
-                        thumb::handle_instr(emu, instr);
-                    } else {
-                        let addr = reg!(emu.arm7, 15).wrapping_sub(8);
-                        let timings = emu.arm7.bus_timings.get(addr);
-                        add_cycles(
-                            emu,
-                            timings.s32 as RawTimestamp
-                                + if emu.arm7.engine_data.prefetch_nseq {
-                                    timings.n32
-                                } else {
-                                    timings.s32
-                                } as RawTimestamp,
-                        );
-                        let instr = bus::read_32::<CpuAccess, _>(emu, addr);
-                        emu.arm7.engine_data.prefetch_nseq = false;
-                        arm::handle_instr(emu, instr);
-                    };
+                        if instr & 1 << 32 == 0 {
+                            arm::handle_instr(emu, instr as u32);
+                        } else {
+                            thumb::handle_instr(emu, instr as u16);
+                        }
+                    }
                 }
+                #[cfg(not(feature = "interp-pipeline"))]
+                if emu.arm7.engine_data.regs.cpsr.thumb_state() {
+                    let addr = reg!(emu.arm7, 15).wrapping_sub(4);
+                    let timings = emu.arm7.bus_timings.get(addr);
+                    add_cycles(
+                        emu,
+                        timings.s16 as RawTimestamp
+                            + if emu.arm7.engine_data.prefetch_nseq {
+                                timings.n16
+                            } else {
+                                timings.s16
+                            } as RawTimestamp,
+                    );
+                    let instr = bus::read_16::<CpuAccess, _>(emu, addr);
+                    emu.arm7.engine_data.prefetch_nseq = false;
+                    thumb::handle_instr(emu, instr);
+                } else {
+                    let addr = reg!(emu.arm7, 15).wrapping_sub(8);
+                    let timings = emu.arm7.bus_timings.get(addr);
+                    add_cycles(
+                        emu,
+                        timings.s32 as RawTimestamp
+                            + if emu.arm7.engine_data.prefetch_nseq {
+                                timings.n32
+                            } else {
+                                timings.s32
+                            } as RawTimestamp,
+                    );
+                    let instr = bus::read_32::<CpuAccess, _>(emu, addr);
+                    emu.arm7.engine_data.prefetch_nseq = false;
+                    arm::handle_instr(emu, instr);
+                };
             }
         }
     }

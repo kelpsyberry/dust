@@ -101,7 +101,7 @@ fn prefetch_arm<const RESET_DATA_CYCLES: bool, const INC_R15: bool>(emu: &mut Em
             add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
         } else {
             let instr = bus::read_32::<CpuAccess, _, true>(emu, fetch_addr);
-            let cycles = bus::timing_32_code(fetch_addr);
+            let cycles = emu.arm9.cp15.timings.get(fetch_addr).code;
             emu.arm9.engine_data.pipeline[1] = instr as PipelineEntry;
             add_cycles(
                 emu,
@@ -138,7 +138,7 @@ fn prefetch_thumb<const RESET_DATA_CYCLES: bool, const INC_R15: bool>(emu: &mut 
                 add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
             } else {
                 let new_instrs = bus::read_32::<CpuAccess, _, true>(emu, fetch_addr);
-                let cycles = bus::timing_32_code(fetch_addr);
+                let cycles = emu.arm9.cp15.timings.get(fetch_addr).code;
                 emu.arm9.engine_data.pipeline[1] =
                     thumb_pipeline_entry(new_instrs as PipelineEntry);
                 add_cycles(
@@ -380,7 +380,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
                     thumb_pipeline_entry(instrs as PipelineEntry),
                     thumb_pipeline_entry((instrs >> 16) as PipelineEntry),
                 ];
-                let cycles = bus::timing_32_code(emu, addr);
+                let cycles = emu.arm9.cp15.timings.get(addr).code;
                 add_cycles(emu, cycles as RawTimestamp + 1);
             }
             reg!(emu.arm9, 15) = addr.wrapping_add(4);
@@ -397,7 +397,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
                 let first_word = bus::read_32::<CpuAccess, _, true>(emu, addr);
                 emu.arm9.engine_data.pipeline[0] =
                     thumb_pipeline_entry((first_word >> 16) as PipelineEntry);
-                let first_cycles = bus::timing_32_code(emu, addr);
+                let first_cycles = emu.arm9.cp15.timings.get(addr).code;
                 add_cycles(emu, first_cycles as RawTimestamp);
             }
             addr = addr.wrapping_add(4);
@@ -414,7 +414,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
                 let second_word = bus::read_32::<CpuAccess, _, true>(emu, addr);
                 emu.arm9.engine_data.pipeline[1] =
                     thumb_pipeline_entry(second_word as PipelineEntry);
-                let second_cycles = bus::timing_32_code(emu, addr);
+                let second_cycles = emu.arm9.cp15.timings.get(addr).code;
                 add_cycles(emu, second_cycles as RawTimestamp);
             }
             reg!(emu.arm9, 15) = addr;
@@ -429,7 +429,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
                 )) {
                     add_cycles(emu, 2);
                 } else {
-                    let cycles = bus::timing_32_code(emu, addr);
+                    let cycles = emu.arm9.cp15.timings.get(addr).code;
                     add_cycles(emu, cycles as RawTimestamp + 1);
                 }
             } else if unlikely(!can_execute(
@@ -442,7 +442,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
             } else {
                 let instrs = bus::read_32::<CpuAccess, _, true>(emu, addr);
                 emu.arm9.engine_data.thumb_next_instr = (instrs >> 16) as u16;
-                let cycles = bus::timing_32_code(emu, addr);
+                let cycles = emu.arm9.cp15.timings.get(addr).code;
                 add_cycles(emu, (cycles as RawTimestamp) << 1);
             }
             reg!(emu.arm9, 15) = addr.wrapping_add(4);
@@ -462,7 +462,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
             } else {
                 let first_instr = bus::read_32::<CpuAccess, _, true>(emu, addr);
                 emu.arm9.engine_data.pipeline[0] = first_instr as PipelineEntry;
-                let first_cycles = bus::timing_32_code(emu, addr);
+                let first_cycles = emu.arm9.cp15.timings.get(addr).code;
                 add_cycles(emu, first_cycles as RawTimestamp);
             }
             addr = addr.wrapping_add(4);
@@ -476,7 +476,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
             } else {
                 let second_instr = bus::read_32::<CpuAccess, _, true>(emu, addr);
                 emu.arm9.engine_data.pipeline[1] = second_instr as PipelineEntry;
-                let second_cycles = bus::timing_32_code(emu, addr);
+                let second_cycles = emu.arm9.cp15.timings.get(addr).code;
                 add_cycles(emu, second_cycles as RawTimestamp);
             }
             reg!(emu.arm9, 15) = addr.wrapping_add(4);
@@ -490,7 +490,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
             )) {
                 add_cycles(emu, 2);
             } else {
-                let cycles = bus::timing_32_code(emu, addr);
+                let cycles = emu.arm9.cp15.timings.get(addr).code;
                 add_cycles(emu, (cycles as RawTimestamp) << 1);
             }
             reg!(emu.arm9, 15) = addr.wrapping_add(8);
@@ -959,7 +959,7 @@ impl Arm9Data for EngineData {
                             1
                         } else {
                             bus::read_32::<CpuAccess, _, true>(emu, fetch_addr);
-                            bus::timing_32_code(emu, fetch_addr)
+                            emu.arm9.cp15.timings.get(fetch_addr).code
                         };
                         add_cycles(
                             emu,
@@ -1039,7 +1039,7 @@ impl Arm9Data for EngineData {
                                     );
                                 } else {
                                     let new_instrs = bus::read_32::<CpuAccess, _, true>(emu, addr);
-                                    let cycles = bus::timing_32_code(emu, addr);
+                                    let cycles = emu.arm9.cp15.timings.get(addr).code;
                                     emu.arm9.engine_data.pipeline[1] =
                                         thumb_pipeline_entry(new_instrs as PipelineEntry);
                                     add_cycles(
@@ -1070,7 +1070,7 @@ impl Arm9Data for EngineData {
                                 add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
                             } else {
                                 let new_instr = bus::read_32::<CpuAccess, _, true>(emu, addr);
-                                let cycles = bus::timing_32_code(emu, addr);
+                                let cycles = emu.arm9.cp15.timings.get(addr).code;
                                 emu.arm9.engine_data.pipeline[1] = new_instr as PipelineEntry;
                                 add_cycles(
                                     emu,
@@ -1112,7 +1112,11 @@ impl Arm9Data for EngineData {
                                     let instrs = bus::read_32::<CpuAccess, _, true>(emu, addr);
                                     add_cycles(
                                         emu,
-                                        bus::timing_32_code(emu, addr)
+                                        emu.arm9
+                                            .cp15
+                                            .timings
+                                            .get(addr)
+                                            .code
                                             .max(emu.arm9.engine_data.data_cycles)
                                             as RawTimestamp,
                                     );
@@ -1138,7 +1142,11 @@ impl Arm9Data for EngineData {
                                 let instr = bus::read_32::<CpuAccess, _, true>(emu, addr);
                                 add_cycles(
                                     emu,
-                                    bus::timing_32_code(emu, addr)
+                                    emu.arm9
+                                        .cp15
+                                        .timings
+                                        .get(addr)
+                                        .code
                                         .max(emu.arm9.engine_data.data_cycles)
                                         as RawTimestamp,
                                 );

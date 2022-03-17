@@ -25,7 +25,7 @@ macro_rules! inc_r15 {
 }
 
 macro_rules! spsr {
-    ($cpu: expr$(,)?) => {
+    ($cpu: expr) => {
         if $cpu.engine_data.regs.is_in_exc_mode() {
             $cpu.engine_data.regs.spsr.raw()
         } else {
@@ -40,7 +40,7 @@ macro_rules! spsr {
 }
 
 macro_rules! update_spsr {
-    ($cpu: expr, $arm9: expr, $mask: expr, $value: expr$(,)?) => {
+    ($cpu: expr, $arm9: expr, $mask: expr, $value: expr) => {
         if $cpu.engine_data.regs.is_in_exc_mode() {
             $cpu.engine_data.regs.spsr = crate::cpu::psr::Spsr::from_raw::<$arm9>(
                 ($cpu.engine_data.regs.spsr.raw() & !$mask) | ($value & $mask),

@@ -90,7 +90,7 @@ macro_rules! map_region {
         $usage: ident,
         $region_shift: expr,
         $mirrored_banks_mask: expr,
-        ($($bit: literal => $mappable_bank: ident),*$(,)?),
+        ($($bit: literal => $mappable_bank: ident,)*),
 
         $cpu: expr,
         $cpu_r_mask: expr,
@@ -173,7 +173,7 @@ macro_rules! map_region {
 macro_rules! unmap_region {
     (
         no_wb $self: expr,
-        $usage: ident, $region_shift: expr, ($($bit: literal => $mappable_bank: ident),*$(,)?),
+        $usage: ident, $region_shift: expr, ($($bit: literal => $mappable_bank: ident,)*),
         $bank_bit: expr, $region: expr
     ) => {{
         let new = $self.map.$usage[$region].get() & !(1 << $bank_bit);
@@ -204,7 +204,7 @@ macro_rules! unmap_region {
         $usage: ident,
         $region_shift: expr,
         $mirrored_banks_mask: expr,
-        ($($bit: literal => $mappable_bank: ident),*$(,)?),
+        ($($bit: literal => $mappable_bank: ident,)*),
 
         $cpu: expr,
         $cpu_r_mask: expr,
@@ -621,7 +621,7 @@ impl Vram {
                 (
                     0 => e,
                     1 => f,
-                    2 => g
+                    2 => g,
                 ),
                 BANK_BIT, region
             );
