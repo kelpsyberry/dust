@@ -319,9 +319,9 @@ pub(super) fn main(
     #[cfg(feature = "gdb-server")]
     let mut gdb_server = None;
 
-    let mut reset_triggered = false;
-
     loop {
+        let mut reset_triggered = false;
+
         if shared_state.stopped.load(Ordering::Relaxed) {
             break;
         }

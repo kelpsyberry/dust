@@ -38,9 +38,9 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 slog-term = { version = "2.8", optional = true }
 slog-async = { version = "2.6", optional = true }
-rfd = "0.6"
+rfd = "0.8"
 home = "0.5"
-parking_lot = "0.11"
+parking_lot = "0.12"
 cpal = "0.13"
 chrono = { version = "0.4", features = ["serde"] }
 discord-rpc = { git = "https://github.com/Kelpsy/discord-rpc", optional = true }

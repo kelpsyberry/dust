@@ -61,7 +61,7 @@ pub fn front_facing(v0: &Vertex, v1: &Vertex, v2: &Vertex) -> bool {
     // ((v2 - v1) × (v0 - v1)) · v1 >= 0
     let v1_64 = v1.coords.cast::<i64>();
     let normal = cross_w_as_z(v2.coords.cast() - v1_64, v0.coords.cast() - v1_64);
-    (normal * simd_swizzle!(v1_64, [0, 1, 3, 2])).horizontal_sum() >= 0
+    (normal * simd_swizzle!(v1_64, [0, 1, 3, 2])).reduce_sum() >= 0
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

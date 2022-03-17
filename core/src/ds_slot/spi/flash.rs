@@ -49,6 +49,8 @@ impl Flash {
     pub fn reset(self) -> Self {
         Flash {
             contents: self.contents.reset(),
+            first: false,
+            accessing_flash: false,
             ..self
         }
     }
