@@ -400,6 +400,16 @@ impl UiState {
     ) {
         self.stop();
 
+        #[cfg(feature = "discord-presence")]
+        {
+            self.presence.state = Some(format!("Playing {}", game_title));
+            self.presence.timestamps = Some(discord_rpc::Timestamps {
+                start: Some(SystemTime::now()),
+                end: None,
+            });
+            self.presence_updated = true;
+        }
+
         self.set_launch_config(&config);
 
         let playing = !config.pause_on_launch;
@@ -486,16 +496,6 @@ impl UiState {
             thread,
             shared_state,
         });
-
-        #[cfg(feature = "discord-presence")]
-        {
-            self.presence.state = Some(format!("Playing {}", game_title));
-            self.presence.timestamps = Some(discord_rpc::Timestamps {
-                start: Some(SystemTime::now()),
-                end: None,
-            });
-            self.presence_updated = true;
-        }
     }
 
     fn stop(&mut self) {
@@ -509,16 +509,6 @@ impl UiState {
                 }
                 let _ = game_config.flush();
             }
-        }
-
-        #[cfg(feature = "discord-presence")]
-        {
-            self.presence.state = Some("Not playing anything".to_string());
-            self.presence.timestamps = Some(discord_rpc::Timestamps {
-                start: Some(SystemTime::now()),
-                end: None,
-            });
-            self.presence_updated = true;
         }
 
         self.current_config = CurrentConfig::from_global(&self.global_config);
@@ -539,6 +529,16 @@ impl UiState {
                 }
             },
         );
+        
+        #[cfg(feature = "discord-presence")]
+        {
+            self.presence.state = Some("Not playing anything".to_string());
+            self.presence.timestamps = Some(discord_rpc::Timestamps {
+                start: Some(SystemTime::now()),
+                end: None,
+            });
+            self.presence_updated = true;
+        }
     }
 
     fn playing(&self) -> bool {
@@ -1207,8 +1207,10 @@ pub fn main() {
                                 if separator_needed {
                                     ui.separator();
                                 }
-                                let gdb_server_active = match &state.emu_shared_state {
-                                    Some(state) => state.gdb_server_active.load(Ordering::Relaxed),
+                                let gdb_server_active = match &state.emu_state {
+                                    Some(emu) => {
+                                        emu.shared_state.gdb_server_active.load(Ordering::Relaxed)
+                                    }
                                     None => false,
                                 };
                                 if ui
@@ -1217,11 +1219,11 @@ pub fn main() {
                                     } else {
                                         "Start GDB server"
                                     })
-                                    .enabled(state.emu_shared_state.is_some())
+                                    .enabled(state.emu_state.is_some())
                                     .build()
                                 {
-                                    if let Some(state) = &state.emu_shared_state {
-                                        state
+                                    if let Some(emu) = &state.emu_state {
+                                        emu.shared_state
                                             .gdb_server_active
                                             .store(!gdb_server_active, Ordering::Relaxed);
                                     }
@@ -1239,8 +1241,8 @@ pub fn main() {
                     }
 
                     #[cfg(feature = "gdb-server")]
-                    if let Some(shared_state) = &state.emu_shared_state {
-                        if shared_state.gdb_server_active.load(Ordering::Relaxed) {
+                    if let Some(emu) = &state.emu_state {
+                        if emu.shared_state.gdb_server_active.load(Ordering::Relaxed) {
                             let text =
                                 format!("GDB: {}", state.global_config.contents.gdb_server_addr);
                             let width =
