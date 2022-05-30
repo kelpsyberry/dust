@@ -66,11 +66,13 @@ impl From<Timestamp> for timers::Timestamp {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Event {
-    Shutdown,             // Max 1
-    DsSlotRomDataReady,   // Max 1
-    DsSlotSpiDataReady,   // Max 1
-    SpiDataReady,         // Max 1
-    AudioSampleReady,     // Max 1
+    Shutdown,           // Max 1
+    DsSlotRomDataReady, // Max 1
+    DsSlotSpiDataReady, // Max 1
+    SpiDataReady,       // Max 1
+    AudioSampleReady,   // Max 1
+    #[cfg(feature = "xq-audio")]
+    XqAudioSampleReady, // Max 1
     Timer(timers::Index), // Max 4
 }
 
@@ -89,6 +91,8 @@ pub mod event_slots {
         DS_SLOT_SPI,
         SPI,
         AUDIO,
+        #[cfg(feature = "xq-audio")]
+        XQ_AUDIO,
         TIMERS_START..TIMERS_END 4,
     }
 }
@@ -147,6 +151,8 @@ impl Schedule {
                 Event::DsSlotSpiDataReady => emu.ds_slot.handle_spi_data_ready(),
                 Event::SpiDataReady => emu.spi.handle_data_ready(&mut emu.arm7.irqs),
                 Event::AudioSampleReady => Audio::handle_sample_ready(emu, time),
+                #[cfg(feature = "xq-audio")]
+                Event::XqAudioSampleReady => Audio::handle_xq_sample_ready(emu, time),
                 Event::Timer(i) => emu.arm7.timers.handle_scheduled_overflow(
                     i,
                     time,

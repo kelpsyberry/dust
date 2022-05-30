@@ -25,6 +25,8 @@ use crate::{
     },
     Model,
 };
+#[cfg(feature = "xq-audio")]
+use core::num::NonZeroU32;
 use input::Input;
 use swram::Swram;
 
@@ -94,9 +96,9 @@ pub struct Builder {
     pub first_launch: bool,
     pub audio_sample_chunk_size: usize,
     #[cfg(feature = "xq-audio")]
-    pub audio_xq_sample_rate_shift: u8,
+    pub audio_custom_sample_rate: Option<NonZeroU32>,
     #[cfg(feature = "xq-audio")]
-    pub audio_xq_interp_method: audio::InterpMethod,
+    pub audio_channel_interp_method: audio::ChannelInterpMethod,
 }
 
 impl Builder {
@@ -130,11 +132,11 @@ impl Builder {
             direct_boot: true,
             batch_duration: DEFAULT_BATCH_DURATION,
             first_launch: false,
-            audio_sample_chunk_size: audio::DEFAULT_SAMPLE_CHUNK_SIZE,
+            audio_sample_chunk_size: audio::DEFAULT_OUTPUT_SAMPLE_CHUNK_SIZE,
             #[cfg(feature = "xq-audio")]
-            audio_xq_sample_rate_shift: 0,
+            audio_custom_sample_rate: None,
             #[cfg(feature = "xq-audio")]
-            audio_xq_interp_method: audio::InterpMethod::Nearest,
+            audio_channel_interp_method: audio::ChannelInterpMethod::Nearest,
         }
     }
 
@@ -193,9 +195,9 @@ impl Builder {
                 &mut arm7.schedule,
                 self.audio_sample_chunk_size,
                 #[cfg(feature = "xq-audio")]
-                self.audio_xq_sample_rate_shift,
+                self.audio_custom_sample_rate,
                 #[cfg(feature = "xq-audio")]
-                self.audio_xq_interp_method,
+                self.audio_channel_interp_method,
                 #[cfg(feature = "log")]
                 self.logger.new(slog::o!("audio" => "")),
             ),

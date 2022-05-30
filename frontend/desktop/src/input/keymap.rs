@@ -1,5 +1,5 @@
 use super::trigger::{self, Trigger};
-use core::fmt;
+use std::fmt;
 use dust_core::emu::input::Keys;
 use fxhash::FxHashMap;
 use serde::{

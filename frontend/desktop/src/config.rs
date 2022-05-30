@@ -5,7 +5,7 @@ use super::{
     utils::{config_base, data_base},
 };
 use dust_core::{
-    audio::InterpMethod as AudioXqInterpMethod,
+    audio::ChannelInterpMethod as AudioChannelInterpMethod,
     cpu::{arm7, arm9},
     spi::firmware,
     utils::{zeroed_box, BoxedByteSlice, Bytes},
@@ -13,6 +13,8 @@ use dust_core::{
 };
 use saves::{save_path, SavePathConfig};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "xq-audio")]
+use std::num::NonZeroU32;
 use std::{
     fmt, fs,
     io::{self, Read},
@@ -53,21 +55,21 @@ pub struct Global {
     pub sys_dir_path: Option<PathBuf>,
     pub sys_paths: SysPaths,
     pub skip_firmware: bool,
+    pub pause_on_launch: bool,
     pub model: ModelConfig,
     pub limit_framerate: bool,
     pub screen_rotation: i16,
     pub sync_to_audio: bool,
-    pub audio_xq_sample_rate_shift: u8,
-    pub audio_xq_interp_method: AudioXqInterpMethod,
+    pub audio_volume: f32,
+    pub audio_sample_chunk_size: u32,
     pub audio_interp_method: audio::InterpMethod,
-    pub pause_on_launch: bool,
+    pub audio_custom_sample_rate: u32,
+    pub audio_channel_interp_method: AudioChannelInterpMethod,
     pub autosave_interval_ms: f32,
     pub rtc_time_offset_seconds: i64,
 
     pub save_dir_path: PathBuf,
 
-    pub audio_volume: f32,
-    pub audio_sample_chunk_size: u32,
     pub fullscreen_render: bool,
     pub screen_integer_scale: bool,
     pub game_db_path: Option<PathBuf>,
@@ -87,21 +89,21 @@ impl Default for Global {
             sys_dir_path: None,
             sys_paths: Default::default(),
             skip_firmware: true,
+            pause_on_launch: false,
             model: ModelConfig::Auto,
             limit_framerate: true,
             screen_rotation: 0,
             sync_to_audio: true,
+            audio_volume: 1.0,
+            audio_sample_chunk_size: 512,
             audio_interp_method: audio::InterpMethod::Nearest,
-            audio_xq_sample_rate_shift: 0,
-            audio_xq_interp_method: AudioXqInterpMethod::Nearest,
-            pause_on_launch: false,
+            audio_custom_sample_rate: 0,
+            audio_channel_interp_method: AudioChannelInterpMethod::Nearest,
             autosave_interval_ms: 1000.0,
             rtc_time_offset_seconds: 0,
 
             save_dir_path: data_base.join("saves"),
 
-            audio_volume: 1.0,
-            audio_sample_chunk_size: 512,
             fullscreen_render: true,
             screen_integer_scale: false,
             game_db_path: Some(data_base.join("game_db.json")),
@@ -121,14 +123,16 @@ pub struct Game {
     pub sys_dir_path: Option<PathBuf>,
     pub sys_paths: SysPaths,
     pub skip_firmware: Option<bool>,
+    pub pause_on_launch: Option<bool>,
     pub model: Option<ModelConfig>,
     pub limit_framerate: Option<bool>,
     pub screen_rotation: Option<i16>,
     pub sync_to_audio: Option<bool>,
+    pub audio_volume: Option<f32>,
+    pub audio_sample_chunk_size: Option<u32>,
     pub audio_interp_method: Option<audio::InterpMethod>,
-    pub audio_xq_sample_rate_shift: Option<u8>,
-    pub audio_xq_interp_method: Option<AudioXqInterpMethod>,
-    pub pause_on_launch: Option<bool>,
+    pub audio_custom_sample_rate: Option<u32>,
+    pub audio_channel_interp_method: Option<AudioChannelInterpMethod>,
     pub autosave_interval_ms: Option<f32>,
     pub rtc_time_offset_seconds: Option<i64>,
 
@@ -141,14 +145,16 @@ impl Default for Game {
             sys_dir_path: None,
             sys_paths: Default::default(),
             skip_firmware: None,
+            pause_on_launch: None,
             model: None,
             limit_framerate: None,
             screen_rotation: None,
             sync_to_audio: None,
+            audio_volume: None,
+            audio_sample_chunk_size: None,
             audio_interp_method: None,
-            audio_xq_sample_rate_shift: None,
-            audio_xq_interp_method: None,
-            pause_on_launch: None,
+            audio_custom_sample_rate: None,
+            audio_channel_interp_method: None,
             autosave_interval_ms: None,
             rtc_time_offset_seconds: None,
 
@@ -263,17 +269,42 @@ pub enum SettingOrigin {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct RuntimeModifiable<T> {
+pub struct GameOverridable<T> {
     pub value: T,
     pub origin: SettingOrigin,
 }
 
-impl<T> RuntimeModifiable<T> {
+impl<T> GameOverridable<T> {
     pub fn global(value: T) -> Self {
-        RuntimeModifiable {
+        GameOverridable {
             value,
             origin: SettingOrigin::Global,
         }
+    }
+
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> GameOverridable<U> {
+        GameOverridable {
+            value: f(self.value),
+            origin: self.origin,
+        }
+    }
+
+    pub fn update(&mut self, new_value: GameOverridable<T>) -> bool
+    where
+        T: PartialEq,
+    {
+        let changed = new_value.value != self.value;
+        *self = new_value;
+        changed
+    }
+
+    pub fn update_value(&mut self, new_value: T) -> bool
+    where
+        T: PartialEq,
+    {
+        let changed = new_value != self.value;
+        self.value = new_value;
+        changed
     }
 }
 
@@ -382,19 +413,20 @@ impl fmt::Display for LaunchConfigError {
 pub struct CommonLaunchConfig {
     pub sys_files: SysFiles,
     pub skip_firmware: bool,
-    pub model: Model,
-    pub limit_framerate: RuntimeModifiable<bool>,
-    pub screen_rotation: RuntimeModifiable<i16>,
-    pub sync_to_audio: RuntimeModifiable<bool>,
-    pub audio_interp_method: RuntimeModifiable<audio::InterpMethod>,
-    pub audio_sample_chunk_size: u32,
-    #[cfg(feature = "xq-audio")]
-    pub audio_xq_sample_rate_shift: RuntimeModifiable<u8>,
-    #[cfg(feature = "xq-audio")]
-    pub audio_xq_interp_method: RuntimeModifiable<AudioXqInterpMethod>,
     pub pause_on_launch: bool,
-    pub autosave_interval_ms: RuntimeModifiable<f32>,
-    pub rtc_time_offset_seconds: RuntimeModifiable<i64>,
+    pub model: Model,
+    pub limit_framerate: GameOverridable<bool>,
+    pub screen_rotation: GameOverridable<i16>,
+    pub sync_to_audio: GameOverridable<bool>,
+    pub audio_volume: GameOverridable<f32>,
+    pub audio_sample_chunk_size: GameOverridable<u32>,
+    pub audio_interp_method: GameOverridable<audio::InterpMethod>,
+    #[cfg(feature = "xq-audio")]
+    pub audio_custom_sample_rate: GameOverridable<Option<NonZeroU32>>,
+    #[cfg(feature = "xq-audio")]
+    pub audio_channel_interp_method: GameOverridable<AudioChannelInterpMethod>,
+    pub autosave_interval_ms: GameOverridable<f32>,
+    pub rtc_time_offset_seconds: GameOverridable<i64>,
 }
 
 pub struct GameLaunchConfig {
@@ -483,15 +515,15 @@ fn common_launch_config(
         };
     }
 
-    macro_rules! runtime_modifiable {
+    macro_rules! game_overridable {
         ($field: ident) => {
             if let Some(value) = game_config.and_then(|c| c.$field) {
-                RuntimeModifiable {
+                GameOverridable {
                     value,
                     origin: SettingOrigin::Game,
                 }
             } else {
-                RuntimeModifiable {
+                GameOverridable {
                     value: global_config.$field,
                     origin: SettingOrigin::Global,
                 }
@@ -558,17 +590,19 @@ fn common_launch_config(
     }
 
     let skip_firmware = plain_setting!(skip_firmware);
-    let limit_framerate = runtime_modifiable!(limit_framerate);
-    let screen_rotation = runtime_modifiable!(screen_rotation);
-    let sync_to_audio = runtime_modifiable!(sync_to_audio);
-    let audio_interp_method = runtime_modifiable!(audio_interp_method);
-    #[cfg(feature = "xq-audio")]
-    let audio_xq_sample_rate_shift = runtime_modifiable!(audio_xq_sample_rate_shift);
-    #[cfg(feature = "xq-audio")]
-    let audio_xq_interp_method = runtime_modifiable!(audio_xq_interp_method);
     let pause_on_launch = plain_setting!(pause_on_launch);
-    let autosave_interval_ms = runtime_modifiable!(autosave_interval_ms);
-    let rtc_time_offset_seconds = runtime_modifiable!(rtc_time_offset_seconds);
+    let limit_framerate = game_overridable!(limit_framerate);
+    let screen_rotation = game_overridable!(screen_rotation);
+    let sync_to_audio = game_overridable!(sync_to_audio);
+    let audio_volume = game_overridable!(audio_volume);
+    let audio_sample_chunk_size = game_overridable!(audio_sample_chunk_size);
+    let audio_interp_method = game_overridable!(audio_interp_method);
+    #[cfg(feature = "xq-audio")]
+    let audio_custom_sample_rate = game_overridable!(audio_custom_sample_rate).map(NonZeroU32::new);
+    #[cfg(feature = "xq-audio")]
+    let audio_channel_interp_method = game_overridable!(audio_channel_interp_method);
+    let autosave_interval_ms = game_overridable!(autosave_interval_ms);
+    let rtc_time_offset_seconds = game_overridable!(rtc_time_offset_seconds);
 
     Ok((
         CommonLaunchConfig {
@@ -578,12 +612,13 @@ fn common_launch_config(
             limit_framerate,
             screen_rotation,
             sync_to_audio,
+            audio_volume,
+            audio_sample_chunk_size,
             audio_interp_method,
-            audio_sample_chunk_size: global_config.audio_sample_chunk_size,
             #[cfg(feature = "xq-audio")]
-            audio_xq_sample_rate_shift,
+            audio_custom_sample_rate,
             #[cfg(feature = "xq-audio")]
-            audio_xq_interp_method,
+            audio_channel_interp_method,
             pause_on_launch,
             autosave_interval_ms,
             rtc_time_offset_seconds,

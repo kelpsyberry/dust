@@ -79,8 +79,9 @@ impl<'a> Serializer<'a> {
 
 macro_rules! s {
     ($s:expr, $k:expr, $v:expr) => {
+        use core::fmt::Write;
         $s.maybe_print_comma();
-        *$s.buffer += &format!("{}: {}", $k, $v);
+        let _ = write!($s.buffer, "{}: {}", $k, $v);
     };
 }
 

@@ -1,5 +1,5 @@
 use super::PressedKey;
-use core::{fmt::Write, str::FromStr};
+use std::{fmt::Write, str::FromStr};
 use serde::{Deserialize, Serialize};
 use winit::event::{ScanCode, VirtualKeyCode};
 

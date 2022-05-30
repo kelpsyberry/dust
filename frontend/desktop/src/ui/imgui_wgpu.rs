@@ -1,6 +1,10 @@
-use core::num::NonZeroU32;
 use imgui::internal::RawWrapper;
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    mem::size_of,
+    num::{NonZeroU32, NonZeroU64},
+    slice,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct TextureRange {
@@ -365,6 +369,11 @@ impl Renderer {
         imgui: &mut imgui::Context,
         output_format: wgpu::TextureFormat,
     ) -> Self {
+        imgui
+            .io_mut()
+            .backend_flags
+            .insert(imgui::BackendFlags::RENDERER_HAS_VTX_OFFSET);
+
         let view_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("imgui view"),
@@ -393,7 +402,7 @@ impl Renderer {
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &view_buffer,
                     offset: 0,
-                    size: Some(core::num::NonZeroU64::new(16).unwrap()),
+                    size: Some(NonZeroU64::new(16).unwrap()),
                 }),
             }],
         });
@@ -577,12 +586,10 @@ impl Renderer {
             return;
         }
 
-        let mut vtx_size =
-            draw_data.total_vtx_count as u64 * core::mem::size_of::<imgui::DrawVert>() as u64;
+        let mut vtx_size = draw_data.total_vtx_count as u64 * size_of::<imgui::DrawVert>() as u64;
         vtx_size += wgpu::COPY_BUFFER_ALIGNMENT - 1;
         vtx_size -= vtx_size % wgpu::COPY_BUFFER_ALIGNMENT;
-        let mut idx_size =
-            draw_data.total_idx_count as u64 * core::mem::size_of::<imgui::DrawIdx>() as u64;
+        let mut idx_size = draw_data.total_idx_count as u64 * size_of::<imgui::DrawIdx>() as u64;
         idx_size += wgpu::COPY_BUFFER_ALIGNMENT - 1;
         idx_size -= idx_size % wgpu::COPY_BUFFER_ALIGNMENT;
 
@@ -616,13 +623,13 @@ impl Renderer {
             let vtx_buffer = draw_list.vtx_buffer();
             let idx_buffer = draw_list.idx_buffer();
             unsafe {
-                vtx.extend_from_slice(core::slice::from_raw_parts(
+                vtx.extend_from_slice(slice::from_raw_parts(
                     vtx_buffer.as_ptr() as *const u8,
-                    vtx_buffer.len() * core::mem::size_of::<imgui::DrawVert>(),
+                    vtx_buffer.len() * size_of::<imgui::DrawVert>(),
                 ));
-                idx.extend_from_slice(core::slice::from_raw_parts(
+                idx.extend_from_slice(slice::from_raw_parts(
                     idx_buffer.as_ptr() as *const u8,
-                    idx_buffer.len() * core::mem::size_of::<imgui::DrawIdx>(),
+                    idx_buffer.len() * size_of::<imgui::DrawIdx>(),
                 ));
             }
         }
@@ -634,7 +641,7 @@ impl Renderer {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_index_buffer(
             idx_buffer.slice(..),
-            if core::mem::size_of::<imgui::DrawIdx>() == 2 {
+            if size_of::<imgui::DrawIdx>() == 2 {
                 wgpu::IndexFormat::Uint16
             } else {
                 wgpu::IndexFormat::Uint32
@@ -656,13 +663,13 @@ impl Renderer {
             queue.write_buffer(
                 &self.view_buffer,
                 0,
-                core::slice::from_raw_parts(scale_translate.as_ptr() as *const u8, 16),
+                slice::from_raw_parts(scale_translate.as_ptr() as *const u8, 16),
             );
         }
         render_pass.set_bind_group(0, &self.view_bind_group, &[]);
 
-        let mut vertex_pos = 0;
-        let mut index_pos = 0;
+        let mut vtx_base = 0;
+        let mut idx_base = 0;
         for draw_list in draw_data.draw_lists() {
             for cmd in draw_list.commands() {
                 match cmd {
@@ -672,8 +679,7 @@ impl Renderer {
                             None => continue,
                         };
 
-                        render_pass
-                            .set_vertex_buffer(0, vtx_buffer.slice(cmd_params.vtx_offset as u64..));
+                        render_pass.set_vertex_buffer(0, vtx_buffer.slice(..));
 
                         let clip_rect = [
                             (cmd_params.clip_rect[0] - draw_data.display_pos[0])
@@ -701,10 +707,10 @@ impl Renderer {
 
                         render_pass.set_bind_group(1, &texture.bind_group, &[]);
 
-                        let start = index_pos + cmd_params.idx_offset;
+                        let idx_start = idx_base + cmd_params.idx_offset;
                         render_pass.draw_indexed(
-                            start as u32..(start + count) as u32,
-                            (vertex_pos + cmd_params.vtx_offset) as i32,
+                            idx_start as u32..(idx_start + count) as u32,
+                            (vtx_base + cmd_params.vtx_offset) as i32,
                             0..1,
                         );
                     }
@@ -712,7 +718,7 @@ impl Renderer {
                         render_pass.set_pipeline(&self.pipeline);
                         render_pass.set_index_buffer(
                             idx_buffer.slice(..),
-                            if core::mem::size_of::<imgui::DrawIdx>() == 2 {
+                            if size_of::<imgui::DrawIdx>() == 2 {
                                 wgpu::IndexFormat::Uint16
                             } else {
                                 wgpu::IndexFormat::Uint32
@@ -726,8 +732,8 @@ impl Renderer {
                     },
                 }
             }
-            vertex_pos += draw_list.vtx_buffer().len();
-            index_pos += draw_list.idx_buffer().len();
+            vtx_base += draw_list.vtx_buffer().len();
+            idx_base += draw_list.idx_buffer().len();
         }
     }
 }

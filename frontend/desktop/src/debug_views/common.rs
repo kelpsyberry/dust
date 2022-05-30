@@ -1,6 +1,6 @@
 macro_rules! str_buf {
     ($buf: expr, $($args: tt)*) => {{
-        use core::fmt::Write;
+        use std::fmt::Write;
         $buf.clear();
         write!($buf, $($args)*).unwrap();
         &$buf

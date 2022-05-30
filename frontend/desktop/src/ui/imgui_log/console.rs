@@ -1,11 +1,11 @@
 use super::{AsyncKV, AsyncRecord, AsyncValue};
-use core::{
-    fmt::{self, Write as _},
-    ptr,
-};
 use crossbeam_channel::{Receiver, Sender};
 use imgui::*;
 use slog::{ser::Serializer, BorrowedKV, Key, Level, Record, RecordStatic, KV};
+use std::{
+    fmt::{self, Write as _},
+    ptr,
+};
 
 #[derive(Clone)]
 enum HistoryNode {

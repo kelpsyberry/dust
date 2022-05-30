@@ -1,4 +1,4 @@
-use dust_core::audio::Sample;
+use dust_core::audio::OutputSample;
 use js_sys::{Float32Array, Function};
 
 pub struct Backend {
@@ -12,7 +12,7 @@ impl Backend {
 }
 
 impl dust_core::audio::Backend for Backend {
-    fn handle_sample_chunk(&mut self, samples: &mut Vec<[Sample; 2]>) {
+    fn handle_sample_chunk(&mut self, samples: &mut Vec<[OutputSample; 2]>) {
         let mut l_buf = Vec::with_capacity(samples.len());
         let mut r_buf = Vec::with_capacity(samples.len());
         for [l, r] in samples.drain(..) {

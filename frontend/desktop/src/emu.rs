@@ -21,6 +21,8 @@ use dust_core::{
 use parking_lot::RwLock;
 #[cfg(feature = "gdb-server")]
 use std::net::SocketAddr;
+#[cfg(feature = "xq-audio")]
+use std::num::NonZeroU32;
 use std::{
     fs::{self, File},
     hint,
@@ -47,9 +49,9 @@ pub enum Message {
     UpdateSavePath(Option<PathBuf>),
     UpdateAudioSampleChunkSize(u32),
     #[cfg(feature = "xq-audio")]
-    UpdateAudioXqSampleRateShift(u8),
+    UpdateAudioCustomSampleRate(Option<NonZeroU32>),
     #[cfg(feature = "xq-audio")]
-    UpdateAudioXqInterpMethod(dust_core::audio::InterpMethod),
+    UpdateAudioChannelInterpMethod(dust_core::audio::ChannelInterpMethod),
     UpdateAudioSync(bool),
     #[cfg(feature = "debug-views")]
     DebugViews(debug_views::Message),
@@ -280,11 +282,11 @@ pub(super) fn main(
     emu_builder.model = config.model;
     emu_builder.direct_boot = direct_boot;
     // TODO: Set batch_duration and first_launch?
-    emu_builder.audio_sample_chunk_size = config.audio_sample_chunk_size as usize;
+    emu_builder.audio_sample_chunk_size = config.audio_sample_chunk_size.value as usize;
     #[cfg(feature = "xq-audio")]
     {
-        emu_builder.audio_xq_sample_rate_shift = config.audio_xq_sample_rate_shift.value;
-        emu_builder.audio_xq_interp_method = config.audio_xq_interp_method.value;
+        emu_builder.audio_custom_sample_rate = config.audio_custom_sample_rate.value;
+        emu_builder.audio_channel_interp_method = config.audio_channel_interp_method.value;
     }
 
     let mut emu = emu_builder.build(Interpreter);
@@ -356,13 +358,13 @@ pub(super) fn main(
                 }
 
                 #[cfg(feature = "xq-audio")]
-                Message::UpdateAudioXqSampleRateShift(shift) => {
-                    dust_core::audio::Audio::set_xq_sample_rate_shift(&mut emu, shift);
+                Message::UpdateAudioCustomSampleRate(sample_rate) => {
+                    dust_core::audio::Audio::set_custom_sample_rate(&mut emu, sample_rate);
                 }
 
                 #[cfg(feature = "xq-audio")]
-                Message::UpdateAudioXqInterpMethod(interp_method) => {
-                    emu.audio.set_xq_interp_method(interp_method);
+                Message::UpdateAudioChannelInterpMethod(interp_method) => {
+                    emu.audio.set_channel_interp_method(interp_method);
                 }
 
                 Message::UpdateAudioSync(new_sync_to_audio) => {
@@ -414,9 +416,9 @@ pub(super) fn main(
 
         if reset_triggered {
             #[cfg(feature = "xq-audio")]
-            let audio_xq_sample_rate_shift = emu.audio.xq_sample_rate_shift();
+            let audio_custom_sample_rate = emu.audio.custom_sample_rate();
             #[cfg(feature = "xq-audio")]
-            let audio_xq_interp_method = emu.audio.xq_interp_method();
+            let audio_channel_interp_method = emu.audio.channel_interp_method();
 
             let mut emu_builder = dust_core::emu::Builder::new(
                 emu.arm7.into_bios().into(),
@@ -445,8 +447,8 @@ pub(super) fn main(
             emu_builder.audio_sample_chunk_size = emu.audio.sample_chunk_size;
             #[cfg(feature = "xq-audio")]
             {
-                emu_builder.audio_xq_sample_rate_shift = audio_xq_sample_rate_shift;
-                emu_builder.audio_xq_interp_method = audio_xq_interp_method;
+                emu_builder.audio_custom_sample_rate = audio_custom_sample_rate;
+                emu_builder.audio_channel_interp_method = audio_channel_interp_method;
             }
 
             emu = emu_builder.build(Interpreter);

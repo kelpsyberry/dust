@@ -3,20 +3,24 @@ pub use self::cpal::*;
 mod interp;
 pub use interp::{Interp, InterpMethod};
 
-use dust_core::audio::Sample;
+use dust_core::audio::OutputSample;
 use parking_lot::Mutex;
 #[cfg(feature = "xq-audio")]
 use parking_lot::RwLock;
-use std::sync::Arc;
+#[cfg(feature = "xq-audio")]
+use std::num::NonZeroU32;
 use std::{
     marker::PhantomData,
     sync::atomic::{AtomicUsize, Ordering},
+    sync::Arc,
     thread::{self, Thread},
 };
 
-const SYS_CLOCK: f64 = (1 << 25) as f64;
-const ORIG_FRAME_RATE: f64 = SYS_CLOCK / (6.0 * 355.0 * 263.0);
-const BASE_INPUT_SAMPLE_RATE: f64 = SYS_CLOCK / 1024.0 * 60.0 / ORIG_FRAME_RATE;
+const SYS_CLOCK_RATE: u32 = 1 << 25;
+pub const DEFAULT_INPUT_SAMPLE_RATE: u32 = SYS_CLOCK_RATE >> 10;
+
+const ORIG_FRAME_RATE: f64 = SYS_CLOCK_RATE as f64 / (6.0 * 355.0 * 263.0);
+pub const SAMPLE_RATE_ADJUSTMENT_RATIO: f64 = 60.0 / ORIG_FRAME_RATE;
 
 const BUFFER_CAPACITY: usize = 0x800;
 
@@ -24,7 +28,7 @@ const BUFFER_CAPACITY: usize = 0x800;
 struct Buffer {
     read_pos: AtomicUsize,
     write_pos: AtomicUsize,
-    data: *mut [[Sample; 2]],
+    data: *mut [[OutputSample; 2]],
     thread: Mutex<Thread>,
 }
 
@@ -32,11 +36,20 @@ unsafe impl Send for Buffer {}
 unsafe impl Sync for Buffer {}
 
 impl Buffer {
-    fn new_arc(thread: Thread, #[cfg(feature = "xq-audio")] xq_sample_rate_shift: u8) -> Arc<Self> {
+    fn new_arc(
+        thread: Thread,
+        #[cfg(feature = "xq-audio")] custom_sample_rate: Option<NonZeroU32>,
+    ) -> Arc<Self> {
         #[cfg(not(feature = "xq-audio"))]
         let capacity = BUFFER_CAPACITY;
         #[cfg(feature = "xq-audio")]
-        let capacity = BUFFER_CAPACITY << xq_sample_rate_shift;
+        let capacity = match custom_sample_rate {
+            Some(sample_rate) => {
+                BUFFER_CAPACITY
+                    * ((sample_rate.get() / DEFAULT_INPUT_SAMPLE_RATE) as usize).next_power_of_two()
+            }
+            None => BUFFER_CAPACITY,
+        };
 
         Arc::new(Buffer {
             read_pos: AtomicUsize::new(capacity - 1),
@@ -89,7 +102,7 @@ impl Sender {
 }
 
 impl dust_core::audio::Backend for Sender {
-    fn handle_sample_chunk(&mut self, samples: &mut Vec<[Sample; 2]>) {
+    fn handle_sample_chunk(&mut self, samples: &mut Vec<[OutputSample; 2]>) {
         while !samples.is_empty() {
             #[cfg(not(feature = "xq-audio"))]
             let buffer_mask = BUFFER_CAPACITY - 1;
@@ -220,23 +233,24 @@ pub struct Channel {
 
 impl Channel {
     #[cfg(feature = "xq-audio")]
-    pub fn set_xq_sample_rate_shift(&mut self, shift: u8) {
+    pub fn set_custom_sample_rate(&mut self, custom_sample_rate: Option<NonZeroU32>) {
         let mut buffer = self.tx_data.buffer_ptr.write();
-        let new_buffer = Buffer::new_arc(buffer.thread.lock().clone(), shift);
+        let new_buffer = Buffer::new_arc(buffer.thread.lock().clone(), custom_sample_rate);
         *buffer = new_buffer;
-        self.output_stream.set_xq_input_sample_rate_shift(shift);
+        self.output_stream
+            .set_custom_sample_rate(custom_sample_rate);
     }
 }
 
 pub fn channel(
     interp_method: InterpMethod,
     volume: f32,
-    #[cfg(feature = "xq-audio")] xq_sample_rate_shift: u8,
+    #[cfg(feature = "xq-audio")] custom_sample_rate: Option<NonZeroU32>,
 ) -> Option<Channel> {
     let buffer = Buffer::new_arc(
         thread::current(),
         #[cfg(feature = "xq-audio")]
-        xq_sample_rate_shift,
+        custom_sample_rate,
     );
     #[cfg(feature = "xq-audio")]
     let buffer_ptr = Arc::new(RwLock::new(Arc::clone(&buffer)));
@@ -256,7 +270,7 @@ pub fn channel(
             interp_method.create_interp(),
             volume,
             #[cfg(feature = "xq-audio")]
-            xq_sample_rate_shift,
+            custom_sample_rate,
         )?,
     })
 }

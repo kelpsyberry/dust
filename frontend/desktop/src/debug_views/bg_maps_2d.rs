@@ -3,7 +3,7 @@ use crate::{
     ui::{imgui_wgpu, window::Window},
     utils::scale_to_fit,
 };
-use core::slice;
+use std::slice;
 use dust_core::{
     cpu,
     emu::Emu,

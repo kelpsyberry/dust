@@ -3,7 +3,7 @@ use super::{
     FrameDataSlot, InstanceableView, View,
 };
 use crate::ui::window::Window;
-use core::cmp::Ordering;
+use std::cmp::Ordering;
 use dust_core::{
     audio::channel::{Control, Format, Index as ChannelIndex, RepeatMode},
     cpu,

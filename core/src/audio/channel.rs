@@ -1,6 +1,6 @@
+use super::RawChannelSample;
 #[cfg(feature = "xq-audio")]
-use super::InterpMethod;
-use super::InterpSample;
+use super::{ChannelInterpMethod, InterpSample};
 #[cfg(feature = "xq-audio")]
 use crate::utils::schedule::RawTimestamp;
 use crate::{
@@ -20,7 +20,9 @@ use core::mem;
 // - Changing the format while running (what if the FIFO becomes misaligned?)
 // TODO: Check how the sample FIFO actually works, GBATEK barely mentions it
 
-// TODO: Maybe run channels per-channel-sample instead of per-mixer-sample
+// TODO: Maybe add the option to run channels per-channel-sample instead of per-mixer-sample;
+//       however, a way to avoid scheduler overload would have to be devised, and channel timing
+//       and startup delays would have to be emulated more accurately.
 
 bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -144,6 +146,7 @@ static PSG_TABLE: [i16; 64] = [
 pub struct Channel {
     #[cfg(feature = "log")]
     logger: slog::Logger,
+    last_update_time: arm7::Timestamp,
     control: Control,
     index: Index,
     volume: u8,
@@ -162,7 +165,6 @@ pub struct Channel {
     total_samples: u32,
     cur_sample_index: i32,
     cur_src_off: u32,
-    #[cfg(not(feature = "xq-audio"))]
     last_sample: i16,
     fifo_read_pos: FifoReadPos,
     fifo_write_pos: FifoWritePos,
@@ -186,6 +188,7 @@ impl Channel {
         Channel {
             #[cfg(feature = "log")]
             logger,
+            last_update_time: arm7::Timestamp(0),
             control: Control(0),
             index,
             volume: 0,
@@ -204,7 +207,6 @@ impl Channel {
             total_samples: 0,
             cur_sample_index: 0,
             cur_src_off: 0,
-            #[cfg(not(feature = "xq-audio"))]
             last_sample: 0,
             fifo_read_pos: FifoReadPos::new(0),
             fifo_write_pos: FifoWritePos::new(0),
@@ -227,53 +229,6 @@ impl Channel {
     #[inline]
     pub fn control(&self) -> Control {
         self.control
-    }
-
-    pub fn write_control(&mut self, value: Control) {
-        let prev = self.control;
-        self.control.0 = value.0 & 0xFF7F_837F;
-
-        if !self.control.running() {
-            self.start = false;
-            return;
-        }
-
-        self.start |= !prev.running();
-
-        self.volume = self.control.volume();
-        self.volume_shift = self.control.volume_shift();
-        self.pan = self.control.pan();
-
-        self.repeat_mode = match self.control.repeat_mode_raw() {
-            0 => {
-                #[cfg(feature = "log")]
-                slog::warn!(self.logger, "Using untested repeat mode 0 (manual)");
-                RepeatMode::Manual
-            }
-            2 => RepeatMode::OneShot,
-            // Arisotura documented in the GBATEK addendum that repeat mode 3 behaves the same as 1
-            _ => RepeatMode::LoopInfinite,
-        };
-
-        self.format = match self.control.format_raw() {
-            0 => Format::Pcm8,
-            1 => Format::Pcm16,
-            2 => Format::Adpcm,
-            _ => match self.index.get() {
-                8..=13 => Format::PsgWave,
-                14..=15 => Format::PsgNoise,
-                _ => {
-                    // TODO: What happens?
-                    #[cfg(feature = "log")]
-                    slog::warn!(self.logger, "Using unsupported format 3 (PSG)");
-                    Format::Silence
-                }
-            },
-        };
-
-        self.loop_start_sample_index = self.calc_loop_start_sample_index();
-        self.total_samples = self.calc_total_samples();
-        self.check_loop_start();
     }
 
     pub(super) fn pan(&self) -> u8 {
@@ -377,14 +332,11 @@ impl Channel {
 
     #[inline]
     fn push_sample(&mut self, sample: i16) {
+        self.last_sample = sample;
         #[cfg(feature = "xq-audio")]
         {
             self.hist.copy_within(1.., 0);
             self.hist[3] = sample as InterpSample / 32768.0;
-        }
-        #[cfg(not(feature = "xq-audio"))]
-        {
-            self.last_sample = sample;
         }
     }
 
@@ -438,6 +390,53 @@ impl Channel {
             Self::refill_fifo(emu, i);
         }
         result
+    }
+
+    pub fn write_control(&mut self, value: Control) {
+        let prev = self.control;
+        self.control.0 = value.0 & 0xFF7F_837F;
+
+        if !self.control.running() {
+            self.start = false;
+            return;
+        }
+
+        self.start |= !prev.running();
+
+        self.volume = self.control.volume();
+        self.volume_shift = self.control.volume_shift();
+        self.pan = self.control.pan();
+
+        self.repeat_mode = match self.control.repeat_mode_raw() {
+            0 => {
+                #[cfg(feature = "log")]
+                slog::warn!(self.logger, "Using untested repeat mode 0 (manual)");
+                RepeatMode::Manual
+            }
+            2 => RepeatMode::OneShot,
+            // Arisotura documented in the GBATEK addendum that repeat mode 3 behaves the same as 1
+            _ => RepeatMode::LoopInfinite,
+        };
+
+        self.format = match self.control.format_raw() {
+            0 => Format::Pcm8,
+            1 => Format::Pcm16,
+            2 => Format::Adpcm,
+            _ => match self.index.get() {
+                8..=13 => Format::PsgWave,
+                14..=15 => Format::PsgNoise,
+                _ => {
+                    // TODO: What happens?
+                    #[cfg(feature = "log")]
+                    slog::warn!(self.logger, "Using unsupported format 3 (PSG)");
+                    Format::Silence
+                }
+            },
+        };
+
+        self.loop_start_sample_index = self.calc_loop_start_sample_index();
+        self.total_samples = self.calc_total_samples();
+        self.check_loop_start();
     }
 
     fn run_pcm8(emu: &mut Emu<impl cpu::Engine>, i: Index) {
@@ -611,18 +610,51 @@ impl Channel {
         emu.audio.channels[i.get() as usize].push_sample(0);
     }
 
-    #[allow(clippy::many_single_char_names)]
-    pub(super) fn run(
-        emu: &mut Emu<impl cpu::Engine>,
-        i: Index,
-        #[cfg(feature = "xq-audio")] xq_sample_rate_shift: u8,
-        #[cfg(feature = "xq-audio")] xq_interp_method: InterpMethod,
-        #[cfg(feature = "xq-audio")] time: arm7::Timestamp,
-    ) -> InterpSample {
-        let channel = &mut emu.audio.channels[i.get() as usize];
+    pub(super) fn raw_output(&self) -> RawChannelSample {
+        ((self.last_sample as RawChannelSample) << self.volume_shift)
+            * self.volume as RawChannelSample
+    }
 
+    #[cfg(feature = "xq-audio")]
+    pub(super) fn interp_output(
+        &self,
+        time: arm7::Timestamp,
+        interp_method: ChannelInterpMethod,
+    ) -> InterpSample {
+        let interp_result = match interp_method {
+            ChannelInterpMethod::Nearest => self.hist[3],
+            ChannelInterpMethod::Cubic => {
+                #[allow(clippy::cast_precision_loss)]
+                let mu = self.last_sample_time.map_or(1.0, |last_sample_time| {
+                    (time.0 - last_sample_time.0) as InterpSample
+                        / self.sample_interval.0 as InterpSample
+                });
+                let a = self.hist[3] - self.hist[2] - self.hist[0] + self.hist[1];
+                let b = self.hist[0] - self.hist[1] - a;
+                let c = self.hist[2] - self.hist[0];
+                let d = self.hist[1];
+                (((a * mu + b) * mu + c) * mu + d).clamp(-1.0, 1.0)
+            }
+        };
+        interp_result * (1 << self.volume_shift) as InterpSample * self.volume as InterpSample
+    }
+
+    pub(super) fn run<E: cpu::Engine, const MIXER: bool>(
+        emu: &mut Emu<E>,
+        i: Index,
+        time: arm7::Timestamp,
+    ) {
+        let channel = &mut emu.audio.channels[i.get() as usize];
         if channel.start {
+            if !MIXER {
+                return;
+            }
             channel.start = false;
+            // Start with the next mixer sample, instead of immediately. Not doing this breaks the
+            // maxmod interpolated mode example, but the issues are probably related to a channel
+            // startup delay separate from how the mixer works; for now, knowing that the rest of
+            // the emulator isn't cycle-accurate, this should be a viable approximation.
+            channel.last_update_time.0 = time.0 & !1;
             channel.timer_counter = channel.timer_reload;
             channel.cur_src_off = 0;
             channel.fifo_read_pos = FifoReadPos::new(0);
@@ -641,75 +673,53 @@ impl Channel {
                 Self::refill_fifo(emu, i);
             }
         }
+
         let channel = &mut emu.audio.channels[i.get() as usize];
-        let f = match channel.format {
-            Format::Pcm8 => Self::run_pcm8,
-            Format::Pcm16 => Self::run_pcm16,
-            Format::Adpcm => Self::run_adpcm,
-            Format::PsgWave => Self::run_psg_wave,
-            Format::PsgNoise => Self::run_psg_noise,
-            Format::Silence => Self::run_silence,
-        };
         // The timer runs at 16.777 MHz (half of the ARM7 clock rate), and the mixer requests a
-        // sample every 1024 ARM7 cycles, so the timer gets incremented 512 times.
-        #[cfg(not(feature = "xq-audio"))]
-        let elapsed = 512;
-        #[cfg(feature = "xq-audio")]
-        let elapsed = 512 >> xq_sample_rate_shift;
-        let mut timer_counter = channel.timer_counter as u32 + elapsed;
+        // sample every 1024 ARM7 cycles, so the timer gets incremented 512 times for every mixer
+        // sample, usually.
+        let mut timer_counter =
+            channel.timer_counter as u32 + ((time.0 - channel.last_update_time.0) >> 1) as u32;
+        channel.last_update_time.0 = time.0 & !1;
         let timer_reload = channel.timer_reload as u32;
         if channel.control.running() {
-            while timer_counter >> 16 != 0 {
+            let f = match channel.format {
+                Format::Pcm8 => Self::run_pcm8,
+                Format::Pcm16 => Self::run_pcm16,
+                Format::Adpcm => Self::run_adpcm,
+                Format::PsgWave => Self::run_psg_wave,
+                Format::PsgNoise => Self::run_psg_noise,
+                Format::Silence => Self::run_silence,
+            };
+            if cfg!(not(feature = "xq-audio")) || timer_counter >> 16 != 0 {
+                while timer_counter >> 16 != 0 {
+                    timer_counter = timer_counter - (1 << 16) + timer_reload;
+                    f(emu, i);
+                }
                 #[cfg(feature = "xq-audio")]
                 {
                     let channel = &mut emu.audio.channels[i.get() as usize];
                     channel.last_sample_time = Some(arm7::Timestamp(
-                        time.0 - ((timer_counter - (1 << 16)) << 1) as RawTimestamp,
+                        time.0
+                            .wrapping_sub(((timer_counter - timer_reload) << 1) as RawTimestamp),
                     ));
                 }
-                timer_counter = timer_counter - (1 << 16) + timer_reload;
-                f(emu, i);
             }
         } else {
             #[cfg(feature = "xq-audio")]
-            {
+            if !MIXER {
                 channel.push_sample(0);
-                while timer_counter >> 16 != 0 {
+                if timer_counter >> 16 != 0 {
+                    timer_counter = (timer_counter - (1 << 16)) % ((1 << 16) - timer_reload);
                     channel.last_sample_time = Some(arm7::Timestamp(
-                        time.0 - ((timer_counter - (1 << 16)) << 1) as RawTimestamp,
+                        time.0
+                            .wrapping_sub(((timer_counter - timer_reload) << 1) as RawTimestamp),
                     ));
-                    timer_counter = timer_counter - (1 << 16) + timer_reload;
+                    timer_counter += timer_reload;
                 }
             }
         }
         let channel = &mut emu.audio.channels[i.get() as usize];
         channel.timer_counter = timer_counter as u16;
-        #[cfg(not(feature = "xq-audio"))]
-        {
-            ((channel.last_sample as InterpSample) << channel.volume_shift)
-                * channel.volume as InterpSample
-        }
-        #[cfg(feature = "xq-audio")]
-        {
-            let interp_result = match xq_interp_method {
-                InterpMethod::Nearest => channel.hist[3],
-                InterpMethod::Cubic => {
-                    #[allow(clippy::cast_precision_loss)]
-                    let mu = channel.last_sample_time.map_or(1.0, |last_sample_time| {
-                        assert!(time.0 >= last_sample_time.0);
-                        (time.0 - last_sample_time.0) as InterpSample
-                            / channel.sample_interval.0 as InterpSample
-                    });
-                    let a = channel.hist[3] - channel.hist[2] - channel.hist[0] + channel.hist[1];
-                    let b = channel.hist[0] - channel.hist[1] - a;
-                    let c = channel.hist[2] - channel.hist[0];
-                    let d = channel.hist[1];
-                    (((a * mu + b) * mu + c) * mu + d).clamp(-1.0, 1.0)
-                }
-            };
-            interp_result
-                * (1 << channel.volume_shift) as InterpSample
-                * channel.volume as InterpSample
-        }
     }
 }

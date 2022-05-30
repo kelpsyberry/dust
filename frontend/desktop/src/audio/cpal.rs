@@ -1,17 +1,19 @@
-use super::{Interp, Receiver, BASE_INPUT_SAMPLE_RATE};
-#[cfg(feature = "xq-audio")]
-use core::sync::atomic::AtomicU64;
-use core::{
-    iter,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use super::{Interp, Receiver, DEFAULT_INPUT_SAMPLE_RATE, SAMPLE_RATE_ADJUSTMENT_RATIO};
 use cpal::{
     default_host,
     platform::Stream,
     traits::{DeviceTrait, HostTrait, StreamTrait},
     Sample, SampleFormat,
 };
-use std::sync::Arc;
+use std::{
+    iter,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
+};
+#[cfg(feature = "xq-audio")]
+use std::{num::NonZeroU32, sync::atomic::AtomicU64};
 
 struct SharedData {
     volume: AtomicU32,
@@ -23,8 +25,16 @@ pub struct OutputStream {
     _stream: Stream,
     interp_tx: crossbeam_channel::Sender<Box<dyn Interp>>,
     #[cfg(feature = "xq-audio")]
-    base_sample_rate_ratio: f64,
+    output_sample_rate: u32,
     shared_data: Arc<SharedData>,
+}
+
+#[cfg(feature = "xq-audio")]
+fn sample_rate_ratio(custom_sample_rate: Option<NonZeroU32>, output_sample_rate: u32) -> f64 {
+    (match custom_sample_rate {
+        Some(sample_rate) => sample_rate.get() as f64 * SAMPLE_RATE_ADJUSTMENT_RATIO,
+        None => DEFAULT_INPUT_SAMPLE_RATE as f64 * SAMPLE_RATE_ADJUSTMENT_RATIO,
+    }) / output_sample_rate as f64
 }
 
 impl OutputStream {
@@ -32,7 +42,7 @@ impl OutputStream {
         rx: Receiver,
         interp: Box<dyn Interp>,
         volume: f32,
-        #[cfg(feature = "xq-audio")] xq_sample_rate_shift: u8,
+        #[cfg(feature = "xq-audio")] custom_sample_rate: Option<NonZeroU32>,
     ) -> Option<Self> {
         let output_device = default_host().default_output_device()?;
         let supported_output_config = output_device
@@ -41,15 +51,14 @@ impl OutputStream {
             .find(|config| config.channels() == 2)?
             .with_max_sample_rate();
 
-        let output_sample_rate = supported_output_config.sample_rate().0 as f64;
-        let base_sample_rate_ratio = BASE_INPUT_SAMPLE_RATE / output_sample_rate;
+        let output_sample_rate = supported_output_config.sample_rate().0;
 
         let (interp_tx, interp_rx) = crossbeam_channel::unbounded();
         let shared_data = Arc::new(SharedData {
             volume: AtomicU32::new(volume.to_bits()),
             #[cfg(feature = "xq-audio")]
             sample_rate_ratio: AtomicU64::new(
-                (base_sample_rate_ratio * (1 << xq_sample_rate_shift) as f64).to_bits(),
+                sample_rate_ratio(custom_sample_rate, output_sample_rate).to_bits(),
             ),
         });
 
@@ -59,7 +68,8 @@ impl OutputStream {
             interp,
             shared_data: Arc::clone(&shared_data),
             #[cfg(not(feature = "xq-audio"))]
-            sample_rate_ratio: base_sample_rate_ratio,
+            sample_rate_ratio: DEFAULT_INPUT_SAMPLE_RATE as f64 * SAMPLE_RATE_ADJUSTMENT_RATIO
+                / output_sample_rate as f64,
             fract: 0.0,
         };
 
@@ -88,7 +98,7 @@ impl OutputStream {
             _stream: stream,
             interp_tx,
             #[cfg(feature = "xq-audio")]
-            base_sample_rate_ratio,
+            output_sample_rate,
             shared_data,
         })
     }
@@ -100,9 +110,9 @@ impl OutputStream {
     }
 
     #[cfg(feature = "xq-audio")]
-    pub fn set_xq_input_sample_rate_shift(&mut self, value: u8) {
+    pub fn set_custom_sample_rate(&mut self, value: Option<NonZeroU32>) {
         self.shared_data.sample_rate_ratio.store(
-            (self.base_sample_rate_ratio * (1 << value) as f64).to_bits(),
+            sample_rate_ratio(value, self.output_sample_rate).to_bits(),
             Ordering::Relaxed,
         );
     }

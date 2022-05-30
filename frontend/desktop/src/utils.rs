@@ -7,7 +7,7 @@ use std::{
 macro_rules! format_list {
     ($list: expr) => {
         $list.into_iter().fold(String::new(), |mut acc, v| {
-            use core::fmt::Write;
+            use std::fmt::Write;
             let _ = write!(acc, "\n- {}", v);
             acc
         })

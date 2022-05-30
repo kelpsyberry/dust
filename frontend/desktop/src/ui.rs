@@ -2,10 +2,10 @@
 mod imgui_log;
 #[allow(dead_code)]
 pub mod imgui_wgpu;
+#[cfg(feature = "log")]
+mod logging;
 pub mod window;
 
-#[cfg(feature = "log")]
-use super::config::LoggingKind;
 #[cfg(feature = "debug-views")]
 use super::debug_views;
 use super::{
@@ -16,20 +16,24 @@ use super::{
     FrameData,
 };
 #[cfg(feature = "xq-audio")]
-use dust_core::audio::InterpMethod as AudioXqInterpMethod;
+use dust_core::audio::ChannelInterpMethod as AudioChannelInterpMethod;
 use dust_core::{
     gpu::{SCREEN_HEIGHT, SCREEN_WIDTH},
     utils::{zeroed_box, BoxedByteSlice},
 };
 use parking_lot::RwLock;
 use rfd::FileDialog;
+#[cfg(feature = "xq-audio")]
+use std::num::NonZeroU32;
 #[cfg(feature = "discord-presence")]
 use std::time::SystemTime;
 use std::{
     env,
+    fmt::Write,
     fs::{self, File},
     io::{self, Read},
     path::{Path, PathBuf},
+    slice,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -38,69 +42,127 @@ use std::{
     time::Duration,
 };
 
-#[cfg(feature = "log")]
-fn init_logging(
-    imgui_log: &mut Option<(imgui_log::Console, imgui_log::Sender, bool)>,
-    kind: LoggingKind,
-    imgui_log_history_capacity: usize,
-) -> slog::Logger {
-    use slog::Drain;
-    match kind {
-        LoggingKind::Imgui => {
-            let logger_tx = if let Some((_, logger_tx, _)) = imgui_log {
-                logger_tx.clone()
-            } else {
-                let (log_console, logger_tx) =
-                    imgui_log::Console::new(true, imgui_log_history_capacity);
-                *imgui_log = Some((log_console, logger_tx.clone(), false));
-                logger_tx
-            };
-            slog::Logger::root(imgui_log::Drain::new(logger_tx).fuse(), slog::o!())
+struct CurrentConfig {
+    limit_framerate: config::GameOverridable<bool>,
+    screen_rotation: config::GameOverridable<i16>,
+
+    sync_to_audio: config::GameOverridable<bool>,
+    audio_volume: config::GameOverridable<f32>,
+    audio_sample_chunk_size: config::GameOverridable<u32>,
+    audio_interp_method: config::GameOverridable<audio::InterpMethod>,
+    #[cfg(feature = "xq-audio")]
+    audio_custom_sample_rate: config::GameOverridable<(Option<NonZeroU32>, Option<NonZeroU32>)>,
+    #[cfg(feature = "xq-audio")]
+    audio_channel_interp_method: config::GameOverridable<AudioChannelInterpMethod>,
+}
+
+macro_rules! update_setting {
+    ($ui_state: expr, $setting: ident, $value: expr, $update_fn: expr) => {
+        if $ui_state.current_config.$setting.update($value) {
+            $update_fn($ui_state);
         }
-        LoggingKind::Term => {
-            *imgui_log = None;
-            let decorator = slog_term::TermDecorator::new().stdout().build();
-            let drain = slog_term::CompactFormat::new(decorator)
-                .use_custom_timestamp(|_: &mut dyn std::io::Write| Ok(()))
-                .build()
-                .fuse();
-            slog::Logger::root(
-                slog_async::Async::new(drain)
-                    .overflow_strategy(slog_async::OverflowStrategy::Block)
-                    .thread_name("async logger".to_string())
-                    .build()
-                    .fuse(),
-                slog::o!(),
-            )
+    };
+}
+
+macro_rules! update_setting_value {
+    ($ui_state: expr, $setting: ident, $value: expr, $update_fn: expr) => {
+        update_setting_value!($ui_state, $setting, $value, $update_fn, |value| value)
+    };
+    (
+        $ui_state: expr, $setting: ident, $value: expr, $update_fn: expr,
+        |$cur_value: ident| $saved_value: expr
+    ) => {
+        let $cur_value = $value;
+        if $ui_state.current_config.$setting.update_value($cur_value) {
+            $update_fn($ui_state);
+            if $ui_state.current_config.$setting.origin == config::SettingOrigin::Game {
+                let game_config = $ui_state
+                    .emu_state
+                    .as_mut()
+                    .and_then(|emu| emu.game_config.as_mut())
+                    .unwrap();
+                game_config.contents.$setting = Some($saved_value);
+                game_config.dirty = true;
+            }
+            $ui_state.global_config.contents.$setting = $saved_value;
+            $ui_state.global_config.dirty = true;
+        }
+    };
+}
+
+#[cfg(feature = "xq-audio")]
+fn adjust_custom_sample_rate(
+    sample_rate: Option<NonZeroU32>,
+) -> (Option<NonZeroU32>, Option<NonZeroU32>) {
+    (
+        sample_rate,
+        sample_rate.map(|sample_rate| {
+            NonZeroU32::new((sample_rate.get() as f64 / audio::SAMPLE_RATE_ADJUSTMENT_RATIO) as u32)
+                .unwrap_or(NonZeroU32::new(1).unwrap())
+        }),
+    )
+}
+
+impl CurrentConfig {
+    fn from_global(global_config: &Config<config::Global>) -> Self {
+        CurrentConfig {
+            limit_framerate: config::GameOverridable::global(
+                global_config.contents.limit_framerate,
+            ),
+            screen_rotation: config::GameOverridable::global(
+                global_config.contents.screen_rotation,
+            ),
+
+            sync_to_audio: config::GameOverridable::global(global_config.contents.sync_to_audio),
+            audio_volume: config::GameOverridable::global(global_config.contents.audio_volume),
+            audio_sample_chunk_size: config::GameOverridable::global(
+                global_config.contents.audio_sample_chunk_size,
+            ),
+            audio_interp_method: config::GameOverridable::global(
+                global_config.contents.audio_interp_method,
+            ),
+            #[cfg(feature = "xq-audio")]
+            audio_custom_sample_rate: config::GameOverridable::global(adjust_custom_sample_rate(
+                NonZeroU32::new(global_config.contents.audio_custom_sample_rate),
+            )),
+            #[cfg(feature = "xq-audio")]
+            audio_channel_interp_method: config::GameOverridable::global(
+                global_config.contents.audio_channel_interp_method,
+            ),
         }
     }
 }
 
-struct UiState {
-    global_config: Config<config::Global>,
-    game_title: Option<String>,
+struct EmuState {
+    playing: bool,
     game_config: Option<Config<config::Game>>,
+    game_title: String,
+    message_tx: crossbeam_channel::Sender<emu::Message>,
+    thread: thread::JoinHandle<triple_buffer::Sender<FrameData>>,
+    shared_state: Arc<emu::SharedState>,
+}
+
+impl EmuState {
+    fn send_message(&self, msg: emu::Message) {
+        self.message_tx.send(msg).expect("Couldn't send UI message");
+    }
+}
+
+struct UiState {
     game_db: Option<game_db::Database>,
 
-    playing: bool,
-    limit_framerate: config::RuntimeModifiable<bool>,
-    screen_rotation: config::RuntimeModifiable<i16>,
+    global_config: Config<config::Global>,
+    current_config: CurrentConfig,
+
+    emu_state: Option<EmuState>,
 
     show_menu_bar: bool,
-
     screen_focused: bool,
+
     input: input::State,
     input_editor: Option<input::Editor>,
 
     audio_channel: Option<audio::Channel>,
-    audio_volume: f32,
-    audio_sample_chunk_size: u32,
-    #[cfg(feature = "xq-audio")]
-    audio_xq_sample_rate_shift: config::RuntimeModifiable<u8>,
-    #[cfg(feature = "xq-audio")]
-    audio_xq_interp_method: config::RuntimeModifiable<AudioXqInterpMethod>,
-    audio_interp_method: config::RuntimeModifiable<audio::InterpMethod>,
-    sync_to_audio: config::RuntimeModifiable<bool>,
 
     #[cfg(feature = "log")]
     imgui_log: Option<(imgui_log::Console, imgui_log::Sender, bool)>,
@@ -115,12 +177,6 @@ struct UiState {
     #[cfg(feature = "debug-views")]
     debug_views: debug_views::UiState,
 
-    message_tx: crossbeam_channel::Sender<emu::Message>,
-    message_rx: crossbeam_channel::Receiver<emu::Message>,
-
-    emu_thread: Option<thread::JoinHandle<triple_buffer::Sender<FrameData>>>,
-    emu_shared_state: Option<Arc<emu::SharedState>>,
-
     #[cfg(feature = "discord-presence")]
     rpc_connection: discord_rpc::Rpc,
     #[cfg(feature = "discord-presence")]
@@ -132,10 +188,132 @@ struct UiState {
 static ALLOWED_ROM_EXTENSIONS: &[&str] = &["nds", "bin"];
 
 impl UiState {
-    fn send_message(&self, msg: emu::Message) {
-        self.message_tx.send(msg).expect("Couldn't send UI message");
+    fn update_limit_framerate(&mut self) {
+        if let Some(emu) = &self.emu_state {
+            emu.shared_state
+                .limit_framerate
+                .store(self.current_config.limit_framerate.value, Ordering::Relaxed);
+        }
     }
 
+    fn update_screen_rotation(&mut self) {}
+
+    fn update_sync_to_audio(&mut self) {
+        if let Some(emu) = &self.emu_state {
+            emu.send_message(emu::Message::UpdateAudioSync(
+                self.current_config.sync_to_audio.value,
+            ));
+        }
+    }
+
+    fn update_audio_volume(&mut self) {
+        if let Some(audio_channel) = &mut self.audio_channel {
+            audio_channel
+                .output_stream
+                .set_volume(self.current_config.audio_volume.value);
+        }
+    }
+
+    fn update_audio_sample_chunk_size(&mut self) {
+        if let Some(emu) = &self.emu_state {
+            emu.send_message(emu::Message::UpdateAudioSampleChunkSize(
+                self.current_config.audio_sample_chunk_size.value,
+            ));
+        }
+    }
+
+    fn update_audio_interp_method(&mut self) {
+        if let Some(audio_channel) = self.audio_channel.as_mut() {
+            audio_channel.output_stream.set_interp(
+                self.current_config
+                    .audio_interp_method
+                    .value
+                    .create_interp(),
+            );
+        }
+    }
+
+    #[cfg(feature = "xq-audio")]
+    fn update_audio_custom_sample_rate(&mut self) {
+        if let Some(channel) = &mut self.audio_channel {
+            channel.set_custom_sample_rate(self.current_config.audio_custom_sample_rate.value.1);
+        }
+        if let Some(emu) = &self.emu_state {
+            emu.send_message(emu::Message::UpdateAudioCustomSampleRate(
+                self.current_config.audio_custom_sample_rate.value.1,
+            ));
+        }
+    }
+
+    #[cfg(feature = "xq-audio")]
+    fn update_audio_channel_interp_method(&mut self) {
+        if let Some(emu) = &self.emu_state {
+            emu.send_message(emu::Message::UpdateAudioChannelInterpMethod(
+                self.current_config.audio_channel_interp_method.value,
+            ));
+        }
+    }
+
+    fn set_launch_config(&mut self, config: &CommonLaunchConfig) {
+        update_setting!(
+            self,
+            limit_framerate,
+            config.limit_framerate,
+            Self::update_limit_framerate
+        );
+        update_setting!(
+            self,
+            screen_rotation,
+            config.screen_rotation,
+            Self::update_screen_rotation
+        );
+
+        update_setting!(
+            self,
+            sync_to_audio,
+            config.sync_to_audio,
+            Self::update_sync_to_audio
+        );
+        update_setting!(
+            self,
+            audio_volume,
+            config.audio_volume,
+            Self::update_audio_volume
+        );
+        update_setting!(
+            self,
+            audio_sample_chunk_size,
+            config.audio_sample_chunk_size,
+            Self::update_audio_sample_chunk_size
+        );
+        update_setting!(
+            self,
+            audio_interp_method,
+            config.audio_interp_method,
+            Self::update_audio_interp_method
+        );
+
+        #[cfg(feature = "xq-audio")]
+        {
+            update_setting!(
+                self,
+                audio_custom_sample_rate,
+                config
+                    .audio_custom_sample_rate
+                    .map(adjust_custom_sample_rate),
+                Self::update_audio_interp_method
+            );
+            update_setting!(
+                self,
+                audio_channel_interp_method,
+                config.audio_channel_interp_method,
+                Self::update_audio_channel_interp_method
+            );
+        }
+    }
+}
+
+impl UiState {
     fn load_from_rom_path(&mut self, path: &Path) {
         if let Some(extension) = path.extension().and_then(|s| s.to_str()) {
             if !ALLOWED_ROM_EXTENSIONS.contains(&extension) {
@@ -222,29 +400,9 @@ impl UiState {
     ) {
         self.stop();
 
-        #[cfg(feature = "discord-presence")]
-        {
-            self.presence.state = Some(format!("Playing {}", game_title));
-            self.presence.timestamps = Some(discord_rpc::Timestamps {
-                start: Some(SystemTime::now()),
-                end: None,
-            });
-            self.presence_updated = true;
-        }
+        self.set_launch_config(&config);
 
-        self.game_title = Some(game_title);
-        self.game_config = game_config;
-
-        self.limit_framerate = config.limit_framerate;
-        self.sync_to_audio = config.sync_to_audio;
-
-        if let Some(channel) = &mut self.audio_channel {
-            channel
-                .output_stream
-                .set_interp(config.audio_interp_method.value.create_interp());
-            #[cfg(feature = "xq-audio")]
-            channel.set_xq_sample_rate_shift(config.audio_xq_sample_rate_shift.value);
-        }
+        let playing = !config.pause_on_launch;
 
         #[cfg(feature = "log")]
         let logger = self.logger.clone();
@@ -275,15 +433,20 @@ impl UiState {
         });
 
         let frame_tx = self.frame_tx.take().unwrap();
-        let message_rx = self.message_rx.clone();
+
         let audio_tx_data = self
             .audio_channel
             .as_ref()
             .map(|audio_channel| audio_channel.tx_data.clone());
-        self.playing = !config.pause_on_launch;
-        let emu_shared_state = Arc::new(emu::SharedState {
-            playing: AtomicBool::new(self.playing),
-            limit_framerate: AtomicBool::new(self.limit_framerate.value),
+
+        #[cfg(feature = "gdb-server")]
+        let gdb_server_addr = self.global_config.contents.gdb_server_addr;
+
+        let (message_tx, message_rx) = crossbeam_channel::unbounded::<emu::Message>();
+
+        let shared_state = Arc::new(emu::SharedState {
+            playing: AtomicBool::new(playing),
+            limit_framerate: AtomicBool::new(self.current_config.limit_framerate.value),
             autosave_interval: RwLock::new(Duration::from_secs_f32(
                 config.autosave_interval_ms.value / 1000.0,
             )),
@@ -291,35 +454,63 @@ impl UiState {
             #[cfg(feature = "gdb-server")]
             gdb_server_active: AtomicBool::new(false),
         });
-        self.emu_shared_state = Some(Arc::clone(&emu_shared_state));
-        #[cfg(feature = "gdb-server")]
-        let gdb_server_addr = self.global_config.contents.gdb_server_addr;
-        self.emu_thread = Some(
-            thread::Builder::new()
-                .name("emulation".to_string())
-                .spawn(move || {
-                    emu::main(
-                        config,
-                        cur_save_path,
-                        ds_slot,
-                        audio_tx_data,
-                        frame_tx,
-                        message_rx,
-                        emu_shared_state,
-                        #[cfg(feature = "gdb-server")]
-                        gdb_server_addr,
-                        #[cfg(feature = "log")]
-                        logger,
-                    )
-                })
-                .expect("Couldn't spawn emulation thread"),
-        );
+        let shared_state_ = Arc::clone(&shared_state);
+
+        let thread = thread::Builder::new()
+            .name("emulation".to_string())
+            .spawn(move || {
+                emu::main(
+                    config,
+                    cur_save_path,
+                    ds_slot,
+                    audio_tx_data,
+                    frame_tx,
+                    message_rx,
+                    shared_state_,
+                    #[cfg(feature = "gdb-server")]
+                    gdb_server_addr,
+                    #[cfg(feature = "log")]
+                    logger,
+                )
+            })
+            .expect("Couldn't spawn emulation thread");
 
         #[cfg(feature = "debug-views")]
         self.debug_views.reload_emu_state();
+
+        self.emu_state = Some(EmuState {
+            playing,
+            game_config,
+            game_title,
+            message_tx,
+            thread,
+            shared_state,
+        });
+
+        #[cfg(feature = "discord-presence")]
+        {
+            self.presence.state = Some(format!("Playing {}", game_title));
+            self.presence.timestamps = Some(discord_rpc::Timestamps {
+                start: Some(SystemTime::now()),
+                end: None,
+            });
+            self.presence_updated = true;
+        }
     }
 
     fn stop(&mut self) {
+        if let Some(emu) = self.emu_state.take() {
+            emu.shared_state.stopped.store(true, Ordering::Relaxed);
+            self.frame_tx = Some(emu.thread.join().expect("Couldn't join emulation thread"));
+
+            if let Some(mut game_config) = emu.game_config {
+                if let Some(dir_path) = game_config.path.as_ref().and_then(|p| p.parent()) {
+                    let _ = fs::create_dir_all(dir_path);
+                }
+                let _ = game_config.flush();
+            }
+        }
+
         #[cfg(feature = "discord-presence")]
         {
             self.presence.state = Some("Not playing anything".to_string());
@@ -330,17 +521,11 @@ impl UiState {
             self.presence_updated = true;
         }
 
-        if let Some(emu_thread) = self.emu_thread.take() {
-            self.emu_shared_state
-                .take()
-                .unwrap()
-                .stopped
-                .store(true, Ordering::Relaxed);
-            self.frame_tx = Some(emu_thread.join().expect("Couldn't join emulation thread"));
-        }
+        self.current_config = CurrentConfig::from_global(&self.global_config);
 
         #[cfg(feature = "debug-views")]
         self.debug_views.clear_frame_data();
+
         triple_buffer::reset(
             (self.frame_tx.as_mut().unwrap(), &mut self.frame_rx),
             |frame_data| {
@@ -354,15 +539,13 @@ impl UiState {
                 }
             },
         );
+    }
 
-        if let Some(mut game_config) = self.game_config.take() {
-            if let Some(dir_path) = game_config.path.as_ref().and_then(|p| p.parent()) {
-                let _ = fs::create_dir_all(dir_path);
-            }
-            let _ = game_config.flush();
+    fn playing(&self) -> bool {
+        match &self.emu_state {
+            Some(emu) => emu.playing,
+            None => false,
         }
-        self.game_title = None;
-        self.playing = false;
     }
 
     fn set_touchscreen_bounds(
@@ -397,10 +580,9 @@ impl UiState {
     fn update_window_title(&self, window: &window::Window) {
         if !cfg!(target_os = "macos") || self.show_menu_bar {
             let mut buffer = "Dust - ".to_string();
-            if let Some(game_title) = &self.game_title {
-                buffer.push_str(game_title);
+            if let Some(emu) = &self.emu_state {
+                buffer.push_str(&emu.game_title);
                 if let Some(fps_fixed) = self.fps_fixed {
-                    use core::fmt::Write;
                     let _ = write!(buffer, " - {:.01} FPS", fps_fixed as f32 / 10.0);
                 }
             } else {
@@ -510,7 +692,7 @@ pub fn main() {
     #[cfg(feature = "log")]
     let mut imgui_log = None;
     #[cfg(feature = "log")]
-    let logger = init_logging(
+    let logger = logging::init(
         &mut imgui_log,
         global_config.contents.logging_kind,
         global_config.contents.imgui_log_history_capacity,
@@ -528,7 +710,10 @@ pub fn main() {
         global_config.contents.audio_interp_method,
         global_config.contents.audio_volume,
         #[cfg(feature = "xq-audio")]
-        global_config.contents.audio_xq_sample_rate_shift,
+        adjust_custom_sample_rate(NonZeroU32::new(
+            global_config.contents.audio_custom_sample_rate,
+        ))
+        .1,
     );
 
     let (frame_tx, frame_rx) = triple_buffer::init([
@@ -536,8 +721,6 @@ pub fn main() {
         FrameData::default(),
         FrameData::default(),
     ]);
-
-    let (message_tx, message_rx) = crossbeam_channel::unbounded::<emu::Message>();
 
     let fb_texture_id = {
         let texture = window_builder.window.gfx.imgui.create_texture(
@@ -577,35 +760,20 @@ pub fn main() {
     clear_fb_texture(fb_texture_id, &mut window_builder.window);
 
     let mut state = UiState {
-        game_title: None,
-        game_config: None,
         game_db,
 
-        playing: false,
-        limit_framerate: config::RuntimeModifiable::global(global_config.contents.limit_framerate),
-        screen_rotation: config::RuntimeModifiable::global(global_config.contents.screen_rotation),
+        current_config: CurrentConfig::from_global(&global_config),
+        global_config,
 
+        emu_state: None,
+
+        show_menu_bar: true,
         screen_focused: true,
+
         input: input::State::new(keymap),
         input_editor: None,
 
         audio_channel,
-        audio_volume: global_config.contents.audio_volume,
-        audio_sample_chunk_size: global_config.contents.audio_sample_chunk_size,
-        #[cfg(feature = "xq-audio")]
-        audio_xq_sample_rate_shift: config::RuntimeModifiable::global(
-            global_config.contents.audio_xq_sample_rate_shift,
-        ),
-        #[cfg(feature = "xq-audio")]
-        audio_xq_interp_method: config::RuntimeModifiable::global(
-            global_config.contents.audio_xq_interp_method,
-        ),
-        audio_interp_method: config::RuntimeModifiable::global(
-            global_config.contents.audio_interp_method,
-        ),
-        sync_to_audio: config::RuntimeModifiable::global(global_config.contents.sync_to_audio),
-
-        show_menu_bar: true,
 
         #[cfg(feature = "log")]
         imgui_log,
@@ -619,14 +787,6 @@ pub fn main() {
 
         #[cfg(feature = "debug-views")]
         debug_views: debug_views::UiState::new(),
-
-        message_tx,
-        message_rx,
-
-        emu_thread: None,
-        emu_shared_state: None,
-
-        global_config,
 
         #[cfg(feature = "discord-presence")]
         rpc_connection: discord_rpc::Rpc::new(
@@ -671,14 +831,8 @@ pub fn main() {
                 state.flush_presence();
             }
 
-            if state.emu_thread.is_some() {
-                if state
-                    .emu_shared_state
-                    .as_ref()
-                    .unwrap()
-                    .stopped
-                    .load(Ordering::Relaxed)
-                {
+            if let Some(emu) = &mut state.emu_state {
+                if emu.shared_state.stopped.load(Ordering::Relaxed) {
                     state.stop();
                     clear_fb_texture(state.fb_texture_id, window);
                 } else if let Ok(frame) = state.frame_rx.get() {
@@ -689,7 +843,7 @@ pub fn main() {
 
                     let fb_texture = window.gfx.imgui.texture_mut(state.fb_texture_id);
                     let data = unsafe {
-                        core::slice::from_raw_parts(
+                        slice::from_raw_parts(
                             frame.fb.0.as_ptr() as *const u8,
                             SCREEN_WIDTH * SCREEN_HEIGHT * 8,
                         )
@@ -707,9 +861,11 @@ pub fn main() {
                 }
             }
 
-            if state.playing {
-                if let Some(changes) = state.input.drain_changes() {
-                    state.send_message(emu::Message::UpdateInput(changes));
+            if let Some(emu) = &mut state.emu_state {
+                if emu.playing {
+                    if let Some(changes) = state.input.drain_changes() {
+                        emu.send_message(emu::Message::UpdateInput(changes));
+                    }
                 }
             }
 
@@ -747,29 +903,29 @@ pub fn main() {
 
                     ui.menu("Emulation", || {
                         if ui
-                            .menu_item_config(if state.playing { "Pause" } else { "Play" })
-                            .enabled(state.emu_thread.is_some())
+                            .menu_item_config(if state.playing() { "Pause" } else { "Play" })
+                            .enabled(state.emu_state.is_some())
                             .build()
                         {
-                            let shared_state = state.emu_shared_state.as_mut().unwrap();
-                            state.playing = !state.playing;
-                            shared_state.playing.store(state.playing, Ordering::Relaxed);
+                            let emu = state.emu_state.as_mut().unwrap();
+                            emu.playing = !emu.playing;
+                            emu.shared_state
+                                .playing
+                                .store(emu.playing, Ordering::Relaxed);
                         }
 
                         if ui
                             .menu_item_config("Reset")
-                            .enabled(state.emu_thread.is_some())
+                            .enabled(state.emu_state.is_some())
                             .build()
                         {
-                            state
-                                .message_tx
-                                .send(emu::Message::Reset)
-                                .expect("Couldn't send UI message");
+                            let emu = state.emu_state.as_mut().unwrap();
+                            emu.send_message(emu::Message::Reset);
                         }
 
                         if ui
                             .menu_item_config("Stop")
-                            .enabled(state.emu_thread.is_some())
+                            .enabled(state.emu_state.is_some())
                             .build()
                         {
                             state.stop();
@@ -792,113 +948,119 @@ pub fn main() {
 
                     ui.menu("Config", || {
                         ui.menu("Audio volume", || {
-                            let mut volume = state.audio_volume * 100.0;
+                            let mut volume = state.current_config.audio_volume.value * 100.0;
                             if ui
                                 .slider_config("##audio_volume", 0.0, 100.0)
                                 .display_format("%.02f%%")
                                 .build(&mut volume)
                             {
-                                state.audio_volume =
-                                    (volume * 100.0).round().clamp(0.0, 10000.0) / 10000.0;
-                                if let Some(audio_channel) = state.audio_channel.as_mut() {
-                                    audio_channel.output_stream.set_volume(state.audio_volume)
-                                }
-                                state.global_config.contents.audio_volume = state.audio_volume;
-                                state.global_config.dirty = true;
+                                let volume = (volume * 100.0).round().clamp(0.0, 10000.0) / 10000.0;
+                                update_setting_value!(
+                                    state,
+                                    audio_volume,
+                                    volume,
+                                    UiState::update_audio_volume
+                                );
                             }
                         });
 
                         ui.menu("Audio sample chunk size", || {
-                            let mut sample_chunk_size = state.audio_sample_chunk_size as i32;
+                            let mut audio_sample_chunk_size =
+                                state.current_config.audio_sample_chunk_size.value;
                             if ui
-                                .input_int("##audio_sample_chunk_size", &mut sample_chunk_size)
+                                .input_scalar(
+                                    "##audio_sample_chunk_size",
+                                    &mut audio_sample_chunk_size,
+                                )
                                 .enter_returns_true(true)
                                 .build()
                             {
-                                state.audio_sample_chunk_size = sample_chunk_size.max(0) as u32;
-                                state
-                                    .message_tx
-                                    .send(emu::Message::UpdateAudioSampleChunkSize(
-                                        state.audio_sample_chunk_size,
-                                    ))
-                                    .expect("Couldn't send UI message");
-                                state.global_config.contents.audio_sample_chunk_size =
-                                    state.audio_sample_chunk_size;
-                                state.global_config.dirty = true;
+                                update_setting_value!(
+                                    state,
+                                    audio_sample_chunk_size,
+                                    audio_sample_chunk_size,
+                                    UiState::update_audio_sample_chunk_size
+                                );
                             }
                         });
 
                         #[cfg(feature = "xq-audio")]
                         ui.menu("Core audio interpolation", || {
-                            if ui
-                                .slider_config("Sample rate multiplier", 0, 10)
-                                .display_format(&format!(
-                                    "{}x",
-                                    1 << state.audio_xq_sample_rate_shift.value
-                                ))
-                                .build(&mut state.audio_xq_sample_rate_shift.value)
-                            {
-                                if let Some(audio_channel) = state.audio_channel.as_mut() {
-                                    audio_channel.set_xq_sample_rate_shift(
-                                        state.audio_xq_sample_rate_shift.value,
-                                    );
-                                }
-                                state
-                                    .message_tx
-                                    .send(emu::Message::UpdateAudioXqSampleRateShift(
-                                        state.audio_xq_sample_rate_shift.value,
-                                    ))
-                                    .expect("Couldn't send UI message");
-                                if state.audio_xq_sample_rate_shift.origin
-                                    == config::SettingOrigin::Game
-                                {
-                                    let game_config = state.game_config.as_mut().unwrap();
-                                    game_config.contents.audio_xq_sample_rate_shift =
-                                        Some(state.audio_xq_sample_rate_shift.value);
-                                    game_config.dirty = true;
-                                }
-                                state.global_config.contents.audio_xq_sample_rate_shift =
-                                    state.audio_xq_sample_rate_shift.value;
-                                state.global_config.dirty = true;
+                            let mut audio_custom_sample_rate_enabled = state
+                                .current_config
+                                .audio_custom_sample_rate
+                                .value
+                                .0
+                                .is_some();
+                            let mut raw_audio_custom_sample_rate =
+                                match state.current_config.audio_custom_sample_rate.value.0 {
+                                    Some(value) => value.get(),
+                                    None => 0,
+                                };
+                            let mut audio_custom_sample_rate_changed = false;
+                            if ui.checkbox(
+                                "Custom sample rate",
+                                &mut audio_custom_sample_rate_enabled,
+                            ) {
+                                audio_custom_sample_rate_changed = true;
+                                raw_audio_custom_sample_rate = if audio_custom_sample_rate_enabled {
+                                    (audio::DEFAULT_INPUT_SAMPLE_RATE as f64
+                                        * audio::SAMPLE_RATE_ADJUSTMENT_RATIO)
+                                        .round() as u32
+                                } else {
+                                    0
+                                };
                             }
 
-                            static INTERP_METHODS: [AudioXqInterpMethod; 2] =
-                                [AudioXqInterpMethod::Nearest, AudioXqInterpMethod::Cubic];
+                            if audio_custom_sample_rate_enabled {
+                                audio_custom_sample_rate_changed |= ui
+                                    .slider_config("Sample rate", 32768, 131072)
+                                    .display_format("%d Hz")
+                                    .build(&mut raw_audio_custom_sample_rate)
+                            }
+
+                            if audio_custom_sample_rate_changed {
+                                let audio_custom_sample_rate = adjust_custom_sample_rate(
+                                    NonZeroU32::new(raw_audio_custom_sample_rate),
+                                );
+                                update_setting_value!(
+                                    state,
+                                    audio_custom_sample_rate,
+                                    audio_custom_sample_rate,
+                                    UiState::update_audio_custom_sample_rate,
+                                    |_value| raw_audio_custom_sample_rate
+                                );
+                            }
+
+                            static INTERP_METHODS: [AudioChannelInterpMethod; 2] = [
+                                AudioChannelInterpMethod::Nearest,
+                                AudioChannelInterpMethod::Cubic,
+                            ];
                             let mut i = INTERP_METHODS
                                 .iter()
-                                .position(|&m| m == state.audio_xq_interp_method.value)
+                                .position(|&m| {
+                                    m == state.current_config.audio_channel_interp_method.value
+                                })
                                 .unwrap();
-                            let updated = ui.combo(
+                            if ui.combo(
                                 "Interpolation method",
                                 &mut i,
                                 &INTERP_METHODS,
                                 |interp_method| {
                                     match interp_method {
-                                        AudioXqInterpMethod::Nearest => "Nearest",
-                                        AudioXqInterpMethod::Cubic => "Cubic",
+                                        AudioChannelInterpMethod::Nearest => "Nearest",
+                                        AudioChannelInterpMethod::Cubic => "Cubic",
                                     }
                                     .into()
                                 },
-                            );
-                            if updated {
-                                state.audio_xq_interp_method.value = INTERP_METHODS[i];
-                                state
-                                    .message_tx
-                                    .send(emu::Message::UpdateAudioXqInterpMethod(
-                                        state.audio_xq_interp_method.value,
-                                    ))
-                                    .expect("Couldn't send UI message");
-                                if state.audio_xq_interp_method.origin
-                                    == config::SettingOrigin::Game
-                                {
-                                    let game_config = state.game_config.as_mut().unwrap();
-                                    game_config.contents.audio_xq_interp_method =
-                                        Some(state.audio_xq_interp_method.value);
-                                    game_config.dirty = true;
-                                }
-                                state.global_config.contents.audio_xq_interp_method =
-                                    state.audio_xq_interp_method.value;
-                                state.global_config.dirty = true;
+                            ) {
+                                let audio_channel_interp_method = INTERP_METHODS[i];
+                                update_setting_value!(
+                                    state,
+                                    audio_channel_interp_method,
+                                    audio_channel_interp_method,
+                                    UiState::update_audio_channel_interp_method
+                                );
                             }
                         });
 
@@ -907,9 +1069,9 @@ pub fn main() {
                                 [audio::InterpMethod::Nearest, audio::InterpMethod::Cubic];
                             let mut i = INTERP_METHODS
                                 .iter()
-                                .position(|&m| m == state.audio_interp_method.value)
+                                .position(|&m| m == state.current_config.audio_interp_method.value)
                                 .unwrap();
-                            let updated = ui.combo(
+                            if ui.combo(
                                 "##audio_interp_method",
                                 &mut i,
                                 &INTERP_METHODS,
@@ -920,60 +1082,45 @@ pub fn main() {
                                     }
                                     .into()
                                 },
-                            );
-                            if updated {
-                                state.audio_interp_method.value = INTERP_METHODS[i];
-                                if let Some(audio_channel) = state.audio_channel.as_mut() {
-                                    audio_channel.output_stream.set_interp(
-                                        state.audio_interp_method.value.create_interp(),
-                                    );
-                                }
-                                if state.audio_interp_method.origin == config::SettingOrigin::Game {
-                                    let game_config = state.game_config.as_mut().unwrap();
-                                    game_config.contents.audio_interp_method =
-                                        Some(state.audio_interp_method.value);
-                                    game_config.dirty = true;
-                                }
-                                state.global_config.contents.audio_interp_method =
-                                    state.audio_interp_method.value;
-                                state.global_config.dirty = true;
+                            ) {
+                                let audio_interp_method = INTERP_METHODS[i];
+                                update_setting_value!(
+                                    state,
+                                    audio_interp_method,
+                                    audio_interp_method,
+                                    UiState::update_audio_interp_method
+                                );
                             }
                         });
 
+                        let mut limit_framerate = state.current_config.limit_framerate.value;
                         if ui
                             .menu_item_config("Limit framerate")
-                            .build_with_ref(&mut state.limit_framerate.value)
+                            .build_with_ref(&mut limit_framerate)
                         {
-                            if let Some(shared_state) = &state.emu_shared_state {
-                                shared_state
-                                    .limit_framerate
-                                    .store(state.limit_framerate.value, Ordering::Relaxed);
-                            }
-                            if state.limit_framerate.origin == config::SettingOrigin::Game {
-                                let game_config = state.game_config.as_mut().unwrap();
-                                game_config.contents.limit_framerate =
-                                    Some(state.limit_framerate.value);
-                                game_config.dirty = true;
-                            }
-                            state.global_config.contents.limit_framerate =
-                                state.limit_framerate.value;
-                            state.global_config.dirty = true;
+                            update_setting_value!(
+                                state,
+                                limit_framerate,
+                                limit_framerate,
+                                UiState::update_limit_framerate
+                            );
                         }
 
                         ui.menu("Screen rotation", || {
-                            let mut screen_rot = state.screen_rotation.value as i32;
+                            let mut screen_rotation =
+                                state.current_config.screen_rotation.value as i32;
                             if ui
-                                .input_int("##screen_rot", &mut screen_rot)
+                                .input_int("##screen_rot", &mut screen_rotation)
                                 .step(1)
                                 .build()
                             {
-                                screen_rot = screen_rot.clamp(0, 359);
+                                screen_rotation = screen_rotation.clamp(0, 359);
                             }
                             macro_rules! buttons {
                                 ($($value: expr),*) => {
                                     $(
                                         if ui.button(stringify!($value)) {
-                                            screen_rot = $value;
+                                            screen_rotation = $value;
                                         }
                                         ui.same_line();
                                     )*
@@ -981,36 +1128,28 @@ pub fn main() {
                                 };
                             }
                             buttons!(0, 90, 180, 270);
-                            if screen_rot != state.screen_rotation.value as i32 {
-                                state.screen_rotation.value = screen_rot as i16;
-                                if state.screen_rotation.origin == config::SettingOrigin::Game {
-                                    let game_config = state.game_config.as_mut().unwrap();
-                                    game_config.contents.screen_rotation =
-                                        Some(state.screen_rotation.value);
-                                    game_config.dirty = true;
-                                }
-                                state.global_config.contents.screen_rotation =
-                                    state.screen_rotation.value;
-                                state.global_config.dirty = true;
+                            if screen_rotation != state.current_config.screen_rotation.value as i32
+                            {
+                                update_setting_value!(
+                                    state,
+                                    screen_rotation,
+                                    screen_rotation as i16,
+                                    UiState::update_screen_rotation
+                                );
                             }
                         });
 
+                        let mut sync_to_audio = state.current_config.sync_to_audio.value;
                         if ui
                             .menu_item_config("Sync to audio")
-                            .build_with_ref(&mut state.sync_to_audio.value)
+                            .build_with_ref(&mut sync_to_audio)
                         {
-                            state
-                                .message_tx
-                                .send(emu::Message::UpdateAudioSync(state.sync_to_audio.value))
-                                .expect("Couldn't send UI message");
-                            if state.sync_to_audio.origin == config::SettingOrigin::Game {
-                                let game_config = state.game_config.as_mut().unwrap();
-                                game_config.contents.sync_to_audio =
-                                    Some(state.sync_to_audio.value);
-                                game_config.dirty = true;
-                            }
-                            state.global_config.contents.sync_to_audio = state.sync_to_audio.value;
-                            state.global_config.dirty = true;
+                            update_setting_value!(
+                                state,
+                                sync_to_audio,
+                                sync_to_audio,
+                                UiState::update_sync_to_audio
+                            );
                         }
 
                         if ui
@@ -1053,9 +1192,11 @@ pub fn main() {
                     if cfg!(any(feature = "debug-views", feature = "gdb-server"))
                         || imgui_log_enabled
                     {
+                        #[allow(unused_assignments)]
                         ui.menu("Debug", || {
                             #[allow(unused_mut, unused_variables)]
                             let mut separator_needed = false;
+
                             #[cfg(feature = "log")]
                             if let Some((_, _, console_visible)) = &mut state.imgui_log {
                                 ui.menu_item_config("Log").build_with_ref(console_visible);
@@ -1129,12 +1270,11 @@ pub fn main() {
             #[cfg(feature = "debug-views")]
             for message in state
                 .debug_views
-                .render(ui, window, state.emu_thread.is_some())
+                .render(ui, window, state.emu_state.is_some())
             {
-                state
-                    .message_tx
-                    .send(emu::Message::DebugViews(message))
-                    .expect("Couldn't send UI message");
+                if let Some(emu) = &state.emu_state {
+                    emu.send_message(emu::Message::DebugViews(message));
+                }
             }
 
             if let Some(input_editor) = &mut state.input_editor {
@@ -1146,7 +1286,7 @@ pub fn main() {
             }
 
             let window_size = window.window.inner_size();
-            let screen_rot = (state.screen_rotation.value as f32).to_radians();
+            let screen_rot = (state.current_config.screen_rotation.value as f32).to_radians();
             if state.global_config.contents.fullscreen_render {
                 let (center, points) = scale_to_fit_rotated(
                     [SCREEN_WIDTH as f32, (2 * SCREEN_HEIGHT) as f32],

@@ -5,8 +5,7 @@ use cocoa::{
     base::id,
     foundation::NSRect,
 };
-use core::{iter, mem::ManuallyDrop};
-use std::{path::PathBuf, time::Instant};
+use std::{iter, mem::ManuallyDrop, path::PathBuf, time::Instant};
 #[cfg(target_os = "macos")]
 use winit::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 use winit::{

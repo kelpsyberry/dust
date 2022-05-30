@@ -1,3 +1,5 @@
+use std::{iter, ops};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RangeInclusive<Idx> {
     pub start: Idx,
@@ -41,9 +43,9 @@ impl<Idx> From<RangeInclusive<Idx>> for (Idx, Idx) {
 
 impl<Idx> IntoIterator for RangeInclusive<Idx>
 where
-    Idx: core::iter::Step,
+    Idx: iter::Step,
 {
-    type IntoIter = core::ops::RangeInclusive<Idx>;
+    type IntoIter = ops::RangeInclusive<Idx>;
     type Item = Idx;
     #[inline]
     fn into_iter(self) -> Self::IntoIter {

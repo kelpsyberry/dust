@@ -2,7 +2,7 @@ use super::{
     y_pos::{SignedYPos, YPos, YPosRaw},
     RangeInclusive, Scrollbar,
 };
-use core::{fmt::Write, num::NonZeroU8};
+use std::{fmt::Write, num::NonZeroU8};
 use imgui::{Key, MouseButton, StyleColor, StyleVar, Ui, WindowFocusedFlags};
 
 bitflags::bitflags! {
