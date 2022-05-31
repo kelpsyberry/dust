@@ -1,6 +1,6 @@
 use super::PressedKey;
-use std::{fmt::Write, str::FromStr};
 use serde::{Deserialize, Serialize};
+use std::{fmt::Write, str::FromStr};
 use winit::event::{ScanCode, VirtualKeyCode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,10 +23,17 @@ pub enum Trigger {
 }
 
 impl Trigger {
-    pub(super) fn activated(&self, pressed_keys: &[PressedKey]) -> bool {
+    pub(super) fn activated<'a>(
+        &self,
+        pressed_keys: impl IntoIterator<Item = &'a PressedKey> + Copy,
+    ) -> bool {
         match self {
-            Trigger::KeyCode(keycode) => pressed_keys.iter().any(|key| key.0 == Some(*keycode)),
-            Trigger::ScanCode(scancode, _) => pressed_keys.iter().any(|key| key.1 == *scancode),
+            Trigger::KeyCode(keycode) => {
+                pressed_keys.into_iter().any(|key| key.0 == Some(*keycode))
+            }
+            Trigger::ScanCode(scancode, _) => {
+                pressed_keys.into_iter().any(|key| key.1 == *scancode)
+            }
             Trigger::Not(trigger) => !trigger.activated(pressed_keys),
             Trigger::Chain(op, triggers) => match op {
                 Op::And => triggers
@@ -112,18 +119,34 @@ impl FromStr for Trigger {
             let mut negate = false;
             let mut operator = None;
             let mut values = Vec::new();
+
             loop {
                 *s = s.trim_start();
 
                 let mut char_indices = s.char_indices();
                 let next_char = char_indices.next().map(|(_, c)| c);
+
+                if next_char == Some(')') || next_char.is_none() {
+                    if let Some(operator) = operator {
+                        if values.len() <= 1 {
+                            return Err(());
+                        }
+                        return Ok(Trigger::Chain(operator, values));
+                    } else {
+                        if values.len() != 1 {
+                            return Err(());
+                        }
+                        return Ok(values.remove(0));
+                    }
+                }
+
                 if let Some((new_start_index, _)) = char_indices.next() {
                     *s = &s[new_start_index..];
                 }
 
                 let value = match next_char {
                     Some('!') => {
-                        negate = true;
+                        negate = !negate;
                         continue;
                     }
 
@@ -171,22 +194,8 @@ impl FromStr for Trigger {
 
                     Some('(') => {
                         let value = parse_value(s)?;
-                        *s = s.strip_prefix(')').unwrap_or(s);
+                        *s = s.strip_prefix(')').ok_or(())?;
                         value
-                    }
-
-                    Some(')') | None => {
-                        if let Some(operator) = operator {
-                            if values.len() <= 1 {
-                                return Err(());
-                            }
-                            return Ok(Trigger::Chain(operator, values));
-                        } else {
-                            if values.len() != 1 {
-                                return Err(());
-                            }
-                            return Ok(values.remove(0));
-                        }
                     }
 
                     _ => return Err(()),

@@ -314,6 +314,42 @@ impl UiState {
 }
 
 impl UiState {
+    fn play_pause(&mut self) {
+        if let Some(emu) = &mut self.emu_state {
+            emu.playing = !emu.playing;
+            emu.shared_state
+                .playing
+                .store(emu.playing, Ordering::Relaxed);
+        }
+    }
+
+    fn reset(&mut self) {
+        if let Some(emu) = &mut self.emu_state {
+            emu.send_message(emu::Message::Reset);
+        }
+    }
+
+    fn toggle_fullscreen_render(&mut self, value: bool) {
+        self.global_config.contents.fullscreen_render = value;
+        self.global_config.dirty = true;
+        self.show_menu_bar = !self.global_config.contents.fullscreen_render;
+    }
+
+    fn toggle_audio_sync(&mut self, value: bool) {
+        update_setting_value!(self, sync_to_audio, value, UiState::update_sync_to_audio);
+    }
+
+    fn toggle_framerate_limit(&mut self, value: bool) {
+        update_setting_value!(
+            self,
+            limit_framerate,
+            value,
+            UiState::update_limit_framerate
+        );
+    }
+}
+
+impl UiState {
     fn load_from_rom_path(&mut self, path: &Path) {
         if let Some(extension) = path.extension().and_then(|s| s.to_str()) {
             if !ALLOWED_ROM_EXTENSIONS.contains(&extension) {
@@ -529,7 +565,7 @@ impl UiState {
                 }
             },
         );
-        
+
         #[cfg(feature = "discord-presence")]
         {
             self.presence.state = Some("Not playing anything".to_string());
@@ -861,9 +897,37 @@ pub fn main() {
                 }
             }
 
-            if let Some(emu) = &mut state.emu_state {
-                if emu.playing {
-                    if let Some(changes) = state.input.drain_changes() {
+            let (input_actions, emu_input_changes) =
+                state
+                    .input
+                    .drain_changes(if let Some(emu) = &state.emu_state {
+                        emu.playing
+                    } else {
+                        false
+                    });
+
+            for action in input_actions {
+                match action {
+                    input::Action::PlayPause => state.play_pause(),
+                    input::Action::Reset => state.reset(),
+                    input::Action::Stop => {
+                        state.stop();
+                        clear_fb_texture(state.fb_texture_id, window);
+                    }
+                    input::Action::ToggleFullscreenRender => state
+                        .toggle_fullscreen_render(!state.global_config.contents.fullscreen_render),
+                    input::Action::ToggleAudioSync => {
+                        state.toggle_audio_sync(!state.current_config.sync_to_audio.value)
+                    }
+                    input::Action::ToggleFramerateLimit => {
+                        state.toggle_framerate_limit(!state.current_config.limit_framerate.value)
+                    }
+                }
+            }
+
+            if let Some(changes) = emu_input_changes {
+                if let Some(emu) = &mut state.emu_state {
+                    if emu.playing {
                         emu.send_message(emu::Message::UpdateInput(changes));
                     }
                 }
@@ -907,11 +971,7 @@ pub fn main() {
                             .enabled(state.emu_state.is_some())
                             .build()
                         {
-                            let emu = state.emu_state.as_mut().unwrap();
-                            emu.playing = !emu.playing;
-                            emu.shared_state
-                                .playing
-                                .store(emu.playing, Ordering::Relaxed);
+                            state.play_pause();
                         }
 
                         if ui
@@ -919,8 +979,7 @@ pub fn main() {
                             .enabled(state.emu_state.is_some())
                             .build()
                         {
-                            let emu = state.emu_state.as_mut().unwrap();
-                            emu.send_message(emu::Message::Reset);
+                            state.reset();
                         }
 
                         if ui
@@ -1098,12 +1157,7 @@ pub fn main() {
                             .menu_item_config("Limit framerate")
                             .build_with_ref(&mut limit_framerate)
                         {
-                            update_setting_value!(
-                                state,
-                                limit_framerate,
-                                limit_framerate,
-                                UiState::update_limit_framerate
-                            );
+                            state.toggle_framerate_limit(limit_framerate);
                         }
 
                         ui.menu("Screen rotation", || {
@@ -1144,20 +1198,16 @@ pub fn main() {
                             .menu_item_config("Sync to audio")
                             .build_with_ref(&mut sync_to_audio)
                         {
-                            update_setting_value!(
-                                state,
-                                sync_to_audio,
-                                sync_to_audio,
-                                UiState::update_sync_to_audio
-                            );
+                            state.toggle_audio_sync(sync_to_audio);
                         }
 
                         if ui
                             .menu_item_config("Fullscreen render")
                             .build_with_ref(&mut state.global_config.contents.fullscreen_render)
                         {
-                            state.global_config.dirty = true;
-                            state.show_menu_bar = !state.global_config.contents.fullscreen_render;
+                            state.toggle_fullscreen_render(
+                                state.global_config.contents.fullscreen_render,
+                            );
                         }
 
                         state.global_config.dirty |= ui
