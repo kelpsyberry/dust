@@ -5,11 +5,9 @@
     // rustc_attrs,
     adt_const_params,
     doc_cfg,
-    step_trait,
     maybe_uninit_uninit_array,
     maybe_uninit_slice,
     label_break_value,
-    result_into_ok_or_err,
     portable_simd
 )]
 #![warn(clippy::pedantic)]

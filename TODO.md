@@ -88,6 +88,7 @@
 - IO register unused bit behavior
 
 # Missing functionality
+- Finished 3D rendering
 - Wi-Fi
 - RTC alarms
 - KEYCNT
@@ -99,3 +100,15 @@
 - GBA slot
 - Absent SIO (even if there's no actual functionality, all ports should still work)
 - GBA mode
+
+# Non-essential but wanted additions
+
+## Core
+- HLE BIOS
+- Savestates
+
+## Frontends
+- Hardware 3D renderer
+- Configuration editor
+- General UI polish
+- Savestate selection and management UI

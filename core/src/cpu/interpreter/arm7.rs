@@ -63,12 +63,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
         ($mask: expr) => {
             #[cfg(feature = "debugger-hooks")]
             if !emu.arm7.debug.breakpoints.is_empty() {
-                let i = emu
-                    .arm7
-                    .debug
-                    .breakpoints
-                    .binary_search(&addr)
-                    .into_ok_or_err();
+                let (Ok(i) | Err(i)) = emu.arm7.debug.breakpoints.binary_search(&addr);
                 emu.arm7.engine_data.next_breakpoint_addr =
                     emu.arm7.debug.breakpoints[if i >= emu.arm7.debug.breakpoints.len() {
                         0

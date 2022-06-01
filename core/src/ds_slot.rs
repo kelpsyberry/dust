@@ -70,7 +70,7 @@ bitfield_debug! {
 mod bounded {
     use crate::utils::bounded_int_lit;
     bounded_int_lit!(pub struct RomOutputLen(u16), max 0x4000);
-    bounded_int_lit!(pub struct RomOutputPos(u16), max 0x3FFC);
+    bounded_int_lit!(pub struct RomOutputPos(u16), max 0x3FFC, mask 0x3FFC);
 }
 pub use bounded::{RomOutputLen, RomOutputPos};
 

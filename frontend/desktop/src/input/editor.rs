@@ -4,7 +4,6 @@ use super::{
 };
 use dust_core::emu::input::Keys;
 use imgui::{MouseButton, StyleColor, TableFlags, Ui};
-use std::str::FromStr;
 use winit::event::{ElementState, Event, WindowEvent};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,9 +146,9 @@ impl Editor {
             State::Capturing { selection, .. } => self
                 .current_trigger
                 .take()
-                .map(|trigger| (trigger, selection)),
+                .map(|trigger| (Some(trigger), selection)),
             State::ManuallyChanging { selection, .. } => {
-                Trigger::from_str(&self.manual_change_buffer)
+                Trigger::option_from_str(&self.manual_change_buffer)
                     .ok()
                     .map(|trigger| (trigger, selection))
             }
@@ -159,11 +158,7 @@ impl Editor {
                     input_state.keymap.contents.keypad.insert(key, trigger);
                 }
                 Selection::Hotkey(action) => {
-                    input_state
-                        .keymap
-                        .contents
-                        .hotkeys
-                        .insert(action, Some(trigger));
+                    input_state.keymap.contents.hotkeys.insert(action, trigger);
                 }
             }
         }
@@ -181,7 +176,7 @@ impl Editor {
         ui.same_line();
 
         let trigger = match selection {
-            Selection::Keypad(key) => Some(&input_state.keymap.contents.keypad[&key]),
+            Selection::Keypad(key) => input_state.keymap.contents.keypad[&key].as_ref(),
             Selection::Hotkey(action) => input_state.keymap.contents.hotkeys[&action].as_ref(),
         };
 
@@ -206,7 +201,7 @@ impl Editor {
 
             if self.state.selection() == Some(selection) {
                 let _id = ui.push_id(&name);
-                
+
                 if self.state.drain_needs_focus() {
                     ui.set_keyboard_focus_here();
                 }

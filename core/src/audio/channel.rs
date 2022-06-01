@@ -112,14 +112,13 @@ mod bounded {
     bounded_int_lit!(pub struct Index(u8), max 15);
     bounded_int_lit!(pub struct WaveDuty(u8), max 7);
     bounded_int_lit!(pub struct FifoReadPos(u8), max 0x1F);
-    bounded_int_lit!(pub struct FifoWritePos(u8), max 0x1C);
+    bounded_int_lit!(pub struct FifoWritePos(u8), max 0x1C, mask 0x1C);
     bounded_int_lit!(pub struct AdpcmIndex(u8), max 88);
 }
 pub use bounded::*;
 
 static ADPCM_INDEX_TABLE: [i8; 8] = [-1, -1, -1, -1, 2, 4, 6, 8];
 
-#[rustfmt::skip]
 static ADPCM_TABLE: [u16; 89] = [
     0x0007, 0x0008, 0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x000E, 0x0010, 0x0011, 0x0013, 0x0015,
     0x0017, 0x0019, 0x001C, 0x001F, 0x0022, 0x0025, 0x0029, 0x002D, 0x0032, 0x0037, 0x003C, 0x0042,

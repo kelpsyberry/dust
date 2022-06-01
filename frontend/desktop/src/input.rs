@@ -177,7 +177,9 @@ impl State {
 
         let mut new_pressed_emu_keys = EmuKeys::empty();
         for (&emu_key, trigger) in &self.keymap.contents.keypad {
-            new_pressed_emu_keys.set(emu_key, trigger.activated(&self.pressed_keys));
+            if let Some(trigger) = trigger {
+                new_pressed_emu_keys.set(emu_key, trigger.activated(&self.pressed_keys));
+            }
         }
 
         let pressed = new_pressed_emu_keys & !self.pressed_emu_keys;

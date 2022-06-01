@@ -9,7 +9,7 @@ use serde::{
     ser::SerializeMap,
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use std::{fmt, hash::Hash, marker::PhantomData};
+use std::{fmt, hash::Hash};
 use winit::event::VirtualKeyCode;
 
 static KEY_IDENTS: &[(Keys, &str)] = &[
@@ -39,34 +39,34 @@ static ACTION_IDENTS: &[(Action, &str)] = &[
 
 #[derive(Clone, Debug)]
 pub struct Keymap {
-    pub keypad: FxHashMap<Keys, Trigger>,
+    pub keypad: FxHashMap<Keys, Option<Trigger>>,
     pub hotkeys: FxHashMap<Action, Option<Trigger>>,
 }
 
-fn default_keypad_map() -> FxHashMap<Keys, Trigger> {
+fn default_keypad_map() -> FxHashMap<Keys, Option<Trigger>> {
     [
-        (Keys::A, Trigger::KeyCode(VirtualKeyCode::X)),
-        (Keys::B, Trigger::KeyCode(VirtualKeyCode::Z)),
-        (Keys::X, Trigger::KeyCode(VirtualKeyCode::S)),
-        (Keys::Y, Trigger::KeyCode(VirtualKeyCode::A)),
-        (Keys::L, Trigger::KeyCode(VirtualKeyCode::Q)),
-        (Keys::R, Trigger::KeyCode(VirtualKeyCode::W)),
-        (Keys::START, Trigger::KeyCode(VirtualKeyCode::Return)),
+        (Keys::A, Some(Trigger::KeyCode(VirtualKeyCode::X))),
+        (Keys::B, Some(Trigger::KeyCode(VirtualKeyCode::Z))),
+        (Keys::X, Some(Trigger::KeyCode(VirtualKeyCode::S))),
+        (Keys::Y, Some(Trigger::KeyCode(VirtualKeyCode::A))),
+        (Keys::L, Some(Trigger::KeyCode(VirtualKeyCode::Q))),
+        (Keys::R, Some(Trigger::KeyCode(VirtualKeyCode::W))),
+        (Keys::START, Some(Trigger::KeyCode(VirtualKeyCode::Return))),
         (
             Keys::SELECT,
-            Trigger::Chain(
+            Some(Trigger::Chain(
                 trigger::Op::Or,
                 vec![
                     Trigger::KeyCode(VirtualKeyCode::LShift),
                     Trigger::KeyCode(VirtualKeyCode::RShift),
                 ],
-            ),
+            )),
         ),
-        (Keys::RIGHT, Trigger::KeyCode(VirtualKeyCode::Right)),
-        (Keys::LEFT, Trigger::KeyCode(VirtualKeyCode::Left)),
-        (Keys::UP, Trigger::KeyCode(VirtualKeyCode::Up)),
-        (Keys::DOWN, Trigger::KeyCode(VirtualKeyCode::Down)),
-        (Keys::DEBUG, Trigger::KeyCode(VirtualKeyCode::Tab)),
+        (Keys::RIGHT, Some(Trigger::KeyCode(VirtualKeyCode::Right))),
+        (Keys::LEFT, Some(Trigger::KeyCode(VirtualKeyCode::Left))),
+        (Keys::UP, Some(Trigger::KeyCode(VirtualKeyCode::Up))),
+        (Keys::DOWN, Some(Trigger::KeyCode(VirtualKeyCode::Down))),
+        (Keys::DEBUG, None),
     ]
     .into_iter()
     .collect()
@@ -123,16 +123,13 @@ impl Serialize for Keymap {
 
 impl<'de> Deserialize<'de> for Keymap {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct TriggerMapVisitor<T: 'static + Eq + Hash, U: 'static>(
+        struct TriggerMapVisitor<T: 'static + Eq + Hash>(
             &'static [(T, &'static str)],
             &'static str,
-            PhantomData<U>,
         );
 
-        impl<'de, T: 'static + Eq + Hash + Copy, U: 'static + Deserialize<'de>> Visitor<'de>
-            for TriggerMapVisitor<T, U>
-        {
-            type Value = FxHashMap<T, U>;
+        impl<'de, T: 'static + Eq + Hash + Copy> Visitor<'de> for TriggerMapVisitor<T> {
+            type Value = FxHashMap<T, Option<Trigger>>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str(self.1)
@@ -144,7 +141,7 @@ impl<'de> Deserialize<'de> for Keymap {
                     Default::default(),
                 );
 
-                while let Some((ident, value)) = access.next_entry::<&str, U>()? {
+                while let Some((ident, value)) = access.next_entry::<&str, Option<Trigger>>()? {
                     if let Some((key, _)) = self.0.iter().find(|(_, ident_)| *ident_ == ident) {
                         map.insert(*key, value);
                     }
@@ -154,7 +151,7 @@ impl<'de> Deserialize<'de> for Keymap {
             }
         }
 
-        struct DeserializedKeypadMap(FxHashMap<Keys, Trigger>);
+        struct DeserializedKeypadMap(FxHashMap<Keys, Option<Trigger>>);
 
         impl<'de> Deserialize<'de> for DeserializedKeypadMap {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -162,10 +159,9 @@ impl<'de> Deserialize<'de> for Keymap {
                 D: Deserializer<'de>,
             {
                 deserializer
-                    .deserialize_map(TriggerMapVisitor::<Keys, Trigger>(
+                    .deserialize_map(TriggerMapVisitor::<Keys>(
                         KEY_IDENTS,
                         "a map of triggers corresponding to keypad keys",
-                        PhantomData,
                     ))
                     .map(Self)
             }
@@ -179,10 +175,9 @@ impl<'de> Deserialize<'de> for Keymap {
                 D: Deserializer<'de>,
             {
                 deserializer
-                    .deserialize_map(TriggerMapVisitor::<Action, Option<Trigger>>(
+                    .deserialize_map(TriggerMapVisitor::<Action>(
                         ACTION_IDENTS,
                         "a map of triggers corresponding to action identifiers",
-                        PhantomData,
                     ))
                     .map(Self)
             }

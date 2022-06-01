@@ -22,7 +22,7 @@ bitfield_debug! {
 mod bounded {
     use crate::utils::bounded_int_lit;
     bounded_int_lit!(pub struct Index(u8), max 15);
-    bounded_int_lit!(pub struct FifoReadPos(u8), max 0x1C);
+    bounded_int_lit!(pub struct FifoReadPos(u8), max 0x1C, mask 0x1C);
     bounded_int_lit!(pub struct FifoWritePos(u8), max 0x1F);
 }
 pub use bounded::*;
