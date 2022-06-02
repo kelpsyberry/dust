@@ -311,7 +311,7 @@ pub fn swp(emu: &mut Emu<Engine>, instr: u32) {
     let dst_reg = instr >> 12 & 0xF;
     #[cfg(feature = "interp-r15-write-checks")]
     if unlikely(dst_reg == 15) {
-        unimplemented!("SWP r15 write");
+        unimplemented!("swp r15 write");
     }
     reg!(emu.arm7, dst_reg) = loaded_value;
 }
@@ -328,7 +328,7 @@ pub fn swpb(emu: &mut Emu<Engine>, instr: u32) {
     let dst_reg = instr >> 12 & 0xF;
     #[cfg(feature = "interp-r15-write-checks")]
     if unlikely(dst_reg == 15) {
-        unimplemented!("SWPB r15 write");
+        unimplemented!("swpb r15 write");
     }
     reg!(emu.arm7, dst_reg) = loaded_value;
 }
@@ -345,7 +345,7 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
     let base_reg = instr >> 16 & 0xF;
     #[cfg(feature = "interp-r15-write-checks")]
     if unlikely(base_reg == 15 && WRITEBACK) {
-        unimplemented!("LDM r15 writeback");
+        unimplemented!("ldm r15 writeback");
     }
 
     if unlikely(instr as u16 == 0) {
@@ -445,7 +445,7 @@ pub fn stm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
     let base_reg = instr >> 16 & 0xF;
     #[cfg(feature = "interp-r15-write-checks")]
     if unlikely(base_reg == 15 && WRITEBACK) {
-        unimplemented!("STM r15 writeback");
+        unimplemented!("stm r15 writeback");
     }
 
     emu.arm7.engine_data.prefetch_nseq = true;

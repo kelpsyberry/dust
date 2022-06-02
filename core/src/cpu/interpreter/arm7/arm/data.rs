@@ -248,7 +248,7 @@ pub fn mul<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, instr:
     }
     #[cfg(feature = "interp-r15-write-checks")]
     if unlikely(dst_reg == 15) {
-        unimplemented!("{} r15 write", if ACC { "MLA" } else { "MUL" });
+        unimplemented!("{} r15 write", if ACC { "mla" } else { "mul" });
     }
     reg!(emu.arm7, dst_reg) = result;
     add_cycles(emu, multiply_cycles(op) + ACC as RawTimestamp);
@@ -269,12 +269,12 @@ pub fn umull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, inst
         );
     }
     if SET_FLAGS {
-        // TODO: What's the value of the carry flag?
+        // TODO: What's the value of the carry and overflow flags?
         bit_ops::set_nz_64(&mut emu.arm7.engine_data.regs, result);
     }
     #[cfg(feature = "interp-r15-write-checks")]
     if unlikely(dst_acc_reg_low == 15 || dst_acc_reg_high == 15) {
-        unimplemented!("U{}L r15 write", if ACC { "MLA" } else { "MUL" });
+        unimplemented!("u{}l r15 write", if ACC { "mla" } else { "mul" });
     }
     // NOTE: The order of operations here is important, as if hi == lo, hi has precedence
     reg!(emu.arm7, dst_acc_reg_low) = result as u32;
@@ -297,12 +297,12 @@ pub fn smull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, inst
         );
     }
     if SET_FLAGS {
-        // TODO: What's the value of the carry flag?
+        // TODO: What's the value of the carry and overflow flags?
         bit_ops::set_nz_64(&mut emu.arm7.engine_data.regs, result);
     }
     #[cfg(feature = "interp-r15-write-checks")]
     if unlikely(dst_acc_reg_low == 15 || dst_acc_reg_high == 15) {
-        unimplemented!("S{}L r15 write", if ACC { "MLA" } else { "MUL" });
+        unimplemented!("s{}l r15 write", if ACC { "mla" } else { "mul" });
     }
     // NOTE: The order of operations here is important, as if hi == lo, hi has precedence
     reg!(emu.arm7, dst_acc_reg_low) = result as u32;

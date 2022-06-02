@@ -82,10 +82,11 @@ macro_rules! wb_handler {
                 }
             };
 
+            let base = reg!($emu.arm9, base_reg);
             let $addr = if $addressing.preincrement() {
-                reg!($emu.arm9, base_reg).wrapping_add(offset as u32)
+                base.wrapping_add(offset as u32)
             } else {
-                reg!($emu.arm9, base_reg)
+                base
             };
             prefetch_arm::<false, true>($emu);
             if matches!(OFF_TY, WbOffTy::Reg(_)) {
@@ -277,10 +278,11 @@ macro_rules! misc_handler {
             };
             add_bus_cycles($emu, 1);
 
+            let base = reg!($emu.arm9, base_reg);
             let $addr = if ADDRESSING.preincrement() {
-                reg!($emu.arm9, base_reg).wrapping_add(offset as u32)
+                base.wrapping_add(offset as u32)
             } else {
-                reg!($emu.arm9, base_reg)
+                base
             };
             prefetch_arm::<false, true>($emu);
 
@@ -721,7 +723,7 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
     let base_reg = (instr >> 16 & 0xF) as u8;
     #[cfg(feature = "interp-r15-write-checks")]
     if unlikely(WRITEBACK && base_reg == 15) {
-        unimplemented!("LDM r15 writeback");
+        unimplemented!("ldm r15 writeback");
     }
     apply_reg_interlock_1::<false>(emu, base_reg);
     add_bus_cycles(emu, 2);
@@ -777,12 +779,10 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
                         .regs
                         .update_mode::<true>(Mode::User, emu.arm9.engine_data.regs.cpsr.mode());
                 }
-                for reg in reg + 1..16 {
-                    if instr & 1 << reg != 0 {
-                        add_cycles(emu, 1);
-                    }
-                }
-                add_cycles(emu, 1);
+                add_cycles(
+                    emu,
+                    (instr as u16 & !((1 << reg) - 1)).count_ones() as RawTimestamp,
+                );
                 return handle_data_abort::<false>(emu, cur_addr);
             }
             reg!(emu.arm9, reg) = bus::read_32::<CpuAccess, _, false>(emu, cur_addr);
@@ -864,18 +864,13 @@ pub fn stm<
     let base_reg = (instr >> 16 & 0xF) as u8;
     #[cfg(feature = "interp-r15-write-checks")]
     if unlikely(WRITEBACK && base_reg == 15) {
-        unimplemented!("STM r15 writeback");
+        unimplemented!("stm r15 writeback");
     }
     apply_reg_interlock_1::<false>(emu, base_reg);
-    if BANK_SWITCH {
-        add_bus_cycles(emu, 2);
-    }
     let base = reg!(emu.arm9, base_reg);
     prefetch_arm::<false, true>(emu);
     if unlikely(instr as u16 == 0) {
-        if !BANK_SWITCH {
-            add_bus_cycles(emu, 2);
-        }
+        add_bus_cycles(emu, 2);
         add_cycles(emu, 1);
         if WRITEBACK {
             reg!(emu.arm9, base_reg) = if UPWARDS {
@@ -926,15 +921,12 @@ pub fn stm<
                         .engine_data
                         .regs
                         .update_mode::<true>(Mode::User, emu.arm9.engine_data.regs.cpsr.mode());
-                } else {
-                    add_bus_cycles(emu, 2);
                 }
-                for reg in reg + 1..16 {
-                    if instr & 1 << reg != 0 {
-                        add_cycles(emu, 1);
-                    }
-                }
-                add_cycles(emu, 1);
+                add_bus_cycles(emu, 2);
+                add_cycles(
+                    emu,
+                    (instr as u16 & !((1 << reg) - 1)).count_ones() as RawTimestamp,
+                );
                 return handle_data_abort::<false>(emu, cur_addr);
             }
             bus::write_32::<CpuAccess, _>(emu, cur_addr, reg!(emu.arm9, reg));
@@ -954,9 +946,8 @@ pub fn stm<
             .engine_data
             .regs
             .update_mode::<true>(Mode::User, emu.arm9.engine_data.regs.cpsr.mode());
-    } else {
-        add_bus_cycles(emu, 2);
     }
+    add_bus_cycles(emu, 2);
     if instr as u16 & (instr as u16 - 1) == 0 {
         // Only one register present, add an internal cycle
         add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);

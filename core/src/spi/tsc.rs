@@ -1,4 +1,4 @@
-use crate::{emu::input::Input, utils::bitfield_debug};
+use crate::{emu::input, utils::bitfield_debug};
 
 bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -74,18 +74,18 @@ impl Tsc {
     }
 
     #[inline]
-    pub(crate) fn set_pen_down(&mut self, value: bool, input: &mut Input) {
+    pub(crate) fn set_pen_down(&mut self, value: bool, input_status: &mut input::Status) {
         self.pen_down = value;
         if self.cur_control_byte.power_down_mode() & 1 == 0 {
-            input.set_pen_down(!value);
+            input_status.set_pen_down(!value);
         }
     }
 
-    fn handle_control_byte(&mut self, value: ControlByte, input: &mut Input) -> u16 {
+    fn handle_control_byte(&mut self, value: ControlByte, input_status: &mut input::Status) -> u16 {
         if value.power_down_mode() & 1 == 0 {
-            input.set_pen_down(!self.pen_down);
+            input_status.set_pen_down(!self.pen_down);
         } else {
-            input.set_pen_down(true);
+            input_status.set_pen_down(true);
         }
         self.cur_control_byte = value;
         #[allow(clippy::match_same_arms)]
@@ -175,14 +175,19 @@ impl Tsc {
         }) << 3
     }
 
-    pub(super) fn handle_byte(&mut self, value: u8, is_first: bool, input: &mut Input) -> u8 {
+    pub(super) fn handle_byte(
+        &mut self,
+        value: u8,
+        is_first: bool,
+        input_status: &mut input::Status,
+    ) -> u8 {
         if is_first {
             self.pos = 0;
         }
         if self.pos == 0 {
             if ControlByte(value).start() {
                 self.pos = 1;
-                self.data_out = self.handle_control_byte(ControlByte(value), input);
+                self.data_out = self.handle_control_byte(ControlByte(value), input_status);
             }
             0
         } else {
@@ -191,7 +196,7 @@ impl Tsc {
             if self.pos == 2 {
                 if ControlByte(value).start() {
                     self.pos = 1;
-                    self.data_out = self.handle_control_byte(ControlByte(value), input);
+                    self.data_out = self.handle_control_byte(ControlByte(value), input_status);
                 }
             } else {
                 self.pos = 2;

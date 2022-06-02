@@ -17,7 +17,7 @@ pub fn mrs<const SPSR: bool>(emu: &mut Emu<Engine>, instr: u32) {
     let dst_reg = instr >> 12 & 0xF;
     #[cfg(feature = "interp-r15-write-checks")]
     if unlikely(dst_reg == 15) {
-        unimplemented!("MRS r15 write");
+        unimplemented!("mrs r15 write");
     }
     reg!(emu.arm7, dst_reg) = result;
     inc_r15!(emu.arm7, 4);
@@ -41,7 +41,7 @@ pub fn msr<const IMM: bool, const SPSR: bool>(emu: &mut Emu<Engine>, instr: u32)
         update_spsr!(emu.arm7, false, mask, value);
     } else {
         if mask & value & 0x20 != 0 {
-            unimplemented!("MSR CPSR T bit change");
+            unimplemented!("msr CPSR T bit change");
         }
         set_cpsr_update_control(
             emu,

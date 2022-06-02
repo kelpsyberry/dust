@@ -22,8 +22,7 @@ pub fn b_cond<const COND: u8>(emu: &mut Emu<Engine>, instr: u16) {
         return add_bus_cycles(emu, 1);
     }
     add_bus_cycles(emu, 2);
-    let branch_addr = reg!(emu.arm9, 15).wrapping_add((instr as i8 as i32 as u32) << 1);
-    reg!(emu.arm9, 15) = branch_addr;
+    reg!(emu.arm9, 15) = reg!(emu.arm9, 15).wrapping_add((instr as i8 as u32) << 1);
     reload_pipeline::<{ StateSource::Thumb }>(emu);
 }
 

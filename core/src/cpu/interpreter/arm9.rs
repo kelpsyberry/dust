@@ -508,7 +508,7 @@ fn set_cpsr_update_control(emu: &mut Emu<Engine>, value: Cpsr) {
 
 fn restore_spsr(emu: &mut Emu<Engine>) {
     if !emu.arm9.engine_data.regs.is_in_exc_mode() {
-        unimplemented!("unpredictable SPSR restore in non-exception mode");
+        unimplemented!("Unpredictable SPSR restore in non-exception mode");
     }
     set_cpsr_update_control(emu, Cpsr::from_spsr(emu.arm9.engine_data.regs.spsr));
     #[cfg(feature = "interp-pipeline-accurate-reloads")]

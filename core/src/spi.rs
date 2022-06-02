@@ -4,7 +4,7 @@ pub mod tsc;
 
 use crate::{
     cpu::{arm7, Schedule as _},
-    emu::{self, input::Input},
+    emu::{self, input},
     flash::Flash,
     utils::bitfield_debug,
     Model,
@@ -106,7 +106,7 @@ impl Controller {
         value: u8,
         arm7_schedule: &mut arm7::Schedule,
         emu_schedule: &mut emu::Schedule,
-        input: &mut Input,
+        input_status: &mut input::Status,
     ) {
         // TODO: What happens if SPICNT bit 11 is set before changing the device?
         if self.control.busy() || !self.control.enabled() {
@@ -131,7 +131,7 @@ impl Controller {
             2 => {
                 let is_first = !self.touchscreen_hold;
                 self.touchscreen_hold = self.control.hold();
-                self.tsc.handle_byte(value, is_first, input)
+                self.tsc.handle_byte(value, is_first, input_status)
             }
 
             _ => {

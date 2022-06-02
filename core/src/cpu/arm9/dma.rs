@@ -50,8 +50,9 @@ impl<E: Engine> Arm9<E> {
         channel.src_addr_incr = match value.src_addr_control() {
             0 => 1,
             1 => -1,
-            2 => 0,
-            _ => unimplemented!("Tried to use prohibited DMA src address increment mode 3"),
+            // TODO: Confirm whether source address increment mode 3 is the same as mode 2 on the
+            //       ARM9 (it is on the ARM7).
+            _ => 0,
         } << incr_shift;
         channel.dst_addr_incr = match value.dst_addr_control() {
             1 => -1,
@@ -64,7 +65,8 @@ impl<E: Engine> Arm9<E> {
             channel.unit_count = 0x20_0000;
         }
 
-        // TODO: Check whether the repeat bit is actually ignored for immediate DMA
+        // TODO: Check whether the repeat bit is actually ignored for immediate DMA on the ARM9 (it
+        //       is on the ARM7).
         channel.repeat = value.repeat() && channel.timing != Timing::Immediate;
 
         if self.dma.running_channels & 1 << i.get() != 0 {

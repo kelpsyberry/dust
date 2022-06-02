@@ -111,7 +111,7 @@ impl<E: Engine> Arm7<E> {
     }
 
     pub(crate) fn setup(emu: &mut Emu<E>) {
-        bus::ptrs::Ptrs::setup(emu);
+        Self::setup_sys_bus_ptrs(emu);
         emu.arm7.bus_timings.setup();
     }
 
@@ -349,7 +349,6 @@ impl<E: Engine> Arm7<E> {
         self.engine_data.invalidate_word_range(bounds);
     }
 
-    #[inline]
     pub(crate) unsafe fn map_sys_bus_ptr_range(
         &mut self,
         mask: bus::ptrs::Mask,
@@ -359,6 +358,24 @@ impl<E: Engine> Arm7<E> {
     ) {
         self.bus_ptrs.map_range(mask, start_ptr, mem_size, bounds);
         self.invalidate_word_range(bounds);
+    }
+
+    fn setup_sys_bus_ptrs(emu: &mut Emu<E>) {
+        unsafe {
+            emu.arm7.bus_ptrs.map_range(
+                bus::ptrs::mask::ALL,
+                emu.main_mem().as_ptr(),
+                0x40_0000,
+                (0x0200_0000, 0x02FF_FFFF),
+            );
+            emu.arm7.bus_ptrs.map_range(
+                bus::ptrs::mask::ALL,
+                emu.arm7.wram.as_ptr(),
+                0x1_0000,
+                (0x0380_0000, 0x03FF_FFFF),
+            );
+            emu.gpu.vram.setup_arm7_bus_ptrs(&mut emu.arm7.bus_ptrs);
+        }
     }
 
     #[inline]

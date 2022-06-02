@@ -135,7 +135,7 @@ impl<E: Engine> Arm9<E> {
     }
 
     pub(crate) fn setup(emu: &mut Emu<E>) {
-        bus::ptrs::Ptrs::setup(emu);
+        Self::setup_sys_bus_ptrs(emu);
         emu.arm9.bus_timings.setup();
         Cp15::setup(emu);
     }
@@ -428,6 +428,24 @@ impl<E: Engine> Arm9<E> {
         self.bus_ptrs.unmap_range(bounds);
         self.cp15.ptrs.unmap_sys_bus_range(bounds);
         self.invalidate_word_range(bounds);
+    }
+
+    fn setup_sys_bus_ptrs(emu: &mut Emu<E>) {
+        unsafe {
+            emu.arm9.bus_ptrs.map_range(
+                bus::ptrs::mask::ALL,
+                emu.main_mem().as_ptr(),
+                0x40_0000,
+                (0x0200_0000, 0x02FF_FFFF),
+            );
+            emu.gpu.vram.setup_arm9_bus_ptrs(&mut emu.arm9.bus_ptrs);
+            emu.arm9.bus_ptrs.map_range(
+                bus::ptrs::mask::R,
+                emu.arm9.bios.as_ptr(),
+                0x4000,
+                (0xFFFF_0000, 0xFFFF_0000 + (emu.arm9.bios.len() - 1) as u32),
+            );
+        }
     }
 
     #[inline]

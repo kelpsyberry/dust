@@ -21,14 +21,14 @@ use core::intrinsics::unlikely;
 
 pub fn ldr<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
-    let addr = if IMM {
+    let addr = reg!(emu.arm9, base_reg).wrapping_add(if IMM {
         apply_reg_interlock_1::<false>(emu, base_reg);
-        reg!(emu.arm9, base_reg).wrapping_add((instr >> 4 & 0x7C) as u32)
+        (instr >> 4 & 0x7C) as u32
     } else {
         let off_reg = (instr >> 6 & 7) as u8;
         apply_reg_interlocks_2::<0, false>(emu, base_reg, off_reg);
-        reg!(emu.arm9, base_reg).wrapping_add(reg!(emu.arm9, off_reg))
-    };
+        reg!(emu.arm9, off_reg)
+    });
     prefetch_thumb::<false, true>(emu);
     if unlikely(!can_read(
         emu,
@@ -55,14 +55,14 @@ pub fn ldr<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
 pub fn str<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
     let src_reg = (instr & 7) as u8;
-    let addr = if IMM {
+    let addr = reg!(emu.arm9, base_reg).wrapping_add(if IMM {
         apply_reg_interlocks_2::<0, true>(emu, base_reg, src_reg);
-        reg!(emu.arm9, base_reg).wrapping_add((instr >> 4 & 0x7C) as u32)
+        (instr >> 4 & 0x7C) as u32
     } else {
         let off_reg = (instr >> 6 & 7) as u8;
         apply_reg_interlocks_3::<0, true>(emu, base_reg, off_reg, src_reg);
-        reg!(emu.arm9, base_reg).wrapping_add(reg!(emu.arm9, off_reg))
-    };
+        reg!(emu.arm9, off_reg)
+    });
     prefetch_thumb::<false, true>(emu);
     if unlikely(!can_write(
         emu,
@@ -81,14 +81,14 @@ pub fn str<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
 
 pub fn ldrh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
-    let addr = if IMM {
+    let addr = reg!(emu.arm9, base_reg).wrapping_add(if IMM {
         apply_reg_interlock_1::<false>(emu, base_reg);
-        reg!(emu.arm9, base_reg).wrapping_add((instr >> 5 & 0x3E) as u32)
+        (instr >> 5 & 0x3E) as u32
     } else {
         let off_reg = (instr >> 6 & 7) as u8;
         apply_reg_interlocks_2::<0, false>(emu, base_reg, off_reg);
-        reg!(emu.arm9, base_reg).wrapping_add(reg!(emu.arm9, off_reg))
-    };
+        reg!(emu.arm9, off_reg)
+    });
     prefetch_thumb::<false, true>(emu);
     if unlikely(!can_read(
         emu,
@@ -109,14 +109,14 @@ pub fn ldrh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
 pub fn strh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
     let src_reg = (instr & 7) as u8;
-    let addr = if IMM {
+    let addr = reg!(emu.arm9, base_reg).wrapping_add(if IMM {
         apply_reg_interlocks_2::<0, true>(emu, base_reg, src_reg);
-        reg!(emu.arm9, base_reg).wrapping_add((instr >> 5 & 0x3E) as u32)
+        (instr >> 5 & 0x3E) as u32
     } else {
         let off_reg = (instr >> 6 & 7) as u8;
         apply_reg_interlocks_3::<0, true>(emu, base_reg, off_reg, src_reg);
-        reg!(emu.arm9, base_reg).wrapping_add(reg!(emu.arm9, off_reg))
-    };
+        reg!(emu.arm9, off_reg)
+    });
     prefetch_thumb::<false, true>(emu);
     if unlikely(!can_write(
         emu,
@@ -135,14 +135,14 @@ pub fn strh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
 
 pub fn ldrb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
-    let addr = if IMM {
+    let addr = reg!(emu.arm9, base_reg).wrapping_add(if IMM {
         apply_reg_interlock_1::<false>(emu, base_reg);
-        reg!(emu.arm9, base_reg).wrapping_add((instr >> 6 & 0x1F) as u32)
+        (instr >> 6 & 0x1F) as u32
     } else {
         let off_reg = (instr >> 6 & 7) as u8;
         apply_reg_interlocks_2::<0, false>(emu, base_reg, off_reg);
-        reg!(emu.arm9, base_reg).wrapping_add(reg!(emu.arm9, off_reg))
-    };
+        reg!(emu.arm9, off_reg)
+    });
     prefetch_thumb::<false, true>(emu);
     if unlikely(!can_read(
         emu,
@@ -163,14 +163,14 @@ pub fn ldrb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
 pub fn strb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
     let src_reg = (instr & 7) as u8;
-    let addr = if IMM {
+    let addr = reg!(emu.arm9, base_reg).wrapping_add(if IMM {
         apply_reg_interlocks_2::<0, true>(emu, base_reg, src_reg);
-        reg!(emu.arm9, base_reg).wrapping_add((instr >> 6 & 0x1F) as u32)
+        (instr >> 6 & 0x1F) as u32
     } else {
         let off_reg = (instr >> 6 & 7) as u8;
         apply_reg_interlocks_3::<0, true>(emu, base_reg, off_reg, src_reg);
-        reg!(emu.arm9, base_reg).wrapping_add(reg!(emu.arm9, off_reg))
-    };
+        reg!(emu.arm9, off_reg)
+    });
     prefetch_thumb::<false, true>(emu);
     if unlikely(!can_write(
         emu,
@@ -331,15 +331,11 @@ pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Engine>, instr: u16) {
                 // from that point on take 1 cycle).
                 emu.arm9.engine_data.data_cycles = 1;
                 add_bus_cycles(emu, 2);
-                for reg in reg + 1..8 {
-                    if instr & 1 << reg != 0 {
-                        add_cycles(emu, 1);
-                    }
-                }
-                if PUSH_R14 {
-                    add_cycles(emu, 1);
-                }
-                add_cycles(emu, 1);
+                add_cycles(
+                    emu,
+                    ((instr as u8 & !((1 << reg) - 1)).count_ones() + PUSH_R14 as u32)
+                        as RawTimestamp,
+                );
                 return handle_data_abort::<true>(emu, cur_addr);
             }
             bus::write_32::<CpuAccess, _>(emu, cur_addr, reg!(emu.arm9, reg));
@@ -411,15 +407,11 @@ pub fn pop<const POP_R15: bool>(emu: &mut Emu<Engine>, instr: u16) {
                 // the exception (unclear what that means for timings, it's assumed all accesses
                 // from that point on take 1 cycle).
                 emu.arm9.engine_data.data_cycles = 1;
-                for reg in reg + 1..8 {
-                    if instr & 1 << reg != 0 {
-                        add_cycles(emu, 1);
-                    }
-                }
-                if POP_R15 {
-                    add_cycles(emu, 1);
-                }
-                add_cycles(emu, 1);
+                add_cycles(
+                    emu,
+                    ((instr as u8 & !((1 << reg) - 1)).count_ones() + POP_R15 as u32)
+                        as RawTimestamp,
+                );
                 return handle_data_abort::<true>(emu, cur_addr);
             }
             let result = bus::read_32::<CpuAccess, _, false>(emu, cur_addr);
@@ -469,9 +461,9 @@ pub fn pop<const POP_R15: bool>(emu: &mut Emu<Engine>, instr: u16) {
 }
 
 pub fn ldmia(emu: &mut Emu<Engine>, instr: u16) {
-    add_bus_cycles(emu, 2);
     let base_reg = (instr >> 8 & 7) as u8;
     apply_reg_interlock_1::<false>(emu, base_reg);
+    add_bus_cycles(emu, 2);
     let mut cur_addr = reg!(emu.arm9, base_reg);
     prefetch_thumb::<false, true>(emu);
     if unlikely(instr as u8 == 0) {
@@ -497,12 +489,10 @@ pub fn ldmia(emu: &mut Emu<Engine>, instr: u16) {
                 // the exception (unclear what that means for timings, it's assumed all accesses
                 // from that point on take 1 cycle).
                 emu.arm9.engine_data.data_cycles = 1;
-                for reg in reg + 1..8 {
-                    if instr & 1 << reg != 0 {
-                        add_cycles(emu, 1);
-                    }
-                }
-                add_cycles(emu, 1);
+                add_cycles(
+                    emu,
+                    (instr as u8 & !((1 << reg) - 1)).count_ones() as RawTimestamp,
+                );
                 return handle_data_abort::<true>(emu, cur_addr);
             }
             let result = bus::read_32::<CpuAccess, _, false>(emu, cur_addr);
@@ -563,12 +553,10 @@ pub fn stmia(emu: &mut Emu<Engine>, instr: u16) {
                 // from that point on take 1 cycle).
                 emu.arm9.engine_data.data_cycles = 1;
                 add_bus_cycles(emu, 2);
-                for reg in reg + 1..8 {
-                    if instr & 1 << reg != 0 {
-                        add_cycles(emu, 1);
-                    }
-                }
-                add_cycles(emu, 1);
+                add_cycles(
+                    emu,
+                    (instr as u8 & !((1 << reg) - 1)).count_ones() as RawTimestamp,
+                );
                 return handle_data_abort::<true>(emu, cur_addr);
             }
             bus::write_32::<CpuAccess, _>(emu, cur_addr, reg!(emu.arm9, reg));

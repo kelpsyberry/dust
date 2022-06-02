@@ -15,10 +15,8 @@ bitfield_debug! {
 pub struct Swram {
     contents: OwnedBytesCellPtr<0x8000>,
     control: Control,
-    #[cfg(feature = "bft-r")]
-    arm7_r_ptr: *const u8,
-    #[cfg(feature = "bft-w")]
-    arm7_w_ptr: *mut u8,
+    #[cfg(any(feature = "bft-r", feature = "bft-w"))]
+    arm7_ptr: *mut u8,
     #[cfg(any(feature = "bft-r", feature = "bft-w"))]
     arm7_mask: u16,
     #[cfg(feature = "bft-r")]
@@ -38,10 +36,8 @@ impl Swram {
         Swram {
             contents: OwnedBytesCellPtr::new_zeroed(),
             control: Control(0),
-            #[cfg(feature = "bft-r")]
-            arm7_r_ptr: ptr::null(),
-            #[cfg(feature = "bft-w")]
-            arm7_w_ptr: ptr::null_mut(),
+            #[cfg(any(feature = "bft-r", feature = "bft-w"))]
+            arm7_ptr: ptr::null_mut(),
             #[cfg(any(feature = "bft-r", feature = "bft-w"))]
             arm7_mask: 0,
             #[cfg(feature = "bft-r")]
@@ -88,14 +84,7 @@ impl Swram {
         #[cfg(any(feature = "bft-r", feature = "bft-w"))]
         match self.control.0 & 3 {
             0 => {
-                #[cfg(feature = "bft-r")]
-                {
-                    self.arm7_r_ptr = arm7.wram.as_ptr();
-                }
-                #[cfg(feature = "bft-w")]
-                {
-                    self.arm7_w_ptr = arm7.wram.as_ptr();
-                }
+                self.arm7_ptr = arm7.wram.as_ptr();
                 self.arm7_mask = 0xFFFF;
                 #[cfg(feature = "bft-r")]
                 {
@@ -108,14 +97,7 @@ impl Swram {
                 self.arm9_mask = 0x7FFF;
             }
             1 => {
-                #[cfg(feature = "bft-r")]
-                {
-                    self.arm7_r_ptr = self.contents.as_ptr();
-                }
-                #[cfg(feature = "bft-w")]
-                {
-                    self.arm7_w_ptr = self.contents.as_ptr();
-                }
+                self.arm7_ptr = self.contents.as_ptr();
                 self.arm7_mask = 0x3FFF;
                 #[cfg(feature = "bft-r")]
                 {
@@ -128,14 +110,7 @@ impl Swram {
                 self.arm9_mask = 0x3FFF;
             }
             2 => {
-                #[cfg(feature = "bft-r")]
-                {
-                    self.arm7_r_ptr = self.contents.as_ptr().wrapping_add(0x4000);
-                }
-                #[cfg(feature = "bft-w")]
-                {
-                    self.arm7_w_ptr = self.contents.as_ptr().wrapping_add(0x4000);
-                }
+                self.arm7_ptr = self.contents.as_ptr().wrapping_add(0x4000);
                 self.arm7_mask = 0x3FFF;
                 #[cfg(feature = "bft-r")]
                 {
@@ -148,14 +123,7 @@ impl Swram {
                 self.arm9_mask = 0x3FFF;
             }
             _ => {
-                #[cfg(feature = "bft-r")]
-                {
-                    self.arm7_r_ptr = self.contents.as_ptr();
-                }
-                #[cfg(feature = "bft-w")]
-                {
-                    self.arm7_w_ptr = self.contents.as_ptr();
-                }
+                self.arm7_ptr = self.contents.as_ptr();
                 self.arm7_mask = 0x7FFF;
                 #[cfg(feature = "bft-r")]
                 {
@@ -170,14 +138,9 @@ impl Swram {
         }
     }
 
-    #[cfg(feature = "bft-r")]
-    pub(crate) fn arm7_r_ptr(&self) -> *const u8 {
-        self.arm7_r_ptr
-    }
-
-    #[cfg(feature = "bft-w")]
-    pub(crate) fn arm7_w_ptr(&self) -> *mut u8 {
-        self.arm7_w_ptr
+    #[cfg(any(feature = "bft-r", feature = "bft-w"))]
+    pub(crate) fn arm7_ptr(&self) -> *mut u8 {
+        self.arm7_ptr
     }
 
     #[cfg(any(feature = "bft-r", feature = "bft-w"))]

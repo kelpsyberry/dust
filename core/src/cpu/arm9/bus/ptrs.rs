@@ -2,11 +2,7 @@
 use crate::cpu::bus::{r_disable_flags, RDisableFlags};
 #[cfg(feature = "bft-w")]
 use crate::cpu::bus::{w_disable_flags, WDisableFlags};
-use crate::{
-    cpu::Engine,
-    emu::Emu,
-    utils::{zeroed_box, Zero},
-};
+use crate::utils::{zeroed_box, Zero};
 use cfg_if::cfg_if;
 
 pub type Mask = u8;
@@ -345,23 +341,5 @@ impl Ptrs {
             all(feature = "bft-r", feature = "bft-w"),
         ))]
         self.attrs[lower_bound..=upper_bound].fill(0);
-    }
-
-    pub fn setup<E: Engine>(emu: &mut Emu<E>) {
-        unsafe {
-            emu.arm9.bus_ptrs.map_range(
-                mask::ALL,
-                emu.main_mem().as_ptr(),
-                0x40_0000,
-                (0x0200_0000, 0x02FF_FFFF),
-            );
-            emu.gpu.vram.setup_arm9_bus_ptrs(&mut emu.arm9.bus_ptrs);
-            emu.arm9.bus_ptrs.map_range(
-                mask::R,
-                emu.arm9.bios.as_ptr(),
-                0x4000,
-                (0xFFFF_0000, 0xFFFF_0000 + (emu.arm9.bios.len() - 1) as u32),
-            );
-        }
     }
 }

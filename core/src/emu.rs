@@ -40,6 +40,26 @@ bitfield_debug! {
     }
 }
 
+impl LocalExMemControl {
+    pub(crate) fn gba_rom_halfword(self, addr: u32) -> u16 {
+        let value = (addr >> 1) as u16;
+        match self.gba_slot_rom_1st_access_time() {
+            0 => value | 0xFE08,
+            1 | 2 => value,
+            _ => 0xFFFF,
+        }
+    }
+
+    pub(crate) fn gba_rom_word(self, addr: u32) -> u32 {
+        let value = (addr >> 1 & 0xFFFF) | (addr >> 1 | 1) << 16;
+        match self.gba_slot_rom_1st_access_time() {
+            0 => value | 0xFE08_FE08,
+            1 | 2 => value,
+            _ => 0xFFFF_FFFF,
+        }
+    }
+}
+
 bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     pub struct GlobalExMemControl(pub u16) {
@@ -188,7 +208,7 @@ impl Builder {
                 #[cfg(feature = "log")]
                 &self.logger.new(slog::o!("gpu" => "")),
             ),
-            input: Input(0x007F_03FF),
+            input: Input::new(),
             audio_wifi_power_control: AudioWifiPowerControl(0),
             audio: Audio::new(
                 self.audio_backend,

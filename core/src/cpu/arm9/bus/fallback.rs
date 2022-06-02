@@ -9,14 +9,12 @@ use crate::{
         dma, timers,
     },
     ds_slot,
-    emu::{swram, Emu, GlobalExMemControl, LocalExMemControl},
+    emu::{input::KeyIrqControl, swram, Emu, GlobalExMemControl, LocalExMemControl},
     gpu::{self, engine_3d},
     ipc,
 };
 
 // TODO:
-// - Fix GBA ROM open bus values, depending on the selected access time they're ORed with another
-//   value according to GBATEK
 // - Check what happens to the DS slot registers when ROMCTRL.bit15 is 0 and when they're allocated
 //   to the other CPU
 // - Check what values get read from the VRAMCNT_* registers (GBATEK says they're write-only)
@@ -113,8 +111,10 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             0x10E => emu.arm9.timers.0[3].control().0,
             0x10F => 0,
 
-            0x130 => emu.input.0 as u8,
-            0x131 => (emu.input.0 >> 8) as u8,
+            0x130 => emu.input.status().0 as u8,
+            0x131 => (emu.input.status().0 >> 8) as u8,
+            0x132 => emu.input.arm9_key_irq_control().0 as u8,
+            0x133 => (emu.input.arm9_key_irq_control().0 >> 8) as u8,
 
             0x1A0 => emu.ds_slot.spi_control().0 as u8,
             0x1A1 => (emu.ds_slot.spi_control().0 >> 8) as u8,
@@ -189,7 +189,7 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             if emu.global_ex_mem_control().arm7_gba_slot_access() {
                 0
             } else {
-                (addr >> ((addr & 1) << 3 | 1)) as u8
+                (emu.arm9.local_ex_mem_control().gba_rom_halfword(addr) >> ((addr & 1) << 3)) as u8
             }
         }
 
@@ -197,7 +197,7 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             if emu.global_ex_mem_control().arm7_gba_slot_access() {
                 0
             } else {
-                u8::MAX
+                0xFF
             }
         }
 
@@ -306,7 +306,8 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
             ),
             0x10E => emu.arm9.timers.0[3].control().0 as u16,
 
-            0x130 => emu.input.0 as u16,
+            0x130 => emu.input.status().0 as u16,
+            0x132 => emu.input.arm9_key_irq_control().0,
 
             0x180 => emu.ipc.sync_9().0,
             0x182 => 0,
@@ -379,7 +380,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
             if emu.global_ex_mem_control().arm7_gba_slot_access() {
                 0
             } else {
-                (addr >> 1) as u16
+                emu.arm9.local_ex_mem_control().gba_rom_halfword(addr)
             }
         }
 
@@ -387,7 +388,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
             if emu.global_ex_mem_control().arm7_gba_slot_access() {
                 0
             } else {
-                u16::MAX
+                0xFFFF
             }
         }
 
@@ -488,7 +489,9 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
                     | (emu.arm9.timers.0[3].control().0 as u32) << 16
             }
 
-            0x130 => emu.input.0 & 0xFFFF,
+            0x130 => {
+                (emu.input.status().0 & 0xFFFF) | (emu.input.arm9_key_irq_control().0 as u32) << 16
+            }
 
             0x180 => emu.ipc.sync_9().0 as u32,
             0x184 => emu.ipc.fifo_control_9().0 as u32,
@@ -575,7 +578,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
             if emu.global_ex_mem_control().arm7_gba_slot_access() {
                 0
             } else {
-                (addr >> 1 & 0xFFFF) | (addr >> 1 | 1) << 16
+                emu.arm9.local_ex_mem_control().gba_rom_word(addr)
             }
         }
 
@@ -583,7 +586,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
             if emu.global_ex_mem_control().arm7_gba_slot_access() {
                 0
             } else {
-                u32::MAX
+                0xFFFF_FFFF
             }
         }
 
@@ -649,6 +652,13 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
             0x062 | 0x063 => {}
 
             0x0E0..=0x0EC => emu.arm9.dma_fill[addr as usize & 0xE] = value,
+
+            0x132 => emu.write_arm9_key_irq_control(KeyIrqControl(
+                (emu.input.arm9_key_irq_control().0 & 0xFF00) | value as u16,
+            )),
+            0x133 => emu.write_arm9_key_irq_control(KeyIrqControl(
+                (emu.input.arm9_key_irq_control().0 & 0x00FF) | (value as u16) << 8,
+            )),
 
             0x1A0 => {
                 if emu.ds_slot.arm9_access() {
@@ -1011,6 +1021,8 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     &mut emu.arm9.irqs,
                 ),
 
+                0x132 => emu.write_arm9_key_irq_control(KeyIrqControl(value)),
+
                 0x180 => emu.ipc.write_sync_9(ipc::Sync(value), &mut emu.arm7.irqs),
                 0x182 => {}
                 0x184 => emu.ipc.write_fifo_control_9(
@@ -1344,6 +1356,8 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                     &mut emu.arm9.schedule,
                     &mut emu.arm9.irqs,
                 ),
+
+                0x130 => emu.write_arm9_key_irq_control(KeyIrqControl((value >> 16) as u16)),
 
                 0x180 => emu
                     .ipc

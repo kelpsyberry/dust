@@ -32,7 +32,7 @@ bitfield_debug! {
         pub dma1: bool @ 9,                         // x
         pub dma2: bool @ 10,                        // x
         pub dma3: bool @ 11,                        // x
-        pub keypad: bool @ 12,                      // -
+        pub keypad: bool @ 12,                      // x
         pub gba_slot_ext: bool @ 13,                // -
         pub ipc_sync: bool @ 16,                    // x
         pub ipc_send_fifo_empty: bool @ 17,         // x

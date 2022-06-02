@@ -47,7 +47,7 @@ pub fn msr<const IMM: bool, const SPSR: bool>(emu: &mut Emu<Engine>, instr: u32)
         update_spsr!(emu.arm9, true, mask, value);
     } else {
         if mask & value & 0x20 != 0 {
-            unimplemented!("MSR CPSR T bit change");
+            unimplemented!("msr CPSR T bit change");
         }
         set_cpsr_update_control(
             emu,

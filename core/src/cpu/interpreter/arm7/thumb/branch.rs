@@ -5,8 +5,7 @@ use crate::{
 };
 
 pub fn b(emu: &mut Emu<Engine>, instr: u16) {
-    let branch_addr = reg!(emu.arm7, 15).wrapping_add(((instr as i32) << 21 >> 20) as u32);
-    reg!(emu.arm7, 15) = branch_addr;
+    reg!(emu.arm7, 15) = reg!(emu.arm7, 15).wrapping_add(((instr as i32) << 21 >> 20) as u32);
     reload_pipeline::<{ StateSource::Thumb }>(emu);
 }
 
@@ -14,14 +13,12 @@ pub fn b_cond<const COND: u8>(emu: &mut Emu<Engine>, instr: u16) {
     if !emu.arm7.engine_data.regs.cpsr.satisfies_condition(COND) {
         return inc_r15!(emu.arm7, 2);
     }
-    let branch_addr = reg!(emu.arm7, 15).wrapping_add((instr as i8 as i32 as u32) << 1);
-    reg!(emu.arm7, 15) = branch_addr;
+    reg!(emu.arm7, 15) = reg!(emu.arm7, 15).wrapping_add((instr as i8 as u32) << 1);
     reload_pipeline::<{ StateSource::Thumb }>(emu);
 }
 
 pub fn bx(emu: &mut Emu<Engine>, instr: u16) {
-    let branch_addr = reg!(emu.arm7, instr >> 3 & 0xF);
-    reg!(emu.arm7, 15) = branch_addr;
+    reg!(emu.arm7, 15) = reg!(emu.arm7, instr >> 3 & 0xF);
     reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
 }
 

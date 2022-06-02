@@ -29,11 +29,6 @@ pub fn add_sub_reg_imm3<const SUB: bool, const IMM3: bool, const IS_MOV: bool>(
     }
     add_bus_cycles(emu, 1);
     let src = reg!(emu.arm9, src_reg);
-    let op = if IMM3 {
-        op3 as u32
-    } else {
-        reg!(emu.arm9, op3)
-    };
     let result = if IS_MOV {
         bit_ops::set_nz(&mut emu.arm9.engine_data.regs, src);
         emu.arm9.engine_data.regs.cpsr = emu
@@ -44,10 +39,17 @@ pub fn add_sub_reg_imm3<const SUB: bool, const IMM3: bool, const IS_MOV: bool>(
             .with_carry(SUB)
             .with_overflow(false);
         src
-    } else if SUB {
-        arithmetic::sub_s(&mut emu.arm9.engine_data.regs, src, op)
     } else {
-        arithmetic::add_s(&mut emu.arm9.engine_data.regs, src, op)
+        let op = if IMM3 {
+            op3 as u32
+        } else {
+            reg!(emu.arm9, op3)
+        };
+        if SUB {
+            arithmetic::sub_s(&mut emu.arm9.engine_data.regs, src, op)
+        } else {
+            arithmetic::add_s(&mut emu.arm9.engine_data.regs, src, op)
+        }
     };
     write_reg_clear_interlock_ab(emu, (instr & 7) as u8, result);
     prefetch_thumb::<true, true>(emu);
@@ -88,9 +90,7 @@ pub fn dp_op_imm8<const OP_TY: DpOpImm8Ty>(emu: &mut Emu<Engine>, instr: u16) {
                 .with_zero(op == 0);
             write_reg_clear_interlock_ab(emu, src_dst_reg, op);
         }
-        DpOpImm8Ty::Cmp => {
-            arithmetic::cmp(&mut emu.arm9.engine_data.regs, src, op);
-        }
+        DpOpImm8Ty::Cmp => arithmetic::cmp(&mut emu.arm9.engine_data.regs, src, op),
         DpOpImm8Ty::Add => {
             let result = arithmetic::add_s(&mut emu.arm9.engine_data.regs, src, op);
             write_reg_clear_interlock_ab(emu, src_dst_reg, result);
@@ -257,15 +257,15 @@ pub fn add_pc_sp_imm8<const SP: bool>(emu: &mut Emu<Engine>, instr: u16) {
     } else {
         reg!(emu.arm9, 15) & !3
     };
-    let op = ((instr & 0xFF) << 2) as u32;
-    let result = src.wrapping_add(op);
+    let result = src.wrapping_add(((instr & 0xFF) << 2) as u32);
     write_reg_clear_interlock_ab(emu, (instr >> 8 & 7) as u8, result);
     add_bus_cycles(emu, 1);
     prefetch_thumb::<true, true>(emu);
 }
 
 pub fn add_sub_sp_imm7<const SUB: bool>(emu: &mut Emu<Engine>, instr: u16) {
-    let (src, op) = (reg!(emu.arm9, 13), ((instr & 0x7F) << 2) as u32);
+    let src = reg!(emu.arm9, 13);
+    let op = ((instr & 0x7F) << 2) as u32;
     let result = if SUB {
         src.wrapping_sub(op)
     } else {
