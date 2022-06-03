@@ -130,6 +130,10 @@ pub fn render_scanline_bg_text<R: Role>(
         macro_rules! read_pixels {
             () => {
                 let tile = unsafe { *tiles.get_unchecked(x as usize >> 3 & tile_off_mask) };
+                #[cfg(target_endian = "big")]
+                {
+                    tile = tile.swap_bytes();
+                }
                 let y_in_tile = if tile & 1 << 11 == 0 {
                     y_in_tile
                 } else {
@@ -169,6 +173,10 @@ pub fn render_scanline_bg_text<R: Role>(
         macro_rules! read_pixels {
             () => {
                 let tile = unsafe { *tiles.get_unchecked(x as usize >> 3 & tile_off_mask) };
+                #[cfg(target_endian = "big")]
+                {
+                    tile = tile.swap_bytes();
+                }
                 let y_in_tile = if tile & 1 << 11 == 0 {
                     y_in_tile
                 } else {

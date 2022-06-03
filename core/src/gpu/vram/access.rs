@@ -26,12 +26,11 @@ macro_rules! handle_mirroring {
         $usage: ident, $value: ident, $T: ty, $mirror_addr: ident, $mirror_mapped: expr;
         $($bit: literal => $bank: ident,)*
     ) => {
+        let writeback_mask = (1 << mem::size_of::<T>()) - 1;
         let writeback = unsafe {
             *$self.writeback.$usage.get_mut().get_unchecked($mirror_addr / usize::BITS as usize)
-                >> ($mirror_addr & (usize::BITS as usize - 1))
-        };
-        let writeback_mask = (1 << mem::size_of::<T>()) - 1;
-        if writeback & writeback_mask == writeback_mask {
+        } >> ($mirror_addr & (usize::BITS as usize - 1)) & writeback_mask;
+        if writeback == writeback_mask {
             unsafe {
                 let prev_value = $self.$usage.read_le_aligned_unchecked::<T>($mirror_addr);
                 $(
@@ -58,32 +57,41 @@ macro_rules! handle_mirroring {
                     };
                 }
             )*
-            let value_bytes = $value.to_le_bytes();
-            let others_value_bytes = others_value.to_le_bytes();
-            for (i, (value_byte, others_value_byte)) in value_bytes
-                .into_iter()
-                .zip(others_value_bytes)
-                .enumerate()
-            {
-                let addr = $mirror_addr | i;
-                if writeback & 1 << i == 0 {
-                    $self.$usage.write(
-                        addr,
-                        others_value_byte | value_byte,
+            if writeback == 0 {
+                unsafe {
+                    $self.$usage.write_le_aligned_unchecked(
+                        $mirror_addr,
+                        others_value | $value,
                     );
-                } else {
-                    let prev_value_byte = $self.$usage.read(addr);
-                    $(
-                        if $mirror_mapped & 1 << $bit != 0 {
-                            unsafe {
-                                $self.banks.$bank.write_unchecked(
-                                    addr & ($self.banks.$bank.len() - 1),
-                                    prev_value_byte,
-                                );
+                }
+            } else {
+                let value_bytes = $value.to_le_bytes();
+                let others_value_bytes = others_value.to_le_bytes();
+                for (i, (value_byte, others_value_byte)) in value_bytes
+                    .into_iter()
+                    .zip(others_value_bytes)
+                    .enumerate()
+                {
+                    let addr = $mirror_addr | i;
+                    if writeback & 1 << i == 0 {
+                        $self.$usage.write(
+                            addr,
+                            others_value_byte | value_byte,
+                        );
+                    } else {
+                        let prev_value_byte = $self.$usage.read(addr);
+                        $(
+                            if $mirror_mapped & 1 << $bit != 0 {
+                                unsafe {
+                                    $self.banks.$bank.write_unchecked(
+                                        addr & ($self.banks.$bank.len() - 1),
+                                        prev_value_byte,
+                                    );
+                                }
                             }
-                        }
-                    )*
-                    $self.$usage.write(addr, prev_value_byte | value_byte);
+                        )*
+                        $self.$usage.write(addr, prev_value_byte | value_byte);
+                    }
                 }
             }
         }
@@ -105,7 +113,7 @@ impl Vram {
         // zero/ignored ones.
         unsafe {
             T::read_le_aligned(
-                self.lcdc_r_ptrs[region].add(addr as usize & (0x3FFF & !(mem::align_of::<T>() - 1)))
+                self.lcdc_r_ptrs[region].add(addr as usize & (0x3FFF & !(mem::size_of::<T>() - 1)))
                     as *const T,
             )
         }
@@ -117,7 +125,7 @@ impl Vram {
         // See read_lcdc
         unsafe {
             value.write_le_aligned(
-                self.lcdc_w_ptrs[region].add(addr as usize & (0x3FFF & !(mem::align_of::<T>() - 1)))
+                self.lcdc_w_ptrs[region].add(addr as usize & (0x3FFF & !(mem::size_of::<T>() - 1)))
                     as *mut T,
             );
         }
@@ -127,7 +135,7 @@ impl Vram {
     pub fn read_a_bg<T: MemValue>(&self, addr: u32) -> T {
         unsafe {
             self.a_bg
-                .read_le_aligned_unchecked(addr as usize & (0x7_FFFF & !(mem::align_of::<T>() - 1)))
+                .read_le_aligned_unchecked(addr as usize & (0x7_FFFF & !(mem::size_of::<T>() - 1)))
         }
     }
 
@@ -173,7 +181,7 @@ impl Vram {
         if mapped == 0 {
             return;
         }
-        let addr = addr as usize & (0x7_FFFF & !(mem::align_of::<T>() - 1));
+        let addr = addr as usize & (0x7_FFFF & !(mem::size_of::<T>() - 1));
         unsafe {
             set_writeback!(self.writeback.a_bg.get_mut(), addr, T);
             self.a_bg.write_le_aligned_unchecked(addr, value);
@@ -195,7 +203,7 @@ impl Vram {
     pub fn read_a_obj<T: MemValue>(&self, addr: u32) -> T {
         unsafe {
             self.a_obj
-                .read_le_aligned_unchecked(addr as usize & (0x3_FFFF & !(mem::align_of::<T>() - 1)))
+                .read_le_aligned_unchecked(addr as usize & (0x3_FFFF & !(mem::size_of::<T>() - 1)))
         }
     }
 
@@ -229,7 +237,7 @@ impl Vram {
         if mapped == 0 {
             return;
         }
-        let addr = addr as usize & (0x3_FFFF & !(mem::align_of::<T>() - 1));
+        let addr = addr as usize & (0x3_FFFF & !(mem::size_of::<T>() - 1));
         unsafe {
             set_writeback!(self.writeback.a_obj.get_mut(), addr, T);
             self.a_obj.write_le_aligned_unchecked(addr, value);
@@ -251,7 +259,7 @@ impl Vram {
     pub fn read_b_bg<T: MemValue>(&self, addr: u32) -> T {
         unsafe {
             self.b_bg
-                .read_le_aligned_unchecked(addr as usize & (0x1_FFFF & !(mem::align_of::<T>() - 1)))
+                .read_le_aligned_unchecked(addr as usize & (0x1_FFFF & !(mem::size_of::<T>() - 1)))
         }
     }
 
@@ -272,15 +280,31 @@ impl Vram {
     fn handle_b_bg_mirroring<T: MemValue + BitOr<Output = T> + BitOrAssign>(
         &mut self,
         addr: usize,
+        mapped: u8,
         value: T,
     ) where
         [(); mem::size_of::<T>()]: Sized,
     {
-        for mirror_addr in [addr ^ 0x4000, addr ^ 0x1_0000, addr ^ 0x1_4000] {
+        let mirror_addr = addr ^ 0x1_0000;
+        if mapped & 1 != 0 {
             handle_mirroring!(
                 self, b_bg, value, T, mirror_addr, 1;
                 0 => c,
             );
+        } else {
+            unsafe {
+                self.b_bg.write_le_aligned_unchecked(mirror_addr, value);
+                clear_writeback!(self.writeback.b_bg.get_mut(), mirror_addr, T);
+            }
+        }
+        if mapped & 4 != 0 {
+            for mirror_addr in [addr ^ 0x4000, addr ^ 0x1_4000] {
+                handle_mirroring!(
+                    self, b_bg, value, T, mirror_addr, 1;
+                    0 => c,
+                    1 => h,
+                );
+            }
         }
     }
 
@@ -294,21 +318,29 @@ impl Vram {
         if mapped == 0 {
             return;
         }
-        let addr = addr as usize & (0x1_FFFF & !(mem::align_of::<T>() - 1));
+        let addr = addr as usize & (0x1_FFFF & !(mem::size_of::<T>() - 1));
         unsafe {
             set_writeback!(self.writeback.b_bg.get_mut(), addr, T);
             self.b_bg.write_le_aligned_unchecked(addr, value);
         }
         if mapped & 6 != 0 {
-            if mapped & !6 == 0 {
-                for mirror_addr in [addr ^ 0x4000, addr ^ 0x1_0000, addr ^ 0x1_4000] {
+            match mapped {
+                2 => {
+                    let mirror_addr = addr ^ 0x1_0000;
                     unsafe {
                         self.b_bg.write_le_aligned_unchecked(mirror_addr, value);
                         clear_writeback!(self.writeback.b_bg.get_mut(), mirror_addr, T);
                     }
                 }
-            } else {
-                self.handle_b_bg_mirroring(addr, value);
+                4 => {
+                    for mirror_addr in [addr ^ 0x4000, addr ^ 0x1_0000, addr ^ 0x1_4000] {
+                        unsafe {
+                            self.b_bg.write_le_aligned_unchecked(mirror_addr, value);
+                            clear_writeback!(self.writeback.b_bg.get_mut(), mirror_addr, T);
+                        }
+                    }
+                }
+                _ => self.handle_b_bg_mirroring(addr, mapped, value),
             }
         }
     }
@@ -317,7 +349,7 @@ impl Vram {
     pub fn read_b_obj<T: MemValue>(&self, addr: u32) -> T {
         unsafe {
             self.b_obj
-                .read_le_aligned_unchecked(addr as usize & (0x1_FFFF & !(mem::align_of::<T>() - 1)))
+                .read_le_aligned_unchecked(addr as usize & (0x1_FFFF & !(mem::size_of::<T>() - 1)))
         }
     }
 
@@ -357,7 +389,7 @@ impl Vram {
         if mapped == 0 {
             return;
         }
-        let addr = addr as usize & (0x1_FFFF & !(mem::align_of::<T>() - 1));
+        let addr = addr as usize & (0x1_FFFF & !(mem::size_of::<T>() - 1));
         unsafe {
             set_writeback!(self.writeback.b_obj.get_mut(), addr, T);
             self.b_obj.write_le_aligned_unchecked(addr, value);
@@ -388,7 +420,7 @@ impl Vram {
     pub fn read_a_bg_ext_pal<T: MemValue>(&self, addr: u32) -> T {
         unsafe {
             self.a_bg_ext_pal
-                .read_le_aligned_unchecked(addr as usize & (0x7FFF & !(mem::align_of::<T>() - 1)))
+                .read_le_aligned_unchecked(addr as usize & (0x7FFF & !(mem::size_of::<T>() - 1)))
         }
     }
 
@@ -414,7 +446,7 @@ impl Vram {
     pub fn read_a_obj_ext_pal<T: MemValue>(&self, addr: u32) -> T {
         unsafe {
             self.a_bg_ext_pal
-                .read_le_aligned_unchecked(addr as usize & (0x1FFF & !(mem::align_of::<T>() - 1)))
+                .read_le_aligned_unchecked(addr as usize & (0x1FFF & !(mem::size_of::<T>() - 1)))
         }
     }
 
@@ -442,7 +474,7 @@ impl Vram {
         unsafe {
             (self
                 .b_bg_ext_pal_ptr
-                .add(addr as usize & (0x7FFF & !(mem::align_of::<T>() - 1)))
+                .add(addr as usize & (0x7FFF & !(mem::size_of::<T>() - 1)))
                 as *const T)
                 .read()
         }
@@ -473,7 +505,7 @@ impl Vram {
         unsafe {
             (self
                 .b_obj_ext_pal_ptr
-                .add(addr as usize & (0x1FFF & !(mem::align_of::<T>() - 1)))
+                .add(addr as usize & (0x1FFF & !(mem::size_of::<T>() - 1)))
                 as *const T)
                 .read()
         }
@@ -528,7 +560,7 @@ impl Vram {
     pub fn read_arm7<T: MemValue>(&self, addr: u32) -> T {
         unsafe {
             self.arm7
-                .read_le_aligned_unchecked(addr as usize & (0x3_FFFF & !(mem::align_of::<T>() - 1)))
+                .read_le_aligned_unchecked(addr as usize & (0x3_FFFF & !(mem::size_of::<T>() - 1)))
         }
     }
 
@@ -538,7 +570,7 @@ impl Vram {
         if self.map.arm7[region].get() == 0 {
             return;
         }
-        let addr = addr as usize & (0x3_FFFF & !(mem::align_of::<T>() - 1));
+        let addr = addr as usize & (0x3_FFFF & !(mem::size_of::<T>() - 1));
         unsafe {
             set_writeback!(self.writeback.arm7.get_mut(), addr, T);
             self.arm7.write_le_aligned_unchecked(addr, value);
