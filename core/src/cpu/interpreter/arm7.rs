@@ -385,6 +385,12 @@ impl CoreData for EngineData {
 
 impl Arm7Data for EngineData {
     #[inline]
+    fn run_stalled_until(emu: &mut Emu<Engine>, end_time: Timestamp) {
+        emu.arm7.schedule.set_cur_time(end_time);
+        Schedule::handle_pending_events(emu);
+    }
+
+    #[inline]
     fn run_until(emu: &mut Emu<Engine>, end_time: Timestamp) {
         while emu.arm7.schedule.cur_time() < end_time {
             Schedule::handle_pending_events(emu);

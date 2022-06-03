@@ -69,8 +69,7 @@ impl<E: Engine> Arm9<E> {
         //       is on the ARM7).
         channel.repeat = value.repeat() && channel.timing != Timing::Immediate;
 
-        if self.dma.running_channels & 1 << i.get() != 0 {
-            // TODO: Add the ID of any game that triggers this to a "ludi non gratae" list
+        if prev_value.enabled() {
             return;
         }
 
@@ -79,14 +78,13 @@ impl<E: Engine> Arm9<E> {
         channel.cur_dst_addr = channel.dst_addr & mask;
         if channel.timing == Timing::GxFifo {
             if !value.is_32_bit() {
-                #[cfg(feature = "log")]
-                slog::warn!(self.logger, "GX FIFO DMA with 16-bit units");
-            }
+            #[cfg(feature = "log")]
+            slog::warn!(self.logger, "GX FIFO DMA with 16-bit units");
+        }
             channel.remaining_units = channel.unit_count;
         } else {
             channel.remaining_batch_units = channel.unit_count;
         }
-        channel.next_access_is_nseq = true;
 
         if channel.timing == Timing::Immediate {
             self.start_dma_transfer::<true, { Timing::Immediate }>(i);
@@ -109,18 +107,20 @@ impl<E: Engine> Arm9<E> {
         &mut self,
         i: Index,
     ) {
+        let channel = &mut self.dma.channels[i.get() as usize];
+        channel.next_access_is_nseq = true;
         if TIMING == Timing::GxFifo {
-            let channel = &mut self.dma.channels[i.get() as usize];
-            channel.remaining_batch_units = channel
-                .remaining_units
-                .min(112 << channel.control.is_32_bit() as u8);
-            channel.remaining_units -= channel.remaining_batch_units;
+                channel.remaining_batch_units = channel
+                    .remaining_units
+                    .min(112 << channel.control.is_32_bit() as u8);
+                channel.remaining_units -= channel.remaining_batch_units;
         }
         self.dma.running_channels |= 1 << i.get();
         if let Some(cur_i) = self.dma.cur_channel {
             if cur_i < i {
                 return;
             }
+            self.dma.channels[cur_i.get() as usize].next_access_is_nseq = true;
         }
         self.dma.cur_channel = Some(i);
         if NEED_SCHED_UPDATE {
@@ -150,7 +150,6 @@ impl<E: Engine> Arm9<E> {
                 } else {
                     channel.remaining_batch_units = channel.unit_count;
                 }
-                channel.next_access_is_nseq = true;
             } else {
                 channel.control.set_enabled(false);
                 channel.timing = Timing::Disabled;
@@ -220,8 +219,13 @@ impl<E: Engine> Arm9<E> {
 
                 channel.remaining_batch_units -= 1;
                 if channel.remaining_batch_units == 0 {
-                    emu.arm9.end_or_pause_dma_transfer(i);
-                    break;
+                    if channel.timing == Timing::GxFifo && emu.gpu.engine_3d.gx_fifo_half_empty() {
+                        channel.remaining_batch_units = channel.remaining_units.min(112);
+                        channel.remaining_units -= channel.remaining_batch_units;
+                    } else {
+                        emu.arm9.end_or_pause_dma_transfer(i);
+                        break;
+                    }
                 }
             }
         } else {
@@ -274,8 +278,13 @@ impl<E: Engine> Arm9<E> {
 
                 channel.remaining_batch_units -= 1;
                 if channel.remaining_batch_units == 0 {
-                    emu.arm9.end_or_pause_dma_transfer(i);
-                    break;
+                    if channel.timing == Timing::GxFifo && emu.gpu.engine_3d.gx_fifo_half_empty() {
+                        channel.remaining_batch_units = channel.remaining_units.min(224);
+                        channel.remaining_units -= channel.remaining_batch_units;
+                    } else {
+                        emu.arm9.end_or_pause_dma_transfer(i);
+                        break;
+                    }
                 }
             }
         }

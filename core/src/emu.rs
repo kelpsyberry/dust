@@ -366,7 +366,7 @@ impl<E: cpu::Engine> Emu<E> {
 }
 
 macro_rules! run {
-    ($emu: expr$(, $cycles: expr)?) => {
+    ($emu: expr, $engine: ty $(, $cycles: expr)?) => {
         let mut batch_end_time = $emu.schedule.batch_end_time();
         $(
             #[cfg(feature = "debugger-hooks")]
@@ -375,9 +375,13 @@ macro_rules! run {
                 *$cycles -= batch_end_time.0 - $emu.schedule.cur_time().0;
             }
         )*
-        if !$emu.gpu.engine_3d.gx_fifo_stalled() {
+        if $emu.gpu.engine_3d.gx_fifo_stalled() {
+            <$engine>::Arm9Data::run_stalled_until($emu, batch_end_time.into());
+            <$engine>::Arm7Data::run_stalled_until($emu, batch_end_time.into());
+        } else {
             macro_rules! run_core {
                 ($core: expr, $engine_data: ty, $run: expr) => {
+                    $core.schedule.set_cur_time_after($emu.schedule.cur_time().into());
                     #[cfg(feature = "debugger-hooks")]
                     let stopped = $core.stopped;
                     #[cfg(not(feature = "debugger-hooks"))]
@@ -390,10 +394,10 @@ macro_rules! run {
                     }
                 };
             }
-            run_core!($emu.arm9, E::Arm9Data, {
+            run_core!($emu.arm9, <$engine>::Arm9Data, {
                 batch_end_time = batch_end_time.min(Timestamp::from($emu.arm9.schedule.cur_time()));
             });
-            run_core!($emu.arm7, E::Arm7Data, {
+            run_core!($emu.arm7, <$engine>::Arm7Data, {
                 #[cfg(feature = "debugger-hooks")]
                 {
                     batch_end_time =
@@ -430,7 +434,7 @@ impl<E: cpu::Engine> Emu<E> {
     #[inline(never)]
     fn run_for_cycles(&mut self, cycles: &mut RawTimestamp) -> RunOutput {
         loop {
-            run!(self, cycles);
+            run!(self, E, cycles);
             if *cycles == 0 {
                 return RunOutput::CyclesOver;
             }
@@ -451,7 +455,7 @@ impl<E: cpu::Engine> Emu<E> {
             }
         }
         loop {
-            run!(self);
+            run!(self, E);
         }
     }
 }

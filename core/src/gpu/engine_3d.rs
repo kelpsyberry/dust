@@ -218,6 +218,7 @@ pub struct Engine3d {
     cur_packed_commands: u32,
     remaining_command_params: u8,
     command_finish_time: emu::Timestamp,
+    gx_fifo_stalled: bool,
 
     swap_buffers_attrs: SwapBuffersAttrs,
 
@@ -314,10 +315,11 @@ impl Engine3d {
             cur_packed_commands: 0,
             remaining_command_params: 0,
             command_finish_time: emu::Timestamp(0),
+            gx_fifo_stalled: false,
+
             swap_buffers_attrs: SwapBuffersAttrs(0),
 
             mtx_mode: MatrixMode::Projection,
-
             proj_stack: Matrix::zero(),
             pos_vec_stack: [[Matrix::zero(); 2]; 32],
             tex_stack: Matrix::zero(),
@@ -381,7 +383,7 @@ impl Engine3d {
 
     #[inline]
     pub fn gx_fifo_stalled(&self) -> bool {
-        self.gx_fifo.len() > 256
+        self.gx_fifo_stalled
     }
 
     #[inline]
@@ -510,19 +512,22 @@ impl Engine3d {
                 2 => emu.gpu.engine_3d.gx_fifo_irq_requested = false,
                 _ => {}
             }
-            if emu.gpu.engine_3d.gx_fifo.len() == 257 {
-                let cur_time = emu.arm9.schedule.cur_time();
-                if arm9::Timestamp::from(emu.gpu.engine_3d.command_finish_time) > cur_time {
-                    if !emu.gpu.engine_3d.swap_buffers_waiting() {
-                        emu.arm9.schedule.cancel_event(arm9::event_slots::ENGINE_3D);
-                        emu.schedule.schedule_event(
-                            emu::event_slots::ENGINE_3D,
-                            emu.gpu.engine_3d.command_finish_time,
-                        );
+            if emu.gpu.engine_3d.gx_fifo.len() > 256 {
+                if !emu.gpu.engine_3d.gx_fifo_stalled {
+                    let cur_time = emu.arm9.schedule.cur_time();
+                    if arm9::Timestamp::from(emu.gpu.engine_3d.command_finish_time) > cur_time {
+                        if !emu.gpu.engine_3d.swap_buffers_waiting() {
+                            emu.arm9.schedule.cancel_event(arm9::event_slots::ENGINE_3D);
+                            emu.schedule.schedule_event(
+                                emu::event_slots::ENGINE_3D,
+                                emu.gpu.engine_3d.command_finish_time,
+                            );
+                        }
+                        emu.arm9
+                            .schedule
+                            .schedule_event(arm9::event_slots::GX_FIFO, cur_time);
+                        emu.gpu.engine_3d.gx_fifo_stalled = true;
                     }
-                    emu.arm9
-                        .schedule
-                        .schedule_event(arm9::event_slots::GX_FIFO, cur_time);
                 }
                 return;
             }
@@ -1546,6 +1551,7 @@ impl Engine3d {
 
             emu.gpu.engine_3d.command_finish_time.0 =
                 emu::Timestamp::from(arm9::Timestamp(emu.arm9.schedule.cur_time().0 + 1)).0 + 10;
+            emu.gpu.engine_3d.gx_fifo_stalled &= emu.gpu.engine_3d.gx_fifo.len() > 256;
             if emu.gpu.engine_3d.gx_fifo_stalled() {
                 emu.schedule.schedule_event(
                     emu::event_slots::ENGINE_3D,

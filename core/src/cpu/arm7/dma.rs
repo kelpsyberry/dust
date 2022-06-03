@@ -73,8 +73,7 @@ impl<E: Engine> Arm7<E> {
         // The repeat bit is ignored for immediate DMA, to avoid triggering an infinite loop.
         channel.repeat = value.repeat() && channel.timing != Timing::Immediate;
 
-        if self.dma.running_channels & 1 << i.get() != 0 {
-            // TODO: Add the ID of any game that triggers this to a "ludi non gratae" list
+        if prev_value.enabled() {
             return;
         }
 
@@ -82,7 +81,6 @@ impl<E: Engine> Arm7<E> {
         channel.cur_src_addr = channel.src_addr & mask;
         channel.cur_dst_addr = channel.dst_addr & mask;
         channel.remaining_units = channel.unit_count;
-        channel.next_access_is_nseq = true;
 
         if channel.timing == Timing::Immediate {
             self.start_dma_transfer::<true>(i);
@@ -99,11 +97,13 @@ impl<E: Engine> Arm7<E> {
     }
 
     fn start_dma_transfer<const NEED_SCHED_UPDATE: bool>(&mut self, i: Index) {
+        self.dma.channels[i.get() as usize].next_access_is_nseq = true;
         self.dma.running_channels |= 1 << i.get();
         if let Some(cur_i) = self.dma.cur_channel {
             if cur_i < i {
                 return;
             }
+            self.dma.channels[cur_i.get() as usize].next_access_is_nseq = true;
         }
         self.dma.cur_channel = Some(i);
         if NEED_SCHED_UPDATE {
@@ -127,7 +127,6 @@ impl<E: Engine> Arm7<E> {
                 channel.cur_dst_addr = channel.dst_addr & mask;
             }
             channel.remaining_units = channel.unit_count;
-            channel.next_access_is_nseq = true;
         } else {
             channel.control.set_enabled(false);
             channel.timing = Timing::Disabled;

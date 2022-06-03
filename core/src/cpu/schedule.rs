@@ -16,6 +16,10 @@ pub trait Schedule {
 
     fn cur_time(&self) -> Self::Timestamp;
     fn set_cur_time(&mut self, value: Self::Timestamp);
+    #[inline]
+    fn set_cur_time_after(&mut self, value: Self::Timestamp) {
+        self.set_cur_time(self.cur_time().max(value));
+    }
 
     fn target_time(&self) -> Self::Timestamp;
     fn set_target_time(&mut self, value: Self::Timestamp);

@@ -106,6 +106,7 @@ pub trait CoreData {
 }
 
 pub trait Arm7Data: CoreData {
+    fn run_stalled_until(emu: &mut Emu<Self::Engine>, end_time: arm7::Timestamp);
     fn run_until(emu: &mut Emu<Self::Engine>, end_time: arm7::Timestamp);
 }
 
@@ -113,6 +114,7 @@ pub trait Arm9Data: CoreData {
     fn set_high_exc_vectors(&mut self, value: bool);
     fn set_t_bit_load_disabled(&mut self, value: bool);
 
+    fn run_stalled_until(emu: &mut Emu<Self::Engine>, end_time: arm9::Timestamp);
     fn run_until(emu: &mut Emu<Self::Engine>, end_time: arm9::Timestamp);
 
     cfg_if! {

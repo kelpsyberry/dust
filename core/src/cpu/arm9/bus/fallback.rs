@@ -651,7 +651,7 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
                 )),
             0x062 | 0x063 => {}
 
-            0x0E0..=0x0EC => emu.arm9.dma_fill[addr as usize & 0xE] = value,
+            0x0E0..=0x0EF => emu.arm9.dma_fill[addr as usize & 0xF] = value,
 
             0x132 => emu.write_arm9_key_irq_control(KeyIrqControl(
                 (emu.input.arm9_key_irq_control().0 & 0xFF00) | value as u16,
@@ -967,7 +967,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                     &emu.gpu.engine_3d,
                 ),
 
-                0x0E0..=0x0EC => emu.arm9.dma_fill.write_le(addr as usize & 0xE, value),
+                0x0E0..=0x0EE => emu.arm9.dma_fill.write_le(addr as usize & 0xE, value),
 
                 0x100 => emu.arm9.timers.write_reload(
                     timers::Index::new(0),
