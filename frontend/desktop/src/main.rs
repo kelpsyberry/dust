@@ -8,7 +8,8 @@
     try_blocks,
     slice_ptr_len,
     array_chunks,
-    label_break_value
+    label_break_value,
+    portable_simd
 )]
 
 #[cfg(target_os = "macos")]

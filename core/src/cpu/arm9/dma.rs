@@ -219,7 +219,10 @@ impl<E: Engine> Arm9<E> {
 
                 channel.remaining_batch_units -= 1;
                 if channel.remaining_batch_units == 0 {
-                    if channel.timing == Timing::GxFifo && emu.gpu.engine_3d.gx_fifo_half_empty() {
+                    if channel.timing == Timing::GxFifo
+                        && emu.gpu.engine_3d.gx_fifo_half_empty()
+                        && channel.remaining_units != 0
+                    {
                         channel.remaining_batch_units = channel.remaining_units.min(112);
                         channel.remaining_units -= channel.remaining_batch_units;
                     } else {
@@ -278,7 +281,10 @@ impl<E: Engine> Arm9<E> {
 
                 channel.remaining_batch_units -= 1;
                 if channel.remaining_batch_units == 0 {
-                    if channel.timing == Timing::GxFifo && emu.gpu.engine_3d.gx_fifo_half_empty() {
+                    if channel.timing == Timing::GxFifo
+                        && emu.gpu.engine_3d.gx_fifo_half_empty()
+                        && channel.remaining_units != 0
+                    {
                         channel.remaining_batch_units = channel.remaining_units.min(224);
                         channel.remaining_units -= channel.remaining_batch_units;
                     } else {

@@ -255,6 +255,7 @@ bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     struct BgObjPixel(u32) {
         pub rgb: u32 @ 0..=17,
+        pub is_3d: bool @ 18,
         pub alpha: u8 @ 19..=23,
         pub force_blending: bool @ 24,
         pub custom_alpha: bool @ 25,

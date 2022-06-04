@@ -1,7 +1,7 @@
 mod io;
 mod matrix;
 mod vertex;
-pub use vertex::{Color, ScreenCoords, ScreenVertex, TexCoords};
+pub use vertex::{Color, InterpColor, ScreenCoords, ScreenVertex, TexCoords};
 mod renderer;
 pub use renderer::Renderer;
 
@@ -15,7 +15,10 @@ use crate::{
     gpu::vram::Vram,
     utils::{bitfield_debug, schedule::RawTimestamp, zeroed_box, Fifo, Zero},
 };
-use core::mem::{replace, transmute};
+use core::{
+    mem::{replace, transmute},
+    simd::i32x4,
+};
 use matrix::{Matrix, MatrixBuffer};
 use vertex::{ConversionScreenCoords, Vertex};
 
@@ -72,7 +75,8 @@ enum MatrixMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Light {
     direction: [i16; 3],
-    color: u16,
+    half_vec: [i16; 3],
+    color: i32x4,
 }
 
 bitfield_debug! {
@@ -134,7 +138,7 @@ use bounded::{PrimMaxVerts, PrimVertIndex};
 pub struct Polygon {
     pub vertices: [VertexAddr; 10],
     pub depth_values: [i32; 10],
-    pub w_values: [i32; 10],
+    pub w_values: [u16; 10],
     pub top_y: u8,
     pub bot_y: u8,
     pub vertices_len: PolyVertsLen,
@@ -213,7 +217,7 @@ pub struct Engine3d {
 
     gx_status: GxStatus,
     gx_fifo_irq_requested: bool,
-    gx_fifo: Box<Fifo<FifoEntry, 260>>,
+    gx_fifo: Box<Fifo<FifoEntry, { 256 + 4 * 16 }>>,
     gx_pipe: Fifo<FifoEntry, 4>,
     cur_packed_commands: u32,
     remaining_command_params: u8,
@@ -236,15 +240,16 @@ pub struct Engine3d {
 
     viewport: [u8; 4],
 
-    vert_color: u16,
+    vert_color: Color,
+    vert_normal: [i16; 3],
     tex_coords: TexCoords,
     last_vtx_coords: [i16; 3],
 
     shininess_table_enabled: bool,
-    diffuse_color: u16,
-    ambient_color: u16,
-    specular_color: u16,
-    emission_color: u16,
+    diffuse_color: i32x4,
+    ambient_color: i32x4,
+    specular_color: i32x4,
+    emission_color: i32x4,
     shininess_table: [u8; 128],
     lights: [Light; 4],
 
@@ -273,13 +278,17 @@ pub struct Engine3d {
     rendering_state: RenderingState,
 }
 
-fn decode_rgb_5(value: u16) -> Color {
+fn decode_rgb_5(value: u32) -> Color {
     Color::from_array([
-        value as i8 & 0x1F,
-        (value >> 5) as i8 & 0x1F,
-        (value >> 10) as i8 & 0x1F,
-        1,
+        value as u8 & 0x1F,
+        (value >> 5) as u8 & 0x1F,
+        (value >> 10) as u8 & 0x1F,
+        0,
     ])
+}
+
+fn rgb_5_to_6(value: Color) -> Color {
+    value << Color::splat(1) | (value + Color::splat(0x1F)) >> Color::splat(5)
 }
 
 impl Engine3d {
@@ -332,18 +341,20 @@ impl Engine3d {
             cur_tex_mtx: Matrix::zero(),
             viewport: [0; 4],
 
-            vert_color: 0,
+            vert_color: Color::splat(0),
+            vert_normal: [0; 3],
             tex_coords: TexCoords::splat(0),
             last_vtx_coords: [0; 3],
             shininess_table_enabled: false,
-            diffuse_color: 0,
-            ambient_color: 0,
-            specular_color: 0,
-            emission_color: 0,
+            diffuse_color: i32x4::splat(0),
+            ambient_color: i32x4::splat(0),
+            specular_color: i32x4::splat(0),
+            emission_color: i32x4::splat(0),
             shininess_table: [0; 128],
             lights: [Light {
                 direction: [0; 3],
-                color: 0,
+                half_vec: [0, 0, -0x100],
+                color: i32x4::splat(0),
             }; 4],
 
             next_poly_attrs: PolygonAttrs(0),
@@ -391,7 +402,7 @@ impl Engine3d {
         self.gx_status
             .with_proj_matrix_stack_level(self.proj_stack_pointer)
             .with_pos_vec_matrix_stack_level(self.pos_vec_stack_pointer)
-            .with_fifo_level(self.gx_fifo.len() as u16)
+            .with_fifo_level(self.gx_fifo.len().min(256) as u16)
             .with_fifo_less_than_half_full(self.gx_fifo.len() < 128)
             .with_fifo_empty(self.gx_fifo.is_empty())
     }
@@ -514,20 +525,20 @@ impl Engine3d {
             }
             if emu.gpu.engine_3d.gx_fifo.len() > 256 {
                 if !emu.gpu.engine_3d.gx_fifo_stalled {
+                    emu.gpu.engine_3d.gx_fifo_stalled = true;
                     let cur_time = emu.arm9.schedule.cur_time();
-                    if arm9::Timestamp::from(emu.gpu.engine_3d.command_finish_time) > cur_time {
-                        if !emu.gpu.engine_3d.swap_buffers_waiting() {
-                            emu.arm9.schedule.cancel_event(arm9::event_slots::ENGINE_3D);
-                            emu.schedule.schedule_event(
-                                emu::event_slots::ENGINE_3D,
-                                emu.gpu.engine_3d.command_finish_time,
-                            );
-                        }
-                        emu.arm9
-                            .schedule
-                            .schedule_event(arm9::event_slots::GX_FIFO, cur_time);
-                        emu.gpu.engine_3d.gx_fifo_stalled = true;
+                    if arm9::Timestamp::from(emu.gpu.engine_3d.command_finish_time) > cur_time
+                        && !emu.gpu.engine_3d.swap_buffers_waiting()
+                    {
+                        emu.arm9.schedule.cancel_event(arm9::event_slots::ENGINE_3D);
+                        emu.schedule.schedule_event(
+                            emu::event_slots::ENGINE_3D,
+                            emu.gpu.engine_3d.command_finish_time,
+                        );
                     }
+                    emu.arm9
+                        .schedule
+                        .schedule_event(arm9::event_slots::GX_FIFO, cur_time);
                 }
                 return;
             }
@@ -641,6 +652,52 @@ impl Engine3d {
         }
     }
 
+    fn apply_lighting(&mut self) {
+        let normal = self.cur_pos_vec_mtxs[1]
+            .mul_left_vec3_zero_i16::<i32, 12>(self.vert_normal)
+            .to_array();
+        let normal = [normal[0], normal[1], normal[2]];
+        let mut color = self.emission_color;
+        for (i, light) in self.lights.iter().enumerate() {
+            if self.cur_poly_attrs.lights_mask() & 1 << i == 0 {
+                continue;
+            }
+
+            let diffuse_level = ((-light
+                .direction
+                .iter()
+                .zip(normal.iter())
+                .fold(0_i32, |acc, (a, b)| {
+                    acc.wrapping_add((*a as i32).wrapping_mul(*b))
+                }))
+                >> 9)
+                .max(0);
+
+            let mut shininess_level = ((-light
+                .half_vec
+                .iter()
+                .zip(normal.iter())
+                .fold(0_i32, |acc, (a, b)| {
+                    acc.wrapping_add((*a as i32).wrapping_mul(*b))
+                }))
+                >> 9)
+                .max(0);
+            shininess_level = (shininess_level * shininess_level) >> 9;
+
+            if self.shininess_table_enabled {
+                shininess_level =
+                    self.shininess_table[(shininess_level >> 2).min(0x7F) as usize] as i32;
+            }
+
+            color += ((self.diffuse_color * light.color * i32x4::splat(diffuse_level))
+                >> i32x4::splat(14))
+                + ((self.specular_color * light.color * i32x4::splat(shininess_level))
+                    >> i32x4::splat(14))
+                + ((self.ambient_color * light.color) >> i32x4::splat(5));
+        }
+        self.vert_color = rgb_5_to_6(color.min(i32x4::splat(0x1F)).cast());
+    }
+
     fn add_vert(&mut self, coords: [i16; 3]) {
         if self.poly_ram_level as usize == self.poly_ram.len() {
             self.rendering_state
@@ -655,9 +712,24 @@ impl Engine3d {
             self.update_clip_mtx();
         }
         self.cur_prim_verts[self.cur_prim_vert_index.get() as usize] = Vertex {
-            coords: self.cur_clip_mtx.mul_left_vec_i16(coords),
-            uv: self.tex_coords,
-            color: decode_rgb_5(self.vert_color),
+            coords: self.cur_clip_mtx.mul_left_vec3_i16(coords),
+            uv: {
+                let mut tex_coords = self.tex_coords;
+                let transform_mode = self.cur_tex_params.coord_transform_mode();
+                if transform_mode != 0 {
+                    let [u, v, ..] = (match transform_mode {
+                        1 => self.cur_tex_mtx.mul_left_vec2_i16(self.tex_coords),
+                        2 => self
+                            .cur_tex_mtx
+                            .mul_left_vec3_zero_i16::<i16, 21>(self.vert_normal),
+                        _ => self.cur_tex_mtx.mul_left_vec3_zero_i16::<i16, 24>(coords),
+                    })
+                    .to_array();
+                    tex_coords += TexCoords::from_array([u, v]);
+                }
+                tex_coords
+            },
+            color: self.vert_color,
         };
 
         let new_vert_index = self.cur_prim_vert_index.get() + 1;
@@ -889,7 +961,8 @@ impl Engine3d {
             self.vert_ram[self.vert_ram_level as usize] = ScreenVertex {
                 coords,
                 uv: vert.uv,
-                color: vert.color,
+                color: vert.color.cast() << InterpColor::splat(3)
+                    | vert.color.cast() >> InterpColor::splat(3),
             };
             *vert_addr = VertexAddr::new(self.vert_ram_level);
             self.vert_ram_level += 1;
@@ -923,12 +996,12 @@ impl Engine3d {
         if leading_zeros >= 16 {
             let shift = leading_zeros - 16;
             for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
-                poly.w_values[i] = vert.coords[3] << shift;
+                poly.w_values[i] = (vert.coords[3] << shift) as u16;
             }
         } else {
             let shift = 16 - leading_zeros;
             for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
-                poly.w_values[i] = vert.coords[3] >> shift;
+                poly.w_values[i] = (vert.coords[3] >> shift) as u16;
             }
         }
 
@@ -999,6 +1072,7 @@ impl Engine3d {
                     &emu.gpu.engine_3d.vert_ram[..emu.gpu.engine_3d.vert_ram_level as usize],
                     &emu.gpu.engine_3d.poly_ram[..emu.gpu.engine_3d.poly_ram_level as usize],
                     &emu.gpu.engine_3d.rendering_state,
+                    emu.gpu.engine_3d.swap_buffers_attrs.w_buffering(),
                 );
             }
             emu.gpu.engine_3d.rendering_state.texture_dirty = 0;
@@ -1357,10 +1431,19 @@ impl Engine3d {
 
                 0x20 => {
                     // COLOR
-                    emu.gpu.engine_3d.vert_color = first_param as u16 & 0x7FFF;
+                    emu.gpu.engine_3d.vert_color = rgb_5_to_6(decode_rgb_5(first_param));
                 }
 
-                // 0x21 => {} // TODO: NORMAL
+                0x21 => {
+                    // NORMAL
+                    emu.gpu.engine_3d.vert_normal = [
+                        (first_param as i16) << 6 >> 6,
+                        (first_param >> 4) as i16 >> 6,
+                        (first_param >> 14) as i16 >> 6,
+                    ];
+                    emu.gpu.engine_3d.apply_lighting();
+                }
+
                 0x22 => {
                     // TEXCOORD
                     emu.gpu.engine_3d.tex_coords =
@@ -1441,33 +1524,43 @@ impl Engine3d {
 
                 0x30 => {
                     // DIF_AMB
-                    emu.gpu.engine_3d.diffuse_color = first_param as u16 & 0x7FFF;
-                    emu.gpu.engine_3d.ambient_color = (first_param >> 16) as u16 & 0x7FFF;
+                    let diffuse_color = decode_rgb_5(first_param);
+                    emu.gpu.engine_3d.diffuse_color = diffuse_color.cast();
+                    emu.gpu.engine_3d.ambient_color = decode_rgb_5(first_param >> 16).cast();
                     if first_param & 1 << 15 != 0 {
-                        emu.gpu.engine_3d.vert_color = emu.gpu.engine_3d.diffuse_color;
+                        emu.gpu.engine_3d.vert_color = rgb_5_to_6(diffuse_color);
                     }
                 }
 
                 0x31 => {
                     // SPE_EMI
-                    emu.gpu.engine_3d.specular_color = first_param as u16 & 0x7FFF;
-                    emu.gpu.engine_3d.emission_color = (first_param >> 16) as u16 & 0x7FFF;
+                    emu.gpu.engine_3d.specular_color = decode_rgb_5(first_param).cast();
+                    emu.gpu.engine_3d.emission_color = decode_rgb_5(first_param >> 16).cast();
                     emu.gpu.engine_3d.shininess_table_enabled = first_param & 1 << 15 != 0;
                 }
 
                 0x32 => {
                     // LIGHT_VECTOR
-                    emu.gpu.engine_3d.lights[(first_param >> 30) as usize].direction = [
-                        (first_param as i16) << 6 >> 3,
-                        ((first_param >> 10) as i16) << 6 >> 3,
-                        ((first_param >> 20) as i16) << 6 >> 3,
+                    let transformed = emu.gpu.engine_3d.cur_pos_vec_mtxs[1]
+                        .mul_left_vec3_zero_i16::<i16, 12>([
+                            (first_param as i16) << 6 >> 6,
+                            (first_param >> 4) as i16 >> 6,
+                            (first_param >> 14) as i16 >> 6,
+                        ])
+                        .to_array();
+                    let light = &mut emu.gpu.engine_3d.lights[(first_param >> 30) as usize];
+                    light.direction = [transformed[0], transformed[1], transformed[2]];
+                    light.half_vec = [
+                        transformed[0] >> 1,
+                        transformed[1] >> 1,
+                        (transformed[2] - 0x200) >> 1,
                     ];
                 }
 
                 0x33 => {
                     // LIGHT_COLOR
                     emu.gpu.engine_3d.lights[(first_param >> 30) as usize].color =
-                        first_param as u16 & 0x7FFF;
+                        decode_rgb_5(first_param).cast();
                 }
 
                 0x34 => {
@@ -1530,19 +1623,19 @@ impl Engine3d {
 
                 // 0x72 => {} // TODO: VEC_TEST
                 _ => {
-                    #[cfg(feature = "log")]
-                    slog::warn!(
-                        emu.gpu.engine_3d.logger,
-                        "Unhandled command: {:#04X} ({})",
-                        command,
-                        match command {
-                            0x21 => "NORMAL",
-                            0x70 => "BOX_TEST",
-                            0x71 => "POS_TEST",
-                            0x72 => "VEC_TEST",
-                            _ => "Unknown",
-                        },
-                    );
+                    // TODO: Obviously remove
+                    // #[cfg(feature = "log")]
+                    // slog::warn!(
+                    //     emu.gpu.engine_3d.logger,
+                    //     "Unhandled command: {:#04X} ({})",
+                    //     command,
+                    //     match command {
+                    //         0x70 => "BOX_TEST",
+                    //         0x71 => "POS_TEST",
+                    //         0x72 => "VEC_TEST",
+                    //         _ => "Unknown",
+                    //     },
+                    // );
                     for _ in 1..params {
                         unsafe { emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param };
                     }

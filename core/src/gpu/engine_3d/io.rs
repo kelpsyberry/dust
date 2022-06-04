@@ -8,6 +8,7 @@ impl Engine3d {
     pub(crate) fn read_8<A: AccessType>(&mut self, addr: u16) -> u8 {
         match addr & 0xFFF {
             0x320 => self.line_buffer_level(),
+            0x321..=0x323 => 0,
 
             0x600 => self.gx_status().0 as u8,
             0x601 => (self.gx_status().0 >> 8) as u8,
@@ -51,6 +52,7 @@ impl Engine3d {
     pub(crate) fn read_16<A: AccessType>(&mut self, addr: u16) -> u16 {
         match addr & 0xFFE {
             0x320 => self.line_buffer_level() as u16,
+            0x322 => 0,
 
             0x600 => self.gx_status().0 as u16,
             0x602 => (self.gx_status().0 >> 16) as u16,
@@ -137,7 +139,6 @@ impl Engine3d {
                     );
                 }
             }
-
             0x600 | 0x602 => {}
 
             _ =>

@@ -9,6 +9,7 @@ pub trait Renderer {
         vert_ram: &[ScreenVertex],
         poly_ram: &[Polygon],
         state: &RenderingState,
+        w_buffering: bool,
     );
     fn repeat_last_frame(
         &mut self,

@@ -58,6 +58,17 @@ impl<R: Role> Engine2d<R> {
             (r | g | b) >> 4
         }
 
+        #[inline]
+        fn blend_5bit_coeff(color_a: u32, color_b: u32, coeff_a: u32, coeff_b: u32) -> u32 {
+            let r = ((color_a & 0x3F) * coeff_a + (color_b & 0x3F) * coeff_b).min(0x7E0);
+            let g =
+                ((color_a & 0xFC0) * coeff_a + (color_b & 0xFC0) * coeff_b).min(0x1F800) & 0x1F800;
+            let b = ((color_a & 0x3_F000) * coeff_a + (color_b & 0x3_F000) * coeff_b)
+                .min(0x7E_0000)
+                & 0x7E_0000;
+            (r | g | b) >> 5
+        }
+
         let target_1_mask = self.color_effects_control.target_1_mask();
         let target_2_mask = self.color_effects_control.target_2_mask();
         let a_coeff = self.blend_coeffs.0 as u32;
@@ -70,7 +81,11 @@ impl<R: Role> Engine2d<R> {
                 let bot = BgObjPixel((pixel >> 32) as u32);
                 let top_mask = top.color_effects_mask();
                 let bot_matches = bot.color_effects_mask() & target_2_mask != 0;
-                if top.force_blending() && bot_matches {
+                if top.is_3d() && bot_matches {
+                    let a_coeff = (top.alpha() + 1) as u32;
+                    let b_coeff = (32 - a_coeff) as u32;
+                    blend_5bit_coeff(top.0, bot.0, a_coeff, b_coeff)
+                } else if top.force_blending() && bot_matches {
                     let (a_coeff, b_coeff) = if top.custom_alpha() {
                         (top.alpha() as u32, 16 - top.alpha() as u32)
                     } else {
@@ -395,13 +410,15 @@ impl<R: Role> Engine2d<R> {
                 if R::IS_A && self.control.bg0_3d() {
                     if self.engine_3d_enabled_in_frame {
                         let scanline = renderer_3d.read_scanline();
-                        let pixel_attrs = BgObjPixel(0).with_color_effects_mask(1);
+                        let pixel_attrs = BgObjPixel(0).with_color_effects_mask(1).with_is_3d(true);
                         for i in 0..SCREEN_WIDTH {
                             let pixel = scanline.0[i];
-                            if pixel & 0x8000 != 0 {
+                            if pixel >> 19 != 0 {
                                 self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64)
                                     << 32
-                                    | (rgb_15_to_18(pixel) | pixel_attrs.0) as u64;
+                                    | ((pixel & 0x3_FFFF)
+                                        | pixel_attrs.with_alpha((pixel >> 18) as u8 & 0x1F).0)
+                                        as u64;
                             }
                         }
                     }

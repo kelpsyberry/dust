@@ -18,6 +18,7 @@ impl RendererTrair for Renderer {
         _vert_ram: &[ScreenVertex],
         _poly_ram: &[Polygon],
         _state: &dust_core::gpu::engine_3d::RenderingState,
+        _w_buffering: bool,
     ) {
     }
 

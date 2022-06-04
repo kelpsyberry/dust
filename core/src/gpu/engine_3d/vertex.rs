@@ -1,8 +1,9 @@
 use crate::utils::Zero;
-use core::simd::{i16x2, i32x2, i32x4, i64x2, i64x4, i8x4, simd_swizzle, u16x2};
+use core::simd::{i16x2, u16x4, i32x2, i32x4, i64x2, i64x4, u8x4, simd_swizzle, u16x2};
 
 pub type TexCoords = i16x2;
-pub type Color = i8x4;
+pub type Color = u8x4;
+pub type InterpColor = u16x4;
 pub type ConversionScreenCoords = i32x2;
 pub type ScreenCoords = u16x2;
 
@@ -11,7 +12,7 @@ pub type ScreenCoords = u16x2;
 pub struct Vertex {
     pub coords: i32x4,
     pub uv: TexCoords,
-    pub color: i8x4,
+    pub color: Color,
 }
 
 unsafe impl Zero for Vertex {}
@@ -21,7 +22,7 @@ impl Vertex {
         Vertex {
             coords: i32x4::splat(0),
             uv: TexCoords::splat(0),
-            color: i8x4::splat(0),
+            color: Color::splat(0),
         }
     }
 
@@ -69,7 +70,7 @@ pub fn front_facing(v0: &Vertex, v1: &Vertex, v2: &Vertex) -> bool {
 pub struct ScreenVertex {
     pub coords: ScreenCoords,
     pub uv: TexCoords,
-    pub color: i8x4,
+    pub color: InterpColor,
 }
 
 unsafe impl Zero for ScreenVertex {}
@@ -79,7 +80,7 @@ impl ScreenVertex {
         ScreenVertex {
             coords: ScreenCoords::splat(0),
             uv: TexCoords::splat(0),
-            color: i8x4::splat(0),
+            color: InterpColor::splat(0),
         }
     }
 }

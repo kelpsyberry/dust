@@ -286,16 +286,16 @@ impl Vram {
         [(); mem::size_of::<T>()]: Sized,
     {
         let mirror_addr = addr ^ 0x1_0000;
-        if mapped & 1 != 0 {
-            handle_mirroring!(
-                self, b_bg, value, T, mirror_addr, 1;
-                0 => c,
-            );
-        } else {
+        if mapped & 1 == 0 {
             unsafe {
                 self.b_bg.write_le_aligned_unchecked(mirror_addr, value);
                 clear_writeback!(self.writeback.b_bg.get_mut(), mirror_addr, T);
             }
+        } else {
+            handle_mirroring!(
+                self, b_bg, value, T, mirror_addr, 1;
+                0 => c,
+            );
         }
         if mapped & 4 != 0 {
             for mirror_addr in [addr ^ 0x4000, addr ^ 0x1_4000] {
