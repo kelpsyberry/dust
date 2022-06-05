@@ -351,7 +351,7 @@ impl Renderer {
                         },
                         alpha: wgpu::BlendComponent {
                             operation: wgpu::BlendOperation::Add,
-                            src_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            src_factor: wgpu::BlendFactor::One,
                             dst_factor: wgpu::BlendFactor::Zero,
                         },
                     }),
