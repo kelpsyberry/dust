@@ -1,15 +1,10 @@
-use super::{
-    common::{
-        memory::{Addr, MemoryEditor},
-        RangeInclusive,
-    },
-    FrameDataSlot, InstanceableView, View,
-};
+use super::{FrameDataSlot, InstanceableView, View};
 use crate::ui::window::Window;
 use dust_core::{
     cpu::{self, arm7, arm9, bus},
     emu::Emu,
 };
+use imgui_memory_editor::{Addr, MemoryEditor, RangeInclusive};
 
 pub struct CpuMemory<const ARM9: bool> {
     editor: MemoryEditor,
@@ -35,10 +30,11 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
     type EmuState = EmuState;
 
     fn new(_window: &mut Window) -> Self {
+        let mut editor = MemoryEditor::new();
+        editor.set_show_range(false);
+        editor.set_addr_range((0, 0xFFFF_FFFF).into());
         CpuMemory {
-            editor: MemoryEditor::new()
-                .show_range(false)
-                .addr_range((0, 0xFFFF_FFFF).into()),
+            editor,
             last_visible_addrs: (0, 0).into(),
             mem_contents: MemContents {
                 visible_addrs: (0, 0).into(),
@@ -75,7 +71,7 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
         frame_data
             .data
             .reserve(((emu_state.visible_addrs.end - emu_state.visible_addrs.start) >> 2) as usize);
-        for addr in emu_state.visible_addrs.into_iter().step_by(4) {
+        for addr in (emu_state.visible_addrs.start..=emu_state.visible_addrs.end).step_by(4) {
             frame_data.data.push(if ARM9 {
                 arm9::bus::read_32::<bus::DebugCpuAccess, E, false>(emu, addr as u32)
             } else {
@@ -113,18 +109,24 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
         let _mono_font = ui.push_font(window.mono_font);
 
         self.editor.handle_options_right_click(ui);
-        self.editor.draw_callbacks(ui, None, &mut (), |_, addr| {
-            if self.mem_contents.visible_addrs.contains(&addr) {
-                let offset = (addr - self.mem_contents.visible_addrs.start) as usize;
-                if offset < self.mem_contents.data.len() << 2 {
-                    Some((self.mem_contents.data[offset >> 2] >> ((offset & 3) << 3)) as u8)
+        self.editor.draw_callbacks(
+            ui,
+            None,
+            &mut (),
+            |_, addr| {
+                if self.mem_contents.visible_addrs.contains(&addr) {
+                    let offset = (addr - self.mem_contents.visible_addrs.start) as usize;
+                    if offset < self.mem_contents.data.len() << 2 {
+                        Some((self.mem_contents.data[offset >> 2] >> ((offset & 3) << 3)) as u8)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
-            } else {
-                None
-            }
-        });
+            },
+            |_, _, _| {},
+        );
 
         let mut visible_addrs = self.editor.visible_addrs(1);
         visible_addrs.start &= !3;

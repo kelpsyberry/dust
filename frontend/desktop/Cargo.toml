@@ -45,6 +45,7 @@ parking_lot = "0.12"
 cpal = "0.13"
 chrono = { version = "0.4", features = ["serde"] }
 discord-rpc = { git = "https://github.com/Kelpsy/discord-rpc", optional = true }
+imgui-memory-editor = { git = "https://github.com/Kelpsy/imgui-memory-editor" }
 gdb-protocol = { version = "0.1", optional = true }
 libc = "0.2"
 

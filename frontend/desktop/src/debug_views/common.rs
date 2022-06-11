@@ -10,7 +10,6 @@ macro_rules! str_buf {
 mod range_inclusive;
 pub use range_inclusive::RangeInclusive;
 pub mod disasm;
-pub mod memory;
 pub mod regs;
 mod scrollbar;
 use scrollbar::Scrollbar;
