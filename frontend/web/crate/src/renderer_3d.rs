@@ -7,7 +7,7 @@ use dust_core::{
 };
 
 pub struct Renderer {
-    scanline: Box<Scanline<u32, 512>>,
+    scanline: Box<Scanline<u32, 256>>,
 }
 
 impl RendererTrair for Renderer {
@@ -32,7 +32,7 @@ impl RendererTrair for Renderer {
 
     fn start_frame(&mut self) {}
 
-    fn read_scanline(&mut self) -> &Scanline<u32, 512> {
+    fn read_scanline(&mut self) -> &Scanline<u32, 256> {
         &self.scanline
     }
 

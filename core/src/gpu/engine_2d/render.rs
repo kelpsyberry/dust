@@ -411,6 +411,7 @@ impl<R: Role> Engine2d<R> {
                     if self.engine_3d_enabled_in_frame {
                         let scanline = renderer_3d.read_scanline();
                         let pixel_attrs = BgObjPixel(0).with_color_effects_mask(1).with_is_3d(true);
+                        // TODO: 3D layer scrolling
                         for i in 0..SCREEN_WIDTH {
                             let pixel = scanline.0[i];
                             if pixel >> 19 != 0 {

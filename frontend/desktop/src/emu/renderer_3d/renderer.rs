@@ -105,7 +105,7 @@ impl RendererTrair for Renderer {
         self.next_scanline = 0;
     }
 
-    fn read_scanline(&mut self) -> &Scanline<u32, 512> {
+    fn read_scanline(&mut self) -> &Scanline<u32, 256> {
         self.wait_for_line(self.next_scanline);
         let result =
             unsafe { &(&*self.shared_data.scanline_buffer.get())[self.next_scanline as usize] };
@@ -133,7 +133,7 @@ impl Renderer {
         let shared_data = Arc::new(unsafe {
             SharedData {
                 rendering_data: transmute(zeroed_box::<RenderingData>()),
-                scanline_buffer: transmute(zeroed_box::<[Scanline<u32, 512>; SCREEN_HEIGHT]>()),
+                scanline_buffer: transmute(zeroed_box::<[Scanline<u32, 256>; SCREEN_HEIGHT]>()),
                 processing_scanline: AtomicU8::new(SCREEN_HEIGHT as u8),
                 stopped: AtomicBool::new(false),
             }

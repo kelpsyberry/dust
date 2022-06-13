@@ -20,6 +20,6 @@ pub trait Renderer {
 
     fn start_frame(&mut self);
 
-    fn read_scanline(&mut self) -> &Scanline<u32, 512>;
+    fn read_scanline(&mut self) -> &Scanline<u32, 256>;
     fn skip_scanline(&mut self);
 }

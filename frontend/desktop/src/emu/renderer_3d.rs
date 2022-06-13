@@ -5,7 +5,7 @@ use render::RenderingState;
 
 use dust_core::{
     gpu::{
-        engine_3d::{Polygon, ScreenVertex},
+        engine_3d::{Polygon, RenderingControl, ScreenVertex},
         Scanline, SCREEN_HEIGHT,
     },
     utils::{Bytes, Zero},
@@ -16,6 +16,7 @@ use std::{
 };
 
 struct RenderingData {
+    control: RenderingControl,
     texture: Bytes<0x8_0000>,
     tex_pal: Bytes<0x1_8000>,
     vert_ram: [ScreenVertex; 6144],
@@ -28,7 +29,7 @@ unsafe impl Zero for RenderingData {}
 
 struct SharedData {
     rendering_data: Box<UnsafeCell<RenderingData>>,
-    scanline_buffer: Box<UnsafeCell<[Scanline<u32, 512>; SCREEN_HEIGHT]>>,
+    scanline_buffer: Box<UnsafeCell<[Scanline<u32, 256>; SCREEN_HEIGHT]>>,
     processing_scanline: AtomicU8,
     stopped: AtomicBool,
 }

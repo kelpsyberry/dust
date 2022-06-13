@@ -21,7 +21,8 @@ struct Edge {
     b: ScreenVertex,
     x_ref: i32,
     x_incr: i32,
-    x_limit: i32,
+    x_min: u16,
+    x_diff: u16,
     a_i: PolyVertIndex,
     b_i: PolyVertIndex,
     y_start: u8,
@@ -82,7 +83,8 @@ impl Edge {
             b_i,
             x_ref,
             x_incr,
-            x_limit: if is_negative { b_x } else { b_x + 1 },
+            x_min: a_x.min(b_x) as u16,
+            x_diff: x_diff as u16,
             y_start: a_y,
             y_end: b_y,
             w_start,
@@ -103,30 +105,40 @@ impl Edge {
             if self.is_negative {
                 (
                     (((start_x + (0x1FF - (start_x & 0x1FF)) - self.x_incr) >> 18) + 1)
-                        .clamp(self.x_limit, 512) as u16,
-                    ((start_x >> 18) + 1).clamp(0, 512) as u16,
+                        .clamp(0, 256) as u16,
+                    (start_x >> 18).clamp(0, 256) as u16,
                 )
             } else {
                 (
-                    (start_x >> 18).clamp(0, 512) as u16,
-                    ((((start_x & !0x1FF) + self.x_incr) >> 18).clamp(0, self.x_limit) as u16),
+                    (start_x >> 18).clamp(0, 256) as u16,
+                    ((((start_x & !0x1FF) + self.x_incr) >> 18).clamp(0, 256) as u16),
                 )
             }
         } else {
             (
-                (start_x >> 18).clamp(0, 512) as u16,
-                ((start_x >> 18) + 1).clamp(0, 512) as u16,
+                (start_x >> 18).clamp(0, 256) as u16,
+                ((start_x >> 18) + 1).clamp(0, 256) as u16,
             )
         }
     }
 
-    fn edge_interp(&self, y: u8) -> InterpData<true> {
-        InterpData::new(
-            self.y_end - self.y_start,
-            y - self.y_start,
-            self.w_start,
-            self.w_end,
-        )
+    fn edge_interp(&self, y: u8, x: u16) -> InterpData<true> {
+        if self.is_x_major {
+            let x = x - self.x_min;
+            InterpData::new(
+                self.x_diff,
+                if self.is_negative { self.x_diff - x } else { x },
+                self.w_start,
+                self.w_end,
+            )
+        } else {
+            InterpData::new(
+                (self.y_end - self.y_start) as u16,
+                (y - self.y_start) as u16,
+                self.w_start,
+                self.w_end,
+            )
+        }
     }
 }
 
@@ -138,8 +150,9 @@ struct InterpData<const EDGE: bool> {
 impl<const EDGE: bool> InterpData<EDGE> {
     const PRECISION: u8 = 8 + EDGE as u8;
 
-    fn new(len: u8, x: u8, a_w: u16, b_w: u16) -> Self {
-        let force_linear = a_w == b_w && (a_w | b_w) & if EDGE { 0x3E } else { 0x3F } == 0;
+    fn new(len: u16, x: u16, a_w: u16, b_w: u16) -> Self {
+        let linear_test_w_mask = if EDGE { 0x7E } else { 0x7F };
+        let force_linear = a_w == b_w && (a_w | b_w) & linear_test_w_mask == 0;
         let l_factor = {
             let numer = (x as u32) << Self::PRECISION;
             let denom = len as u32;
@@ -185,9 +198,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
             u32x4::splat(factor),
             u32x4::splat((1 << Self::PRECISION) - factor),
         );
-        (((min << u32x4::splat(Self::PRECISION as u32)) + (max - min) * factor)
-            >> u32x4::splat(Self::PRECISION as u32))
-        .cast()
+        (min + (((max - min) * factor) >> u32x4::splat(Self::PRECISION as u32))).cast()
     }
 
     fn interp_uv(&self, a: TexCoords, b: TexCoords) -> TexCoords {
@@ -201,9 +212,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
             i32x2::splat(factor),
             i32x2::splat((1 << Self::PRECISION) - factor),
         );
-        (((min << i32x2::splat(Self::PRECISION as i32)) + (max - min) * factor)
-            >> i32x2::splat(Self::PRECISION as i32))
-        .cast()
+        (min + (((max - min) * factor) >> i32x2::splat(Self::PRECISION as i32))).cast()
     }
 
     fn interp_depth(&self, a: i32, b: i32, w_buffering: bool) -> i32 {
@@ -215,10 +224,9 @@ impl<const EDGE: bool> InterpData<EDGE> {
             self.l_factor
         }) as i64;
         (if b >= a {
-            ((a << Self::PRECISION) + (b - a) * factor) >> Self::PRECISION
+            a + (((b - a) * factor) >> Self::PRECISION)
         } else {
-            ((b << Self::PRECISION) + (a - b) * ((1 << Self::PRECISION) - factor))
-                >> Self::PRECISION
+            b + (((a - b) * ((1 << Self::PRECISION) - factor)) >> Self::PRECISION)
         }) as i32
     }
 
@@ -227,10 +235,9 @@ impl<const EDGE: bool> InterpData<EDGE> {
         let a = a as u32;
         let b = b as u32;
         (if b >= a {
-            ((a << Self::PRECISION) + (b - a) * factor) >> Self::PRECISION
+            a + (((b - a) * factor) >> Self::PRECISION)
         } else {
-            ((b << Self::PRECISION) + (a - b) * ((1 << Self::PRECISION) - factor))
-                >> Self::PRECISION
+            b + (((a - b) * ((1 << Self::PRECISION) - factor)) >> Self::PRECISION)
         }) as u16
     }
 }
@@ -256,7 +263,7 @@ fn dec_poly_vert_index(i: PolyVertIndex, verts: PolyVertsLen) -> PolyVertIndex {
 #[repr(C)]
 struct RenderingPolygon {
     poly: Polygon,
-    height_minus_1: u8,
+    height: u8,
     bot_i: PolyVertIndex,
     alpha: u8,
     id: u8,
@@ -294,14 +301,14 @@ unsafe impl Zero for PixelAttrs {}
 
 pub(super) struct RenderingState {
     pub shared_data: Arc<SharedData>,
-    color_buffer: Box<[u64; 512]>,
-    depth_buffer: Box<[u32; 512]>,
-    attr_buffer: Box<[PixelAttrs; 512]>,
+    color_buffer: Box<[u64; 256]>,
+    depth_buffer: Box<[u32; 256]>,
+    attr_buffer: Box<[PixelAttrs; 256]>,
     polys: Box<[RenderingPolygon; 2048]>,
 }
 
 fn encode_rgb6(color: InterpColor, alpha: u8) -> u32 {
-    let [r, g, b, a] = color.to_array();
+    let [r, g, b, _] = color.to_array();
     (r as u32 >> 3) | (g as u32 >> 3) << 6 | (b as u32 >> 3) << 12 | (alpha as u32) << 18
 }
 
@@ -330,51 +337,86 @@ impl RenderingState {
 
                 let top_y = src.top_y;
                 let bot_y = src.bot_y;
-                let (top_i, top_vert, bot_i) = unsafe {
-                    let mut top_i = PolyVertIndex::new_unchecked(0);
+
+                if top_y == bot_y {
+                    let mut top_i = PolyVertIndex::new(0);
                     let mut bot_i = top_i;
-                    let mut top_vert = None;
-                    for i in 0..src.vertices_len.get() as usize {
-                        let i = PolyVertIndex::new(i as u8);
+                    let mut top_vert = &rendering_data.vert_ram[src.vertices[0].get() as usize];
+                    let mut bot_vert = top_vert;
+                    for i in [
+                        PolyVertIndex::new(1),
+                        PolyVertIndex::new(src.vertices_len.get() - 1),
+                    ] {
                         let vert =
                             &rendering_data.vert_ram[src.vertices[i.get() as usize].get() as usize];
-                        if vert.coords[1] as u8 == top_y && top_vert.is_none() {
+                        if vert.coords[0] < top_vert.coords[0] {
                             top_i = i;
-                            top_vert = Some(vert);
+                            top_vert = vert;
                         }
-                        if vert.coords[1] as u8 == bot_y {
+                        if vert.coords[0] > bot_vert.coords[0] {
                             bot_i = i;
+                            bot_vert = vert;
                         }
                     }
-                    (top_i, top_vert.unwrap_unchecked(), bot_i)
-                };
 
-                let mut other_verts = [
-                    inc_poly_vert_index(top_i, src.vertices_len),
-                    dec_poly_vert_index(top_i, src.vertices_len),
-                ]
-                .map(|i| {
-                    (
-                        i,
-                        &rendering_data.vert_ram[src.vertices[i.get() as usize].get() as usize],
-                    )
-                });
+                    *dst = RenderingPolygon {
+                        poly: *src,
+                        height: 1,
+                        bot_i,
+                        alpha: src.attrs.alpha(),
+                        id: src.attrs.id(),
+                        edges: [
+                            Edge::new(src, *top_vert, top_i, *top_vert, top_i),
+                            Edge::new(src, *bot_vert, bot_i, *bot_vert, bot_i),
+                        ],
+                    };
+                } else {
+                    let (top_i, top_vert, bot_i) = unsafe {
+                        let mut top_i = PolyVertIndex::new(0);
+                        let mut bot_i = top_i;
+                        let mut top_vert = None;
+                        for i in 0..src.vertices_len.get() as usize {
+                            let i = PolyVertIndex::new(i as u8);
+                            let vert = &rendering_data.vert_ram
+                                [src.vertices[i.get() as usize].get() as usize];
+                            if vert.coords[1] as u8 == top_y && top_vert.is_none() {
+                                top_i = i;
+                                top_vert = Some(vert);
+                            }
+                            if vert.coords[1] as u8 == bot_y {
+                                bot_i = i;
+                            }
+                        }
+                        (top_i, top_vert.unwrap_unchecked(), bot_i)
+                    };
 
-                if !src.is_front_facing {
-                    other_verts.swap(0, 1);
+                    let mut other_verts = [
+                        inc_poly_vert_index(top_i, src.vertices_len),
+                        dec_poly_vert_index(top_i, src.vertices_len),
+                    ]
+                    .map(|i| {
+                        (
+                            i,
+                            &rendering_data.vert_ram[src.vertices[i.get() as usize].get() as usize],
+                        )
+                    });
+
+                    if !src.is_front_facing {
+                        other_verts.swap(0, 1);
+                    }
+
+                    *dst = RenderingPolygon {
+                        poly: *src,
+                        height: src.bot_y - src.top_y,
+                        bot_i,
+                        alpha: src.attrs.alpha(),
+                        id: src.attrs.id(),
+                        edges: [
+                            Edge::new(src, *top_vert, top_i, *other_verts[0].1, other_verts[0].0),
+                            Edge::new(src, *top_vert, top_i, *other_verts[1].1, other_verts[1].0),
+                        ],
+                    };
                 }
-
-                *dst = RenderingPolygon {
-                    poly: *src,
-                    height_minus_1: src.bot_y - src.top_y,
-                    bot_i,
-                    alpha: src.attrs.alpha(),
-                    id: src.attrs.id(),
-                    edges: [
-                        Edge::new(src, *top_vert, top_i, *other_verts[0].1, other_verts[0].0),
-                        Edge::new(src, *top_vert, top_i, *other_verts[1].1, other_verts[1].0),
-                    ],
-                };
             }
         }
 
@@ -387,29 +429,84 @@ impl RenderingState {
             self.attr_buffer.fill(PixelAttrs(0));
 
             for poly in self.polys[..rendering_data.poly_ram_level as usize].iter_mut() {
-                if y.wrapping_sub(poly.poly.top_y) > poly.height_minus_1 {
+                if y.wrapping_sub(poly.poly.top_y) >= poly.height {
                     continue;
                 }
+
+                if poly.poly.top_y != poly.poly.bot_y {
+                    macro_rules! process_edge {
+                        ($edge: expr, $increasing: expr) => {{
+                            if y >= $edge.y_end {
+                                let mut i = $edge.b_i;
+                                let mut start_vert = &$edge.b;
+                                while i != poly.bot_i {
+                                    i = if $increasing {
+                                        inc_poly_vert_index(i, poly.poly.vertices_len)
+                                    } else {
+                                        dec_poly_vert_index(i, poly.poly.vertices_len)
+                                    };
+                                    let new_end_vert = &rendering_data.vert_ram
+                                        [poly.poly.vertices[i.get() as usize].get() as usize];
+                                    let new_y_end = new_end_vert.coords[1] as u8;
+
+                                    if new_y_end > y || i == poly.bot_i {
+                                        $edge = Edge::new(
+                                            &poly.poly,
+                                            *start_vert,
+                                            $edge.b_i,
+                                            *new_end_vert,
+                                            i,
+                                        );
+                                        break;
+                                    }
+
+                                    start_vert = new_end_vert;
+                                }
+                            }
+                        }};
+                    }
+
+                    process_edge!(poly.edges[0], poly.poly.is_front_facing);
+                    process_edge!(poly.edges[1], !poly.poly.is_front_facing);
+                }
+
                 let mut edges = [&poly.edges[0], &poly.edges[1]];
                 let mut ranges = edges.map(|edge| edge.line_x_range(y));
+
+                // if edges[1].x_incr == 0 {
+                //     ranges[1].0 = ranges[1].0.saturating_sub(1);
+                //     ranges[1].1 = ranges[1].1.saturating_sub(1);
+                // }
 
                 if ranges[1].1 <= ranges[0].0 {
                     edges.swap(0, 1);
                     ranges.swap(0, 1);
                 }
 
-                let x_span_start = ranges[0].0;
-                let x_span_len = (ranges[1].1 - ranges[0].0) as u8;
+                ranges[0].0 = ranges[0].0.max(0);
+                ranges[0].1 = ranges[0].1.max(1);
 
+                let x_span_start = ranges[0].0;
+                let x_span_end = ranges[1].1;
+                let x_span_len = x_span_end - x_span_start;
+                let wireframe = poly.alpha == 0;
+                let alpha = if wireframe { 31 } else { poly.alpha };
+
+                let fill_all_edges = wireframe
+                    || rendering_data.control.antialiasing_enabled()
+                    || rendering_data.control.edge_marking_enabled();
                 let fill_edges = [
-                    poly.alpha == 0 || poly.edges[0].is_negative || !poly.edges[0].is_x_major,
-                    poly.alpha == 0 || (!poly.edges[1].is_negative && poly.edges[1].is_x_major),
+                    fill_all_edges || edges[0].is_negative || !edges[0].is_x_major,
+                    fill_all_edges
+                        || (!edges[1].is_negative && edges[1].is_x_major)
+                        || edges[1].x_incr == 0,
                 ];
-                let fill = poly.alpha != 0;
+
+                let edge_mask = (y == poly.poly.top_y) as u8 | (y == poly.poly.bot_y - 1) as u8;
 
                 let [(l_color, l_uv, l_depth, l_w), (r_color, r_uv, r_depth, r_w)] =
-                    edges.map(|edge| {
-                        let interp = edge.edge_interp(y);
+                    [(edges[0], x_span_start), (edges[1], x_span_end - 1)].map(|(edge, x)| {
+                        let interp = edge.edge_interp(y, x);
                         let color = interp.interp_color(edge.a.color, edge.b.color);
                         let uv = interp.interp_uv(edge.a.uv, edge.b.uv);
                         let depth = interp.interp_depth(
@@ -424,12 +521,8 @@ impl RenderingState {
                 for i in 0..2 {
                     if fill_edges[i] {
                         for x in ranges[i].0..ranges[i].1 {
-                            let span_interp = InterpData::<false>::new(
-                                x_span_len,
-                                (x - x_span_start) as u8,
-                                l_w,
-                                r_w,
-                            );
+                            let span_interp =
+                                InterpData::<false>::new(x_span_len, x - x_span_start, l_w, r_w);
                             let x = x as usize;
                             let depth = span_interp.interp_depth(
                                 l_depth,
@@ -442,10 +535,8 @@ impl RenderingState {
                             } else {
                                 depth < self.depth_buffer[x]
                             } {
-                                scanline.0[x] = encode_rgb6(
-                                    span_interp.interp_color(l_color, r_color),
-                                    poly.alpha,
-                                );
+                                scanline.0[x] =
+                                    encode_rgb6(span_interp.interp_color(l_color, r_color), alpha);
                                 self.depth_buffer[x] = depth;
                                 self.attr_buffer[x] =
                                     PixelAttrs::from_opaque_poly_attrs(poly.poly.attrs);
@@ -454,14 +545,10 @@ impl RenderingState {
                     }
                 }
 
-                if fill {
+                if !wireframe || edge_mask != 0 {
                     for x in ranges[0].1..ranges[1].0 {
-                        let span_interp = InterpData::<false>::new(
-                            x_span_len,
-                            (x - x_span_start) as u8,
-                            l_w,
-                            r_w,
-                        );
+                        let span_interp =
+                            InterpData::<false>::new(x_span_len, x - x_span_start, l_w, r_w);
                         let x = x as usize;
                         let depth =
                             span_interp.interp_depth(l_depth, r_depth, rendering_data.w_buffering)
@@ -473,53 +560,13 @@ impl RenderingState {
                             depth < self.depth_buffer[x]
                         } {
                             scanline.0[x] =
-                                encode_rgb6(span_interp.interp_color(l_color, r_color), poly.alpha);
+                                encode_rgb6(span_interp.interp_color(l_color, r_color), alpha);
                             self.depth_buffer[x] = depth;
                             self.attr_buffer[x] =
                                 PixelAttrs::from_opaque_poly_attrs(poly.poly.attrs);
                         }
                     }
                 }
-
-                macro_rules! process_edge {
-                    (
-                        $edge: expr, $increasing: expr
-                    ) => {{
-                        let next_y = y.wrapping_add(1);
-                        if next_y >= $edge.y_end {
-                            let mut i = $edge.b_i;
-                            let mut start_vert = $edge.b;
-                            let mut y_start = $edge.y_end;
-                            while i != poly.bot_i {
-                                i = if $increasing {
-                                    inc_poly_vert_index(i, poly.poly.vertices_len)
-                                } else {
-                                    dec_poly_vert_index(i, poly.poly.vertices_len)
-                                };
-                                let new_end_vert = rendering_data.vert_ram
-                                    [poly.poly.vertices[i.get() as usize].get() as usize];
-                                let new_y_end = new_end_vert.coords[1] as u8;
-
-                                if new_y_end >= y_start {
-                                    $edge = Edge::new(
-                                        &poly.poly,
-                                        start_vert,
-                                        $edge.b_i,
-                                        new_end_vert,
-                                        i,
-                                    );
-                                    break;
-                                }
-
-                                start_vert = new_end_vert;
-                                y_start = new_y_end.max(next_y);
-                            }
-                        }
-                    }};
-                }
-
-                process_edge!(poly.edges[0], poly.poly.is_front_facing);
-                process_edge!(poly.edges[1], !poly.poly.is_front_facing);
             }
 
             if self
