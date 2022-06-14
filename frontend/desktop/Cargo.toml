@@ -54,4 +54,4 @@ cocoa = "0.24"
 objc = "0.2"
 
 [build-dependencies]
-shaderc = { version = "0.7", optional = true }
+shaderc = { version = "0.8", optional = true }
