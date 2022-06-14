@@ -2,8 +2,8 @@ use super::{
     y_pos::{SignedYPos, YPos, YPosRaw},
     RangeInclusive, Scrollbar,
 };
-use std::{fmt::Write, num::NonZeroU8};
 use imgui::{Key, MouseButton, StyleColor, StyleVar, Ui, WindowFocusedFlags};
+use std::{fmt::Write, num::NonZeroU8};
 
 bitflags::bitflags! {
     pub struct Flags: u8 {

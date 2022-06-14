@@ -282,6 +282,7 @@ impl<T> GameOverridable<T> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> GameOverridable<U> {
         GameOverridable {
             value: f(self.value),

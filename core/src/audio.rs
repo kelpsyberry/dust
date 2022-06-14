@@ -44,6 +44,7 @@ cfg_if! {
     }
 }
 
+#[cfg(feature = "xq-audio")]
 const SYS_CLOCK_RATE: RawTimestamp = 1 << 25;
 
 // One sample is produced every 1024 cycles (33.554432 MHz / 32.768 kHz)

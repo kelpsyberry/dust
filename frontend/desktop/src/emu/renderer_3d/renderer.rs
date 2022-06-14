@@ -72,6 +72,7 @@ impl RendererTrair for Renderer {
         self.wait_for_line(SCREEN_HEIGHT as u8 - 1);
 
         let rendering_data = unsafe { &mut *self.shared_data.rendering_data.get() };
+        rendering_data.control = state.control;
         rendering_data.copy_texture_data(texture, tex_pal, state);
         rendering_data.vert_ram[..vert_ram.len()].copy_from_slice(vert_ram);
         rendering_data.poly_ram[..poly_ram.len()].copy_from_slice(poly_ram);

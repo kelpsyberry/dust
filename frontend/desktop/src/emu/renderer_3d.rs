@@ -18,7 +18,8 @@ use std::{
 struct RenderingData {
     control: RenderingControl,
     texture: Bytes<0x8_0000>,
-    tex_pal: Bytes<0x1_8000>,
+    // TODO: How is the texture palette region mirrored?
+    tex_pal: Bytes<0x2_0000>,
     vert_ram: [ScreenVertex; 6144],
     poly_ram: [Polygon; 2048],
     poly_ram_level: u16,

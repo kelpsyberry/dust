@@ -1,5 +1,5 @@
 use crate::utils::Zero;
-use core::simd::{i16x2, u16x4, i32x2, i32x4, i64x2, i64x4, u8x4, simd_swizzle, u16x2};
+use core::simd::{i16x2, i32x2, i32x4, i64x2, i64x4, simd_swizzle, u16x2, u16x4, u8x4};
 
 pub type TexCoords = i16x2;
 pub type Color = u8x4;

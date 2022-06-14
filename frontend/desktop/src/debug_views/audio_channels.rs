@@ -3,13 +3,13 @@ use super::{
     FrameDataSlot, InstanceableView, View,
 };
 use crate::ui::window::Window;
-use std::cmp::Ordering;
 use dust_core::{
     audio::channel::{Control, Format, Index as ChannelIndex, RepeatMode},
     cpu,
     emu::Emu,
 };
 use imgui::{PlotLines, SliderFlags, StyleVar, TableFlags, Ui};
+use std::cmp::Ordering;
 
 #[derive(Clone)]
 struct RingBuffer<T: Copy> {

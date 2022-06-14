@@ -77,7 +77,7 @@ pub struct Vram {
     writeback: Box<Modified>,
 
     lcdc_r_ptrs: [*const u8; 0x40], // 0x4000 B granularity
-    lcdc_w_ptrs: [*mut u8; 0x40], // 0x4000 B granularity
+    lcdc_w_ptrs: [*mut u8; 0x40],   // 0x4000 B granularity
     a_bg: OwnedBytesCellPtr<0x8_0000>,
     a_obj: OwnedBytesCellPtr<0x4_0000>,
     pub(super) a_bg_ext_pal: OwnedBytesCellPtr<0x8000>,

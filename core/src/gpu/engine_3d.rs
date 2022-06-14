@@ -237,12 +237,15 @@ pub struct Engine3d {
     cur_clip_mtx: Matrix,
     clip_mtx_needs_recalculation: bool,
     cur_tex_mtx: Matrix,
+    tex_params: TextureParams,
+    tex_palette_base: u16,
 
     viewport: [u8; 4],
 
     vert_color: Color,
     vert_normal: [i16; 3],
     tex_coords: TexCoords,
+    transformed_tex_coords: TexCoords,
     last_vtx_coords: [i16; 3],
 
     shininess_table_enabled: bool,
@@ -256,11 +259,6 @@ pub struct Engine3d {
     // Latched on BEGIN_VTXS
     next_poly_attrs: PolygonAttrs,
     cur_poly_attrs: PolygonAttrs,
-    // Latched on new completely separate polygons (not strips)
-    next_tex_params: TextureParams,
-    cur_tex_params: TextureParams,
-    next_tex_palette_base: u16,
-    cur_tex_palette_base: u16,
 
     cur_prim_type: PrimitiveType,
     cur_prim_verts: [Vertex; 4],
@@ -339,11 +337,15 @@ impl Engine3d {
             cur_clip_mtx: Matrix::zero(),
             clip_mtx_needs_recalculation: false,
             cur_tex_mtx: Matrix::zero(),
+            tex_params: TextureParams(0),
+            tex_palette_base: 0,
+
             viewport: [0; 4],
 
             vert_color: Color::splat(0),
             vert_normal: [0; 3],
             tex_coords: TexCoords::splat(0),
+            transformed_tex_coords: TexCoords::splat(0),
             last_vtx_coords: [0; 3],
             shininess_table_enabled: false,
             diffuse_color: i32x4::splat(0),
@@ -359,10 +361,6 @@ impl Engine3d {
 
             next_poly_attrs: PolygonAttrs(0),
             cur_poly_attrs: PolygonAttrs(0),
-            next_tex_params: TextureParams(0),
-            cur_tex_params: TextureParams(0),
-            next_tex_palette_base: 0,
-            cur_tex_palette_base: 0,
 
             cur_prim_type: PrimitiveType::Triangles,
             cur_prim_verts: [Vertex::new(); 4],
@@ -654,7 +652,7 @@ impl Engine3d {
 
     fn apply_lighting(&mut self) {
         let normal = self.cur_pos_vec_mtxs[1]
-            .mul_left_vec3_zero_i16::<i32, 12>(self.vert_normal)
+            .mul_left_vec3_zero::<i16, i32, 12>(self.vert_normal)
             .to_array();
         let normal = [normal[0], normal[1], normal[2]];
         let mut color = self.emission_color;
@@ -711,24 +709,20 @@ impl Engine3d {
         if self.clip_mtx_needs_recalculation {
             self.update_clip_mtx();
         }
+
+        let transformed_coords = self.cur_clip_mtx.mul_left_vec3::<i16, i32>(coords);
+
+        if self.tex_params.coord_transform_mode() == 3 {
+            let [u, v, ..] = self
+                .cur_tex_mtx
+                .mul_left_vec3_simd_zero::<i32, i16, 24>(transformed_coords)
+                .to_array();
+            self.transformed_tex_coords = self.tex_coords + TexCoords::from_array([u, v]);
+        }
+
         self.cur_prim_verts[self.cur_prim_vert_index.get() as usize] = Vertex {
-            coords: self.cur_clip_mtx.mul_left_vec3_i16(coords),
-            uv: {
-                let mut tex_coords = self.tex_coords;
-                let transform_mode = self.cur_tex_params.coord_transform_mode();
-                if transform_mode != 0 {
-                    let [u, v, ..] = (match transform_mode {
-                        1 => self.cur_tex_mtx.mul_left_vec2_i16(self.tex_coords),
-                        2 => self
-                            .cur_tex_mtx
-                            .mul_left_vec3_zero_i16::<i16, 21>(self.vert_normal),
-                        _ => self.cur_tex_mtx.mul_left_vec3_zero_i16::<i16, 24>(coords),
-                    })
-                    .to_array();
-                    tex_coords += TexCoords::from_array([u, v]);
-                }
-                tex_coords
-            },
+            coords: transformed_coords,
+            uv: self.transformed_tex_coords,
             color: self.vert_color,
         };
 
@@ -742,8 +736,6 @@ impl Engine3d {
 
             match self.cur_prim_type {
                 PrimitiveType::Triangles | PrimitiveType::Quads => {
-                    self.cur_tex_params = self.next_tex_params;
-                    self.cur_tex_palette_base = self.next_tex_palette_base;
                     self.cur_prim_vert_index = PrimVertIndex::new(0);
                 }
 
@@ -915,8 +907,8 @@ impl Engine3d {
         let mut poly = &mut self.poly_ram[self.poly_ram_level as usize];
         self.poly_ram_level += 1;
         poly.vertices_len = PolyVertsLen::new(clipped_verts_len as u8);
-        poly.tex_palette_base = self.cur_tex_palette_base;
-        poly.tex_params = self.cur_tex_params;
+        poly.tex_palette_base = self.tex_palette_base;
+        poly.tex_params = self.tex_params;
         poly.attrs = self.cur_poly_attrs;
         poly.is_front_facing = is_front_facing;
 
@@ -1441,6 +1433,18 @@ impl Engine3d {
                         (first_param >> 4) as i16 >> 6,
                         (first_param >> 14) as i16 >> 6,
                     ];
+
+                    if emu.gpu.engine_3d.tex_params.coord_transform_mode() == 2 {
+                        let [u, v, ..] = emu
+                            .gpu
+                            .engine_3d
+                            .cur_tex_mtx
+                            .mul_left_vec3_zero::<i16, i16, 21>(emu.gpu.engine_3d.vert_normal)
+                            .to_array();
+                        emu.gpu.engine_3d.transformed_tex_coords =
+                            emu.gpu.engine_3d.tex_coords + TexCoords::from_array([u, v]);
+                    }
+
                     emu.gpu.engine_3d.apply_lighting();
                 }
 
@@ -1448,6 +1452,23 @@ impl Engine3d {
                     // TEXCOORD
                     emu.gpu.engine_3d.tex_coords =
                         TexCoords::from_array([first_param as i16, (first_param >> 16) as i16]);
+
+                    match emu.gpu.engine_3d.tex_params.coord_transform_mode() {
+                        0 => {
+                            emu.gpu.engine_3d.transformed_tex_coords = emu.gpu.engine_3d.tex_coords
+                        }
+                        1 => {
+                            let [u, v, ..] = emu
+                                .gpu
+                                .engine_3d
+                                .cur_tex_mtx
+                                .mul_left_vec2_one_one::<i16, i16>(emu.gpu.engine_3d.tex_coords)
+                                .to_array();
+                            emu.gpu.engine_3d.transformed_tex_coords =
+                                TexCoords::from_array([u, v]);
+                        }
+                        _ => {}
+                    }
                 }
 
                 0x23 => {
@@ -1514,12 +1535,12 @@ impl Engine3d {
 
                 0x2A => {
                     // TEXIMAGE_PARAM
-                    emu.gpu.engine_3d.next_tex_params = TextureParams(first_param);
+                    emu.gpu.engine_3d.tex_params = TextureParams(first_param);
                 }
 
                 0x2B => {
                     // PLTT_BASE
-                    emu.gpu.engine_3d.next_tex_palette_base = first_param as u16 & 0xFFF;
+                    emu.gpu.engine_3d.tex_palette_base = first_param as u16 & 0x1FFF;
                 }
 
                 0x30 => {
@@ -1542,7 +1563,7 @@ impl Engine3d {
                 0x32 => {
                     // LIGHT_VECTOR
                     let transformed = emu.gpu.engine_3d.cur_pos_vec_mtxs[1]
-                        .mul_left_vec3_zero_i16::<i16, 12>([
+                        .mul_left_vec3_zero::<i16, i16, 12>([
                             (first_param as i16) << 6 >> 6,
                             (first_param >> 4) as i16 >> 6,
                             (first_param >> 14) as i16 >> 6,
@@ -1582,9 +1603,6 @@ impl Engine3d {
                 0x40 => {
                     // BEGIN_VTXS
                     emu.gpu.engine_3d.cur_poly_attrs = emu.gpu.engine_3d.next_poly_attrs;
-                    emu.gpu.engine_3d.cur_tex_params = emu.gpu.engine_3d.next_tex_params;
-                    emu.gpu.engine_3d.cur_tex_palette_base =
-                        emu.gpu.engine_3d.next_tex_palette_base;
                     emu.gpu.engine_3d.cur_prim_type = unsafe { transmute(first_param as u8 & 3) };
                     emu.gpu.engine_3d.cur_prim_vert_index = PrimVertIndex::new(0);
                     emu.gpu.engine_3d.cur_prim_max_verts = match emu.gpu.engine_3d.cur_prim_type {

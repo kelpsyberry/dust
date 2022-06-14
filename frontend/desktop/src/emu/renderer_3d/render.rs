@@ -1,17 +1,17 @@
 mod utils;
 use utils::{dec_poly_vert_index, inc_poly_vert_index, Edge, InterpLineData};
 
-use super::SharedData;
+use super::{RenderingData, SharedData};
 use dust_core::{
     gpu::{
-        engine_3d::{InterpColor, PolyVertIndex, Polygon, PolygonAttrs},
+        engine_3d::{InterpColor, PolyVertIndex, Polygon, PolygonAttrs, TexCoords},
         SCREEN_HEIGHT,
     },
     utils::{bitfield_debug, zeroed_box, Zero},
 };
 use std::sync::{atomic::Ordering, Arc};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 struct RenderingPolygon<'a> {
     poly: &'a Polygon,
     edges: [Edge<'a>; 2],
@@ -19,6 +19,8 @@ struct RenderingPolygon<'a> {
     bot_i: PolyVertIndex,
     alpha: u8,
     id: u8,
+    depth_test: fn(u32, u32, PixelAttrs) -> bool,
+    process_pixel: fn(&RenderingData, &RenderingPolygon, TexCoords, InterpColor) -> InterpColor,
 }
 
 bitfield_debug! {
@@ -56,9 +58,172 @@ pub(super) struct RenderingState {
     polys: Vec<RenderingPolygon<'static>>,
 }
 
-fn encode_rgb6(color: InterpColor, alpha: u8) -> u32 {
-    let [r, g, b, _] = color.to_array();
-    (r as u32 >> 3) | (g as u32 >> 3) << 6 | (b as u32 >> 3) << 12 | (alpha as u32) << 18
+fn decode_rgb_5(color: u16, alpha: u16) -> InterpColor {
+    InterpColor::from_array([
+        color & 0x1F,
+        (color >> 5) & 0x1F,
+        (color >> 10) & 0x1F,
+        alpha,
+    ])
+}
+
+fn rgb_5_to_6(color: InterpColor) -> InterpColor {
+    (color << InterpColor::splat(1)) - color.lanes_ne(InterpColor::splat(0)).to_int().cast::<u16>()
+}
+
+fn encode_rgb_6(color: InterpColor) -> u32 {
+    let [r, g, b, a] = color.to_array();
+    r as u32 | (g as u32) << 6 | (b as u32) << 12 | (a as u32 >> 1) << 18
+}
+
+fn process_pixel<const FORMAT: u8, const MODE: u8>(
+    rendering_data: &RenderingData,
+    poly: &RenderingPolygon,
+    uv: TexCoords,
+    vert_color: InterpColor,
+) -> InterpColor {
+    let vert_color = vert_color >> InterpColor::splat(3);
+
+    let mut vert_blend_color = match MODE {
+        2 => {
+            // TODO: Toon table
+            rgb_5_to_6(InterpColor::from_array([0x1F, 0x1F, 0x1F, 0]))
+        }
+        3 => InterpColor::splat(vert_color[0]),
+        _ => vert_color,
+    };
+    vert_blend_color[3] = if poly.alpha == 0 {
+        0x3F
+    } else {
+        (poly.alpha << 1 | 1) as u16
+    };
+
+    let blended_color = if FORMAT == 0 {
+        vert_blend_color
+    } else {
+        let tex_params = poly.poly.tex_params;
+        let tex_base = (tex_params.vram_off() as usize) << 3;
+        let pal_base = if FORMAT == 2 {
+            (poly.poly.tex_palette_base as usize) << 3
+        } else {
+            (poly.poly.tex_palette_base as usize) << 4
+        };
+
+        let tex_width_shift = tex_params.size_shift_s();
+        let tex_width_mask = (8 << tex_width_shift) - 1;
+        let tex_height_shift = tex_params.size_shift_t();
+        let tex_height_mask = (8 << tex_height_shift) - 1;
+
+        macro_rules! apply_tiling {
+            ($coord: expr, $size_mask: expr, $size_shift: expr, $repeat: ident, $flip: ident) => {{
+                let x = $coord >> 4;
+                (if tex_params.$repeat() {
+                    if tex_params.$flip() && x & 8 << $size_shift != 0 {
+                        $size_mask - (x & $size_mask)
+                    } else {
+                        x & $size_mask
+                    }
+                } else {
+                    x.clamp(0, $size_mask)
+                }) as u16
+            }};
+        }
+
+        let u = apply_tiling!(uv[0], tex_width_mask, tex_width_shift, repeat_s, flip_s);
+        let v = apply_tiling!(uv[1], tex_height_mask, tex_height_shift, repeat_t, flip_t);
+
+        let i = (v as usize) << (tex_width_shift + 3) | u as usize;
+
+        let tex_color = rgb_5_to_6(match FORMAT {
+            2 => {
+                let color_index = rendering_data.texture[(tex_base + (i >> 2)) & 0x7_FFFF]
+                    .wrapping_shr((i << 1) as u32) as usize
+                    & 3;
+                decode_rgb_5(
+                    rendering_data
+                        .tex_pal
+                        .read_le::<u16>(pal_base | color_index << 1),
+                    if tex_params.use_color_0_as_transparent() && color_index == 0 {
+                        0
+                    } else {
+                        0x1F
+                    },
+                )
+            }
+
+            3 => {
+                let color_index = rendering_data.texture[(tex_base + (i >> 1)) & 0x7_FFFF]
+                    .wrapping_shr((i << 2) as u32) as usize
+                    & 0xF;
+                decode_rgb_5(
+                    rendering_data
+                        .tex_pal
+                        .read_le::<u16>((pal_base + (color_index << 1)) & 0x1_FFFF),
+                    if tex_params.use_color_0_as_transparent() && color_index == 0 {
+                        0
+                    } else {
+                        0x1F
+                    },
+                )
+            }
+
+            4 => {
+                let color_index = rendering_data.texture[(tex_base + i) & 0x7_FFFF] as usize;
+                decode_rgb_5(
+                    rendering_data
+                        .tex_pal
+                        .read_le::<u16>((pal_base + (color_index << 1)) & 0x1_FFFF),
+                    if tex_params.use_color_0_as_transparent() && color_index == 0 {
+                        0
+                    } else {
+                        0x1F
+                    },
+                )
+            }
+
+            7 => {
+                let color = rendering_data
+                    .texture
+                    .read_le::<u16>((tex_base + (i << 1)) & 0x7_FFFE);
+                decode_rgb_5(color, if color & 1 << 15 != 0 { 0x1F } else { 0 })
+            }
+
+            // TODO: Texture lookup
+            _ => InterpColor::from_array([0x1F, 0x1F, 0x1F, 0x1F]),
+        });
+
+        match MODE {
+            1 => match tex_color[3] {
+                0 => vert_blend_color,
+                0x3F => {
+                    let mut color = tex_color;
+                    color[3] = vert_blend_color[3];
+                    color
+                }
+                _ => {
+                    let mut color = (tex_color * InterpColor::splat(tex_color[3])
+                        + vert_blend_color * InterpColor::splat(vert_blend_color[3]))
+                        >> InterpColor::splat(6);
+                    color[3] = vert_blend_color[3];
+                    color
+                }
+            },
+
+            _ => {
+                ((tex_color + InterpColor::splat(1)) * (vert_blend_color + InterpColor::splat(1))
+                    - InterpColor::splat(1))
+                    >> InterpColor::splat(6)
+            }
+        }
+    };
+
+    if MODE == 3 {
+        // TODO: Toon table
+        let toon_color = rgb_5_to_6(InterpColor::from_array([0x1F, 0x1F, 0x1F, 0]));
+        (blended_color + toon_color).min(InterpColor::from_array([0x3F, 0x3F, 0x3F, 0x3F]))
+    } else {
+        blended_color
+    }
 }
 
 impl RenderingState {
@@ -79,6 +244,86 @@ impl RenderingState {
             if poly.vertices_len.get() < 3 {
                 continue;
             }
+
+            let depth_test: fn(u32, u32, PixelAttrs) -> bool = if poly.attrs.depth_test_equal() {
+                if rendering_data.w_buffering {
+                    |a, b: u32, _b_attrs| b.wrapping_sub(a).wrapping_add(0xFF) <= 0x1FE
+                } else {
+                    |a, b, _b_attrs| b.wrapping_sub(a).wrapping_add(0x200) <= 0x400
+                }
+            } else if poly.is_front_facing {
+                |a, b, b_attrs| {
+                    if b_attrs.0
+                        & PixelAttrs(0)
+                            .with_translucent(true)
+                            .with_back_facing(true)
+                            .0
+                        == PixelAttrs(0)
+                            .with_translucent(false)
+                            .with_back_facing(true)
+                            .0
+                    {
+                        a <= b
+                    } else {
+                        a < b
+                    }
+                }
+            } else {
+                |a, b, _b_attrs| a < b
+            };
+
+            let process_pixel = if poly.attrs.mode() == 3 {
+                // TODO: Shadow polygons
+                process_pixel::<0, 0>
+            } else {
+                let mode = match poly.attrs.mode() {
+                    2 => 2 + rendering_data.control.highlight_shading_enabled() as u8,
+                    mode => mode,
+                };
+                if rendering_data.control.texture_mapping_enabled() {
+                    [
+                        process_pixel::<0, 0>,
+                        process_pixel::<1, 0>,
+                        process_pixel::<2, 0>,
+                        process_pixel::<3, 0>,
+                        process_pixel::<4, 0>,
+                        process_pixel::<5, 0>,
+                        process_pixel::<6, 0>,
+                        process_pixel::<7, 0>,
+                        process_pixel::<0, 1>,
+                        process_pixel::<1, 1>,
+                        process_pixel::<2, 1>,
+                        process_pixel::<3, 1>,
+                        process_pixel::<4, 1>,
+                        process_pixel::<5, 1>,
+                        process_pixel::<6, 1>,
+                        process_pixel::<7, 1>,
+                        process_pixel::<0, 2>,
+                        process_pixel::<1, 2>,
+                        process_pixel::<2, 2>,
+                        process_pixel::<3, 2>,
+                        process_pixel::<4, 2>,
+                        process_pixel::<5, 2>,
+                        process_pixel::<6, 2>,
+                        process_pixel::<7, 2>,
+                        process_pixel::<0, 3>,
+                        process_pixel::<1, 3>,
+                        process_pixel::<2, 3>,
+                        process_pixel::<3, 3>,
+                        process_pixel::<4, 3>,
+                        process_pixel::<5, 3>,
+                        process_pixel::<6, 3>,
+                        process_pixel::<7, 3>,
+                    ][(mode << 3 | poly.tex_params.format()) as usize]
+                } else {
+                    [
+                        process_pixel::<0, 0>,
+                        process_pixel::<0, 1>,
+                        process_pixel::<0, 2>,
+                        process_pixel::<0, 3>,
+                    ][mode as usize]
+                }
+            };
 
             let top_y = poly.top_y;
             let bot_y = poly.bot_y;
@@ -114,6 +359,8 @@ impl RenderingState {
                         Edge::new(poly, top_vert, top_i, top_vert, top_i),
                         Edge::new(poly, bot_vert, bot_i, bot_vert, bot_i),
                     ],
+                    depth_test,
+                    process_pixel,
                 });
             } else {
                 let (top_i, top_vert, bot_i) = unsafe {
@@ -160,6 +407,8 @@ impl RenderingState {
                         Edge::new(poly, top_vert, top_i, other_verts[0].1, other_verts[0].0),
                         Edge::new(poly, top_vert, top_i, other_verts[1].1, other_verts[1].0),
                     ],
+                    depth_test,
+                    process_pixel,
                 });
             }
         }
@@ -172,7 +421,7 @@ impl RenderingState {
             self.depth_buffer.fill(0xFF_FFFF);
             self.attr_buffer.fill(PixelAttrs(0));
 
-            for poly in self.polys[..rendering_data.poly_ram_level as usize].iter_mut() {
+            for poly in self.polys.iter_mut() {
                 if y.wrapping_sub(poly.poly.top_y) >= poly.height {
                     continue;
                 }
@@ -235,7 +484,6 @@ impl RenderingState {
                 let x_span_end = ranges[1].1;
                 let x_span_len = x_span_end - x_span_start;
                 let wireframe = poly.alpha == 0;
-                let alpha = if wireframe { 31 } else { poly.alpha };
 
                 let fill_all_edges = wireframe
                     || rendering_data.control.antialiasing_enabled()
@@ -249,10 +497,10 @@ impl RenderingState {
 
                 let edge_mask = (y == poly.poly.top_y) as u8 | (y == poly.poly.bot_y - 1) as u8;
 
-                let [(l_color, l_uv, l_depth, l_w), (r_color, r_uv, r_depth, r_w)] =
+                let [(l_vert_color, l_uv, l_depth, l_w), (r_vert_color, r_uv, r_depth, r_w)] =
                     [(edges[0], x_span_start), (edges[1], x_span_end - 1)].map(|(edge, x)| {
                         let interp = edge.edge_interp(y, x);
-                        let color = interp.color(edge.a().color, edge.b().color);
+                        let vert_color = interp.color(edge.a().color, edge.b().color);
                         let uv = interp.uv(edge.a().uv, edge.b().uv);
                         let depth = interp.depth(
                             poly.poly.depth_values[edge.a_i().get() as usize],
@@ -260,7 +508,7 @@ impl RenderingState {
                             rendering_data.w_buffering,
                         );
                         let w = interp.w(edge.a_w(), edge.b_w());
-                        (color, uv, depth, w)
+                        (vert_color, uv, depth, w)
                     });
 
                 let x_interp = InterpLineData::<false>::new(l_w, r_w);
@@ -273,12 +521,12 @@ impl RenderingState {
                             let depth = interp.depth(l_depth, r_depth, rendering_data.w_buffering)
                                 as u32
                                 & 0x00FF_FFFF;
-                            if if poly.poly.attrs.depth_test_equal() {
-                                depth == self.depth_buffer[x]
-                            } else {
-                                depth < self.depth_buffer[x]
-                            } {
-                                scanline.0[x] = encode_rgb6(interp.color(l_color, r_color), alpha);
+                            if (poly.depth_test)(depth, self.depth_buffer[x], self.attr_buffer[x]) {
+                                let vert_color = interp.color(l_vert_color, r_vert_color);
+                                let uv = interp.uv(l_uv, r_uv);
+                                let color =
+                                    (poly.process_pixel)(rendering_data, poly, uv, vert_color);
+                                scanline.0[x] = encode_rgb_6(color);
                                 self.depth_buffer[x] = depth;
                                 self.attr_buffer[x] =
                                     PixelAttrs::from_opaque_poly_attrs(poly.poly.attrs);
@@ -294,12 +542,11 @@ impl RenderingState {
                         let depth = interp.depth(l_depth, r_depth, rendering_data.w_buffering)
                             as u32
                             & 0x00FF_FFFF;
-                        if if poly.poly.attrs.depth_test_equal() {
-                            depth == self.depth_buffer[x]
-                        } else {
-                            depth < self.depth_buffer[x]
-                        } {
-                            scanline.0[x] = encode_rgb6(interp.color(l_color, r_color), alpha);
+                        if (poly.depth_test)(depth, self.depth_buffer[x], self.attr_buffer[x]) {
+                            let vert_color = interp.color(l_vert_color, r_vert_color);
+                            let uv = interp.uv(l_uv, r_uv);
+                            let color = (poly.process_pixel)(rendering_data, poly, uv, vert_color);
+                            scanline.0[x] = encode_rgb_6(color);
                             self.depth_buffer[x] = depth;
                             self.attr_buffer[x] =
                                 PixelAttrs::from_opaque_poly_attrs(poly.poly.attrs);

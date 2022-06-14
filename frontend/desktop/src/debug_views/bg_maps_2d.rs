@@ -3,7 +3,6 @@ use crate::{
     ui::{imgui_wgpu, window::Window},
     utils::scale_to_fit,
 };
-use std::slice;
 use dust_core::{
     cpu,
     emu::Emu,
@@ -14,6 +13,7 @@ use dust_core::{
     utils::{zeroed_box, ByteMutSlice, Bytes},
 };
 use imgui::{Image, SliderFlags, StyleColor, TextureId, Ui};
+use std::slice;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Engine2d {

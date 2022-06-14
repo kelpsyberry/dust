@@ -1,5 +1,5 @@
 use core::ops::Mul;
-use core::simd::{i16x2, i32x4, i64x4, Simd, SimdElement};
+use core::simd::{i32x4, i64x4, Simd, SimdElement};
 
 #[derive(Clone, Copy, Debug)]
 #[repr(align(16))]
@@ -99,30 +99,45 @@ impl Matrix {
         self.0 = [row!(0), row!(1), row!(2), self.0[3]];
     }
 
-    pub fn mul_left_vec2_i16<T: SimdElement>(&self, vec: i16x2) -> Simd<T, 4> {
-        ((self.0[0].cast::<i64>() * i64x4::splat(vec[0] as i64)
-            + self.0[1].cast::<i64>() * i64x4::splat(vec[1] as i64)
-            + ((self.0[2].cast::<i64>() + self.0[3].cast::<i64>()) << i64x4::splat(12)))
-            >> i64x4::splat(12))
-        .cast()
-    }
-
-    pub fn mul_left_vec3_i16<T: SimdElement>(&self, vec: [i16; 3]) -> Simd<T, 4> {
-        ((self.0[0].cast::<i64>() * i64x4::splat(vec[0] as i64)
-            + self.0[1].cast::<i64>() * i64x4::splat(vec[1] as i64)
-            + self.0[2].cast::<i64>() * i64x4::splat(vec[2] as i64)
+    pub fn mul_left_vec3<T: Into<i64> + Copy, U: SimdElement>(&self, vec: [T; 3]) -> Simd<U, 4> {
+        ((self.0[0].cast::<i64>() * i64x4::splat(vec[0].into())
+            + self.0[1].cast::<i64>() * i64x4::splat(vec[1].into())
+            + self.0[2].cast::<i64>() * i64x4::splat(vec[2].into())
             + (self.0[3].cast::<i64>() << i64x4::splat(12)))
             >> i64x4::splat(12))
         .cast()
     }
 
-    pub fn mul_left_vec3_zero_i16<T: SimdElement, const SHIFT: u8>(
+    pub fn mul_left_vec2_one_one<T: Into<i64> + SimdElement, U: SimdElement>(
         &self,
-        vec: [i16; 3],
-    ) -> Simd<T, 4> {
-        ((self.0[0].cast::<i64>() * i64x4::splat(vec[0] as i64)
-            + self.0[1].cast::<i64>() * i64x4::splat(vec[1] as i64)
-            + self.0[2].cast::<i64>() * i64x4::splat(vec[2] as i64))
+        vec: Simd<T, 2>,
+    ) -> Simd<U, 4> {
+        ((self.0[0].cast::<i64>() * i64x4::splat(vec[0].into())
+            + self.0[1].cast::<i64>() * i64x4::splat(vec[1].into())
+            + self.0[2].cast::<i64>()
+            + self.0[3].cast::<i64>())
+            >> i64x4::splat(12))
+        .cast()
+    }
+
+    pub fn mul_left_vec3_zero<T: Into<i64> + Copy, U: SimdElement, const SHIFT: u8>(
+        &self,
+        vec: [T; 3],
+    ) -> Simd<U, 4> {
+        ((self.0[0].cast::<i64>() * i64x4::splat(vec[0].into())
+            + self.0[1].cast::<i64>() * i64x4::splat(vec[1].into())
+            + self.0[2].cast::<i64>() * i64x4::splat(vec[2].into()))
+            >> i64x4::splat(SHIFT as i64))
+        .cast()
+    }
+
+    pub fn mul_left_vec3_simd_zero<T: Into<i64> + SimdElement, U: SimdElement, const SHIFT: u8>(
+        &self,
+        vec: Simd<T, 4>,
+    ) -> Simd<U, 4> {
+        ((self.0[0].cast::<i64>() * i64x4::splat(vec[0].into())
+            + self.0[1].cast::<i64>() * i64x4::splat(vec[1].into())
+            + self.0[2].cast::<i64>() * i64x4::splat(vec[2].into()))
             >> i64x4::splat(SHIFT as i64))
         .cast()
     }
