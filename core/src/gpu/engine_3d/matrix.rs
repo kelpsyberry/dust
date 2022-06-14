@@ -130,17 +130,6 @@ impl Matrix {
             >> i64x4::splat(SHIFT as i64))
         .cast()
     }
-
-    pub fn mul_left_vec3_simd_zero<T: Into<i64> + SimdElement, U: SimdElement, const SHIFT: u8>(
-        &self,
-        vec: Simd<T, 4>,
-    ) -> Simd<U, 4> {
-        ((self.0[0].cast::<i64>() * i64x4::splat(vec[0].into())
-            + self.0[1].cast::<i64>() * i64x4::splat(vec[1].into())
-            + self.0[2].cast::<i64>() * i64x4::splat(vec[2].into()))
-            >> i64x4::splat(SHIFT as i64))
-        .cast()
-    }
 }
 
 impl Mul for Matrix {

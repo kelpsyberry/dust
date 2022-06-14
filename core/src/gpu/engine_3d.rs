@@ -715,7 +715,7 @@ impl Engine3d {
         if self.tex_params.coord_transform_mode() == 3 {
             let [u, v, ..] = self
                 .cur_tex_mtx
-                .mul_left_vec3_simd_zero::<i32, i16, 24>(transformed_coords)
+                .mul_left_vec3_zero::<i16, i16, 24>(coords)
                 .to_array();
             self.transformed_tex_coords = self.tex_coords + TexCoords::from_array([u, v]);
         }

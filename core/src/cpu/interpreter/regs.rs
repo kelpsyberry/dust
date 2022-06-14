@@ -26,7 +26,7 @@ pub struct Regs {
 impl Regs {
     pub const STARTUP: Self = Regs {
         cur: [0; 16],
-        cpsr: Cpsr::from_raw::<false>(0x1F),
+        cpsr: Cpsr::from_raw::<false>(0x13),
         is_in_priv_mode: true,
         is_in_exc_mode: true,
         spsr: Spsr::from_raw::<false>(0),
