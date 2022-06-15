@@ -78,9 +78,9 @@ impl<E: Engine> Arm9<E> {
         channel.cur_dst_addr = channel.dst_addr & mask;
         if channel.timing == Timing::GxFifo {
             if !value.is_32_bit() {
-            #[cfg(feature = "log")]
-            slog::warn!(self.logger, "GX FIFO DMA with 16-bit units");
-        }
+                #[cfg(feature = "log")]
+                slog::warn!(self.logger, "GX FIFO DMA with 16-bit units");
+            }
             channel.remaining_units = channel.unit_count;
         } else {
             channel.remaining_batch_units = channel.unit_count;
@@ -110,10 +110,10 @@ impl<E: Engine> Arm9<E> {
         let channel = &mut self.dma.channels[i.get() as usize];
         channel.next_access_is_nseq = true;
         if TIMING == Timing::GxFifo {
-                channel.remaining_batch_units = channel
-                    .remaining_units
-                    .min(112 << channel.control.is_32_bit() as u8);
-                channel.remaining_units -= channel.remaining_batch_units;
+            channel.remaining_batch_units = channel
+                .remaining_units
+                .min(112 << channel.control.is_32_bit() as u8);
+            channel.remaining_units -= channel.remaining_batch_units;
         }
         self.dma.running_channels |= 1 << i.get();
         if let Some(cur_i) = self.dma.cur_channel {

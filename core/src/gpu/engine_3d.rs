@@ -223,6 +223,8 @@ pub struct Engine3d {
     remaining_command_params: u8,
     command_finish_time: emu::Timestamp,
     gx_fifo_stalled: bool,
+    queued_mtx_stack_cmds: u16,
+    queued_test_cmd_entries: u16,
 
     swap_buffers_attrs: SwapBuffersAttrs,
 
@@ -323,6 +325,8 @@ impl Engine3d {
             remaining_command_params: 0,
             command_finish_time: emu::Timestamp(0),
             gx_fifo_stalled: false,
+            queued_mtx_stack_cmds: 0,
+            queued_test_cmd_entries: 0,
 
             swap_buffers_attrs: SwapBuffersAttrs(0),
 
@@ -510,6 +514,18 @@ impl Engine3d {
     }
 
     fn write_to_gx_fifo(emu: &mut Emu<impl cpu::Engine>, value: FifoEntry) {
+        match value.command {
+            0x11 | 0x12 => {
+                emu.gpu.engine_3d.queued_mtx_stack_cmds += 1;
+                emu.gpu.engine_3d.gx_status.set_matrix_stack_busy(true);
+            }
+            0x70..=0x72 => {
+                emu.gpu.engine_3d.queued_test_cmd_entries += 1;
+                emu.gpu.engine_3d.gx_status.set_test_busy(true);
+            }
+            _ => {}
+        }
+
         if !emu.gpu.engine_3d.gx_pipe.is_full() && emu.gpu.engine_3d.gx_fifo.is_empty() {
             let _ = emu.gpu.engine_3d.gx_pipe.write(value);
         } else {
@@ -1076,8 +1092,6 @@ impl Engine3d {
     }
 
     pub(crate) fn process_next_command(emu: &mut Emu<impl cpu::Engine>) {
-        emu.gpu.engine_3d.gx_status.set_matrix_stack_busy(false);
-
         loop {
             if emu.gpu.engine_3d.gx_pipe.is_empty() {
                 break;
@@ -1107,6 +1121,25 @@ impl Engine3d {
                 emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9);
             }
 
+            macro_rules! dequeue_mtx_stack_cmd {
+                () => {
+                    emu.gpu.engine_3d.queued_mtx_stack_cmds -= 1;
+                    if emu.gpu.engine_3d.queued_mtx_stack_cmds == 0 {
+                        emu.gpu.engine_3d.gx_status.set_matrix_stack_busy(false);
+                    }
+                };
+            }
+
+            macro_rules! dequeue_test_cmd_entries {
+                ($num: expr) => {
+                    emu.gpu.engine_3d.queued_test_cmd_entries -= $num;
+                    if emu.gpu.engine_3d.queued_test_cmd_entries == 0 {
+                        emu.gpu.engine_3d.gx_status.set_test_busy(false);
+                    }
+                };
+            }
+
+            #[allow(clippy::match_same_arms)]
             match command {
                 0x10 => {
                     // MTX_MODE
@@ -1139,8 +1172,7 @@ impl Engine3d {
                             emu.gpu.engine_3d.tex_stack = emu.gpu.engine_3d.cur_tex_mtx;
                         }
                     }
-
-                    emu.gpu.engine_3d.gx_status.set_matrix_stack_busy(true);
+                    dequeue_mtx_stack_cmd!();
                 }
 
                 0x12 => {
@@ -1169,8 +1201,7 @@ impl Engine3d {
                             emu.gpu.engine_3d.cur_tex_mtx = emu.gpu.engine_3d.tex_stack;
                         }
                     }
-
-                    emu.gpu.engine_3d.gx_status.set_matrix_stack_busy(true);
+                    dequeue_mtx_stack_cmd!();
                 }
 
                 0x13 => {
@@ -1193,8 +1224,6 @@ impl Engine3d {
                             emu.gpu.engine_3d.tex_stack = emu.gpu.engine_3d.cur_tex_mtx;
                         }
                     }
-
-                    emu.gpu.engine_3d.gx_status.set_matrix_stack_busy(true);
                 }
 
                 0x14 => {
@@ -1219,8 +1248,6 @@ impl Engine3d {
                             emu.gpu.engine_3d.cur_tex_mtx = emu.gpu.engine_3d.tex_stack;
                         }
                     }
-
-                    emu.gpu.engine_3d.gx_status.set_matrix_stack_busy(true);
                 }
 
                 0x15 => {
@@ -1455,7 +1482,7 @@ impl Engine3d {
 
                     match emu.gpu.engine_3d.tex_params.coord_transform_mode() {
                         0 => {
-                            emu.gpu.engine_3d.transformed_tex_coords = emu.gpu.engine_3d.tex_coords
+                            emu.gpu.engine_3d.transformed_tex_coords = emu.gpu.engine_3d.tex_coords;
                         }
                         1 => {
                             let [u, v, ..] = emu
@@ -1635,29 +1662,29 @@ impl Engine3d {
                     }
                 }
 
-                // 0x70 => {} // TODO: BOX_TEST
-
-                // 0x71 => {} // TODO: POS_TEST
-
-                // 0x72 => {} // TODO: VEC_TEST
-                _ => {
-                    // TODO: Obviously remove
-                    // #[cfg(feature = "log")]
-                    // slog::warn!(
-                    //     emu.gpu.engine_3d.logger,
-                    //     "Unhandled command: {:#04X} ({})",
-                    //     command,
-                    //     match command {
-                    //         0x70 => "BOX_TEST",
-                    //         0x71 => "POS_TEST",
-                    //         0x72 => "VEC_TEST",
-                    //         _ => "Unknown",
-                    //     },
-                    // );
-                    for _ in 1..params {
+                0x70 => {
+                    // TODO: BOX_TEST
+                    emu.gpu.engine_3d.gx_status.set_box_test_result(true);
+                    for _ in 1..3 {
                         unsafe { emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param };
                     }
+                    dequeue_test_cmd_entries!(3);
                 }
+
+                0x71 => {
+                    // TODO: POS_TEST
+                    for _ in 1..2 {
+                        unsafe { emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param };
+                    }
+                    dequeue_test_cmd_entries!(2);
+                }
+
+                0x72 => {
+                    // TODO: VEC_TEST
+                    dequeue_test_cmd_entries!(1);
+                }
+
+                _ => {}
             }
 
             emu.gpu.engine_3d.command_finish_time.0 =

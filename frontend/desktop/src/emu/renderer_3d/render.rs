@@ -129,12 +129,24 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
             }};
         }
 
-        let u = apply_tiling!(uv[0], tex_width_mask, tex_width_shift, repeat_s, flip_s);
-        let v = apply_tiling!(uv[1], tex_height_mask, tex_height_shift, repeat_t, flip_t);
+        let u = apply_tiling!(uv[0], tex_width_mask, tex_width_shift, repeat_s, flip_s) as usize;
+        let v = apply_tiling!(uv[1], tex_height_mask, tex_height_shift, repeat_t, flip_t) as usize;
 
-        let i = (v as usize) << (tex_width_shift + 3) | u as usize;
+        let i = v << (tex_width_shift + 3) | u;
 
         let tex_color = rgb_5_to_6(match FORMAT {
+            1 => {
+                let pixel = rendering_data.texture[(tex_base + i) & 0x7_FFFF];
+                let color_index = pixel as usize & 0x1F;
+                let raw_alpha = pixel >> 5;
+                decode_rgb_5(
+                    rendering_data
+                        .tex_pal
+                        .read_le::<u16>((pal_base + (color_index << 1)) & 0x1_FFFF),
+                    (raw_alpha << 2 | raw_alpha >> 1) as u16,
+                )
+            }
+
             2 => {
                 let color_index = rendering_data.texture[(tex_base + (i >> 2)) & 0x7_FFFF]
                     .wrapping_shr((i << 1) as u32) as usize
@@ -181,15 +193,85 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                 )
             }
 
-            7 => {
+            5 => {
+                let texel_block_addr = tex_base + (v >> 2 << (tex_width_shift + 3) | (u & !3));
+                let texel_value = rendering_data.texture[(texel_block_addr | (v & 3)) & 0x7_FFFF]
+                    >> ((u & 3) << 1)
+                    & 3;
+
+                let pal_data_addr = 0x2_0000
+                    | (texel_block_addr >> 1 & 0xFFFE)
+                    | (texel_block_addr >> 2 & 0x1_0000);
+                let pal_data = rendering_data.texture.read_le::<u16>(pal_data_addr);
+                let pal_base = pal_base + (pal_data << 2) as usize;
+                let mode = pal_data >> 14;
+
+                macro_rules! color {
+                    ($i: literal) => {
+                        decode_rgb_5(
+                            rendering_data
+                                .tex_pal
+                                .read_le::<u16>((pal_base + ($i << 1)) & 0x1_FFFE),
+                            0x1F,
+                        )
+                    };
+                }
+
+                match texel_value {
+                    0 => color!(0),
+
+                    1 => color!(1),
+
+                    2 => match mode {
+                        0 | 2 => color!(2),
+
+                        1 => {
+                            let color_0 = color!(0);
+                            let color_1 = color!(1);
+                            (color_0 + color_1) >> InterpColor::splat(1)
+                        }
+
+                        _ => {
+                            let color_0 = color!(0);
+                            let color_1 = color!(1);
+                            (color_0 * InterpColor::splat(5) + color_1 * InterpColor::splat(3))
+                                >> InterpColor::splat(3)
+                        }
+                    },
+
+                    _ => match mode {
+                        0 | 1 => InterpColor::splat(0),
+
+                        2 => color!(3),
+
+                        _ => {
+                            let color_0 = color!(0);
+                            let color_1 = color!(1);
+                            (color_0 * InterpColor::splat(5) + color_1 * InterpColor::splat(3))
+                                >> InterpColor::splat(3)
+                        }
+                    },
+                }
+            }
+
+            6 => {
+                let pixel = rendering_data.texture[(tex_base + i) & 0x7_FFFF];
+                let color_index = pixel as usize & 7;
+                let alpha = pixel >> 3;
+                decode_rgb_5(
+                    rendering_data
+                        .tex_pal
+                        .read_le::<u16>((pal_base | color_index << 1) & 0x1_FFFF),
+                    alpha as u16,
+                )
+            }
+
+            _ => {
                 let color = rendering_data
                     .texture
                     .read_le::<u16>((tex_base + (i << 1)) & 0x7_FFFE);
                 decode_rgb_5(color, if color & 1 << 15 != 0 { 0x1F } else { 0 })
             }
-
-            // TODO: Texture lookup
-            _ => InterpColor::from_array([0x1F, 0x1F, 0x1F, 0x1F]),
         });
 
         match MODE {
