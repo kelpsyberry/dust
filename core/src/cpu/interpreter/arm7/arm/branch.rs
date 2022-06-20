@@ -1,10 +1,10 @@
 use super::super::reload_pipeline;
 use crate::{
-    cpu::interpreter::{common::StateSource, Engine},
+    cpu::interpreter::{common::StateSource, Interpreter},
     emu::Emu,
 };
 
-pub fn b<const LINK: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn b<const LINK: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let r15 = reg!(emu.arm7, 15);
     if LINK {
         reg!(emu.arm7, 14) = r15.wrapping_sub(4);
@@ -13,7 +13,7 @@ pub fn b<const LINK: bool>(emu: &mut Emu<Engine>, instr: u32) {
     reload_pipeline::<{ StateSource::Arm }>(emu);
 }
 
-pub fn bx(emu: &mut Emu<Engine>, instr: u32) {
+pub fn bx(emu: &mut Emu<Interpreter>, instr: u32) {
     reg!(emu.arm7, 15) = reg!(emu.arm7, instr & 0xF);
     reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
 }

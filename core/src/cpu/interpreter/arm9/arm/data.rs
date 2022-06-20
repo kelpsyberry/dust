@@ -7,7 +7,7 @@ use crate::{
     cpu::interpreter::{
         alu_utils::{arithmetic, bit_ops, shifts},
         common::{DpOpTy, DpOperand, ShiftTy, StateSource},
-        Engine,
+        Interpreter,
     },
     emu::Emu,
 };
@@ -18,7 +18,7 @@ use core::intrinsics::{likely, unlikely};
 //       others take 3, regardless of the operation.
 
 pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: bool>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     instr: u32,
 ) {
     let src_reg = (instr >> 16 & 0xF) as u8;
@@ -266,7 +266,7 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
     }
 }
 
-pub fn clz(emu: &mut Emu<Engine>, instr: u32) {
+pub fn clz(emu: &mut Emu<Interpreter>, instr: u32) {
     let src_reg = (instr & 0xF) as u8;
     apply_reg_interlock_1::<false>(emu, src_reg);
     add_bus_cycles(emu, 1);
@@ -278,7 +278,7 @@ pub fn clz(emu: &mut Emu<Engine>, instr: u32) {
     }
 }
 
-pub fn mul<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn mul<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let src_reg = (instr & 0xF) as u8;
     let op_reg = (instr >> 8 & 0xF) as u8;
     let acc_reg = (instr >> 12 & 0xF) as u8;
@@ -314,7 +314,7 @@ pub fn mul<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, instr:
 //   the multiplication instruction.
 // - Only RdHi can cause an interlock in subsequent instructions, RdLo is immediately available.
 
-pub fn umull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn umull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let src_reg = (instr & 0xF) as u8;
     let op_reg = (instr >> 8 & 0xF) as u8;
     let dst_acc_reg_low = (instr >> 12 & 0xF) as u8;
@@ -349,7 +349,7 @@ pub fn umull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, inst
     }
 }
 
-pub fn smull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn smull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let src_reg = (instr & 0xF) as u8;
     let op_reg = (instr >> 8 & 0xF) as u8;
     let dst_acc_reg_low = (instr >> 12 & 0xF) as u8;
@@ -385,7 +385,7 @@ pub fn smull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, inst
     }
 }
 
-pub fn smulxy<const ACC: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn smulxy<const ACC: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let src_reg = (instr & 0xF) as u8;
     let op_reg = (instr >> 8 & 0xF) as u8;
     let acc_reg = (instr >> 12 & 0xF) as u8;
@@ -412,7 +412,7 @@ pub fn smulxy<const ACC: bool>(emu: &mut Emu<Engine>, instr: u32) {
     }
 }
 
-pub fn smulwy<const ACC: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn smulwy<const ACC: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let src_reg = (instr & 0xF) as u8;
     let op_reg = (instr >> 8 & 0xF) as u8;
     let acc_reg = (instr >> 12 & 0xF) as u8;
@@ -439,7 +439,7 @@ pub fn smulwy<const ACC: bool>(emu: &mut Emu<Engine>, instr: u32) {
     }
 }
 
-pub fn smlalxy(emu: &mut Emu<Engine>, instr: u32) {
+pub fn smlalxy(emu: &mut Emu<Interpreter>, instr: u32) {
     let src_reg = (instr & 0xF) as u8;
     let op_reg = (instr >> 8 & 0xF) as u8;
     let dst_acc_reg_low = (instr >> 12 & 0xF) as u8;
@@ -461,7 +461,7 @@ pub fn smlalxy(emu: &mut Emu<Engine>, instr: u32) {
     }
 }
 
-pub fn qaddsub<const SUB: bool, const DOUBLED: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn qaddsub<const SUB: bool, const DOUBLED: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let src_reg = (instr & 0xF) as u8;
     let op_reg = (instr >> 16 & 0xF) as u8;
     apply_reg_interlocks_2::<0, false>(emu, src_reg, op_reg);

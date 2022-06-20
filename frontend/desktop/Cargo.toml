@@ -8,6 +8,8 @@ publish = false
 debug-views = ["bitflags", "dust-core/disasm", "dust-core/channel-audio-capture"]
 log = ["slog", "slog-term", "slog-async", "dust-core/log"]
 
+jit = ["dust-core/jit"]
+
 pu-checks = ["dust-core/pu-checks"]
 
 interp-pipeline = ["dust-core/interp-pipeline"]

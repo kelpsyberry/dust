@@ -305,7 +305,7 @@ impl Ptrs {
                         true
                     };
                     if w_not_disabled {
-                        attrs = (attrs & !mask::W) | write_mask_attrs;
+                        attrs = (attrs & !mask::W_ALL) | write_mask_attrs;
                     }
                 }
                 #[cfg(all(feature = "bft-r", feature = "bft-w"))]

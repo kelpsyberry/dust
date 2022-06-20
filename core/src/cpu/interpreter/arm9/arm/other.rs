@@ -4,12 +4,12 @@ use super::super::{
     write_reg_interlock,
 };
 use crate::{
-    cpu::{arm9::Arm9, interpreter::Engine, psr::Cpsr},
+    cpu::{arm9::Arm9, interpreter::Interpreter, psr::Cpsr},
     emu::Emu,
 };
 use core::intrinsics::{likely, unlikely};
 
-pub fn mrs<const SPSR: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn mrs<const SPSR: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let result = if SPSR {
         spsr!(emu.arm9)
     } else {
@@ -24,7 +24,7 @@ pub fn mrs<const SPSR: bool>(emu: &mut Emu<Engine>, instr: u32) {
     add_cycles(emu, 1);
 }
 
-pub fn msr<const IMM: bool, const SPSR: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn msr<const IMM: bool, const SPSR: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let value = if IMM {
         (instr & 0xFF).rotate_right(instr >> 7 & 0x1E)
     } else {
@@ -56,11 +56,11 @@ pub fn msr<const IMM: bool, const SPSR: bool>(emu: &mut Emu<Engine>, instr: u32)
     }
 }
 
-pub fn bkpt(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn bkpt(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_prefetch_abort::<false>(emu);
 }
 
-pub fn swi(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn swi(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_swi::<false>(
         emu,
         #[cfg(feature = "debugger-hooks")]
@@ -70,7 +70,7 @@ pub fn swi(emu: &mut Emu<Engine>, _instr: u32) {
     );
 }
 
-pub fn undefined(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn undefined(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_undefined::<false>(emu);
 }
 
@@ -79,7 +79,7 @@ pub fn undefined(emu: &mut Emu<Engine>, _instr: u32) {
 // TODO: Confirm that MCRR/MRRC are undefined for CP15 (the ARM946E-S manual only mentions CDP, LDC
 //       and STC), and check timings of undefined CDP/LDC/STC/MCRR/MRRC
 
-pub fn mcr(emu: &mut Emu<Engine>, instr: u32) {
+pub fn mcr(emu: &mut Emu<Interpreter>, instr: u32) {
     if likely(emu.arm9.engine_data.regs.is_in_priv_mode() && instr >> 8 & 0xF == 15) {
         let src_reg = (instr >> 12 & 0xF) as u8;
         apply_reg_interlock_1::<false>(emu, src_reg);
@@ -98,7 +98,7 @@ pub fn mcr(emu: &mut Emu<Engine>, instr: u32) {
     }
 }
 
-pub fn mrc(emu: &mut Emu<Engine>, instr: u32) {
+pub fn mrc(emu: &mut Emu<Interpreter>, instr: u32) {
     if likely(emu.arm9.engine_data.regs.is_in_priv_mode() && instr >> 8 & 0xF == 15) {
         prefetch_arm::<true, true>(emu);
         let result = Arm9::read_cp15_reg(
@@ -120,22 +120,22 @@ pub fn mrc(emu: &mut Emu<Engine>, instr: u32) {
     }
 }
 
-pub fn mcrr(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn mcrr(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_undefined::<false>(emu);
 }
 
-pub fn mrrc(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn mrrc(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_undefined::<false>(emu);
 }
 
-pub fn cdp(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn cdp(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_undefined::<false>(emu);
 }
 
-pub fn ldc(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn ldc(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_undefined::<false>(emu);
 }
 
-pub fn stc(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn stc(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_undefined::<false>(emu);
 }

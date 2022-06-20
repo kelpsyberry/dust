@@ -11,6 +11,7 @@ use crate::{
         self,
         arm7::{self, Arm7},
         arm9::{self, Arm9},
+        bus::CpuAccess,
         Arm7Data, Arm9Data, CoreData, Schedule as _,
     },
     ds_slot::{self, DsSlot},
@@ -79,6 +80,7 @@ bitfield_debug! {
 }
 
 pub struct Emu<E: cpu::Engine> {
+    #[allow(dead_code)]
     pub(crate) global_engine_data: E::GlobalData,
     pub arm7: Arm7<E>,
     pub arm9: Arm9<E>,
@@ -299,26 +301,26 @@ impl<E: cpu::Engine> Emu<E> {
         let arm7_entry_addr = header.read_le::<u32>(0x34);
         let arm7_ram_addr = header.read_le::<u32>(0x38);
         let arm7_size = header.read_le::<u32>(0x3C);
+
         let mut arm7_loaded_data = BoxedByteSlice::new_zeroed(arm7_size as usize);
         self.ds_slot.rom.read(
             arm7_rom_offset,
             ByteMutSlice::new(&mut arm7_loaded_data[..]),
         );
-        E::Arm7Data::setup_direct_boot(
-            self,
-            arm7_entry_addr,
-            (arm7_loaded_data.as_byte_slice(), arm7_ram_addr),
-        );
+        E::Arm7Data::setup_direct_boot(self, arm7_entry_addr);
+        for (&byte, addr) in arm7_loaded_data.iter().zip(arm7_ram_addr..) {
+            arm7::bus::write_8::<CpuAccess, _>(self, addr, byte);
+        }
+
         let mut arm9_loaded_data = BoxedByteSlice::new_zeroed(arm9_size as usize);
         self.ds_slot.rom.read(
             arm9_rom_offset,
             ByteMutSlice::new(&mut arm9_loaded_data[..]),
         );
-        E::Arm9Data::setup_direct_boot(
-            self,
-            arm9_entry_addr,
-            (arm9_loaded_data.as_byte_slice(), arm9_ram_addr),
-        );
+        for (&byte, addr) in arm9_loaded_data.iter().zip(arm9_ram_addr..) {
+            arm9::bus::write_8::<CpuAccess, _>(self, addr, byte);
+        }
+        E::Arm9Data::setup_direct_boot(self, arm9_entry_addr);
     }
 
     #[inline]

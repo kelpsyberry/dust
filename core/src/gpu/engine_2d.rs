@@ -446,7 +446,7 @@ impl<R: Role> Engine2d<R> {
 
     #[inline]
     pub fn write_brightness_coeff(&mut self, value: u8) {
-        self.brightness_coeff = (value & 0x1F).min(value);
+        self.brightness_coeff = (value & 0x1F).min(16);
     }
 
     pub(super) fn end_vblank(&mut self) {

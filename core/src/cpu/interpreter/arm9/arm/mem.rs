@@ -10,7 +10,7 @@ use crate::{
         interpreter::{
             alu_utils::shifts,
             common::{MiscAddressing, ShiftTy, StateSource, WbAddressing, WbOffTy},
-            Engine,
+            Interpreter,
         },
         psr::Mode,
     },
@@ -38,7 +38,7 @@ macro_rules! wb_handler {
         | $check: block $do_access: block
     ) => {
         pub fn $ident<const OFF_TY: WbOffTy, const UPWARDS: bool, const $addressing: WbAddressing>(
-            $emu: &mut Emu<Engine>,
+            $emu: &mut Emu<Interpreter>,
             $instr: u32,
         ) {
             $( let $src_reg = ($instr >> 12 & 0xF) as u8; )*
@@ -249,7 +249,7 @@ macro_rules! misc_handler {
         | $check: block $do_access: block
     ) => {
         pub fn $ident<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddressing>(
-            $emu: &mut Emu<Engine>,
+            $emu: &mut Emu<Interpreter>,
             $instr: u32,
         ) {
             $( let $src_reg = ($instr >> 12 & 0xF) as u8; )*
@@ -359,7 +359,7 @@ misc_handler! {
 }
 
 pub fn ldrd<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddressing>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     instr: u32,
 ) {
     let dst_base_reg = (instr >> 12 & 0xF) as u8;
@@ -464,7 +464,7 @@ pub fn ldrd<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddr
 }
 
 pub fn strd<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddressing>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     instr: u32,
 ) {
     let src_base_reg = (instr >> 12 & 0xF) as u8;
@@ -642,7 +642,7 @@ macro_rules! swp_handler {
         |
         $read: block $write: block
     ) => {
-        pub fn $ident($emu: &mut Emu<Engine>, $instr: u32) {
+        pub fn $ident($emu: &mut Emu<Interpreter>, $instr: u32) {
             let addr_reg = ($instr >> 16 & 0xF) as u8;
             apply_reg_interlock_1::<false>($emu, addr_reg);
             add_bus_cycles($emu, 2);
@@ -717,7 +717,7 @@ swp_handler! {
 // TODO: Check how bank switching interacts with timing.
 
 pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const S_BIT: bool>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     instr: u32,
 ) {
     let base_reg = (instr >> 16 & 0xF) as u8;
@@ -858,7 +858,7 @@ pub fn stm<
     const WRITEBACK: bool,
     const BANK_SWITCH: bool,
 >(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     instr: u32,
 ) {
     let base_reg = (instr >> 16 & 0xF) as u8;
@@ -962,6 +962,6 @@ pub fn stm<
     }
 }
 
-pub fn pld(_emu: &mut Emu<Engine>, _instr: u32) {
+pub fn pld(_emu: &mut Emu<Interpreter>, _instr: u32) {
     todo!("pld");
 }

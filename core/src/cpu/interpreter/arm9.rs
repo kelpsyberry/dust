@@ -3,7 +3,7 @@ mod thumb;
 
 #[cfg(feature = "interp-pipeline")]
 use super::common::{thumb_pipeline_entry, PipelineEntry};
-use super::{super::Regs as EngineRegs, common::StateSource, Engine, Regs};
+use super::{super::Regs as EngineRegs, common::StateSource, Interpreter, Regs};
 #[cfg(feature = "debugger-hooks")]
 use crate::cpu::debug;
 #[cfg(feature = "interp-arm9-interlocks")]
@@ -18,7 +18,7 @@ use crate::{
     ds_slot::DsSlot,
     emu::Emu,
     gpu::engine_3d::Engine3d,
-    utils::{schedule::RawTimestamp, ByteSlice},
+    utils::schedule::RawTimestamp,
 };
 use cfg_if::cfg_if;
 use core::intrinsics::unlikely;
@@ -74,7 +74,7 @@ impl EngineData {
 }
 
 #[inline]
-fn add_cycles(emu: &mut Emu<Engine>, cycles: RawTimestamp) {
+fn add_cycles(emu: &mut Emu<Interpreter>, cycles: RawTimestamp) {
     emu.arm9
         .schedule
         .set_cur_time(emu.arm9.schedule.cur_time() + Timestamp(cycles));
@@ -83,7 +83,7 @@ fn add_cycles(emu: &mut Emu<Engine>, cycles: RawTimestamp) {
 const ARM_BKPT: u32 = 0xE120_0070;
 const THUMB_BKPT: u16 = 0xBE00;
 
-fn prefetch_arm<const RESET_DATA_CYCLES: bool, const INC_R15: bool>(emu: &mut Emu<Engine>) {
+fn prefetch_arm<const RESET_DATA_CYCLES: bool, const INC_R15: bool>(emu: &mut Emu<Interpreter>) {
     #[cfg(feature = "interp-arm9-interlocks")]
     let fetch_addr = reg!(emu.arm9, 15);
     if INC_R15 {
@@ -114,7 +114,7 @@ fn prefetch_arm<const RESET_DATA_CYCLES: bool, const INC_R15: bool>(emu: &mut Em
     }
 }
 
-fn prefetch_thumb<const RESET_DATA_CYCLES: bool, const INC_R15: bool>(emu: &mut Emu<Engine>) {
+fn prefetch_thumb<const RESET_DATA_CYCLES: bool, const INC_R15: bool>(emu: &mut Emu<Interpreter>) {
     #[cfg(feature = "interp-arm9-interlocks")]
     let fetch_addr = reg!(emu.arm9, 15);
     if INC_R15 {
@@ -159,7 +159,7 @@ fn prefetch_thumb<const RESET_DATA_CYCLES: bool, const INC_R15: bool>(emu: &mut 
 
 #[cfg_attr(not(feature = "interp-arm9-interlocks"), allow(unused_variables))]
 #[inline]
-fn apply_reg_interlock_1<const PORT_C: bool>(emu: &mut Emu<Engine>, reg: u8) {
+fn apply_reg_interlock_1<const PORT_C: bool>(emu: &mut Emu<Interpreter>, reg: u8) {
     #[cfg(feature = "interp-arm9-interlocks")]
     {
         let interlock = emu.arm9.engine_data.interlocks[reg as usize];
@@ -183,7 +183,7 @@ fn apply_reg_interlock_1<const PORT_C: bool>(emu: &mut Emu<Engine>, reg: u8) {
 #[cfg_attr(not(feature = "interp-arm9-interlocks"), allow(unused_variables))]
 #[inline]
 fn apply_reg_interlocks_2<const OFFSET_A: u8, const B_PORT_C: bool>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     reg_a: u8,
     reg_b: u8,
 ) {
@@ -215,7 +215,7 @@ fn apply_reg_interlocks_2<const OFFSET_A: u8, const B_PORT_C: bool>(
 #[cfg_attr(not(feature = "interp-arm9-interlocks"), allow(unused_variables))]
 #[inline]
 fn apply_reg_interlocks_3<const OFFSET_AB: u8, const C_PORT_C: bool>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     reg_a: u8,
     reg_b: u8,
     reg_c: u8,
@@ -254,7 +254,7 @@ fn apply_reg_interlocks_3<const OFFSET_AB: u8, const C_PORT_C: bool>(
 // this).
 
 #[inline]
-fn write_reg_clear_interlock_ab(emu: &mut Emu<Engine>, reg: u8, value: u32) {
+fn write_reg_clear_interlock_ab(emu: &mut Emu<Interpreter>, reg: u8, value: u32) {
     #[cfg(feature = "interp-arm9-interlocks")]
     {
         emu.arm9.engine_data.interlocks[reg as usize].port_ab = 0;
@@ -263,7 +263,7 @@ fn write_reg_clear_interlock_ab(emu: &mut Emu<Engine>, reg: u8, value: u32) {
 }
 
 #[inline]
-fn write_reg_interlock_ab(emu: &mut Emu<Engine>, reg: u8, value: u32, _offset: RawTimestamp) {
+fn write_reg_interlock_ab(emu: &mut Emu<Interpreter>, reg: u8, value: u32, _offset: RawTimestamp) {
     #[cfg(feature = "interp-arm9-interlocks")]
     {
         emu.arm9.engine_data.interlocks[reg as usize].port_ab =
@@ -274,7 +274,7 @@ fn write_reg_interlock_ab(emu: &mut Emu<Engine>, reg: u8, value: u32, _offset: R
 
 #[inline]
 fn write_reg_interlock(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     reg: u8,
     value: u32,
     _port_ab_offset: RawTimestamp,
@@ -293,7 +293,7 @@ fn write_reg_interlock(
 #[cfg_attr(not(feature = "interp-arm9-interlocks"), allow(unused_variables))]
 #[inline]
 fn add_interlock(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     reg: u8,
     port_ab_offset: RawTimestamp,
     port_c_offset: RawTimestamp,
@@ -313,14 +313,14 @@ fn add_interlock(
 /// up to 2 cycles.
 #[cfg_attr(not(feature = "interp-arm9-interlocks"), allow(unused_variables))]
 #[inline]
-fn add_bus_cycles(emu: &mut Emu<Engine>, cycles: RawTimestamp) {
+fn add_bus_cycles(emu: &mut Emu<Interpreter>, cycles: RawTimestamp) {
     #[cfg(feature = "interp-arm9-interlocks")]
     {
         emu.arm9.engine_data.bus_cycle += cycles;
     }
 }
 
-fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
+fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Interpreter>) {
     let mut addr = reg!(emu.arm9, 15);
 
     macro_rules! get_next_breakpoint {
@@ -494,7 +494,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
 }
 
 #[inline]
-fn set_cpsr_update_control(emu: &mut Emu<Engine>, value: Cpsr) {
+fn set_cpsr_update_control(emu: &mut Emu<Interpreter>, value: Cpsr) {
     let old_value = emu.arm9.engine_data.regs.cpsr;
     emu.arm9.engine_data.regs.cpsr = value;
     emu.arm9
@@ -506,7 +506,7 @@ fn set_cpsr_update_control(emu: &mut Emu<Engine>, value: Cpsr) {
         .update_mode::<false>(old_value.mode(), value.mode());
 }
 
-fn restore_spsr(emu: &mut Emu<Engine>) {
+fn restore_spsr(emu: &mut Emu<Interpreter>) {
     if !emu.arm9.engine_data.regs.is_in_exc_mode() {
         unimplemented!("Unpredictable SPSR restore in non-exception mode");
     }
@@ -518,7 +518,7 @@ fn restore_spsr(emu: &mut Emu<Engine>) {
     }
 }
 
-fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Engine>) {
+fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
     #[cfg(feature = "log")]
     slog::warn!(
         emu.arm9.logger,
@@ -570,7 +570,7 @@ fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Engine>) {
 }
 
 fn handle_swi<const THUMB: bool>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     #[cfg(feature = "debugger-hooks")] swi_num: u8,
 ) {
     #[cfg(feature = "debugger-hooks")]
@@ -616,7 +616,7 @@ fn handle_swi<const THUMB: bool>(
     reload_pipeline::<{ StateSource::Arm }>(emu);
 }
 
-fn handle_prefetch_abort<const THUMB: bool>(emu: &mut Emu<Engine>) {
+fn handle_prefetch_abort<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
     #[cfg(feature = "log")]
     slog::warn!(
         emu.arm9.logger,
@@ -667,7 +667,7 @@ fn handle_prefetch_abort<const THUMB: bool>(emu: &mut Emu<Engine>) {
     reload_pipeline::<{ StateSource::Arm }>(emu);
 }
 
-fn handle_data_abort<const THUMB: bool>(emu: &mut Emu<Engine>, _addr: u32) {
+fn handle_data_abort<const THUMB: bool>(emu: &mut Emu<Interpreter>, _addr: u32) {
     // r15 is assumed to be PC + 3i, and not PC + 2i (where i = instr size)
     #[cfg(feature = "log")]
     slog::warn!(
@@ -716,7 +716,7 @@ fn handle_data_abort<const THUMB: bool>(emu: &mut Emu<Engine>, _addr: u32) {
 
 #[allow(unused_variables)]
 #[inline]
-fn can_read(emu: &Emu<Engine>, addr: u32, privileged: bool) -> bool {
+fn can_read(emu: &Emu<Interpreter>, addr: u32, privileged: bool) -> bool {
     #[cfg(feature = "pu-checks")]
     {
         emu.arm9.cp15.perm_map.read(addr, privileged)
@@ -727,7 +727,7 @@ fn can_read(emu: &Emu<Engine>, addr: u32, privileged: bool) -> bool {
 
 #[allow(unused_variables)]
 #[inline]
-fn can_write(emu: &Emu<Engine>, addr: u32, privileged: bool) -> bool {
+fn can_write(emu: &Emu<Interpreter>, addr: u32, privileged: bool) -> bool {
     #[cfg(feature = "pu-checks")]
     {
         emu.arm9.cp15.perm_map.write(addr, privileged)
@@ -738,7 +738,7 @@ fn can_write(emu: &Emu<Engine>, addr: u32, privileged: bool) -> bool {
 
 #[allow(unused_variables)]
 #[inline]
-fn can_execute(emu: &Emu<Engine>, addr: u32, privileged: bool) -> bool {
+fn can_execute(emu: &Emu<Interpreter>, addr: u32, privileged: bool) -> bool {
     #[cfg(feature = "pu-checks")]
     {
         emu.arm9.cp15.perm_map.execute(addr, privileged)
@@ -748,23 +748,16 @@ fn can_execute(emu: &Emu<Engine>, addr: u32, privileged: bool) -> bool {
 }
 
 impl CoreData for EngineData {
-    type Engine = Engine;
+    type Engine = Interpreter;
 
     #[inline]
-    fn setup(emu: &mut Emu<Self::Engine>) {
+    fn setup(emu: &mut Emu<Interpreter>) {
         add_bus_cycles(emu, 2);
         reg!(emu.arm9, 15) = 0xFFFF_0000;
         reload_pipeline::<{ StateSource::Arm }>(emu);
     }
 
-    fn setup_direct_boot(
-        emu: &mut Emu<Self::Engine>,
-        entry_addr: u32,
-        loaded_data: (ByteSlice, u32),
-    ) {
-        for (&byte, addr) in loaded_data.0[..].iter().zip(loaded_data.1..) {
-            bus::write_8::<CpuAccess, _>(emu, addr, byte);
-        }
+    fn setup_direct_boot(emu: &mut Emu<Interpreter>, entry_addr: u32) {
         let old_mode = emu.arm9.engine_data.regs.cpsr.mode();
         emu.arm9.engine_data.regs.cpsr.set_mode(Mode::System);
         emu.arm9
@@ -799,7 +792,7 @@ impl CoreData for EngineData {
     fn invalidate_word_range(&mut self, _bounds: (u32, u32)) {}
 
     #[inline]
-    fn jump(emu: &mut Emu<Engine>, addr: u32) {
+    fn jump(emu: &mut Emu<Interpreter>, addr: u32) {
         reg!(emu.arm9, 15) = addr;
         reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
     }
@@ -828,10 +821,10 @@ impl CoreData for EngineData {
     cfg_if! {
         if #[cfg(feature = "debugger-hooks")] {
             #[inline]
-            fn set_swi_hook(&mut self, _hook: &Option<debug::SwiHook<Engine>>) {}
+            fn set_swi_hook(&mut self, _hook: &Option<debug::SwiHook<Interpreter>>) {}
 
             #[inline]
-            fn set_undef_hook(&mut self, _hook: &Option<debug::UndefHook<Engine>>) {}
+            fn set_undef_hook(&mut self, _hook: &Option<debug::UndefHook<Interpreter>>) {}
 
             #[inline]
             fn add_breakpoint(&mut self, addr: u32) {
@@ -860,12 +853,12 @@ impl CoreData for EngineData {
             }
 
             #[inline]
-            fn set_breakpoint_hook(&mut self, _hook: &Option<debug::BreakpointHook<Engine>>) {}
+            fn set_breakpoint_hook(&mut self, _hook: &Option<debug::BreakpointHook<Interpreter>>) {}
 
             #[inline]
             fn set_mem_watchpoint_hook(
                 &mut self,
-                _hook: &Option<debug::MemWatchpointHook<Engine>>,
+                _hook: &Option<debug::MemWatchpointHook<Interpreter>>,
             ) {}
 
             #[inline]
@@ -925,22 +918,22 @@ impl Arm9Data for EngineData {
             #[inline]
             fn set_prefetch_abort_hook(
                 &mut self,
-                _hook: &Option<debug::PrefetchAbortHook<Self::Engine>>,
+                _hook: &Option<debug::PrefetchAbortHook<Interpreter>>,
             ) {}
 
             #[inline]
-            fn set_data_abort_hook(&mut self, _hook: &Option<debug::DataAbortHook<Self::Engine>>) {}
+            fn set_data_abort_hook(&mut self, _hook: &Option<debug::DataAbortHook<Interpreter>>) {}
         }
     }
 
     #[inline]
-    fn run_stalled_until(emu: &mut Emu<Engine>, end_time: Timestamp) {
+    fn run_stalled_until(emu: &mut Emu<Interpreter>, end_time: Timestamp) {
         emu.arm9.schedule.set_cur_time(end_time);
         handle_pending_events!(emu, {});
     }
 
     #[inline]
-    fn run_until(emu: &mut Emu<Self::Engine>, end_time: Timestamp) {
+    fn run_until(emu: &mut Emu<Interpreter>, end_time: Timestamp) {
         while emu.arm9.schedule.cur_time() < end_time {
             handle_pending_events!(emu, return);
             emu.arm9

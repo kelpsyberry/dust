@@ -18,7 +18,7 @@ pub mod interpreter;
 pub mod jit;
 pub mod timers;
 
-use crate::{emu::Emu, utils::ByteSlice};
+use crate::emu::Emu;
 use cfg_if::cfg_if;
 use psr::{Cpsr, Spsr};
 
@@ -53,11 +53,7 @@ pub trait CoreData {
     type Engine: Engine;
 
     fn setup(emu: &mut Emu<Self::Engine>);
-    fn setup_direct_boot(
-        emu: &mut Emu<Self::Engine>,
-        entry_addr: u32,
-        loaded_data: (ByteSlice, u32),
-    );
+    fn setup_direct_boot(emu: &mut Emu<Self::Engine>, entry_addr: u32);
 
     fn invalidate_word(&mut self, addr: u32);
     fn invalidate_word_range(&mut self, bounds: (u32, u32));

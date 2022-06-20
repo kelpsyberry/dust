@@ -3,7 +3,7 @@ use crate::{
     cpu::interpreter::{
         alu_utils::{arithmetic, bit_ops, shifts},
         common::{DpOpTy, DpOperand, ShiftTy, StateSource},
-        Engine,
+        Interpreter,
     },
     emu::Emu,
     utils::schedule::RawTimestamp,
@@ -11,7 +11,7 @@ use crate::{
 use core::intrinsics::unlikely;
 
 pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: bool>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     instr: u32,
 ) {
     let (src, op) = match OPERAND {
@@ -233,7 +233,7 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
     }
 }
 
-pub fn mul<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn mul<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let src = reg!(emu.arm7, instr & 0xF);
     let op = reg!(emu.arm7, instr >> 8 & 0xF);
     let dst_reg = instr >> 16 & 0xF;
@@ -255,7 +255,7 @@ pub fn mul<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, instr:
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn umull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn umull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let src = reg!(emu.arm7, instr & 0xF);
     let op = reg!(emu.arm7, instr >> 8 & 0xF);
     let dst_acc_reg_low = instr >> 12 & 0xF;
@@ -283,7 +283,7 @@ pub fn umull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, inst
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn smull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn smull<const ACC: bool, const SET_FLAGS: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let src = reg!(emu.arm7, instr & 0xF);
     let op = reg!(emu.arm7, instr >> 8 & 0xF);
     let dst_acc_reg_low = instr >> 12 & 0xF;

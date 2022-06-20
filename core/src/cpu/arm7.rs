@@ -5,7 +5,7 @@ mod schedule;
 pub use schedule::{event_slots, Event, EventSlotIndex, Schedule, Timestamp};
 pub mod dma;
 
-#[cfg(feature = "debugger-hooks")]
+#[cfg(any(feature = "debugger-hooks", doc))]
 use super::debug;
 use super::{psr::Cpsr, timers::Timers, CoreData, Engine, Regs};
 use crate::{
@@ -21,7 +21,7 @@ pub struct Arm7<E: Engine> {
     #[cfg(feature = "log")]
     pub logger: slog::Logger,
     #[cfg(feature = "debugger-hooks")]
-    pub(super) debug: debug::CoreData<E>,
+    pub(super) debug: debug::Arm7Data<E>,
     pub engine_data: E::Arm7Data,
     bios: OwnedBytesCellPtr<BIOS_SIZE>,
     pub wram: OwnedBytesCellPtr<0x1_0000>,
@@ -55,7 +55,7 @@ impl<E: Engine> Arm7<E> {
             #[cfg(feature = "log")]
             logger,
             #[cfg(feature = "debugger-hooks")]
-            debug: debug::CoreData::new(),
+            debug: debug::Arm7Data::new(),
             engine_data,
             bios,
             wram: OwnedBytesCellPtr::new_zeroed(),

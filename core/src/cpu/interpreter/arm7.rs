@@ -3,7 +3,7 @@ mod thumb;
 
 #[cfg(feature = "interp-pipeline")]
 use super::common::{thumb_pipeline_entry, PipelineEntry};
-use super::{super::Regs as EngineRegs, common::StateSource, Engine, Regs};
+use super::{super::Regs as EngineRegs, common::StateSource, Interpreter, Regs};
 #[cfg(feature = "debugger-hooks")]
 use crate::cpu::debug;
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
         Arm7Data, CoreData, Schedule as _,
     },
     emu::Emu,
-    utils::{schedule::RawTimestamp, ByteSlice},
+    utils::schedule::RawTimestamp,
 };
 use cfg_if::cfg_if;
 
@@ -50,13 +50,13 @@ fn multiply_cycles(mut op: u32) -> RawTimestamp {
 }
 
 #[inline]
-fn add_cycles(emu: &mut Emu<Engine>, cycles: RawTimestamp) {
+fn add_cycles(emu: &mut Emu<Interpreter>, cycles: RawTimestamp) {
     emu.arm7
         .schedule
         .set_cur_time(emu.arm7.schedule.cur_time() + Timestamp(cycles));
 }
 
-fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
+fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Interpreter>) {
     let mut addr = reg!(emu.arm7, 15);
 
     macro_rules! get_next_breakpoint {
@@ -152,7 +152,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Engine>) {
     }
 }
 
-fn set_cpsr_update_control(emu: &mut Emu<Engine>, value: Cpsr) {
+fn set_cpsr_update_control(emu: &mut Emu<Interpreter>, value: Cpsr) {
     let old_value = emu.arm7.engine_data.regs.cpsr;
     emu.arm7.engine_data.regs.cpsr = value;
     emu.arm7
@@ -164,7 +164,7 @@ fn set_cpsr_update_control(emu: &mut Emu<Engine>, value: Cpsr) {
         .update_mode::<false>(old_value.mode(), value.mode());
 }
 
-fn restore_spsr(emu: &mut Emu<Engine>) {
+fn restore_spsr(emu: &mut Emu<Interpreter>) {
     if !emu.arm7.engine_data.regs.is_in_exc_mode() {
         unimplemented!("Unpredictable SPSR restore in non-exception mode");
     }
@@ -176,7 +176,7 @@ fn restore_spsr(emu: &mut Emu<Engine>) {
     }
 }
 
-fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Engine>) {
+fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
     #[cfg(feature = "log")]
     slog::warn!(
         emu.arm7.logger,
@@ -218,7 +218,7 @@ fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Engine>) {
 }
 
 fn handle_swi<const THUMB: bool>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     #[cfg(feature = "debugger-hooks")] swi_num: u8,
 ) {
     #[cfg(feature = "debugger-hooks")]
@@ -255,17 +255,14 @@ fn handle_swi<const THUMB: bool>(
 }
 
 impl CoreData for EngineData {
-    type Engine = Engine;
+    type Engine = Interpreter;
 
-    fn setup(emu: &mut Emu<Engine>) {
+    fn setup(emu: &mut Emu<Interpreter>) {
         reg!(emu.arm7, 15) = 0;
         reload_pipeline::<{ StateSource::Arm }>(emu);
     }
 
-    fn setup_direct_boot(emu: &mut Emu<Engine>, entry_addr: u32, loaded_data: (ByteSlice, u32)) {
-        for (&byte, addr) in loaded_data.0[..].iter().zip(loaded_data.1..) {
-            bus::write_8::<CpuAccess, _>(emu, addr, byte);
-        }
+    fn setup_direct_boot(emu: &mut Emu<Interpreter>, entry_addr: u32) {
         let old_mode = emu.arm7.engine_data.regs.cpsr.mode();
         emu.arm7.engine_data.regs.cpsr.set_mode(Mode::System);
         emu.arm7
@@ -292,7 +289,7 @@ impl CoreData for EngineData {
     fn invalidate_word_range(&mut self, _bounds: (u32, u32)) {}
 
     #[inline]
-    fn jump(emu: &mut Emu<Engine>, addr: u32) {
+    fn jump(emu: &mut Emu<Interpreter>, addr: u32) {
         reg!(emu.arm7, 15) = addr;
         reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
     }
@@ -321,10 +318,10 @@ impl CoreData for EngineData {
     cfg_if! {
         if #[cfg(feature = "debugger-hooks")] {
             #[inline]
-            fn set_swi_hook(&mut self, _hook: &Option<debug::SwiHook<Engine>>) {}
+            fn set_swi_hook(&mut self, _hook: &Option<debug::SwiHook<Interpreter>>) {}
 
             #[inline]
-            fn set_undef_hook(&mut self, _hook: &Option<debug::UndefHook<Engine>>) {}
+            fn set_undef_hook(&mut self, _hook: &Option<debug::UndefHook<Interpreter>>) {}
 
             #[inline]
             fn add_breakpoint(&mut self, addr: u32) {
@@ -353,12 +350,12 @@ impl CoreData for EngineData {
             }
 
             #[inline]
-            fn set_breakpoint_hook(&mut self, _hook: &Option<debug::BreakpointHook<Engine>>) {}
+            fn set_breakpoint_hook(&mut self, _hook: &Option<debug::BreakpointHook<Interpreter>>) {}
 
             #[inline]
             fn set_mem_watchpoint_hook(
                 &mut self,
-                _hook: &Option<debug::MemWatchpointHook<Engine>>,
+                _hook: &Option<debug::MemWatchpointHook<Interpreter>>,
             ) {}
 
             #[inline]
@@ -385,13 +382,13 @@ impl CoreData for EngineData {
 
 impl Arm7Data for EngineData {
     #[inline]
-    fn run_stalled_until(emu: &mut Emu<Engine>, end_time: Timestamp) {
+    fn run_stalled_until(emu: &mut Emu<Interpreter>, end_time: Timestamp) {
         emu.arm7.schedule.set_cur_time(end_time);
         Schedule::handle_pending_events(emu);
     }
 
     #[inline]
-    fn run_until(emu: &mut Emu<Engine>, end_time: Timestamp) {
+    fn run_until(emu: &mut Emu<Interpreter>, end_time: Timestamp) {
         while emu.arm7.schedule.cur_time() < end_time {
             Schedule::handle_pending_events(emu);
             emu.arm7

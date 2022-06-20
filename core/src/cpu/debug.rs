@@ -198,7 +198,7 @@ pub type BreakpointHook<E> = Hook<dyn FnMut(&mut Emu<E>, u32) -> bool>;
 pub type MemWatchpointHook<E> =
     Hook<dyn FnMut(&mut Emu<E>, u32, u8, MemWatchpointTriggerCause) -> bool>;
 
-pub(super) struct CoreData<E: Engine> {
+pub(super) struct Arm7Data<E: Engine> {
     pub swi_hook: Option<SwiHook<E>>,
     pub undef_hook: Option<UndefHook<E>>,
     pub breakpoints: Vec<u32>,
@@ -207,15 +207,40 @@ pub(super) struct CoreData<E: Engine> {
     pub mem_watchpoints: Box<MemWatchpointRootTable>,
 }
 
-impl<E: Engine> CoreData<E> {
+impl<E: Engine> Arm7Data<E> {
     pub(super) fn new() -> Self {
-        CoreData {
+        Arm7Data {
             swi_hook: None,
             undef_hook: None,
             breakpoints: Vec::new(),
             breakpoint_hook: None,
             mem_watchpoint_hook: None,
             mem_watchpoints: zeroed_box(),
+        }
+    }
+}
+pub(super) struct Arm9Data<E: Engine> {
+    pub swi_hook: Option<SwiHook<E>>,
+    pub undef_hook: Option<UndefHook<E>>,
+    pub breakpoints: Vec<u32>,
+    pub breakpoint_hook: Option<BreakpointHook<E>>,
+    pub mem_watchpoint_hook: Option<MemWatchpointHook<E>>,
+    pub mem_watchpoints: Box<MemWatchpointRootTable>,
+    pub prefetch_abort_hook: Option<PrefetchAbortHook<E>>,
+    pub data_abort_hook: Option<DataAbortHook<E>>,
+}
+
+impl<E: Engine> Arm9Data<E> {
+    pub(super) fn new() -> Self {
+        Arm9Data {
+            swi_hook: None,
+            undef_hook: None,
+            breakpoints: Vec::new(),
+            breakpoint_hook: None,
+            mem_watchpoint_hook: None,
+            mem_watchpoints: zeroed_box(),
+            prefetch_abort_hook: None,
+            data_abort_hook: None,
         }
     }
 }

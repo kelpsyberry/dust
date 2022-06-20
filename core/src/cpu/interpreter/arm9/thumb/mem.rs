@@ -7,7 +7,7 @@ use crate::{
     cpu::{
         arm9::bus,
         bus::CpuAccess,
-        interpreter::{common::StateSource, Engine},
+        interpreter::{common::StateSource, Interpreter},
     },
     emu::Emu,
     utils::schedule::RawTimestamp,
@@ -19,7 +19,7 @@ use core::intrinsics::unlikely;
 //       applies to all register offsets, unconditionally.
 // TODO: Check data abort timings.
 
-pub fn ldr<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldr<const IMM: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
     let addr = reg!(emu.arm9, base_reg).wrapping_add(if IMM {
         apply_reg_interlock_1::<false>(emu, base_reg);
@@ -52,7 +52,7 @@ pub fn ldr<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     );
 }
 
-pub fn str<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn str<const IMM: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
     let src_reg = (instr & 7) as u8;
     let addr = reg!(emu.arm9, base_reg).wrapping_add(if IMM {
@@ -79,7 +79,7 @@ pub fn str<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     add_bus_cycles(emu, 1);
 }
 
-pub fn ldrh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldrh<const IMM: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
     let addr = reg!(emu.arm9, base_reg).wrapping_add(if IMM {
         apply_reg_interlock_1::<false>(emu, base_reg);
@@ -106,7 +106,7 @@ pub fn ldrh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     write_reg_interlock(emu, (instr & 7) as u8, result, 2, 1);
 }
 
-pub fn strh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn strh<const IMM: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
     let src_reg = (instr & 7) as u8;
     let addr = reg!(emu.arm9, base_reg).wrapping_add(if IMM {
@@ -133,7 +133,7 @@ pub fn strh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     add_bus_cycles(emu, 1);
 }
 
-pub fn ldrb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldrb<const IMM: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
     let addr = reg!(emu.arm9, base_reg).wrapping_add(if IMM {
         apply_reg_interlock_1::<false>(emu, base_reg);
@@ -160,7 +160,7 @@ pub fn ldrb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     write_reg_interlock(emu, (instr & 7) as u8, result, 2, 1);
 }
 
-pub fn strb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn strb<const IMM: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
     let src_reg = (instr & 7) as u8;
     let addr = reg!(emu.arm9, base_reg).wrapping_add(if IMM {
@@ -187,7 +187,7 @@ pub fn strb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     add_bus_cycles(emu, 1);
 }
 
-pub fn ldrsh(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldrsh(emu: &mut Emu<Interpreter>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
     let off_reg = (instr >> 6 & 7) as u8;
     let addr = reg!(emu.arm9, base_reg).wrapping_add(reg!(emu.arm9, off_reg));
@@ -209,7 +209,7 @@ pub fn ldrsh(emu: &mut Emu<Engine>, instr: u16) {
     write_reg_interlock(emu, (instr & 7) as u8, result, 2, 1);
 }
 
-pub fn ldrsb(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldrsb(emu: &mut Emu<Interpreter>, instr: u16) {
     let base_reg = (instr >> 3 & 7) as u8;
     let off_reg = (instr >> 6 & 7) as u8;
     let addr = reg!(emu.arm9, base_reg).wrapping_add(reg!(emu.arm9, off_reg));
@@ -231,7 +231,7 @@ pub fn ldrsb(emu: &mut Emu<Engine>, instr: u16) {
     write_reg_interlock(emu, (instr & 7) as u8, result, 2, 1);
 }
 
-pub fn ldr_pc_rel(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldr_pc_rel(emu: &mut Emu<Interpreter>, instr: u16) {
     let addr = (reg!(emu.arm9, 15) & !3).wrapping_add(((instr & 0xFF) << 2) as u32);
     prefetch_thumb::<false, true>(emu);
     if unlikely(!can_read(
@@ -250,7 +250,7 @@ pub fn ldr_pc_rel(emu: &mut Emu<Engine>, instr: u16) {
     write_reg_interlock(emu, (instr >> 8 & 7) as u8, result, 1, 1);
 }
 
-pub fn ldr_sp_rel(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldr_sp_rel(emu: &mut Emu<Interpreter>, instr: u16) {
     let addr = reg!(emu.arm9, 13).wrapping_add(((instr & 0xFF) << 2) as u32);
     prefetch_thumb::<false, true>(emu);
     if unlikely(!can_read(
@@ -275,7 +275,7 @@ pub fn ldr_sp_rel(emu: &mut Emu<Engine>, instr: u16) {
     );
 }
 
-pub fn str_sp_rel(emu: &mut Emu<Engine>, instr: u16) {
+pub fn str_sp_rel(emu: &mut Emu<Interpreter>, instr: u16) {
     let src_reg = (instr >> 8 & 7) as u8;
     apply_reg_interlock_1::<false>(emu, src_reg);
     let addr = reg!(emu.arm9, 13).wrapping_add(((instr & 0xFF) << 2) as u32);
@@ -299,7 +299,7 @@ pub fn str_sp_rel(emu: &mut Emu<Engine>, instr: u16) {
 //       happen in the execute stage, after the fetch has been initiated.
 // TODO: Check timing after data aborts and with empty reg lists.
 
-pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     prefetch_thumb::<false, true>(emu);
     if unlikely(!PUSH_R14 && instr as u8 == 0) {
         emu.arm9.engine_data.data_cycles = 1;
@@ -380,7 +380,7 @@ pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Engine>, instr: u16) {
     reg!(emu.arm9, 13) = start_addr;
 }
 
-pub fn pop<const POP_R15: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn pop<const POP_R15: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     add_bus_cycles(emu, 2);
     prefetch_thumb::<false, true>(emu);
     if unlikely(!POP_R15 && instr as u8 == 0) {
@@ -460,7 +460,7 @@ pub fn pop<const POP_R15: bool>(emu: &mut Emu<Engine>, instr: u16) {
     reg!(emu.arm9, 13) = cur_addr;
 }
 
-pub fn ldmia(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldmia(emu: &mut Emu<Interpreter>, instr: u16) {
     let base_reg = (instr >> 8 & 7) as u8;
     apply_reg_interlock_1::<false>(emu, base_reg);
     add_bus_cycles(emu, 2);
@@ -521,7 +521,7 @@ pub fn ldmia(emu: &mut Emu<Engine>, instr: u16) {
     }
 }
 
-pub fn stmia(emu: &mut Emu<Engine>, instr: u16) {
+pub fn stmia(emu: &mut Emu<Interpreter>, instr: u16) {
     add_bus_cycles(emu, 2);
     let base_reg = (instr >> 8 & 7) as u8;
     apply_reg_interlock_1::<false>(emu, base_reg);

@@ -8,8 +8,8 @@ pub mod div_engine;
 pub mod dma;
 pub mod sqrt_engine;
 
-#[cfg(feature = "debugger-hooks")]
-use super::{debug, Arm9Data};
+#[cfg(any(feature = "debugger-hooks", doc))]
+use super::debug;
 use super::{psr::Cpsr, timers::Timers, CoreData, Engine, Regs};
 use crate::{
     cpu,
@@ -36,11 +36,7 @@ pub struct Arm9<E: Engine> {
     #[cfg(feature = "log")]
     pub logger: slog::Logger,
     #[cfg(feature = "debugger-hooks")]
-    pub(super) debug: debug::CoreData<E>,
-    #[cfg(feature = "debugger-hooks")]
-    prefetch_abort_hook: Option<debug::PrefetchAbortHook<E>>,
-    #[cfg(feature = "debugger-hooks")]
-    data_abort_hook: Option<debug::DataAbortHook<E>>,
+    pub(super) debug: debug::Arm9Data<E>,
     pub engine_data: E::Arm9Data,
     pub bios: OwnedBytesCellPtr<BIOS_BUFFER_SIZE>,
     pub schedule: Schedule,
@@ -75,11 +71,7 @@ impl<E: Engine> Arm9<E> {
             #[cfg(feature = "log")]
             logger,
             #[cfg(feature = "debugger-hooks")]
-            debug: debug::CoreData::new(),
-            #[cfg(feature = "debugger-hooks")]
-            prefetch_abort_hook: None,
-            #[cfg(feature = "debugger-hooks")]
-            data_abort_hook: None,
+            debug: debug::Arm9Data::new(),
             engine_data,
             bios,
             schedule,
@@ -196,27 +188,27 @@ impl<E: Engine> Arm9<E> {
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
             pub fn prefetch_abort_hook(&self) -> &Option<debug::PrefetchAbortHook<E>> {
-                &self.prefetch_abort_hook
+                &self.debug.prefetch_abort_hook
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
             pub fn set_prefetch_abort_hook(&mut self, value: Option<debug::PrefetchAbortHook<E>>) {
-                self.prefetch_abort_hook = value;
-                self.engine_data.set_prefetch_abort_hook(&self.prefetch_abort_hook);
+                self.debug.prefetch_abort_hook = value;
+                self.engine_data.set_prefetch_abort_hook(&self.debug.prefetch_abort_hook);
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
             pub fn data_abort_hook(&self) -> &Option<debug::DataAbortHook<E>> {
-                &self.data_abort_hook
+                &self.debug.data_abort_hook
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]
             pub fn set_data_abort_hook(&mut self, value: Option<debug::DataAbortHook<E>>) {
-                self.data_abort_hook = value;
-                self.engine_data.set_data_abort_hook(&self.data_abort_hook);
+                self.debug.data_abort_hook = value;
+                self.engine_data.set_data_abort_hook(&self.debug.data_abort_hook);
             }
 
             #[doc(cfg(feature = "debugger-hooks"))]

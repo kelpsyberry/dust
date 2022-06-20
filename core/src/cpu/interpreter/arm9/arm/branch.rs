@@ -1,13 +1,13 @@
 use super::super::{add_bus_cycles, apply_reg_interlock_1, prefetch_arm, reload_pipeline};
 use crate::{
-    cpu::interpreter::{common::StateSource, Engine},
+    cpu::interpreter::{common::StateSource, Interpreter},
     emu::Emu,
 };
 
 // NOTE: When linking, there's no need to clear previous interlocks for r14, as they will never
 // last more than the amount of bus cycles taken by the branch.
 
-pub fn b<const LINK: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn b<const LINK: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let r15 = reg!(emu.arm9, 15);
     if LINK {
         reg!(emu.arm9, 14) = r15.wrapping_sub(4);
@@ -19,7 +19,7 @@ pub fn b<const LINK: bool>(emu: &mut Emu<Engine>, instr: u32) {
     reload_pipeline::<{ StateSource::Arm }>(emu);
 }
 
-pub fn bx<const LINK: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn bx<const LINK: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let addr_reg = (instr & 0xF) as u8;
     let branch_addr = reg!(emu.arm9, addr_reg);
     apply_reg_interlock_1::<false>(emu, addr_reg);
@@ -32,7 +32,7 @@ pub fn bx<const LINK: bool>(emu: &mut Emu<Engine>, instr: u32) {
     reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
 }
 
-pub fn blx_imm(emu: &mut Emu<Engine>, instr: u32) {
+pub fn blx_imm(emu: &mut Emu<Interpreter>, instr: u32) {
     let r15 = reg!(emu.arm9, 15);
     reg!(emu.arm9, 14) = r15.wrapping_sub(4);
     let branch_addr = r15.wrapping_add(((instr as i32) << 8 >> 6) as u32 | (instr >> 23 & 2));

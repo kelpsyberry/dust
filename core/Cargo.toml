@@ -15,12 +15,12 @@ bft-w = []
 
 jit = ["bft-w"]
 
+pu-checks = []
+
 interp-pipeline = []
 interp-pipeline-accurate-reloads = ["interp-pipeline"]
 interp-arm9-interlocks = ["interp-pipeline"]
 interp-r15-write-checks = []
-
-pu-checks = []
 
 xq-audio = []
 channel-audio-capture = []

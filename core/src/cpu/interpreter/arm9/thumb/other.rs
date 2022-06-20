@@ -1,11 +1,11 @@
-use super::super::{super::Engine, handle_prefetch_abort, handle_swi, handle_undefined};
+use super::super::{super::Interpreter, handle_prefetch_abort, handle_swi, handle_undefined};
 use crate::emu::Emu;
 
-pub fn bkpt(emu: &mut Emu<Engine>, _instr: u16) {
+pub fn bkpt(emu: &mut Emu<Interpreter>, _instr: u16) {
     handle_prefetch_abort::<true>(emu);
 }
 
-pub fn swi(emu: &mut Emu<Engine>, _instr: u16) {
+pub fn swi(emu: &mut Emu<Interpreter>, _instr: u16) {
     handle_swi::<true>(
         emu,
         #[cfg(feature = "debugger-hooks")]
@@ -15,6 +15,6 @@ pub fn swi(emu: &mut Emu<Engine>, _instr: u16) {
     );
 }
 
-pub fn undefined(emu: &mut Emu<Engine>, _instr: u16) {
+pub fn undefined(emu: &mut Emu<Interpreter>, _instr: u16) {
     handle_undefined::<true>(emu);
 }

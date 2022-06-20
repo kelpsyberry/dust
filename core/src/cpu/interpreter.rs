@@ -3,7 +3,7 @@ pub use regs::Regs;
 mod alu_utils;
 mod common;
 
-use crate::cpu;
+use super::Engine;
 
 macro_rules! reg {
     ($cpu: expr, $reg: expr) => {
@@ -60,7 +60,7 @@ mod arm9;
 
 pub struct Interpreter;
 
-impl cpu::Engine for Interpreter {
+impl Engine for Interpreter {
     type GlobalData = ();
     type Arm7Data = arm7::EngineData;
     type Arm9Data = arm9::EngineData;
@@ -69,5 +69,3 @@ impl cpu::Engine for Interpreter {
         ((), arm7::EngineData::new(), arm9::EngineData::new())
     }
 }
-
-use Interpreter as Engine;

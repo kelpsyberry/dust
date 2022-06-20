@@ -3,13 +3,13 @@ use crate::{
     cpu::interpreter::{
         alu_utils::{arithmetic, bit_ops, shifts},
         common::{DpOpImm8Ty, DpOpRegTy, ShiftImmTy, StateSource},
-        Engine,
+        Interpreter,
     },
     emu::Emu,
 };
 
 pub fn add_sub_reg_imm3<const SUB: bool, const IMM3: bool, const IS_MOV: bool>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     instr: u16,
 ) {
     let src = reg!(emu.arm7, instr >> 3 & 7);
@@ -39,7 +39,7 @@ pub fn add_sub_reg_imm3<const SUB: bool, const IMM3: bool, const IS_MOV: bool>(
     inc_r15!(emu.arm7, 2);
 }
 
-pub fn shift_imm<const SHIFT_TY: ShiftImmTy>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn shift_imm<const SHIFT_TY: ShiftImmTy>(emu: &mut Emu<Interpreter>, instr: u16) {
     let src = reg!(emu.arm7, instr >> 3 & 7);
     let shift = (instr >> 6 & 0x1F) as u8;
     let result = match SHIFT_TY {
@@ -52,7 +52,7 @@ pub fn shift_imm<const SHIFT_TY: ShiftImmTy>(emu: &mut Emu<Engine>, instr: u16) 
     inc_r15!(emu.arm7, 2);
 }
 
-pub fn dp_op_imm8<const OP_TY: DpOpImm8Ty>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn dp_op_imm8<const OP_TY: DpOpImm8Ty>(emu: &mut Emu<Interpreter>, instr: u16) {
     let src_dst_reg = instr >> 8 & 7;
     let op = instr as u8 as u32;
     let src = reg!(emu.arm7, src_dst_reg);
@@ -80,7 +80,7 @@ pub fn dp_op_imm8<const OP_TY: DpOpImm8Ty>(emu: &mut Emu<Engine>, instr: u16) {
     inc_r15!(emu.arm7, 2);
 }
 
-pub fn dp_op_reg<const OP_TY: DpOpRegTy>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn dp_op_reg<const OP_TY: DpOpRegTy>(emu: &mut Emu<Interpreter>, instr: u16) {
     let src_dst_reg = instr & 7;
     let src = reg!(emu.arm7, src_dst_reg);
     let op = reg!(emu.arm7, instr >> 3 & 7);
@@ -161,7 +161,7 @@ pub fn dp_op_reg<const OP_TY: DpOpRegTy>(emu: &mut Emu<Engine>, instr: u16) {
     inc_r15!(emu.arm7, 2);
 }
 
-pub fn add_special(emu: &mut Emu<Engine>, instr: u16) {
+pub fn add_special(emu: &mut Emu<Interpreter>, instr: u16) {
     let src_dst_reg = (instr & 7) | (instr >> 4 & 8);
     let result = reg!(emu.arm7, src_dst_reg).wrapping_add(reg!(emu.arm7, instr >> 3 & 0xF));
     reg!(emu.arm7, src_dst_reg) = result;
@@ -172,14 +172,14 @@ pub fn add_special(emu: &mut Emu<Engine>, instr: u16) {
     }
 }
 
-pub fn cmp_special(emu: &mut Emu<Engine>, instr: u16) {
+pub fn cmp_special(emu: &mut Emu<Interpreter>, instr: u16) {
     let src = reg!(emu.arm7, (instr & 7) | (instr >> 4 & 8));
     let op = reg!(emu.arm7, instr >> 3 & 0xF);
     arithmetic::cmp(&mut emu.arm7.engine_data.regs, src, op);
     inc_r15!(emu.arm7, 2);
 }
 
-pub fn mov_special(emu: &mut Emu<Engine>, instr: u16) {
+pub fn mov_special(emu: &mut Emu<Interpreter>, instr: u16) {
     let dst_reg = (instr & 7) | (instr >> 4 & 8);
     let op = reg!(emu.arm7, instr >> 3 & 0xF);
     reg!(emu.arm7, dst_reg) = op;
@@ -190,7 +190,7 @@ pub fn mov_special(emu: &mut Emu<Engine>, instr: u16) {
     }
 }
 
-pub fn add_pc_sp_imm8<const SP: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn add_pc_sp_imm8<const SP: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let src = if SP {
         reg!(emu.arm7, 13)
     } else {
@@ -201,7 +201,7 @@ pub fn add_pc_sp_imm8<const SP: bool>(emu: &mut Emu<Engine>, instr: u16) {
     inc_r15!(emu.arm7, 2);
 }
 
-pub fn add_sub_sp_imm7<const SUB: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn add_sub_sp_imm7<const SUB: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let src = reg!(emu.arm7, 13);
     let op = ((instr & 0x7F) << 2) as u32;
     let result = if SUB {

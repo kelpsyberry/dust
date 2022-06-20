@@ -1,14 +1,14 @@
-use super::super::{super::Engine, handle_swi, handle_undefined, set_cpsr_update_control};
+use super::super::{super::Interpreter, handle_swi, handle_undefined, set_cpsr_update_control};
 #[cfg(not(feature = "interp-pipeline"))]
 use crate::cpu::{arm7::bus, bus::CpuAccess};
 use crate::{cpu::psr::Cpsr, emu::Emu};
 use core::intrinsics::unlikely;
 
-pub fn nop(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn nop(emu: &mut Emu<Interpreter>, _instr: u32) {
     inc_r15!(emu.arm7, 4);
 }
 
-pub fn mrs<const SPSR: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn mrs<const SPSR: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let result = if SPSR {
         spsr!(emu.arm7)
     } else {
@@ -23,7 +23,7 @@ pub fn mrs<const SPSR: bool>(emu: &mut Emu<Engine>, instr: u32) {
     inc_r15!(emu.arm7, 4);
 }
 
-pub fn msr<const IMM: bool, const SPSR: bool>(emu: &mut Emu<Engine>, instr: u32) {
+pub fn msr<const IMM: bool, const SPSR: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     // TODO: Can reserved bits be modified in the SPSRs?
     let value = if IMM {
         (instr & 0xFF).rotate_right(instr >> 7 & 0x1E)
@@ -53,7 +53,7 @@ pub fn msr<const IMM: bool, const SPSR: bool>(emu: &mut Emu<Engine>, instr: u32)
     inc_r15!(emu.arm7, 4);
 }
 
-pub fn swi(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn swi(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_swi::<false>(
         emu,
         #[cfg(feature = "debugger-hooks")]
@@ -63,14 +63,14 @@ pub fn swi(emu: &mut Emu<Engine>, _instr: u32) {
     );
 }
 
-pub fn undefined(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn undefined(emu: &mut Emu<Interpreter>, _instr: u32) {
     // TODO: Check timing, the ARM7TDMI manual is unclear
     handle_undefined::<false>(emu);
 }
 
 // TODO: Check what happens with cdp/ldc/stc P14,...
 
-pub fn mcr(emu: &mut Emu<Engine>, instr: u32) {
+pub fn mcr(emu: &mut Emu<Interpreter>, instr: u32) {
     if instr >> 8 & 0xF == 14 {
         inc_r15!(emu.arm7, 4);
     } else {
@@ -79,7 +79,7 @@ pub fn mcr(emu: &mut Emu<Engine>, instr: u32) {
     }
 }
 
-pub fn mrc(emu: &mut Emu<Engine>, instr: u32) {
+pub fn mrc(emu: &mut Emu<Interpreter>, instr: u32) {
     if instr >> 8 & 0xF == 14 {
         #[cfg(feature = "interp-pipeline")]
         let result = emu.arm7.engine_data.pipeline[1] as u32;
@@ -98,14 +98,14 @@ pub fn mrc(emu: &mut Emu<Engine>, instr: u32) {
     }
 }
 
-pub fn cdp(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn cdp(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_undefined::<false>(emu);
 }
 
-pub fn ldc(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn ldc(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_undefined::<false>(emu);
 }
 
-pub fn stc(emu: &mut Emu<Engine>, _instr: u32) {
+pub fn stc(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_undefined::<false>(emu);
 }

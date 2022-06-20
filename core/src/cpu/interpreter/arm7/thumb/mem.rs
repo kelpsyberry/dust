@@ -3,14 +3,14 @@ use crate::{
     cpu::{
         arm7::bus,
         bus::CpuAccess,
-        interpreter::{common::StateSource, Engine},
+        interpreter::{common::StateSource, Interpreter},
     },
     emu::Emu,
     utils::schedule::RawTimestamp,
 };
 use core::intrinsics::unlikely;
 
-pub fn ldr<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldr<const IMM: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let addr = reg!(emu.arm7, instr >> 3 & 7).wrapping_add(if IMM {
         (instr >> 4 & 0x7C) as u32
     } else {
@@ -24,7 +24,7 @@ pub fn ldr<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn str<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn str<const IMM: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let addr = reg!(emu.arm7, instr >> 3 & 7).wrapping_add(if IMM {
         (instr >> 4 & 0x7C) as u32
     } else {
@@ -37,7 +37,7 @@ pub fn str<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn ldrh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldrh<const IMM: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let addr = reg!(emu.arm7, instr >> 3 & 7).wrapping_add(if IMM {
         (instr >> 5 & 0x3E) as u32
     } else {
@@ -51,7 +51,7 @@ pub fn ldrh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn strh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn strh<const IMM: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let addr = reg!(emu.arm7, instr >> 3 & 7).wrapping_add(if IMM {
         (instr >> 5 & 0x3E) as u32
     } else {
@@ -64,7 +64,7 @@ pub fn strh<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn ldrb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldrb<const IMM: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let addr = reg!(emu.arm7, instr >> 3 & 7).wrapping_add(if IMM {
         (instr >> 6 & 0x1F) as u32
     } else {
@@ -78,7 +78,7 @@ pub fn ldrb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn strb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn strb<const IMM: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let addr = reg!(emu.arm7, instr >> 3 & 7).wrapping_add(if IMM {
         (instr >> 6 & 0x1F) as u32
     } else {
@@ -91,7 +91,7 @@ pub fn strb<const IMM: bool>(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn ldrsh(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldrsh(emu: &mut Emu<Interpreter>, instr: u16) {
     let addr = reg!(emu.arm7, instr >> 3 & 7).wrapping_add(reg!(emu.arm7, instr >> 6 & 7));
     inc_r15!(emu.arm7, 2);
     let result = {
@@ -104,7 +104,7 @@ pub fn ldrsh(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn ldrsb(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldrsb(emu: &mut Emu<Interpreter>, instr: u16) {
     let addr = reg!(emu.arm7, instr >> 3 & 7).wrapping_add(reg!(emu.arm7, instr >> 6 & 7));
     inc_r15!(emu.arm7, 2);
     let result = bus::read_8::<CpuAccess, _>(emu, addr) as i8 as u32;
@@ -114,7 +114,7 @@ pub fn ldrsb(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn ldr_pc_rel(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldr_pc_rel(emu: &mut Emu<Interpreter>, instr: u16) {
     let r15 = reg!(emu.arm7, 15);
     let addr = (r15 & !3).wrapping_add(((instr & 0xFF) << 2) as u32);
     inc_r15!(emu.arm7, 2);
@@ -125,7 +125,7 @@ pub fn ldr_pc_rel(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn ldr_sp_rel(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldr_sp_rel(emu: &mut Emu<Interpreter>, instr: u16) {
     let addr = reg!(emu.arm7, 13).wrapping_add(((instr & 0xFF) << 2) as u32);
     inc_r15!(emu.arm7, 2);
     let result = bus::read_32::<CpuAccess, _>(emu, addr).rotate_right((addr & 3) << 3);
@@ -135,7 +135,7 @@ pub fn ldr_sp_rel(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn str_sp_rel(emu: &mut Emu<Engine>, instr: u16) {
+pub fn str_sp_rel(emu: &mut Emu<Interpreter>, instr: u16) {
     let addr = reg!(emu.arm7, 13).wrapping_add(((instr & 0xFF) << 2) as u32);
     inc_r15!(emu.arm7, 2);
     bus::write_32::<CpuAccess, _>(emu, addr, reg!(emu.arm7, instr >> 8 & 7));
@@ -144,7 +144,7 @@ pub fn str_sp_rel(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     inc_r15!(emu.arm7, 2);
     if unlikely(instr as u8 == 0 && !PUSH_R14) {
         let start_addr = reg!(emu.arm7, 13).wrapping_sub(0x40);
@@ -180,7 +180,7 @@ pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn pop<const POP_R15: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn pop<const POP_R15: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     // NOTE: Writeback should actually happen during the first load, but the effects can't be seen
     // (and `count_ones` is potentially slow).
     let mut cur_addr = reg!(emu.arm7, 13);
@@ -222,7 +222,7 @@ pub fn pop<const POP_R15: bool>(emu: &mut Emu<Engine>, instr: u16) {
     }
 }
 
-pub fn ldmia(emu: &mut Emu<Engine>, instr: u16) {
+pub fn ldmia(emu: &mut Emu<Interpreter>, instr: u16) {
     let base_reg = instr >> 8 & 7;
     let mut cur_addr = reg!(emu.arm7, base_reg);
     inc_r15!(emu.arm7, 2);
@@ -255,7 +255,7 @@ pub fn ldmia(emu: &mut Emu<Engine>, instr: u16) {
     emu.arm7.engine_data.prefetch_nseq = true;
 }
 
-pub fn stmia(emu: &mut Emu<Engine>, instr: u16) {
+pub fn stmia(emu: &mut Emu<Interpreter>, instr: u16) {
     let base_reg = instr >> 8 & 7;
     let mut cur_addr = reg!(emu.arm7, base_reg);
     inc_r15!(emu.arm7, 2);

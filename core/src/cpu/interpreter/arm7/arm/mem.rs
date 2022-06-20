@@ -6,7 +6,7 @@ use crate::{
         interpreter::{
             alu_utils::shifts,
             common::{MiscAddressing, ShiftTy, StateSource, WbAddressing, WbOffTy},
-            Engine,
+            Interpreter,
         },
         psr::Mode,
     },
@@ -27,7 +27,7 @@ macro_rules! wb_handler {
         | $inner: block
     ) => {
         pub fn $ident<const OFF_TY: WbOffTy, const UPWARDS: bool, const ADDRESSING: WbAddressing>(
-            $emu: &mut Emu<Engine>,
+            $emu: &mut Emu<Interpreter>,
             $instr: u32,
         ) {
             let offset = {
@@ -161,7 +161,7 @@ macro_rules! misc_handler {
         | $inner: block
     ) => {
         pub fn $ident<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddressing>(
-            $emu: &mut Emu<Engine>,
+            $emu: &mut Emu<Interpreter>,
             $instr: u32,
         ) {
             let offset = {
@@ -299,7 +299,7 @@ misc_handler! {
     }
 }
 
-pub fn swp(emu: &mut Emu<Engine>, instr: u32) {
+pub fn swp(emu: &mut Emu<Interpreter>, instr: u32) {
     let addr = reg!(emu.arm7, instr >> 16 & 0xF);
     inc_r15!(emu.arm7, 4);
     let access_timings = emu.arm7.bus_timings.get(addr).n32 as RawTimestamp;
@@ -316,7 +316,7 @@ pub fn swp(emu: &mut Emu<Engine>, instr: u32) {
     reg!(emu.arm7, dst_reg) = loaded_value;
 }
 
-pub fn swpb(emu: &mut Emu<Engine>, instr: u32) {
+pub fn swpb(emu: &mut Emu<Interpreter>, instr: u32) {
     let addr = reg!(emu.arm7, instr >> 16 & 0xF);
     inc_r15!(emu.arm7, 4);
     let access_timings = emu.arm7.bus_timings.get(addr).n16 as RawTimestamp;
@@ -339,7 +339,7 @@ pub fn swpb(emu: &mut Emu<Engine>, instr: u32) {
 // TODO: Check how bank switching interacts with timing.
 
 pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const S_BIT: bool>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     instr: u32,
 ) {
     let base_reg = instr >> 16 & 0xF;
@@ -439,7 +439,7 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
 }
 
 pub fn stm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const S_BIT: bool>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     instr: u32,
 ) {
     let base_reg = instr >> 16 & 0xF;

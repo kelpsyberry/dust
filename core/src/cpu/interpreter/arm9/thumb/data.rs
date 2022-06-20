@@ -6,7 +6,7 @@ use crate::{
     cpu::interpreter::{
         alu_utils::{arithmetic, bit_ops, shifts},
         common::{DpOpImm8Ty, DpOpRegTy, ShiftImmTy, StateSource},
-        Engine,
+        Interpreter,
     },
     emu::Emu,
     utils::schedule::RawTimestamp,
@@ -17,7 +17,7 @@ use crate::{
 //       source register in the second cycle).
 
 pub fn add_sub_reg_imm3<const SUB: bool, const IMM3: bool, const IS_MOV: bool>(
-    emu: &mut Emu<Engine>,
+    emu: &mut Emu<Interpreter>,
     instr: u16,
 ) {
     let src_reg = (instr >> 3 & 7) as u8;
@@ -55,7 +55,7 @@ pub fn add_sub_reg_imm3<const SUB: bool, const IMM3: bool, const IS_MOV: bool>(
     prefetch_thumb::<true, true>(emu);
 }
 
-pub fn shift_imm<const SHIFT_TY: ShiftImmTy>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn shift_imm<const SHIFT_TY: ShiftImmTy>(emu: &mut Emu<Interpreter>, instr: u16) {
     let src_reg = (instr >> 3 & 7) as u8;
     apply_reg_interlock_1::<false>(emu, src_reg);
     add_bus_cycles(emu, 1);
@@ -71,7 +71,7 @@ pub fn shift_imm<const SHIFT_TY: ShiftImmTy>(emu: &mut Emu<Engine>, instr: u16) 
     prefetch_thumb::<true, true>(emu);
 }
 
-pub fn dp_op_imm8<const OP_TY: DpOpImm8Ty>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn dp_op_imm8<const OP_TY: DpOpImm8Ty>(emu: &mut Emu<Interpreter>, instr: u16) {
     let src_dst_reg = (instr >> 8 & 7) as u8;
     if OP_TY != DpOpImm8Ty::Mov {
         apply_reg_interlock_1::<false>(emu, src_dst_reg);
@@ -103,7 +103,7 @@ pub fn dp_op_imm8<const OP_TY: DpOpImm8Ty>(emu: &mut Emu<Engine>, instr: u16) {
     prefetch_thumb::<true, true>(emu);
 }
 
-pub fn dp_op_reg<const OP_TY: DpOpRegTy>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn dp_op_reg<const OP_TY: DpOpRegTy>(emu: &mut Emu<Interpreter>, instr: u16) {
     let src_dst_reg = (instr & 7) as u8;
     let op_reg = (instr >> 3 & 7) as u8;
     let src = reg!(emu.arm9, src_dst_reg);
@@ -211,7 +211,7 @@ pub fn dp_op_reg<const OP_TY: DpOpRegTy>(emu: &mut Emu<Engine>, instr: u16) {
     }
 }
 
-pub fn add_special(emu: &mut Emu<Engine>, instr: u16) {
+pub fn add_special(emu: &mut Emu<Interpreter>, instr: u16) {
     let src_dst_reg = ((instr & 7) | (instr >> 4 & 8)) as u8;
     let op_reg = (instr >> 3 & 0xF) as u8;
     apply_reg_interlocks_2::<0, false>(emu, src_dst_reg, op_reg);
@@ -226,7 +226,7 @@ pub fn add_special(emu: &mut Emu<Engine>, instr: u16) {
     }
 }
 
-pub fn cmp_special(emu: &mut Emu<Engine>, instr: u16) {
+pub fn cmp_special(emu: &mut Emu<Interpreter>, instr: u16) {
     let src_reg = ((instr & 7) | (instr >> 4 & 8)) as u8;
     let op_reg = (instr >> 3 & 0xF) as u8;
     apply_reg_interlocks_2::<0, false>(emu, src_reg, op_reg);
@@ -236,7 +236,7 @@ pub fn cmp_special(emu: &mut Emu<Engine>, instr: u16) {
     prefetch_thumb::<true, true>(emu);
 }
 
-pub fn mov_special(emu: &mut Emu<Engine>, instr: u16) {
+pub fn mov_special(emu: &mut Emu<Interpreter>, instr: u16) {
     let op_reg = (instr >> 3 & 0xF) as u8;
     apply_reg_interlock_1::<false>(emu, op_reg);
     let op = reg!(emu.arm9, op_reg);
@@ -251,7 +251,7 @@ pub fn mov_special(emu: &mut Emu<Engine>, instr: u16) {
     }
 }
 
-pub fn add_pc_sp_imm8<const SP: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn add_pc_sp_imm8<const SP: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let src = if SP {
         reg!(emu.arm9, 13)
     } else {
@@ -263,7 +263,7 @@ pub fn add_pc_sp_imm8<const SP: bool>(emu: &mut Emu<Engine>, instr: u16) {
     prefetch_thumb::<true, true>(emu);
 }
 
-pub fn add_sub_sp_imm7<const SUB: bool>(emu: &mut Emu<Engine>, instr: u16) {
+pub fn add_sub_sp_imm7<const SUB: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let src = reg!(emu.arm9, 13);
     let op = ((instr & 0x7F) << 2) as u32;
     let result = if SUB {

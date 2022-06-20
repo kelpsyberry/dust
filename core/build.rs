@@ -420,13 +420,7 @@ mod jit {
                     Instr::Msr { ty, spsr } => {
                         write!(file, "msr::<_, {}, {}>", ty != arm::MsrTy::Reg, spsr)
                     }
-                    Instr::Bx { link } => {
-                        if is_arm9 {
-                            write!(file, "bx::<{}>", link)
-                        } else {
-                            write!(file, "bx")
-                        }
-                    }
+                    Instr::Bx { link } => write!(file, "bx::<_, {}>", link),
                     Instr::Clz => write!(file, "clz"),
                     Instr::SatAddSub { sub, doubled } => {
                         write!(file, "qaddsub::<_, {}, {}>", sub, doubled)
@@ -435,8 +429,8 @@ mod jit {
                     Instr::DspMul(ty) => {
                         if is_arm9 {
                             match ty {
-                                DspMulTy::Smulxy { acc } => write!(file, "smulxy::<{}>", acc),
-                                DspMulTy::Smulwy { acc } => write!(file, "smulwy::<{}>", acc),
+                                DspMulTy::Smulxy { acc } => write!(file, "smulxy::<_, {}>", acc),
+                                DspMulTy::Smulwy { acc } => write!(file, "smulwy::<_, {}>", acc),
                                 DspMulTy::Smlalxy => write!(file, "smlalxy"),
                             }
                         } else {
@@ -566,7 +560,7 @@ mod jit {
                     Instr::Mcr => write!(file, "mcr"),
                     Instr::Mrc => write!(file, "mrc"),
                     Instr::Swi => write!(file, "swi"),
-                    Instr::Undefined => write!(file, "undefined"),
+                    Instr::Undefined { .. } => write!(file, "undefined"),
                     _ => unreachable!(),
                 }?;
                 write!(file, ",")?;
@@ -609,11 +603,7 @@ mod jit {
         writeln!(file, "]")
     }
 
-    fn output_thumb_instr_table(
-        filename: &str,
-        table: &[thumb::Instr],
-        is_arm9: bool,
-    ) -> Result<(), io::Error> {
+    fn output_thumb_instr_table(filename: &str, table: &[thumb::Instr]) -> Result<(), io::Error> {
         use thumb::Instr;
         let mut file = BufWriter::new(File::create(format!(
             "{}/{}",
@@ -660,13 +650,7 @@ mod jit {
                     Instr::Bx {
                         link,
                         addr_high_reg: _,
-                    } => {
-                        if is_arm9 {
-                            write!(file, "bx::<{}>", link)
-                        } else {
-                            write!(file, "bx")
-                        }
-                    }
+                    } => write!(file, "bx::<_, {}>", link),
                     Instr::DpOpSpecial { ty, h1: _, h2: _ } => {
                         write!(file, "{}_special", ["add", "cmp", "mov"][ty as usize])
                     }
@@ -730,14 +714,8 @@ mod jit {
                     Instr::CondBranch { cond } => write!(file, "b_cond::<_, {}>", cond),
                     Instr::Branch => write!(file, "b"),
                     Instr::BlPrefix => write!(file, "bl_prefix"),
-                    Instr::BlSuffix { exchange } => {
-                        if is_arm9 {
-                            write!(file, "bl_suffix::<{}>", exchange)
-                        } else {
-                            write!(file, "bl_suffix")
-                        }
-                    }
-                    Instr::Undefined => write!(file, "undefined"),
+                    Instr::BlSuffix { exchange } => write!(file, "bl_suffix::<_, {}>", exchange),
+                    Instr::Undefined { .. } => write!(file, "undefined"),
                     _ => unreachable!(),
                 }?;
                 write!(file, ",")?;
@@ -753,7 +731,6 @@ mod jit {
         output_thumb_instr_table(
             "jit_arm7_thumb.rs",
             &thumb::thumb(arm_decoder::Processor::Arm7Tdmi),
-            false,
         )
         .expect("couldn't write JIT ARM7 thumb instruction table");
 
@@ -764,7 +741,6 @@ mod jit {
         output_thumb_instr_table(
             "jit_arm9_thumb.rs",
             &thumb::thumb(arm_decoder::Processor::Arm9Es),
-            true,
         )
         .expect("couldn't write JIT ARM9 thumb instruction table");
     }
