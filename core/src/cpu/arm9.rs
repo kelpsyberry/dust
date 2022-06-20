@@ -10,6 +10,8 @@ pub mod sqrt_engine;
 
 #[cfg(any(feature = "debugger-hooks", doc))]
 use super::debug;
+#[cfg(feature = "debugger-hooks")]
+use crate::cpu::Arm9Data;
 use super::{psr::Cpsr, timers::Timers, CoreData, Engine, Regs};
 use crate::{
     cpu,
@@ -34,7 +36,7 @@ pub const BIOS_BUFFER_SIZE: usize = bus::ptrs::Ptrs::PAGE_SIZE;
 
 pub struct Arm9<E: Engine> {
     #[cfg(feature = "log")]
-    pub logger: slog::Logger,
+    pub(super) logger: slog::Logger,
     #[cfg(feature = "debugger-hooks")]
     pub(super) debug: debug::Arm9Data<E>,
     pub engine_data: E::Arm9Data,

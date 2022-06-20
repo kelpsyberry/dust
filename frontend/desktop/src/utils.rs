@@ -1,6 +1,6 @@
 use std::{
     env,
-    lazy::SyncLazy,
+    sync::OnceLock,
     path::{Path, PathBuf},
 };
 
@@ -114,24 +114,24 @@ pub fn scale_to_fit_rotated(
     )
 }
 
-static CONFIG_BASE: SyncLazy<PathBuf> = SyncLazy::new(|| match env::var_os("XDG_CONFIG_HOME") {
-    Some(config_dir) => Path::new(&config_dir).join("dust"),
-    None => home::home_dir()
-        .map(|home| home.join(".config/dust"))
-        .unwrap_or_else(|| PathBuf::from("/.config/dust")),
-});
+static CONFIG_BASE: OnceLock<PathBuf> = OnceLock::new();
 
-static DATA_BASE: SyncLazy<PathBuf> = SyncLazy::new(|| match env::var_os("XDG_DATA_HOME") {
-    Some(data_home) => Path::new(&data_home).join("dust"),
-    None => home::home_dir()
-        .map(|home| home.join(".local/share/dust"))
-        .unwrap_or_else(|| PathBuf::from("/.local/share/dust")),
-});
+static DATA_BASE: OnceLock<PathBuf> = OnceLock::new();
 
 pub fn config_base<'a>() -> &'a Path {
-    &*CONFIG_BASE
+    CONFIG_BASE.get_or_init(|| match env::var_os("XDG_CONFIG_HOME") {
+        Some(config_dir) => Path::new(&config_dir).join("dust"),
+        None => home::home_dir()
+            .map(|home| home.join(".config/dust"))
+            .unwrap_or_else(|| PathBuf::from("/.config/dust")),
+    })
 }
 
 pub fn data_base<'a>() -> &'a Path {
-    &*DATA_BASE
+    DATA_BASE.get_or_init(|| match env::var_os("XDG_DATA_HOME") {
+        Some(data_home) => Path::new(&data_home).join("dust"),
+        None => home::home_dir()
+            .map(|home| home.join(".local/share/dust"))
+            .unwrap_or_else(|| PathBuf::from("/.local/share/dust")),
+    })
 }

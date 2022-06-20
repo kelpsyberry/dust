@@ -19,7 +19,7 @@ pub const BIOS_SIZE: usize = 0x4000;
 
 pub struct Arm7<E: Engine> {
     #[cfg(feature = "log")]
-    pub logger: slog::Logger,
+    pub(super) logger: slog::Logger,
     #[cfg(feature = "debugger-hooks")]
     pub(super) debug: debug::Arm7Data<E>,
     pub engine_data: E::Arm7Data,

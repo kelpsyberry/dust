@@ -24,7 +24,7 @@ use dust_core::{
 };
 use fxhash::FxHashMap;
 use gdb_protocol::packet::{CheckedPacket, Kind as PacketKind};
-use std::{cell::RefCell, io::Write, lazy::SyncLazy, net::ToSocketAddrs, rc::Rc, str};
+use std::{cell::RefCell, io::Write, net::ToSocketAddrs, rc::Rc, str};
 
 bitflags! {
     struct ThreadMask: u8 {
@@ -95,7 +95,7 @@ pub struct GdbServer {
     stop_cause: Rc<RefCell<StopCause>>,
 }
 
-static CRC_TABLE: SyncLazy<[u32; 256]> = SyncLazy::new(|| {
+static CRC_TABLE: [u32; 256] = {
     let mut table = [0; 256];
     let mut crc = 0x8000_0000;
     let mut i = 1;
@@ -105,13 +105,15 @@ static CRC_TABLE: SyncLazy<[u32; 256]> = SyncLazy::new(|| {
         } else {
             crc = crc << 1 ^ 0x04C1_1DB7;
         }
-        for v in &mut table[i..i << 1] {
-            *v ^= crc;
+        let mut j = i;
+        while j < i << 1 {
+            table[j] ^= crc;
+            j += 1;
         }
         i <<= 1;
     }
     table
-});
+};
 
 fn split_once(data: &[u8], char: u8) -> (&[u8], &[u8]) {
     if let Some(split_pos) = data.iter().position(|c| *c == char) {
@@ -700,14 +702,13 @@ impl GdbServer {
                         let (mut addr, length) = parse_addr_length!(data, "qCRC");
                         check_not_multiple_threads!("qCRC");
                         let mut crc = 0xFFFF_FFFF;
-                        let crc_table = &*CRC_TABLE;
                         for _ in 0..length {
                             let byte = if self.g_thread.mask == ThreadMask::ARM9 {
                                 arm9::bus::read_8::<DebugCpuAccess, _>(emu, addr)
                             } else {
                                 arm7::bus::read_8::<DebugCpuAccess, _>(emu, addr)
                             };
-                            crc = crc << 8 ^ crc_table[(((crc >> 24) as u8) ^ byte) as usize];
+                            crc = crc << 8 ^ CRC_TABLE[(((crc >> 24) as u8) ^ byte) as usize];
                             addr = addr.wrapping_add(1);
                         }
                         let mut reply = Vec::with_capacity(8);
