@@ -623,20 +623,19 @@ impl Engine3d {
         }
     }
 
-    unsafe fn read_from_gx_pipe(&mut self, arm9: &mut Arm9<impl cpu::Engine>) -> FifoEntry {
-        let result = self.gx_pipe.read_unchecked();
-        if self.gx_pipe.len() <= 2 {
-            for _ in 0..2 {
-                if let Some(entry) = self.gx_fifo.read() {
-                    self.gx_pipe.write_unchecked(entry);
-                    self.update_gx_fifo_irq(arm9);
-                    if self.gx_fifo_half_empty() {
-                        arm9.start_dma_transfers_with_timing::<{ arm9::dma::Timing::GxFifo }>();
-                    }
-                }
+    fn refill_gx_pipe(&mut self, arm9: &mut Arm9<impl cpu::Engine>, empty: usize) {
+        if self.gx_pipe.len() > 2 {
+            return;
+        }
+        for _ in (self.gx_pipe.len()..4 - empty).take(self.gx_fifo.len()) {
+            unsafe {
+                self.gx_pipe.write_unchecked(self.gx_fifo.read_unchecked());
             }
         }
-        result
+        self.update_gx_fifo_irq(arm9);
+        if self.gx_fifo_half_empty() {
+            arm9.start_dma_transfers_with_timing::<{ arm9::dma::Timing::GxFifo }>();
+        }
     }
 
     fn update_clip_mtx(&mut self) {
@@ -743,33 +742,33 @@ impl Engine3d {
         };
 
         let new_vert_index = self.cur_prim_vert_index.get() + 1;
-        if new_vert_index >= self.cur_prim_max_verts.get() {
-            if self.cur_prim_type == PrimitiveType::QuadStrip {
-                self.cur_prim_verts.swap(2, 3);
+        if new_vert_index < self.cur_prim_max_verts.get() {
+            self.cur_prim_vert_index = PrimVertIndex::new(new_vert_index);
+            return;
+        }
+
+        if self.cur_prim_type == PrimitiveType::QuadStrip {
+            self.cur_prim_verts.swap(2, 3);
+        }
+
+        self.clip_and_submit_polygon();
+
+        match self.cur_prim_type {
+            PrimitiveType::Triangles | PrimitiveType::Quads => {
+                self.cur_prim_vert_index = PrimVertIndex::new(0);
             }
 
-            self.clip_and_submit_polygon();
+            PrimitiveType::TriangleStrip => {
+                self.cur_prim_verts[self.cur_strip_prim_is_odd as usize] = self.cur_prim_verts[2];
+                self.cur_prim_vert_index = PrimVertIndex::new(2);
+                self.cur_strip_prim_is_odd = !self.cur_strip_prim_is_odd;
+            }
 
-            match self.cur_prim_type {
-                PrimitiveType::Triangles | PrimitiveType::Quads => {
-                    self.cur_prim_vert_index = PrimVertIndex::new(0);
-                }
-
-                PrimitiveType::TriangleStrip => {
-                    self.cur_prim_verts[self.cur_strip_prim_is_odd as usize] =
-                        self.cur_prim_verts[2];
-                    self.cur_prim_vert_index = PrimVertIndex::new(2);
-                    self.cur_strip_prim_is_odd = !self.cur_strip_prim_is_odd;
-                }
-
-                PrimitiveType::QuadStrip => {
-                    self.cur_prim_verts.copy_within(2.., 0);
-                    self.cur_prim_verts.swap(0, 1);
-                    self.cur_prim_vert_index = PrimVertIndex::new(2);
-                }
-            };
-        } else {
-            self.cur_prim_vert_index = PrimVertIndex::new(new_vert_index);
+            PrimitiveType::QuadStrip => {
+                self.cur_prim_verts.copy_within(2.., 0);
+                self.cur_prim_verts.swap(0, 1);
+                self.cur_prim_vert_index = PrimVertIndex::new(2);
+            }
         }
     }
 
@@ -804,7 +803,7 @@ impl Engine3d {
             (
                 $axis_i: expr,
                 $output: expr,
-                ($vert: expr, $coord: expr, $w: expr),
+                ($vert: expr, $coord: expr, $w: expr, $sign: expr),
                 $other: expr,
                 |$other_coord: ident, $other_w: ident|
                 ($compare: expr, $numer: expr, $coord_diff: expr,),
@@ -827,7 +826,9 @@ impl Engine3d {
                     //     ±(x1 - x0) - w1 + w0    $coord_diff - w1 + w0
                     let denom = $coord_diff + $w - $other_w;
                     if denom != 0 {
-                        $output[clipped_verts_len] = $vert.interpolate($other, $numer, denom);
+                        let mut vert = $vert.interpolate($other, $numer, denom);
+                        vert.coords[$axis_i] = $sign * vert.coords[3];
+                        $output[clipped_verts_len] = vert;
                         clipped_verts_len += 1;
                     }
                 }
@@ -835,17 +836,20 @@ impl Engine3d {
         }
 
         macro_rules! run_pass {
-            ($axis_i: expr, $input: expr => $output: expr) => {
+            ($axis_i: expr, $clip_far: expr, $input: expr => $output: expr) => {
                 let input_len = replace(&mut clipped_verts_len, shared_verts);
                 for (i, vert) in $input[..input_len].iter().enumerate().skip(shared_verts) {
                     let coord = vert.coords[$axis_i] as i64;
                     let w = vert.coords[3] as i64;
                     if coord > w {
+                        if !$clip_far {
+                            return;
+                        }
                         self.connect_to_last_strip_prim = false;
                         interpolate!(
                             $axis_i,
                             $output,
-                            (vert, coord, w),
+                            (vert, coord, w, 1),
                             &$input[if i == 0 { input_len - 1 } else { i - 1 }],
                             |other_coord, other_w| (
                                 other_coord <= other_w,
@@ -856,7 +860,7 @@ impl Engine3d {
                         interpolate!(
                             $axis_i,
                             $output,
-                            (vert, coord, w),
+                            (vert, coord, w, 1),
                             &$input[if i + 1 == input_len { 0 } else { i + 1 }],
                             |other_coord, other_w| (
                                 other_coord <= other_w,
@@ -869,7 +873,7 @@ impl Engine3d {
                         interpolate!(
                             $axis_i,
                             $output,
-                            (vert, coord, w),
+                            (vert, coord, w, -1),
                             &$input[if i == 0 { input_len - 1 } else { i - 1 }],
                             |other_coord, other_w| (
                                 other_coord >= -other_w,
@@ -880,7 +884,7 @@ impl Engine3d {
                         interpolate!(
                             $axis_i,
                             $output,
-                            (vert, coord, w),
+                            (vert, coord, w, -1),
                             &$input[if i + 1 == input_len { 0 } else { i + 1 }],
                             |other_coord, other_w| (
                                 other_coord >= -other_w,
@@ -909,9 +913,9 @@ impl Engine3d {
         let [mut buffer_0, mut buffer_1] = [[Vertex::new(); 10]; 2];
         buffer_0[..shared_verts].copy_from_slice(&self.cur_prim_verts[..shared_verts]);
         buffer_1[..shared_verts].copy_from_slice(&self.cur_prim_verts[..shared_verts]);
-        run_pass!(2, self.cur_prim_verts => buffer_0);
-        run_pass!(1, buffer_0 => buffer_1);
-        run_pass!(0, buffer_1 => buffer_0);
+        run_pass!(2, self.cur_poly_attrs.clip_far_plane(), self.cur_prim_verts => buffer_0);
+        run_pass!(1, true, buffer_0 => buffer_1);
+        run_pass!(0, true, buffer_1 => buffer_0);
 
         if self.vert_ram_level as usize > self.vert_ram.len() - (clipped_verts_len - shared_verts) {
             self.rendering_state
@@ -1097,6 +1101,35 @@ impl Engine3d {
                 break;
             }
 
+            macro_rules! read_from_gx_pipe {
+                () => {
+                    emu.gpu.engine_3d.gx_pipe.read_unchecked()
+                };
+                (
+                    $len: literal,
+                    $iter: expr,
+                    |$elem_ident: ident, $entry_ident: ident| $f: expr
+                ) => {
+                    let mut iter = $iter.into_iter();
+                    let pipe_len = emu.gpu.engine_3d.gx_pipe.len();
+                    if pipe_len >= $len {
+                        for $elem_ident in iter {
+                            let $entry_ident = emu.gpu.engine_3d.gx_pipe.read_unchecked();
+                            $f
+                        }
+                    } else {
+                        for $elem_ident in Iterator::take(&mut iter, pipe_len) {
+                            let $entry_ident = emu.gpu.engine_3d.gx_pipe.read_unchecked();
+                            $f
+                        }
+                        for $elem_ident in iter {
+                            let $entry_ident = emu.gpu.engine_3d.gx_fifo.read_unchecked();
+                            $f
+                        }
+                    }
+                };
+            }
+
             let FifoEntry {
                 command,
                 param: first_param,
@@ -1104,8 +1137,9 @@ impl Engine3d {
 
             if command == 0 {
                 unsafe {
-                    emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9);
+                    read_from_gx_pipe!();
                 }
+                emu.gpu.engine_3d.refill_gx_pipe(&mut emu.arm9, 0);
                 continue;
             }
 
@@ -1116,9 +1150,10 @@ impl Engine3d {
             }
 
             emu.gpu.engine_3d.gx_status.set_busy(true);
+            let prev_gx_pipe_len = emu.gpu.engine_3d.gx_pipe.len();
 
             unsafe {
-                emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9);
+                read_from_gx_pipe!();
             }
 
             macro_rules! dequeue_mtx_stack_cmd {
@@ -1277,10 +1312,9 @@ impl Engine3d {
                     // MTX_LOAD_4x4
                     let mut contents = MatrixBuffer([0; 16]);
                     contents.0[0] = first_param as i32;
-                    for elem in &mut contents.0[1..] {
-                        *elem = unsafe {
-                            emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32
-                        };
+                    unsafe {
+                        read_from_gx_pipe!(15, &mut contents.0[1..], |elem, entry| *elem =
+                            entry.param as i32);
                     }
                     emu.gpu.engine_3d.load_matrix(Matrix::new(contents));
                 }
@@ -1290,12 +1324,12 @@ impl Engine3d {
                     let mut contents = MatrixBuffer([0; 16]);
                     contents.0[0] = first_param as i32;
                     contents.0[15] = 0x1000;
-                    for range in [1..3, 4..7, 8..11, 12..15] {
-                        for elem in &mut contents.0[range] {
-                            *elem = unsafe {
-                                emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32
-                            };
-                        }
+                    unsafe {
+                        read_from_gx_pipe!(
+                            11,
+                            [1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14],
+                            |i, entry| contents.0[i] = entry.param as i32
+                        );
                     }
                     emu.gpu.engine_3d.load_matrix(Matrix::new(contents));
                 }
@@ -1304,10 +1338,9 @@ impl Engine3d {
                     // MTX_MULT_4x4
                     let mut contents = MatrixBuffer([0; 16]);
                     contents.0[0] = first_param as i32;
-                    for elem in &mut contents.0[1..] {
-                        *elem = unsafe {
-                            emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32
-                        };
+                    unsafe {
+                        read_from_gx_pipe!(15, &mut contents.0[1..], |elem, entry| *elem =
+                            entry.param as i32);
                     }
 
                     match emu.gpu.engine_3d.mtx_mode {
@@ -1335,10 +1368,9 @@ impl Engine3d {
                     // MTX_MULT_4x3
                     let mut contents = MatrixBuffer([0; 12]);
                     contents.0[0] = first_param as i32;
-                    for elem in &mut contents.0[1..] {
-                        *elem = unsafe {
-                            emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32
-                        };
+                    unsafe {
+                        read_from_gx_pipe!(11, &mut contents.0[1..], |elem, entry| *elem =
+                            entry.param as i32);
                     }
 
                     match emu.gpu.engine_3d.mtx_mode {
@@ -1366,10 +1398,9 @@ impl Engine3d {
                     // MTX_MULT_3x3
                     let mut contents = MatrixBuffer([0; 9]);
                     contents.0[0] = first_param as i32;
-                    for elem in &mut contents.0[1..] {
-                        *elem = unsafe {
-                            emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32
-                        };
+                    unsafe {
+                        read_from_gx_pipe!(8, &mut contents.0[1..], |elem, entry| *elem =
+                            entry.param as i32);
                     }
 
                     match emu.gpu.engine_3d.mtx_mode {
@@ -1395,13 +1426,11 @@ impl Engine3d {
 
                 0x1B => {
                     // MTX_SCALE
-                    let contents = unsafe {
-                        [
-                            first_param as i32,
-                            emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32,
-                            emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32,
-                        ]
-                    };
+                    let mut contents = [first_param as i32, 0, 0];
+                    unsafe {
+                        read_from_gx_pipe!(2, &mut contents[1..], |elem, entry| *elem =
+                            entry.param as i32);
+                    }
 
                     match emu.gpu.engine_3d.mtx_mode {
                         MatrixMode::Projection => {
@@ -1419,13 +1448,11 @@ impl Engine3d {
                 }
                 0x1C => {
                     // MTX_TRANS
-                    let contents = unsafe {
-                        [
-                            first_param as i32,
-                            emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32,
-                            emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param as i32,
-                        ]
-                    };
+                    let mut contents = [first_param as i32, 0, 0];
+                    unsafe {
+                        read_from_gx_pipe!(2, &mut contents[1..], |elem, entry| *elem =
+                            entry.param as i32);
+                    }
 
                     match emu.gpu.engine_3d.mtx_mode {
                         MatrixMode::Projection => {
@@ -1500,8 +1527,7 @@ impl Engine3d {
 
                 0x23 => {
                     // VTX_16
-                    let second_param =
-                        unsafe { emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param };
+                    let second_param = unsafe { read_from_gx_pipe!() }.param;
                     emu.gpu.engine_3d.add_vert([
                         first_param as i16,
                         (first_param >> 16) as i16,
@@ -1617,13 +1643,13 @@ impl Engine3d {
                     emu.gpu.engine_3d.shininess_table[1] = (first_param >> 8) as u8;
                     emu.gpu.engine_3d.shininess_table[2] = (first_param >> 16) as u8;
                     emu.gpu.engine_3d.shininess_table[3] = (first_param >> 24) as u8;
-                    for i in (4..128).step_by(4) {
-                        let param =
-                            unsafe { emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param };
-                        emu.gpu.engine_3d.shininess_table[i] = param as u8;
-                        emu.gpu.engine_3d.shininess_table[i + 1] = (param >> 8) as u8;
-                        emu.gpu.engine_3d.shininess_table[i + 2] = (param >> 16) as u8;
-                        emu.gpu.engine_3d.shininess_table[i + 3] = (param >> 24) as u8;
+                    unsafe {
+                        read_from_gx_pipe!(31, (4..128).step_by(4), |i, entry| {
+                            emu.gpu.engine_3d.shininess_table[i] = entry.param as u8;
+                            emu.gpu.engine_3d.shininess_table[i + 1] = (entry.param >> 8) as u8;
+                            emu.gpu.engine_3d.shininess_table[i + 2] = (entry.param >> 16) as u8;
+                            emu.gpu.engine_3d.shininess_table[i + 3] = (entry.param >> 24) as u8;
+                        });
                     }
                 }
 
@@ -1666,7 +1692,9 @@ impl Engine3d {
                     // TODO: BOX_TEST
                     emu.gpu.engine_3d.gx_status.set_box_test_result(true);
                     for _ in 1..3 {
-                        unsafe { emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param };
+                        unsafe {
+                            read_from_gx_pipe!();
+                        }
                     }
                     dequeue_test_cmd_entries!(3);
                 }
@@ -1674,7 +1702,9 @@ impl Engine3d {
                 0x71 => {
                     // TODO: POS_TEST
                     for _ in 1..2 {
-                        unsafe { emu.gpu.engine_3d.read_from_gx_pipe(&mut emu.arm9).param };
+                        unsafe {
+                            read_from_gx_pipe!();
+                        }
                     }
                     dequeue_test_cmd_entries!(2);
                 }
@@ -1686,6 +1716,11 @@ impl Engine3d {
 
                 _ => {}
             }
+
+            emu.gpu.engine_3d.refill_gx_pipe(
+                &mut emu.arm9,
+                (prev_gx_pipe_len ^ params.max(1) as usize) & 1,
+            );
 
             emu.gpu.engine_3d.command_finish_time.0 =
                 emu::Timestamp::from(arm9::Timestamp(emu.arm9.schedule.cur_time().0 + 1)).0 + 10;

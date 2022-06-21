@@ -32,16 +32,16 @@ impl Vertex {
         let numer_2 = i64x2::splat(numer);
         let denom_2 = i64x2::splat(denom);
         macro_rules! interpolate_attr {
-            ($ident: ident, $orig_ty: ty, $numer: expr, $denom: expr) => {
+            ($ident: ident, $numer: expr, $denom: expr) => {
                 self.$ident
                     + ((other.$ident.cast::<i64>() - self.$ident.cast::<i64>()) * $numer / $denom)
                         .cast()
             };
         }
         Vertex {
-            coords: interpolate_attr!(coords, i32x4, numer_4, denom_4),
-            uv: interpolate_attr!(uv, TexCoords, numer_2, denom_2),
-            color: interpolate_attr!(color, i8x4, numer_4, denom_4),
+            coords: interpolate_attr!(coords, numer_4, denom_4),
+            uv: interpolate_attr!(uv, numer_2, denom_2),
+            color: interpolate_attr!(color, numer_4, denom_4),
         }
     }
 }
