@@ -5,13 +5,11 @@ pub fn decode(offset: u32, rom: ByteSlice) -> Option<[u32; 32 * 32]> {
     let icon_data = ByteSlice::new(rom.get(offset as usize + 0x20..offset as usize + 0x240)?);
 
     let mut palette = [0; 16];
-    for (i, color) in palette.iter_mut().enumerate() {
+    for (i, color) in palette.iter_mut().enumerate().skip(1) {
         let raw_color = icon_data.read_le::<u16>(0x200 | i << 1) as u32;
-        let rgb6 = (raw_color << 1 & 0x3E)
-        | (raw_color << 4 & 0x3E00)
-        | (raw_color << 7 & 0x3E_0000);
-        *color = 0xFF00_0000
-            | rgb6 << 2 | (rgb6 >> 4 & 0x03_0303);
+        let rgb6 =
+            (raw_color << 1 & 0x3E) | (raw_color << 4 & 0x3E00) | (raw_color << 7 & 0x3E_0000);
+        *color = 0xFF00_0000 | rgb6 << 2 | (rgb6 >> 4 & 0x03_0303);
     }
 
     let mut pixels = [0; 32 * 32];
