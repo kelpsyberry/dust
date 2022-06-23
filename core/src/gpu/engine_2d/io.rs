@@ -59,13 +59,14 @@ impl<R: Role> Engine2d<R> {
         match addr {
             0x00 => self.control.0,
             0x08 => self.bgs[0].control.0 as u32 | (self.bgs[1].control.0 as u32) << 16,
+            0x0C => self.bgs[2].control.0 as u32 | (self.bgs[3].control.0 as u32) << 16,
             0x48 => {
                 self.window_control[0].0 as u32
                     | (self.window_control[1].0 as u32) << 8
                     | (self.window_control[2].0 as u32) << 16
                     | (self.window_control[3].0 as u32) << 24
             }
-            0x0C => self.bgs[2].control.0 as u32 | (self.bgs[3].control.0 as u32) << 16,
+            0x50 => self.color_effects_control.0 as u32 | (self.blend_coeffs_raw.0 as u32) << 16,
             0x6C => self.master_brightness_control.0 as u32,
             _ => {
                 #[cfg(feature = "log")]

@@ -18,6 +18,7 @@ use super::{
 #[cfg(feature = "xq-audio")]
 use dust_core::audio::ChannelInterpMethod as AudioChannelInterpMethod;
 use dust_core::{
+    ds_slot,
     gpu::{SCREEN_HEIGHT, SCREEN_WIDTH},
     utils::{zeroed_box, BoxedByteSlice},
 };
@@ -155,6 +156,11 @@ struct UiState {
     current_config: CurrentConfig,
 
     emu_state: Option<EmuState>,
+
+    #[cfg(target_os = "windows")]
+    icon: Option<[u32; 32 * 32]>,
+    #[cfg(target_os = "windows")]
+    icon_updated: bool,
 
     show_menu_bar: bool,
     screen_focused: bool,
@@ -453,8 +459,17 @@ impl UiState {
         #[cfg(feature = "log")]
         let logger = self.logger.clone();
 
-        let ds_slot = ds_slot_rom.map(|rom| {
-            let game_code = rom.read_le::<u32>(0xC);
+        let ds_slot = ds_slot_rom.and_then(|rom| {
+            let header = ds_slot::rom::header::Header::new(rom.as_byte_slice())?;
+            let game_code = header.game_code().0;
+
+            #[cfg(target_os = "windows")]
+            {
+                let icon_title_offset = header.icon_title_offset();
+                self.icon = ds_slot::rom::icon::decode(icon_title_offset, rom.as_byte_slice());
+                self.icon_updated = true;
+            }
+
             let save_type = self
                 .game_db
                 .as_ref()
@@ -471,11 +486,11 @@ impl UiState {
                     }
                     entry.save_type
                 });
-            emu::DsSlot {
+            Some(emu::DsSlot {
                 rom,
                 save_type,
                 has_ir: game_code as u8 == b'I',
-            }
+            })
         });
 
         let frame_tx = self.frame_tx.take().unwrap();
@@ -565,6 +580,12 @@ impl UiState {
                 }
             },
         );
+
+        #[cfg(target_os = "windows")]
+        {
+            self.icon = None;
+            self.icon_updated = true;
+        }
 
         #[cfg(feature = "discord-presence")]
         {
@@ -803,6 +824,11 @@ pub fn main() {
 
         emu_state: None,
 
+        #[cfg(target_os = "windows")]
+        icon: None,
+        #[cfg(target_os = "windows")]
+        icon_updated: false,
+
         show_menu_bar: true,
         screen_focused: true,
 
@@ -861,6 +887,20 @@ pub fn main() {
             }
         },
         |window, ui, state| {
+            #[cfg(target_os = "windows")]
+            if state.icon_updated {
+                window
+                    .window
+                    .set_window_icon(state.icon.as_ref().and_then(|icon_pixels| {
+                        let mut rgba = Vec::with_capacity(32 * 32 * 4);
+                        for pixel in icon_pixels {
+                            rgba.extend_from_slice(&pixel.to_le_bytes());
+                        }
+                        winit::window::Icon::from_rgba(rgba, 32, 32).ok()
+                    }));
+                state.icon_updated = false;
+            }
+
             #[cfg(feature = "discord-presence")]
             {
                 state.rpc_connection.check_events();

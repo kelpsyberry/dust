@@ -136,7 +136,16 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             0x208 => emu.arm9.irqs.master_enable() as u8,
             0x209..=0x20B => 0,
 
+            0x240 => emu.gpu.vram.bank_control()[0].0,
+            0x241 => emu.gpu.vram.bank_control()[1].0,
+            0x242 => emu.gpu.vram.bank_control()[2].0,
+            0x243 => emu.gpu.vram.bank_control()[3].0,
+            0x244 => emu.gpu.vram.bank_control()[4].0,
+            0x245 => emu.gpu.vram.bank_control()[5].0,
+            0x246 => emu.gpu.vram.bank_control()[6].0,
             0x247 => emu.swram.control().0,
+            0x248 => emu.gpu.vram.bank_control()[7].0,
+            0x249 => emu.gpu.vram.bank_control()[8].0,
 
             0x280 => emu.arm9.div_engine.control().0 as u8,
             0x281 => (emu.arm9.div_engine.control().0 >> 8) as u8,

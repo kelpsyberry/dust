@@ -10,9 +10,9 @@ pub mod sqrt_engine;
 
 #[cfg(any(feature = "debugger-hooks", doc))]
 use super::debug;
+use super::{psr::Cpsr, timers::Timers, CoreData, Engine, Regs};
 #[cfg(feature = "debugger-hooks")]
 use crate::cpu::Arm9Data;
-use super::{psr::Cpsr, timers::Timers, CoreData, Engine, Regs};
 use crate::{
     cpu,
     emu::{swram::Swram, Emu, LocalExMemControl},

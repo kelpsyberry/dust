@@ -254,16 +254,17 @@ pub enum RunOutput {
 impl<E: cpu::Engine> Emu<E> {
     fn setup_direct_boot(&mut self) {
         // TODO: More accurate direct boot
-        let mut header = Bytes::new([0; 0x170]);
-        self.ds_slot.rom.read(0, header.as_byte_mut_slice());
+        
+        let mut header_bytes = Bytes::new([0; 0x170]);
+        self.ds_slot.rom.read(0, header_bytes.as_byte_mut_slice());
+        let header = ds_slot::rom::header::Header::new(header_bytes.as_byte_slice()).unwrap();
         let chip_id = self.ds_slot.rom.chip_id();
 
         self.main_mem.write_le(0x3F_F800, chip_id);
         self.main_mem.write_le(0x3F_F804, chip_id);
+        self.main_mem.write_le(0x3F_F808, header.header_checksum());
         self.main_mem
-            .write_le(0x3F_F808, header.read_le::<u16>(0x15E));
-        self.main_mem
-            .write_le(0x3F_F80A, header.read_le::<u16>(0x6C));
+            .write_le(0x3F_F80A, header.secure_area_checksum());
         self.main_mem.write_le(0x3F_F80C, 0_u32);
         self.main_mem.write_le(0x3F_F810, 0xFFFF_u16);
         self.main_mem.write_le(0x3F_F850, 0x5835_u16);
@@ -271,15 +272,15 @@ impl<E: cpu::Engine> Emu<E> {
         self.main_mem.write_le(0x3F_F884, 6_u32);
         self.main_mem.write_le(0x3F_FC00, chip_id);
         self.main_mem.write_le(0x3F_FC04, chip_id);
+        self.main_mem.write_le(0x3F_FC08, header.header_checksum());
         self.main_mem
-            .write_le(0x3F_FC08, header.read_le::<u16>(0x15E));
-        self.main_mem
-            .write_le(0x3F_FC0A, header.read_le::<u16>(0x6C));
+            .write_le(0x3F_FC0A, header.secure_area_checksum());
         self.main_mem.write_le(0x3F_FC0C, 0_u32);
         self.main_mem.write_le(0x3F_FC10, 0x5835_u16);
         self.main_mem.write_le(0x3F_FC40, 1_u16);
         unsafe {
-            self.main_mem.as_byte_mut_slice()[0x3F_FE00..0x3F_FF70].copy_from_slice(&header[..]);
+            self.main_mem.as_byte_mut_slice()[0x3F_FE00..0x3F_FF70]
+                .copy_from_slice(&header_bytes[..]);
         };
         self.arm7.wram.write_le(0xF980, 0xFBDD_37BB_u32);
         self.arm7.write_bios_prot(0x1204);
@@ -293,34 +294,25 @@ impl<E: cpu::Engine> Emu<E> {
             .write_control(swram::Control(3), &mut self.arm7, &mut self.arm9);
         self.gpu.write_power_control(gpu::PowerControl(0x820F));
 
-        let arm9_rom_offset = header.read_le::<u32>(0x20);
-        let arm9_entry_addr = header.read_le::<u32>(0x24);
-        let arm9_ram_addr = header.read_le::<u32>(0x28);
-        let arm9_size = header.read_le::<u32>(0x2C);
-        let arm7_rom_offset = header.read_le::<u32>(0x30);
-        let arm7_entry_addr = header.read_le::<u32>(0x34);
-        let arm7_ram_addr = header.read_le::<u32>(0x38);
-        let arm7_size = header.read_le::<u32>(0x3C);
-
-        let mut arm7_loaded_data = BoxedByteSlice::new_zeroed(arm7_size as usize);
+        let mut arm7_loaded_data = BoxedByteSlice::new_zeroed(header.arm7_size() as usize);
         self.ds_slot.rom.read(
-            arm7_rom_offset,
+            header.arm7_rom_offset(),
             ByteMutSlice::new(&mut arm7_loaded_data[..]),
         );
-        E::Arm7Data::setup_direct_boot(self, arm7_entry_addr);
-        for (&byte, addr) in arm7_loaded_data.iter().zip(arm7_ram_addr..) {
+        E::Arm7Data::setup_direct_boot(self, header.arm7_entry_addr());
+        for (&byte, addr) in arm7_loaded_data.iter().zip(header.arm7_ram_addr()..) {
             arm7::bus::write_8::<CpuAccess, _>(self, addr, byte);
         }
 
-        let mut arm9_loaded_data = BoxedByteSlice::new_zeroed(arm9_size as usize);
+        let mut arm9_loaded_data = BoxedByteSlice::new_zeroed(header.arm9_size() as usize);
         self.ds_slot.rom.read(
-            arm9_rom_offset,
+            header.arm9_rom_offset(),
             ByteMutSlice::new(&mut arm9_loaded_data[..]),
         );
-        for (&byte, addr) in arm9_loaded_data.iter().zip(arm9_ram_addr..) {
+        for (&byte, addr) in arm9_loaded_data.iter().zip(header.arm9_ram_addr()..) {
             arm9::bus::write_8::<CpuAccess, _>(self, addr, byte);
         }
-        E::Arm9Data::setup_direct_boot(self, arm9_entry_addr);
+        E::Arm9Data::setup_direct_boot(self, header.arm9_entry_addr());
     }
 
     #[inline]
