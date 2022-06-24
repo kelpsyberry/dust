@@ -1461,6 +1461,12 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                 // The KEY2 encryption seeds aren't used
                 0x1B0 | 0x1B4 => {}
 
+                0x204 => {
+                    emu.arm9
+                        .write_local_ex_mem_control(LocalExMemControl(value as u8));
+                    emu.write_global_ex_mem_control(GlobalExMemControl(value as u16));
+                }
+
                 0x208 => emu
                     .arm9
                     .irqs
