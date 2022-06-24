@@ -116,6 +116,13 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
             0x132 => emu.input.arm9_key_irq_control().0 as u8,
             0x133 => (emu.input.arm9_key_irq_control().0 >> 8) as u8,
 
+            0x180 => emu.ipc.sync_9().0 as u8,
+            0x181 => (emu.ipc.sync_9().0 >> 8) as u8,
+            0x182 | 0x183 => 0,
+            0x184 => emu.ipc.fifo_control_9().0 as u8,
+            0x185 => (emu.ipc.fifo_control_9().0 >> 8) as u8,
+            0x186 | 0x187 => 0,
+
             0x1A0 => emu.ds_slot.spi_control().0 as u8,
             0x1A1 => (emu.ds_slot.spi_control().0 >> 8) as u8,
 
@@ -668,6 +675,23 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
             0x133 => emu.write_arm9_key_irq_control(KeyIrqControl(
                 (emu.input.arm9_key_irq_control().0 & 0x00FF) | (value as u16) << 8,
             )),
+
+            0x180 | 0x182 | 0x183 => {}
+            0x181 => emu.ipc.write_sync_9(
+                ipc::Sync((emu.ipc.sync_9().0 & 0x00FF) | (value as u16) << 8),
+                &mut emu.arm7.irqs,
+            ),
+            0x184 => emu.ipc.write_fifo_control_9(
+                ipc::FifoControl((emu.ipc.fifo_control_9().0 & 0xBF00) | value as u16),
+                &mut emu.arm9.irqs,
+                &mut emu.arm9.schedule,
+            ),
+            0x185 => emu.ipc.write_fifo_control_9(
+                ipc::FifoControl((emu.ipc.fifo_control_9().0 & 0x00FF) | (value as u16) << 8),
+                &mut emu.arm9.irqs,
+                &mut emu.arm9.schedule,
+            ),
+            0x186 | 0x187 => {}
 
             0x1A0 => {
                 if emu.ds_slot.arm9_access() {
