@@ -1,5 +1,5 @@
-use crate::utils::{ByteSlice, bounded_int_lit};
 use crate::ds_slot::RomControl;
+use crate::utils::{bounded_int_lit, ByteSlice};
 
 #[derive(Clone, Copy)]
 pub struct Header<'a>(ByteSlice<'a>);
@@ -190,7 +190,7 @@ impl<'a> Header<'a> {
     }
 
     #[inline]
-    pub fn secure_area_checksum(&self) -> u16 {
+    pub fn secure_area_crc(&self) -> u16 {
         self.0.read_le::<u16>(0x6C)
     }
 
@@ -215,7 +215,7 @@ impl<'a> Header<'a> {
     }
 
     #[inline]
-    pub fn header_checksum(&self) -> u16 {
+    pub fn header_crc(&self) -> u16 {
         self.0.read_le::<u16>(0x15E)
     }
 }

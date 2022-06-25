@@ -158,3 +158,14 @@ pub fn detect_model(firmware: ByteSlice) -> Result<Model, ModelDetectionError> {
         _ => Err(ModelDetectionError::UnknownModel),
     }
 }
+
+pub fn newest_user_settings<'a>(firmware: &'a ByteSlice<'_>) -> ByteSlice<'a> {
+    let user_settings_offset = (firmware.read_le::<u16>(0x20) as usize) << 3;
+    let count_0 = firmware.read_le::<u16>(user_settings_offset + 0x70);
+    let count_1 = firmware.read_le::<u16>(user_settings_offset + 0x170);
+    if count_1 == (count_0 + 1) & 0x7F {
+        ByteSlice::new(&firmware[user_settings_offset + 0x100..user_settings_offset + 0x200])
+    } else {
+        ByteSlice::new(&firmware[user_settings_offset..user_settings_offset + 0x100])
+    }
+}

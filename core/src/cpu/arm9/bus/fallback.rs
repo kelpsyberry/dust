@@ -24,7 +24,10 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
     #[allow(clippy::shadow_unrelated)]
     match addr >> 24 {
         #[cfg(feature = "bft-r")]
-        0x02 => emu.main_mem().read(addr as usize & 0x3F_FFFF),
+        0x02 => unsafe {
+            emu.main_mem()
+                .read_unchecked((addr & emu.main_mem_mask().get()) as usize)
+        },
 
         #[cfg(feature = "bft-r")]
         0x03 => unsafe {
@@ -241,7 +244,10 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
     addr &= !1;
     match addr >> 24 {
         #[cfg(feature = "bft-r")]
-        0x02 => emu.main_mem().read_le(addr as usize & 0x3F_FFFE),
+        0x02 => unsafe {
+            emu.main_mem()
+                .read_le_unchecked((addr & emu.main_mem_mask().get()) as usize)
+        },
 
         #[cfg(feature = "bft-r")]
         0x03 => unsafe {
@@ -432,7 +438,10 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
     addr &= !3;
     match addr >> 24 {
         #[cfg(feature = "bft-r")]
-        0x02 => emu.main_mem().read_le(addr as usize & 0x3F_FFFC),
+        0x02 => unsafe {
+            emu.main_mem()
+                .read_le_unchecked((addr & emu.main_mem_mask().get()) as usize)
+        },
 
         #[cfg(feature = "bft-r")]
         0x03 => unsafe {
@@ -630,7 +639,10 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
 pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8) {
     match addr >> 24 {
         #[cfg(feature = "bft-w")]
-        0x02 => emu.main_mem().write(addr as usize & 0x3F_FFFF, value),
+        0x02 => unsafe {
+            emu.main_mem()
+                .write_unchecked((addr & emu.main_mem_mask().get()) as usize, value);
+        },
 
         #[cfg(feature = "bft-w")]
         0x03 => unsafe {
@@ -888,7 +900,10 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
     addr &= !1;
     match addr >> 24 {
         #[cfg(feature = "bft-w")]
-        0x02 => emu.main_mem().write_le(addr as usize & 0x3F_FFFE, value),
+        0x02 => unsafe {
+            emu.main_mem()
+                .write_le_unchecked((addr & emu.main_mem_mask().get()) as usize, value);
+        },
 
         #[cfg(feature = "bft-w")]
         0x03 => unsafe {
@@ -1299,7 +1314,10 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
     addr &= !3;
     match addr >> 24 {
         #[cfg(feature = "bft-w")]
-        0x02 => emu.main_mem().write_le(addr as usize & 0x3F_FFFC, value),
+        0x02 => unsafe {
+            emu.main_mem()
+                .write_le_unchecked((addr & emu.main_mem_mask().get()) as usize, value);
+        },
 
         #[cfg(feature = "bft-w")]
         0x03 => unsafe {

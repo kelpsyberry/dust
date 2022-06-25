@@ -1,7 +1,7 @@
 use std::{
     env,
-    sync::OnceLock,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 macro_rules! format_list {

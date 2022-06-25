@@ -1,9 +1,9 @@
 mod empty;
 mod key1;
 pub use empty::Empty;
-pub mod normal;
 pub mod header;
 pub mod icon;
+pub mod normal;
 
 use super::RomOutputLen;
 use crate::utils::{ByteMutSlice, Bytes};

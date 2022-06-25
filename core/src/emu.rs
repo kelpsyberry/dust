@@ -21,8 +21,8 @@ use crate::{
     rtc::{self, Rtc},
     spi,
     utils::{
-        bitfield_debug, schedule::RawTimestamp, BoxedByteSlice, ByteMutSlice, Bytes,
-        OwnedBytesCellPtr,
+        bitfield_debug, bounded_int_lit, schedule::RawTimestamp, BoxedByteSlice, ByteMutSlice,
+        Bytes, OwnedBytesCellPtr,
     },
     Model,
 };
@@ -79,12 +79,15 @@ bitfield_debug! {
     }
 }
 
+bounded_int_lit!(pub struct MainMemMask(u32), min 0x3F_FFFF, max 0x7F_FFFF);
+
 pub struct Emu<E: cpu::Engine> {
     #[allow(dead_code)]
     pub(crate) global_engine_data: E::GlobalData,
     pub arm7: Arm7<E>,
     pub arm9: Arm9<E>,
-    main_mem: OwnedBytesCellPtr<0x40_0000>,
+    main_mem: OwnedBytesCellPtr<0x80_0000>,
+    main_mem_mask: MainMemMask,
     pub swram: Swram,
     pub schedule: Schedule,
     global_ex_mem_control: GlobalExMemControl,
@@ -97,6 +100,7 @@ pub struct Emu<E: cpu::Engine> {
     pub audio_wifi_power_control: AudioWifiPowerControl,
     pub audio: Audio,
     rcnt: u16, // TODO: Move to SIO
+    is_debugger: bool,
 }
 
 pub struct Builder {
@@ -113,6 +117,7 @@ pub struct Builder {
     pub renderer_3d: Box<dyn gpu::engine_3d::Renderer>,
 
     pub model: Model,
+    pub is_debugger: bool,
     pub direct_boot: bool,
     pub batch_duration: u32,
     pub first_launch: bool,
@@ -151,6 +156,7 @@ impl Builder {
             renderer_3d,
 
             model: Model::Ds,
+            is_debugger: false,
             direct_boot: true,
             batch_duration: DEFAULT_BATCH_DURATION,
             first_launch: false,
@@ -180,6 +186,11 @@ impl Builder {
         let mut emu = Emu {
             global_engine_data,
             main_mem: OwnedBytesCellPtr::new_zeroed(),
+            main_mem_mask: MainMemMask::new(if self.is_debugger {
+                0x7F_FFFF
+            } else {
+                0x3F_FFFF
+            }),
             swram: Swram::new(),
             global_ex_mem_control: GlobalExMemControl(0x6000),
             ipc: Ipc::new(),
@@ -227,6 +238,7 @@ impl Builder {
             schedule: global_schedule,
             arm7,
             arm9,
+            is_debugger: self.is_debugger,
         };
         Arm7::setup(&mut emu);
         Arm9::setup(&mut emu);
@@ -254,35 +266,123 @@ pub enum RunOutput {
 impl<E: cpu::Engine> Emu<E> {
     fn setup_direct_boot(&mut self) {
         // TODO: More accurate direct boot
-        
+
         let mut header_bytes = Bytes::new([0; 0x170]);
         self.ds_slot.rom.read(0, header_bytes.as_byte_mut_slice());
         let header = ds_slot::rom::header::Header::new(header_bytes.as_byte_slice()).unwrap();
         let chip_id = self.ds_slot.rom.chip_id();
 
-        self.main_mem.write_le(0x3F_F800, chip_id);
-        self.main_mem.write_le(0x3F_F804, chip_id);
-        self.main_mem.write_le(0x3F_F808, header.header_checksum());
-        self.main_mem
-            .write_le(0x3F_F80A, header.secure_area_checksum());
-        self.main_mem.write_le(0x3F_F80C, 0_u32);
-        self.main_mem.write_le(0x3F_F810, 0xFFFF_u16);
-        self.main_mem.write_le(0x3F_F850, 0x5835_u16);
-        self.main_mem.write_le(0x3F_F880, 7_u32);
-        self.main_mem.write_le(0x3F_F884, 6_u32);
-        self.main_mem.write_le(0x3F_FC00, chip_id);
-        self.main_mem.write_le(0x3F_FC04, chip_id);
-        self.main_mem.write_le(0x3F_FC08, header.header_checksum());
-        self.main_mem
-            .write_le(0x3F_FC0A, header.secure_area_checksum());
-        self.main_mem.write_le(0x3F_FC0C, 0_u32);
-        self.main_mem.write_le(0x3F_FC10, 0x5835_u16);
-        self.main_mem.write_le(0x3F_FC40, 1_u16);
-        unsafe {
-            self.main_mem.as_byte_mut_slice()[0x3F_FE00..0x3F_FF70]
-                .copy_from_slice(&header_bytes[..]);
-        };
+        macro_rules! write_main_mem {
+            ($addr: expr, $value: expr) => {
+                unsafe {
+                    self.main_mem
+                        .write_le_unchecked($addr & self.main_mem_mask.get() as usize, $value);
+                }
+            };
+            (copy $range_start: literal..$range_end: literal, $slice: expr) => {
+                unsafe {
+                    self.main_mem.as_byte_mut_slice()[($range_start
+                        & self.main_mem_mask.get() as usize)
+                        ..($range_end & self.main_mem_mask.get() as usize)]
+                        .copy_from_slice($slice);
+                }
+            };
+        }
+
+        // –––––––––––––––– Main RAM init values  ––––––––––––––––
+
+        // TODO: "Fragments of NDS9 firmware boot code" at 0x3F_EE00..0x3F_EF68
+
+        // Chip ID 1
+        write_main_mem!(0x7F_F800, chip_id);
+        // Chip ID 2
+        write_main_mem!(0x7F_F804, chip_id);
+        // DS cart header CRC
+        write_main_mem!(0x7F_F808, header.header_crc());
+        // DS cart secure area CRC
+        write_main_mem!(0x7F_F80A, header.secure_area_crc());
+        // Missing/bad DS cart CRC (0 == OK, TODO: Actually check? Does the game even boot?)
+        write_main_mem!(0x7F_F80C, 0_u16);
+        // DS cart secure area bad (0 == OK, TODO: Actually check)
+        write_main_mem!(0x7F_F80E, 0_u16);
+        // Boot handler task number
+        write_main_mem!(0x7F_F810, 0xFFFF_u16);
+        // Secure area disable (0 == normal, TODO: Detect)
+        write_main_mem!(0x7F_F812, 0_u16);
+        // SIO debug connection present (1 == present, TODO: Support it?)
+        write_main_mem!(0x7F_F814, 0);
+        // RTC status (0 == OK)
+        write_main_mem!(0x7F_F816, 0_u16);
+        // "Random LSB from SIO debug detect handshake"
+        write_main_mem!(0x7F_F818, 0);
+        // NDS7 BIOS CRC
+        write_main_mem!(0x7F_F850, 0x5835_u16);
+        // Copy of NDS7 RAM address (?)
+        write_main_mem!(0x7F_F860, header.arm7_ram_addr());
+        // Firmware user settings bad (0 == OK)
+        write_main_mem!(0x7F_F864, 0);
+        // Firmware user settings FLASH address
+        write_main_mem!(
+            0x7F_F868,
+            (self.spi.firmware.contents().read_le::<u16>(0x20) as u32) << 3
+        );
+        // Firmware part 5 (data/graphics) CRC16
+        write_main_mem!(0x7F_F874, 0x359A_u16);
+        // Firmware part 3/4 (arm7/9 GUI/Wi-Fi code) CRC16, zero at cart boot time
+        write_main_mem!(0x7F_F876, 0_u16);
+        // Last message from NDS9 to NDS7
+        write_main_mem!(0x7F_F880, 7_u32);
+        // NDS7 boot task
+        write_main_mem!(0x7F_F884, 6_u32);
+
+        // Copies of some things at 0x7F_F800
+
+        // Chip ID 1
+        write_main_mem!(0x7F_FC00, chip_id);
+        // Chip ID 2
+        write_main_mem!(0x7F_FC04, chip_id);
+        // DS cart header CRC
+        write_main_mem!(0x7F_FC08, header.header_crc());
+        // DS cart secure area CRC
+        write_main_mem!(0x7F_FC0A, header.secure_area_crc());
+        // Missing/bad DS cart CRC (0 == OK)
+        write_main_mem!(0x7F_FC0C, 0_u16);
+        // DS cart secure area bad (0 == OK)
+        write_main_mem!(0x7F_FC0E, 0_u16);
+        // NDS7 BIOS CRC
+        write_main_mem!(0x7F_FC10, 0x5835_u16);
+        // Secure area disable (0 == normal, TODO: Detect)
+        write_main_mem!(0x7F_FC12, 0_u16);
+        // SIO debug connection present (1 == present, TODO: Support it?)
+        write_main_mem!(0x7F_FC14, 0);
+        // RTC status (0 == OK)
+        write_main_mem!(0x7F_FC16, 0_u8);
+        // "Random LSB from SIO debug detect handshake"
+        write_main_mem!(0x7F_FC17, 0);
+
+        // TODO: GBA cart header data at 0x7F_FC30..0x7F_FC3C
+
+        // Frame counter value (currently a random fixed value)
+        write_main_mem!(0x7F_FC3C, 0x332_u32);
+        // Boot indicator (1 = normal, 2 = Wi-Fi (?))
+        write_main_mem!(0x7F_FC40, 1_u16);
+
+        // Newest firmware user settings copy
+        write_main_mem!(
+            copy 0x7F_FC80..0x7F_FCF0,
+            &spi::firmware::newest_user_settings(&self.spi.firmware.contents())[..0x70]
+        );
+
+        write_main_mem!(copy 0x7F_FE00..0x7F_FF70, &header_bytes[..]);
+
+        // –––––––––––––––– ARM7 WRAM init values ––––––––––––––––
+
+        // TODO: "Fragments of NDS7 firmware boot code" at 0xF700
+
         self.arm7.wram.write_le(0xF980, 0xFBDD_37BB_u32);
+
+        // ––––––––––––––––  I/O register values  ––––––––––––––––
+
         self.arm7.write_bios_prot(0x1204);
         self.arm7.set_post_boot_flag(true);
         self.arm9.set_post_boot_flag(arm9::PostBootFlag(1));
@@ -294,15 +394,17 @@ impl<E: cpu::Engine> Emu<E> {
             .write_control(swram::Control(3), &mut self.arm7, &mut self.arm9);
         self.gpu.write_power_control(gpu::PowerControl(0x820F));
 
+        // ––––––––––––––––    Game boot code     ––––––––––––––––
+
         let mut arm7_loaded_data = BoxedByteSlice::new_zeroed(header.arm7_size() as usize);
         self.ds_slot.rom.read(
             header.arm7_rom_offset(),
             ByteMutSlice::new(&mut arm7_loaded_data[..]),
         );
-        E::Arm7Data::setup_direct_boot(self, header.arm7_entry_addr());
         for (&byte, addr) in arm7_loaded_data.iter().zip(header.arm7_ram_addr()..) {
             arm7::bus::write_8::<CpuAccess, _>(self, addr, byte);
         }
+        E::Arm7Data::setup_direct_boot(self, header.arm7_entry_addr());
 
         let mut arm9_loaded_data = BoxedByteSlice::new_zeroed(header.arm9_size() as usize);
         self.ds_slot.rom.read(
@@ -316,8 +418,18 @@ impl<E: cpu::Engine> Emu<E> {
     }
 
     #[inline]
-    pub fn main_mem(&self) -> &OwnedBytesCellPtr<0x40_0000> {
+    pub fn is_debugger(&self) -> bool {
+        self.is_debugger
+    }
+
+    #[inline]
+    pub fn main_mem(&self) -> &OwnedBytesCellPtr<0x80_0000> {
         &self.main_mem
+    }
+
+    #[inline]
+    pub fn main_mem_mask(&self) -> MainMemMask {
+        self.main_mem_mask
     }
 
     #[inline]
