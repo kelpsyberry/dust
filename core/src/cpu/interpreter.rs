@@ -27,14 +27,14 @@ macro_rules! inc_r15 {
 macro_rules! spsr {
     ($cpu: expr) => {
         if $cpu.engine_data.regs.is_in_exc_mode() {
-            $cpu.engine_data.regs.spsr.raw()
+            $cpu.engine_data.regs.spsr
         } else {
             #[cfg(feature = "log")]
             slog::warn!(
                 $cpu.logger,
                 "Unpredictable SPSR read in non-exception mode, reading CPSR"
             );
-            $cpu.engine_data.regs.cpsr.raw()
+            $cpu.engine_data.regs.cpsr.into()
         }
     };
 }

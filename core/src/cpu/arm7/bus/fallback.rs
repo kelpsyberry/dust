@@ -48,7 +48,7 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
         #[cfg(feature = "bft-r")]
         0x02 => unsafe {
             emu.main_mem()
-                .read((addr_unchecked & emu.main_mem_mask().get()) as usize)
+                .read_unchecked((addr & emu.main_mem_mask().get()) as usize)
         },
 
         #[cfg(feature = "bft-r")]

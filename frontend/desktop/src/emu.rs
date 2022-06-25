@@ -10,12 +10,12 @@ use super::{
 };
 use dust_core::{
     audio::DummyBackend as DummyAudioBackend,
-    cpu::{arm9, interpreter::Interpreter},
+    cpu::interpreter::Interpreter,
     ds_slot::{self, rom::Rom as DsSlotRom, spi::Spi as DsSlotSpi},
     emu::RunOutput,
     flash::Flash,
     spi::firmware,
-    utils::{zeroed_box, BoxedByteSlice, Bytes},
+    utils::BoxedByteSlice,
     SaveContents,
 };
 use parking_lot::RwLock;
@@ -76,13 +76,15 @@ pub(super) fn main(
     #[cfg(feature = "gdb-server")] gdb_server_addr: SocketAddr,
     #[cfg(feature = "log")] logger: slog::Logger,
 ) -> triple_buffer::Sender<FrameData> {
-    let direct_boot = config.skip_firmware && ds_slot.is_some();
+    let hle_bios_enabled =
+        config.sys_files.arm7_bios.is_none() || config.sys_files.arm9_bios.is_none();
+    let direct_boot = ds_slot.is_some() && (config.skip_firmware || hle_bios_enabled);
     let mut sync_to_audio = config.sync_to_audio.value;
 
     let (ds_slot_rom, ds_slot_spi) = if let Some(ds_slot) = ds_slot {
         let rom = ds_slot::rom::normal::Normal::new(
             ds_slot.rom,
-            &config.sys_files.arm7_bios,
+            config.sys_files.arm7_bios.as_deref(),
             #[cfg(feature = "log")]
             logger.new(slog::o!("ds_rom" => "normal")),
         )
@@ -254,12 +256,6 @@ pub(super) fn main(
     };
 
     let mut emu_builder = dust_core::emu::Builder::new(
-        config.sys_files.arm7_bios,
-        {
-            let mut bios = zeroed_box::<Bytes<{ arm9::BIOS_BUFFER_SIZE }>>();
-            bios[..arm9::BIOS_SIZE].copy_from_slice(&config.sys_files.arm9_bios[..]);
-            bios
-        },
         Flash::new(
             SaveContents::Existing(config.sys_files.firmware),
             firmware::id_for_model(config.model),
@@ -279,6 +275,9 @@ pub(super) fn main(
         logger.clone(),
     );
 
+    emu_builder.arm7_bios = config.sys_files.arm7_bios.clone();
+    emu_builder.arm9_bios = config.sys_files.arm9_bios.clone();
+
     emu_builder.model = config.model;
     emu_builder.direct_boot = direct_boot;
     // TODO: Set batch_duration and first_launch?
@@ -289,7 +288,7 @@ pub(super) fn main(
         emu_builder.audio_channel_interp_method = config.audio_channel_interp_method.value;
     }
 
-    let mut emu = emu_builder.build(Interpreter);
+    let mut emu = emu_builder.build(Interpreter).unwrap();
 
     const FRAME_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
     let mut last_frame_time = Instant::now();
@@ -421,8 +420,6 @@ pub(super) fn main(
             let audio_channel_interp_method = emu.audio.channel_interp_method();
 
             let mut emu_builder = dust_core::emu::Builder::new(
-                emu.arm7.into_bios().into(),
-                emu.arm9.into_bios().into(),
                 emu.spi.firmware.reset(),
                 match emu.ds_slot.rom {
                     DsSlotRom::Empty(device) => DsSlotRom::Empty(device.reset()),
@@ -441,6 +438,9 @@ pub(super) fn main(
                 logger.clone(),
             );
 
+            emu_builder.arm7_bios = config.sys_files.arm7_bios.clone();
+            emu_builder.arm9_bios = config.sys_files.arm9_bios.clone();
+
             emu_builder.model = config.model;
             emu_builder.direct_boot = direct_boot;
             // TODO: Set batch_duration and first_launch?
@@ -451,7 +451,7 @@ pub(super) fn main(
                 emu_builder.audio_channel_interp_method = audio_channel_interp_method;
             }
 
-            emu = emu_builder.build(Interpreter);
+            emu = emu_builder.build(Interpreter).unwrap();
             #[cfg(feature = "gdb-server")]
             if let Some(server) = &mut gdb_server {
                 server.attach(&mut emu);

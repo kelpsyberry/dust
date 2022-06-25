@@ -12,7 +12,8 @@ use crate::{
     cpu::{
         arm9::{bus, Arm9, Event, Timestamp},
         bus::CpuAccess,
-        psr::{Cpsr, Mode},
+        hle_bios,
+        psr::{Cpsr, Mode, Spsr},
         Arm9Data, CoreData, Schedule as _,
     },
     ds_slot::DsSlot,
@@ -495,7 +496,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Interpreter>) 
 
 #[inline]
 fn set_cpsr_update_control(emu: &mut Emu<Interpreter>, value: Cpsr) {
-    let old_value = emu.arm9.engine_data.regs.cpsr;
+    let prev_value = emu.arm9.engine_data.regs.cpsr;
     emu.arm9.engine_data.regs.cpsr = value;
     emu.arm9
         .irqs
@@ -503,7 +504,7 @@ fn set_cpsr_update_control(emu: &mut Emu<Interpreter>, value: Cpsr) {
     emu.arm9
         .engine_data
         .regs
-        .update_mode::<false>(old_value.mode(), value.mode());
+        .update_mode::<false>(prev_value.mode(), value.mode());
 }
 
 fn restore_spsr(emu: &mut Emu<Interpreter>) {
@@ -545,7 +546,7 @@ fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
         emu.arm9.engine_data.data_cycles = 1;
     }
     add_bus_cycles(emu, 2);
-    let old_cpsr = emu.arm9.engine_data.regs.cpsr;
+    let prev_cpsr = emu.arm9.engine_data.regs.cpsr;
     emu.arm9.engine_data.regs.cpsr = emu
         .arm9
         .engine_data
@@ -562,26 +563,33 @@ fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
     emu.arm9
         .engine_data
         .regs
-        .update_mode::<false>(old_cpsr.mode(), Mode::Undefined);
-    emu.arm9.engine_data.regs.spsr = old_cpsr.into();
+        .update_mode::<false>(prev_cpsr.mode(), Mode::Undefined);
+    emu.arm9.engine_data.regs.spsr = prev_cpsr.into();
     reg!(emu.arm9, 14) = reg!(emu.arm9, 15).wrapping_sub(4 >> THUMB as u8);
     reg!(emu.arm9, 15) = emu.arm9.engine_data.exc_vectors_start | 0x4;
     reload_pipeline::<{ StateSource::Arm }>(emu);
 }
 
-fn handle_swi<const THUMB: bool>(
-    emu: &mut Emu<Interpreter>,
-    #[cfg(feature = "debugger-hooks")] swi_num: u8,
-) {
+fn handle_swi<const THUMB: bool>(emu: &mut Emu<Interpreter>, number: u8) {
     #[cfg(feature = "debugger-hooks")]
     if let Some(swi_hook) = emu.arm9.swi_hook() {
-        if unsafe { swi_hook.get()(emu, swi_num) } {
+        if unsafe { swi_hook.get()(emu, number) } {
             emu.arm9
                 .schedule
                 .set_target_time(emu.arm9.schedule.cur_time());
             emu.arm9.stopped_by_debug_hook = true;
         }
     }
+
+    if emu.arm9.hle_bios_enabled() && emu.arm9.cp15.control().high_exc_vectors() {
+        enter_hle_swi::<true>(
+            emu,
+            number,
+            reg!(emu.arm9, 15).wrapping_sub(4 >> THUMB as u8),
+        );
+        return;
+    }
+
     if THUMB {
         prefetch_thumb::<false, false>(emu);
     } else {
@@ -592,12 +600,8 @@ fn handle_swi<const THUMB: bool>(
         emu.arm9.engine_data.data_cycles = 1;
     }
     add_bus_cycles(emu, 2);
-    let old_cpsr = emu.arm9.engine_data.regs.cpsr;
-    emu.arm9.engine_data.regs.cpsr = emu
-        .arm9
-        .engine_data
-        .regs
-        .cpsr
+    let prev_cpsr = emu.arm9.engine_data.regs.cpsr;
+    emu.arm9.engine_data.regs.cpsr = prev_cpsr
         .with_mode(Mode::Supervisor)
         .with_thumb_state(false)
         .with_irqs_disabled(true);
@@ -609,8 +613,8 @@ fn handle_swi<const THUMB: bool>(
     emu.arm9
         .engine_data
         .regs
-        .update_mode::<false>(old_cpsr.mode(), Mode::Supervisor);
-    emu.arm9.engine_data.regs.spsr = old_cpsr.into();
+        .update_mode::<false>(prev_cpsr.mode(), Mode::Supervisor);
+    emu.arm9.engine_data.regs.spsr = prev_cpsr.into();
     reg!(emu.arm9, 14) = reg!(emu.arm9, 15).wrapping_sub(4 >> THUMB as u8);
     reg!(emu.arm9, 15) = emu.arm9.engine_data.exc_vectors_start | 0x8;
     reload_pipeline::<{ StateSource::Arm }>(emu);
@@ -643,12 +647,8 @@ fn handle_prefetch_abort<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
         emu.arm9.engine_data.data_cycles = 1;
     }
     add_bus_cycles(emu, 2);
-    let old_cpsr = emu.arm9.engine_data.regs.cpsr;
-    emu.arm9.engine_data.regs.cpsr = emu
-        .arm9
-        .engine_data
-        .regs
-        .cpsr
+    let prev_cpsr = emu.arm9.engine_data.regs.cpsr;
+    emu.arm9.engine_data.regs.cpsr = prev_cpsr
         .with_mode(Mode::Abort)
         .with_thumb_state(false)
         .with_irqs_disabled(true);
@@ -660,8 +660,8 @@ fn handle_prefetch_abort<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
     emu.arm9
         .engine_data
         .regs
-        .update_mode::<false>(old_cpsr.mode(), Mode::Abort);
-    emu.arm9.engine_data.regs.spsr = old_cpsr.into();
+        .update_mode::<false>(prev_cpsr.mode(), Mode::Abort);
+    emu.arm9.engine_data.regs.spsr = prev_cpsr.into();
     reg!(emu.arm9, 14) = reg!(emu.arm9, 15).wrapping_sub((!THUMB as u32) << 2);
     reg!(emu.arm9, 15) = emu.arm9.engine_data.exc_vectors_start | 0xC;
     reload_pipeline::<{ StateSource::Arm }>(emu);
@@ -686,12 +686,8 @@ fn handle_data_abort<const THUMB: bool>(emu: &mut Emu<Interpreter>, _addr: u32) 
             emu.arm9.stopped_by_debug_hook = true;
         }
     }
-    let old_cpsr = emu.arm9.engine_data.regs.cpsr;
-    emu.arm9.engine_data.regs.cpsr = emu
-        .arm9
-        .engine_data
-        .regs
-        .cpsr
+    let prev_cpsr = emu.arm9.engine_data.regs.cpsr;
+    emu.arm9.engine_data.regs.cpsr = prev_cpsr
         .with_mode(Mode::Abort)
         .with_thumb_state(false)
         .with_irqs_disabled(true);
@@ -703,8 +699,8 @@ fn handle_data_abort<const THUMB: bool>(emu: &mut Emu<Interpreter>, _addr: u32) 
     emu.arm9
         .engine_data
         .regs
-        .update_mode::<false>(old_cpsr.mode(), Mode::Abort);
-    emu.arm9.engine_data.regs.spsr = old_cpsr.into();
+        .update_mode::<false>(prev_cpsr.mode(), Mode::Abort);
+    emu.arm9.engine_data.regs.spsr = prev_cpsr.into();
     reg!(emu.arm9, 14) = if THUMB {
         reg!(emu.arm9, 15).wrapping_add(2)
     } else {
@@ -712,6 +708,126 @@ fn handle_data_abort<const THUMB: bool>(emu: &mut Emu<Interpreter>, _addr: u32) 
     };
     reg!(emu.arm9, 15) = emu.arm9.engine_data.exc_vectors_start | 0x10;
     reload_pipeline::<{ StateSource::Arm }>(emu);
+}
+
+fn enter_hle_swi<const FROM_USER_CODE: bool>(
+    emu: &mut Emu<Interpreter>,
+    number: u8,
+    return_addr: u32,
+) {
+    let spsr = if FROM_USER_CODE {
+        emu.arm9.engine_data.regs.cpsr.into()
+    } else {
+        spsr!(emu.arm9)
+    };
+
+    if FROM_USER_CODE {
+        let prev_mode = emu.arm9.engine_data.regs.cpsr.mode();
+        emu.arm9.engine_data.regs.cpsr.set_mode(Mode::Supervisor);
+        emu.arm9
+            .engine_data
+            .regs
+            .update_mode::<false>(prev_mode, Mode::Supervisor);
+        reg!(emu.arm9, 14) = return_addr;
+        emu.arm9.engine_data.regs.spsr = spsr;
+    }
+
+    reg!(emu.arm9, 13) = reg!(emu.arm9, 13).wrapping_sub(0x10);
+    let base_addr = reg!(emu.arm9, 13);
+    for (i, value) in [
+        spsr.raw(),
+        reg!(emu.arm9, 11),
+        reg!(emu.arm9, 12),
+        reg!(emu.arm9, 14),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        bus::write_32::<CpuAccess, _>(emu, base_addr.wrapping_add((i << 2) as u32), value);
+    }
+
+    let new_cpsr = Cpsr::from_raw::<true>((spsr.raw() & 0x80) | 0x1F);
+    reg!(emu.arm9, 11) = new_cpsr.raw();
+    set_cpsr_update_control(emu, new_cpsr);
+
+    let base_addr = reg!(emu.arm9, 13).wrapping_sub(8);
+    reg!(emu.arm9, 13) = base_addr;
+    for (i, reg) in [2_u8, 14].into_iter().enumerate() {
+        bus::write_32::<CpuAccess, _>(
+            emu,
+            base_addr.wrapping_add((i << 2) as u32),
+            reg!(emu.arm9, reg),
+        );
+    }
+
+    hle_bios::arm9::handle_swi(emu, number, emu.arm9.engine_data.regs.r0_3());
+}
+
+fn return_from_hle_swi(emu: &mut Emu<Interpreter>) {
+    let base_addr = reg!(emu.arm9, 13);
+    reg!(emu.arm9, 13) = base_addr.wrapping_add(8);
+    for (i, reg) in [2_u8, 14].into_iter().enumerate() {
+        reg!(emu.arm9, reg) =
+            bus::read_32::<CpuAccess, _, false>(emu, base_addr.wrapping_add((i << 2) as u32));
+    }
+
+    let prev_cpsr = emu.arm9.engine_data.regs.cpsr;
+    emu.arm9.engine_data.regs.cpsr = prev_cpsr.with_mode(Mode::Supervisor);
+    emu.arm9
+        .engine_data
+        .regs
+        .update_mode::<false>(prev_cpsr.mode(), Mode::Supervisor);
+
+    let base_addr = reg!(emu.arm9, 13);
+    reg!(emu.arm9, 13) = base_addr.wrapping_add(0x10);
+    emu.arm9.engine_data.regs.spsr =
+        Spsr::from_raw::<true>(bus::read_32::<CpuAccess, _, false>(emu, base_addr));
+    for (i, reg) in [11_u8, 12, 14].into_iter().enumerate() {
+        reg!(emu.arm9, reg) =
+            bus::read_32::<CpuAccess, _, false>(emu, base_addr.wrapping_add(((i + 1) << 2) as u32));
+    }
+
+    reg!(emu.arm9, 15) = reg!(emu.arm9, 14);
+    restore_spsr(emu);
+    reload_pipeline::<{ StateSource::Cpsr }>(emu);
+}
+
+fn enter_hle_irq<const FROM_USER_CODE: bool>(emu: &mut Emu<Interpreter>, return_addr: u32) {
+    if FROM_USER_CODE {
+        let prev_cpsr = emu.arm9.engine_data.regs.cpsr;
+        emu.arm9.engine_data.regs.cpsr = prev_cpsr.with_mode(Mode::Irq).with_irqs_disabled(true);
+        emu.arm9.irqs.set_enabled_in_cpsr(false, ());
+        emu.arm9
+            .engine_data
+            .regs
+            .update_mode::<false>(prev_cpsr.mode(), Mode::Irq);
+        emu.arm9.engine_data.regs.spsr = prev_cpsr.into();
+    }
+
+    let base_addr = reg!(emu.arm9, 13).wrapping_sub(0x18);
+    reg!(emu.arm9, 13) = base_addr;
+    for (i, reg) in [0_u8, 1, 2, 3, 12].into_iter().enumerate() {
+        bus::write_32::<CpuAccess, _>(
+            emu,
+            base_addr.wrapping_add((i << 2) as u32),
+            reg!(emu.arm9, reg),
+        );
+    }
+    bus::write_32::<CpuAccess, _>(emu, base_addr.wrapping_add(0x14), return_addr);
+
+    reg!(emu.arm9, 0) = hle_bios::arm9::handle_irq(emu);
+}
+
+fn return_from_hle_irq(emu: &mut Emu<Interpreter>) {
+    let base_addr = reg!(emu.arm9, 13);
+    reg!(emu.arm9, 13) = base_addr.wrapping_add(0x18);
+    for (i, reg) in [0_u8, 1, 2, 3, 12, 14].into_iter().enumerate() {
+        reg!(emu.arm9, reg) =
+            bus::read_32::<CpuAccess, _, false>(emu, base_addr.wrapping_add((i << 2) as u32));
+    }
+    reg!(emu.arm9, 15) = reg!(emu.arm9, 14).wrapping_sub(4);
+    restore_spsr(emu);
+    reload_pipeline::<{ StateSource::Cpsr }>(emu);
 }
 
 #[allow(unused_variables)]
@@ -758,12 +874,12 @@ impl CoreData for EngineData {
     }
 
     fn setup_direct_boot(emu: &mut Emu<Interpreter>, entry_addr: u32) {
-        let old_mode = emu.arm9.engine_data.regs.cpsr.mode();
+        let prev_mode = emu.arm9.engine_data.regs.cpsr.mode();
         emu.arm9.engine_data.regs.cpsr.set_mode(Mode::System);
         emu.arm9
             .engine_data
             .regs
-            .update_mode::<false>(old_mode, Mode::System);
+            .update_mode::<false>(prev_mode, Mode::System);
         for reg in 0..12 {
             reg!(emu.arm9, reg) = 0;
         }
@@ -816,6 +932,19 @@ impl CoreData for EngineData {
     fn set_regs(&mut self, regs: &EngineRegs) {
         self.regs.set_from_engine_regs(regs);
         todo!("Update registers externally");
+    }
+
+    #[inline]
+    fn jump_and_link(emu: &mut Emu<Interpreter>, addr: u32, lr: u32) {
+        reg!(emu.arm9, 14) = lr;
+        reg!(emu.arm9, 15) = addr;
+        reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
+    }
+
+    #[inline]
+    fn return_from_hle_swi(emu: &mut Emu<Self::Engine>, r0_3: [u32; 4]) {
+        emu.arm9.engine_data.regs.set_r0_3(r0_3);
+        return_from_hle_swi(emu);
     }
 
     cfg_if! {
@@ -945,51 +1074,53 @@ impl Arm9Data for EngineData {
                 Arm9::run_dma_transfer(emu, channel);
             } else {
                 if emu.arm9.irqs.triggered() {
-                    // Perform an extra instruction fetch before branching, like real hardware does,
-                    // according to the ARM9E-S reference manual
-                    add_bus_cycles(emu, 2);
-                    #[cfg(feature = "interp-pipeline")]
-                    {
-                        let fetch_addr = reg!(emu.arm9, 15);
-                        let cycles = if unlikely(!can_execute(
-                            emu,
-                            fetch_addr,
-                            emu.arm9.engine_data.regs.is_in_priv_mode(),
-                        )) {
-                            1
-                        } else {
-                            bus::read_32::<CpuAccess, _, true>(emu, fetch_addr);
-                            emu.arm9.cp15.timings.get(fetch_addr).code
-                        };
-                        add_cycles(
-                            emu,
-                            cycles.max(emu.arm9.engine_data.data_cycles) as RawTimestamp,
-                        );
-                        emu.arm9.engine_data.data_cycles = 1;
+                    let prev_cpsr = emu.arm9.engine_data.regs.cpsr;
+                    let return_addr =
+                        reg!(emu.arm9, 15).wrapping_sub((!prev_cpsr.thumb_state() as u32) << 2);
+                    if emu.arm9.hle_bios_enabled() && emu.arm9.cp15.control().high_exc_vectors() {
+                        enter_hle_irq::<true>(emu, return_addr);
+                    } else {
+                        // Perform an extra instruction fetch before branching, like real hardware does,
+                        // according to the ARM9E-S reference manual
+                        add_bus_cycles(emu, 2);
+                        #[cfg(feature = "interp-pipeline")]
+                        {
+                            let fetch_addr = reg!(emu.arm9, 15);
+                            let cycles = if unlikely(!can_execute(
+                                emu,
+                                fetch_addr,
+                                emu.arm9.engine_data.regs.is_in_priv_mode(),
+                            )) {
+                                1
+                            } else {
+                                bus::read_32::<CpuAccess, _, true>(emu, fetch_addr);
+                                emu.arm9.cp15.timings.get(fetch_addr).code
+                            };
+                            add_cycles(
+                                emu,
+                                cycles.max(emu.arm9.engine_data.data_cycles) as RawTimestamp,
+                            );
+                            emu.arm9.engine_data.data_cycles = 1;
+                        }
+                        let prev_cpsr = emu.arm9.engine_data.regs.cpsr;
+                        emu.arm9.engine_data.regs.cpsr = prev_cpsr
+                            .with_mode(Mode::Irq)
+                            .with_thumb_state(false)
+                            .with_irqs_disabled(true);
+                        emu.arm9.irqs.set_enabled_in_cpsr(false, ());
+                        #[cfg(feature = "interp-pipeline-accurate-reloads")]
+                        {
+                            emu.arm9.engine_data.r15_increment = 4;
+                        }
+                        emu.arm9
+                            .engine_data
+                            .regs
+                            .update_mode::<false>(prev_cpsr.mode(), Mode::Irq);
+                        emu.arm9.engine_data.regs.spsr = prev_cpsr.into();
+                        reg!(emu.arm9, 14) = return_addr;
+                        reg!(emu.arm9, 15) = emu.arm9.engine_data.exc_vectors_start | 0x18;
+                        reload_pipeline::<{ StateSource::Arm }>(emu);
                     }
-                    let old_cpsr = emu.arm9.engine_data.regs.cpsr;
-                    emu.arm9.engine_data.regs.cpsr = emu
-                        .arm9
-                        .engine_data
-                        .regs
-                        .cpsr
-                        .with_mode(Mode::Irq)
-                        .with_thumb_state(false)
-                        .with_irqs_disabled(true);
-                    emu.arm9.irqs.set_enabled_in_cpsr(false, ());
-                    #[cfg(feature = "interp-pipeline-accurate-reloads")]
-                    {
-                        emu.arm9.engine_data.r15_increment = 4;
-                    }
-                    emu.arm9
-                        .engine_data
-                        .regs
-                        .update_mode::<false>(old_cpsr.mode(), Mode::Irq);
-                    emu.arm9.engine_data.regs.spsr = old_cpsr.into();
-                    reg!(emu.arm9, 14) =
-                        reg!(emu.arm9, 15).wrapping_sub((!old_cpsr.thumb_state() as u32) << 2);
-                    reg!(emu.arm9, 15) = emu.arm9.engine_data.exc_vectors_start | 0x18;
-                    reload_pipeline::<{ StateSource::Arm }>(emu);
                 } else if emu.arm9.irqs.halted() {
                     emu.arm9
                         .schedule

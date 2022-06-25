@@ -1,7 +1,11 @@
-use super::super::{super::Interpreter, handle_swi, handle_undefined, set_cpsr_update_control};
-#[cfg(not(feature = "interp-pipeline"))]
-use crate::cpu::{arm7::bus, bus::CpuAccess};
-use crate::{cpu::psr::Cpsr, emu::Emu};
+use super::super::{
+    super::Interpreter, enter_hle_irq, enter_hle_swi, handle_swi, handle_undefined,
+    return_from_hle_irq, set_cpsr_update_control,
+};
+use crate::{
+    cpu::{arm7::bus, bus::CpuAccess, hle_bios, psr::Cpsr},
+    emu::Emu,
+};
 use core::intrinsics::unlikely;
 
 pub fn nop(emu: &mut Emu<Interpreter>, _instr: u32) {
@@ -10,7 +14,7 @@ pub fn nop(emu: &mut Emu<Interpreter>, _instr: u32) {
 
 pub fn mrs<const SPSR: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let result = if SPSR {
-        spsr!(emu.arm7)
+        spsr!(emu.arm7).raw()
     } else {
         emu.arm7.engine_data.regs.cpsr.raw()
     };
@@ -53,17 +57,42 @@ pub fn msr<const IMM: bool, const SPSR: bool>(emu: &mut Emu<Interpreter>, instr:
     inc_r15!(emu.arm7, 4);
 }
 
-pub fn swi(emu: &mut Emu<Interpreter>, _instr: u32) {
-    handle_swi::<false>(
-        emu,
-        #[cfg(feature = "debugger-hooks")]
-        {
-            (_instr >> 16) as u8
-        },
-    );
+pub fn swi(emu: &mut Emu<Interpreter>, instr: u32) {
+    handle_swi::<false>(emu, (instr >> 16) as u8);
 }
 
-pub fn undefined(emu: &mut Emu<Interpreter>, _instr: u32) {
+pub fn undefined<const MAYBE_HLE_BIOS_CALL: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
+    if MAYBE_HLE_BIOS_CALL
+        && instr & hle_bios::arm7::BIOS_CALL_INSTR_MASK == hle_bios::arm7::BIOS_CALL_INSTR
+        && emu.arm7.hle_bios_enabled()
+    {
+        let function = instr as u8 & 0xF;
+        match function {
+            0 => {
+                hle_bios::arm7::resume_intr_wait(emu);
+                return;
+            }
+            1 => {
+                enter_hle_irq::<false>(emu, reg!(emu.arm7, 14));
+                return;
+            }
+            2 => {
+                return_from_hle_irq(emu);
+                return;
+            }
+            3 => {
+                hle_bios::arm7::handle_undefined_instr(emu);
+                return;
+            }
+            5 => {
+                let return_addr = reg!(emu.arm7, 14);
+                let number = bus::read_8::<CpuAccess, _>(emu, return_addr.wrapping_sub(2));
+                enter_hle_swi::<false>(emu, number, return_addr);
+                return;
+            }
+            _ => {}
+        }
+    }
     // TODO: Check timing, the ARM7TDMI manual is unclear
     handle_undefined::<false>(emu);
 }

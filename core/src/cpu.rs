@@ -13,6 +13,7 @@ pub mod arm9;
 pub mod disasm;
 pub mod dma;
 mod engines_common;
+mod hle_bios;
 pub mod interpreter;
 #[cfg(feature = "jit")]
 pub mod jit;
@@ -63,6 +64,9 @@ pub trait CoreData {
     fn cpsr(&self) -> Cpsr;
     fn regs(&self) -> Regs;
     fn set_regs(&mut self, values: &Regs);
+
+    fn jump_and_link(emu: &mut Emu<Self::Engine>, addr: u32, lr: u32);
+    fn return_from_hle_swi(emu: &mut Emu<Self::Engine>, r0_3: [u32; 4]);
 
     cfg_if! {
         if #[cfg(any(feature = "debugger-hooks", doc))] {

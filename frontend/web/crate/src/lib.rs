@@ -96,6 +96,8 @@ pub struct EmuState {
     logger: slog::Logger,
     model: Model,
     emu: Option<Emu<Interpreter>>,
+    arm7_bios: Option<Box<Bytes<{ arm7::BIOS_SIZE }>>>,
+    arm9_bios: Option<Box<Bytes<{ arm9::BIOS_SIZE }>>>,
 }
 
 #[wasm_bindgen]
@@ -104,8 +106,6 @@ impl EmuState {
         let emu = self.emu.take().unwrap();
 
         let mut emu_builder = dust_core::emu::Builder::new(
-            emu.arm7.into_bios().into(),
-            emu.arm9.into_bios().into(),
             emu.spi.firmware.reset(),
             match emu.ds_slot.rom {
                 DsSlotRom::Empty(device) => DsSlotRom::Empty(device.reset()),
@@ -124,10 +124,13 @@ impl EmuState {
             self.logger.clone(),
         );
 
+        emu_builder.arm7_bios = self.arm7_bios.clone();
+        emu_builder.arm9_bios = self.arm9_bios.clone();
+
         emu_builder.model = self.model;
         emu_builder.direct_boot = true;
 
-        self.emu = Some(emu_builder.build(Interpreter));
+        self.emu = Some(emu_builder.build(Interpreter).unwrap());
     }
 
     pub fn load_save(&mut self, ram_arr: Uint8Array) {
@@ -170,8 +173,8 @@ impl EmuState {
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn create_emu_state(
-    arm7_bios_arr: Uint8Array,
-    arm9_bios_arr: Uint8Array,
+    arm7_bios_arr: Option<Uint8Array>,
+    arm9_bios_arr: Option<Uint8Array>,
     firmware_arr: Uint8Array,
     rom_arr: Uint8Array,
     save_contents_arr: Option<Uint8Array>,
@@ -185,11 +188,17 @@ pub fn create_emu_state(
     #[cfg(feature = "log")]
     let logger = slog::Logger::root(console_log::Console::new(), slog::o!());
 
-    let mut arm7_bios = zeroed_box::<Bytes<{ arm7::BIOS_SIZE }>>();
-    arm7_bios_arr.copy_to(&mut arm7_bios[..]);
+    let arm7_bios = arm7_bios_arr.map(|arr| {
+        let mut buf = zeroed_box::<Bytes<{ arm7::BIOS_SIZE }>>();
+        arr.copy_to(&mut buf[..]);
+        buf
+    });
 
-    let mut arm9_bios = zeroed_box::<Bytes<{ arm9::BIOS_BUFFER_SIZE }>>();
-    arm9_bios_arr.copy_to(&mut arm9_bios[..arm9::BIOS_SIZE]);
+    let arm9_bios = arm9_bios_arr.map(|arr| {
+        let mut buf = zeroed_box::<Bytes<{ arm9::BIOS_SIZE }>>();
+        arr.copy_to(&mut buf[..]);
+        buf
+    });
 
     let mut firmware = BoxedByteSlice::new_zeroed(firmware_arr.length() as usize);
     firmware_arr.copy_to(&mut firmware[..]);
@@ -208,7 +217,7 @@ pub fn create_emu_state(
     let (ds_slot_rom, ds_slot_spi) = {
         let rom = ds_slot::rom::normal::Normal::new(
             rom,
-            &arm7_bios,
+            arm7_bios.as_deref(),
             #[cfg(feature = "log")]
             logger.new(slog::o!("ds_rom" => "normal")),
         )
@@ -340,8 +349,6 @@ pub fn create_emu_state(
     };
 
     let mut emu_builder = dust_core::emu::Builder::new(
-        arm7_bios,
-        arm9_bios,
         Flash::new(
             SaveContents::Existing(firmware),
             firmware::id_for_model(model),
@@ -358,15 +365,20 @@ pub fn create_emu_state(
         logger.clone(),
     );
 
+    emu_builder.arm7_bios = arm7_bios.clone();
+    emu_builder.arm9_bios = arm9_bios.clone();
+
     emu_builder.model = model;
     emu_builder.direct_boot = true;
 
-    let emu = emu_builder.build(Interpreter);
+    let emu = emu_builder.build(Interpreter).unwrap();
 
     EmuState {
         #[cfg(feature = "log")]
         logger,
         model,
         emu: Some(emu),
+        arm7_bios,
+        arm9_bios,
     }
 }

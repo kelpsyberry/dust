@@ -1,17 +1,23 @@
 use super::super::{
-    add_bus_cycles, add_cycles, apply_reg_interlock_1, handle_prefetch_abort, handle_swi,
-    handle_undefined, prefetch_arm, set_cpsr_update_control, write_reg_clear_interlock_ab,
-    write_reg_interlock,
+    add_bus_cycles, add_cycles, apply_reg_interlock_1, enter_hle_irq, enter_hle_swi,
+    handle_prefetch_abort, handle_swi, handle_undefined, prefetch_arm, return_from_hle_irq,
+    set_cpsr_update_control, write_reg_clear_interlock_ab, write_reg_interlock,
 };
 use crate::{
-    cpu::{arm9::Arm9, interpreter::Interpreter, psr::Cpsr},
+    cpu::{
+        arm9::{bus, Arm9},
+        bus::CpuAccess,
+        hle_bios,
+        interpreter::Interpreter,
+        psr::Cpsr,
+    },
     emu::Emu,
 };
 use core::intrinsics::{likely, unlikely};
 
 pub fn mrs<const SPSR: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
     let result = if SPSR {
-        spsr!(emu.arm9)
+        spsr!(emu.arm9).raw()
     } else {
         emu.arm9.engine_data.regs.cpsr.raw()
     };
@@ -60,17 +66,42 @@ pub fn bkpt(emu: &mut Emu<Interpreter>, _instr: u32) {
     handle_prefetch_abort::<false>(emu);
 }
 
-pub fn swi(emu: &mut Emu<Interpreter>, _instr: u32) {
-    handle_swi::<false>(
-        emu,
-        #[cfg(feature = "debugger-hooks")]
-        {
-            (_instr >> 16) as u8
-        },
-    );
+pub fn swi(emu: &mut Emu<Interpreter>, instr: u32) {
+    handle_swi::<false>(emu, (instr >> 16) as u8);
 }
 
-pub fn undefined(emu: &mut Emu<Interpreter>, _instr: u32) {
+pub fn undefined<const MAYBE_HLE_BIOS_SWI: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
+    if MAYBE_HLE_BIOS_SWI
+        && instr & hle_bios::arm9::BIOS_CALL_INSTR_MASK == hle_bios::arm9::BIOS_CALL_INSTR
+        && emu.arm9.hle_bios_enabled()
+    {
+        let function = instr as u8 & 0xF;
+        match function {
+            0 => {
+                hle_bios::arm9::resume_intr_wait(emu);
+                return;
+            }
+            1 => {
+                enter_hle_irq::<false>(emu, reg!(emu.arm9, 14));
+                return;
+            }
+            2 => {
+                return_from_hle_irq(emu);
+                return;
+            }
+            3 => {
+                hle_bios::arm9::handle_undefined_instr(emu);
+                return;
+            }
+            5 => {
+                let return_addr = reg!(emu.arm9, 14);
+                let number = bus::read_8::<CpuAccess, _>(emu, return_addr.wrapping_sub(2));
+                enter_hle_swi::<false>(emu, number, return_addr);
+                return;
+            }
+            _ => {}
+        }
+    }
     handle_undefined::<false>(emu);
 }
 

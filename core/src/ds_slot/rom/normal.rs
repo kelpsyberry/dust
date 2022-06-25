@@ -24,7 +24,7 @@ pub struct Normal {
     rom: BoxedByteSlice,
     rom_mask: u32,
     chip_id: u32,
-    key_buf: Box<key1::KeyBuffer>, // Always at level 2
+    key_buf: Option<Box<key1::KeyBuffer>>, // Always at level 2
     stage: Stage,
 }
 
@@ -34,7 +34,7 @@ impl Normal {
     ///   size is not a power of two.
     pub fn new(
         rom: BoxedByteSlice,
-        arm7_bios: &Bytes<{ arm7::BIOS_SIZE }>,
+        arm7_bios: Option<&Bytes<{ arm7::BIOS_SIZE }>>,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Result<Self, CreationError> {
         if !rom.len().is_power_of_two() {
@@ -54,7 +54,7 @@ impl Normal {
             rom,
             rom_mask,
             chip_id,
-            key_buf: Box::new(key1::KeyBuffer::new::<2>(game_code, arm7_bios)),
+            key_buf: arm7_bios.map(|bios| Box::new(key1::KeyBuffer::new::<2>(game_code, bios))),
             stage: Stage::Initial,
         })
     }
@@ -85,11 +85,12 @@ impl super::RomDevice for Normal {
         if direct_boot {
             self.stage = Stage::Key2;
         } else {
+            let key_buf = self.key_buf.as_ref().unwrap();
             let arm9_code_start = self.rom.read_le::<u32>(0x020) as usize;
             let mut secure_area = ByteMutSlice::new(&mut self.rom[arm9_code_start..]);
             if secure_area.read_le::<u32>(0) == 0xE7FF_DEFF {
                 secure_area[..8].copy_from_slice(b"encryObj");
-                let mut level_3_key_buf = self.key_buf.clone();
+                let mut level_3_key_buf = key_buf.clone();
                 level_3_key_buf.make_level_3::<2>();
                 for i in (0..0x800).step_by(8) {
                     let res = level_3_key_buf
@@ -97,9 +98,7 @@ impl super::RomDevice for Normal {
                     secure_area.write_le(i, res[0]);
                     secure_area.write_le(i + 4, res[1]);
                 }
-                let res = self
-                    .key_buf
-                    .encrypt_64_bit([secure_area.read_le(0), secure_area.read_le(4)]);
+                let res = key_buf.encrypt_64_bit([secure_area.read_le(0), secure_area.read_le(4)]);
                 secure_area.write_le(0, res[0]);
                 secure_area.write_le(4, res[1]);
             }
@@ -167,6 +166,8 @@ impl super::RomDevice for Normal {
                 {
                     let res = self
                         .key_buf
+                        .as_ref()
+                        .unwrap()
                         .decrypt_64_bit([cmd.read_be(4), cmd.read_be(0)]);
                     cmd.write_be(4, res[0]);
                     cmd.write_be(0, res[1]);

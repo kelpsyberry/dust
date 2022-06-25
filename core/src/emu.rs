@@ -107,8 +107,6 @@ pub struct Builder {
     #[cfg(feature = "log")]
     logger: slog::Logger,
 
-    pub arm7_bios: Box<Bytes<{ arm7::BIOS_SIZE }>>,
-    pub arm9_bios: Box<Bytes<{ arm9::BIOS_BUFFER_SIZE }>>,
     pub firmware: Flash,
     pub ds_rom: ds_slot::rom::Rom,
     pub ds_spi: ds_slot::spi::Spi,
@@ -116,6 +114,8 @@ pub struct Builder {
     pub rtc_backend: Box<dyn rtc::Backend>,
     pub renderer_3d: Box<dyn gpu::engine_3d::Renderer>,
 
+    pub arm7_bios: Option<Box<Bytes<{ arm7::BIOS_SIZE }>>>,
+    pub arm9_bios: Option<Box<Bytes<{ arm9::BIOS_SIZE }>>>,
     pub model: Model,
     pub is_debugger: bool,
     pub direct_boot: bool,
@@ -132,8 +132,6 @@ impl Builder {
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        arm7_bios: Box<Bytes<{ arm7::BIOS_SIZE }>>,
-        arm9_bios: Box<Bytes<{ arm9::BIOS_BUFFER_SIZE }>>,
         firmware: Flash,
         ds_rom: ds_slot::rom::Rom,
         ds_spi: ds_slot::spi::Spi,
@@ -146,8 +144,6 @@ impl Builder {
             #[cfg(feature = "log")]
             logger,
 
-            arm7_bios,
-            arm9_bios,
             firmware,
             ds_rom,
             ds_spi,
@@ -155,6 +151,8 @@ impl Builder {
             rtc_backend,
             renderer_3d,
 
+            arm7_bios: None,
+            arm9_bios: None,
             model: Model::Ds,
             is_debugger: false,
             direct_boot: true,
@@ -168,17 +166,25 @@ impl Builder {
         }
     }
 
-    pub fn build<E: cpu::Engine>(self, engine: E) -> Emu<E> {
+    pub fn build<E: cpu::Engine>(self, engine: E) -> Result<Emu<E>, ()> {
+        if (self.arm7_bios.is_none() || self.arm9_bios.is_none()) && !self.direct_boot {
+            return Err(());
+        }
+
         let (global_engine_data, arm7_engine_data, arm9_engine_data) = engine.into_data();
         let mut arm7 = Arm7::new(
             arm7_engine_data,
-            self.arm7_bios.into(),
+            self.arm7_bios.map(Into::into),
             #[cfg(feature = "log")]
             self.logger.new(slog::o!("cpu" => "arm7")),
         );
         let mut arm9 = Arm9::new(
             arm9_engine_data,
-            self.arm9_bios.into(),
+            self.arm9_bios.map(|bios| {
+                let buf = OwnedBytesCellPtr::new_zeroed();
+                (unsafe { buf.as_byte_mut_slice() })[..arm9::BIOS_SIZE].copy_from_slice(&bios[..]);
+                buf
+            }),
             #[cfg(feature = "log")]
             self.logger.new(slog::o!("cpu" => "arm9")),
         );
@@ -249,7 +255,7 @@ impl Builder {
         if self.direct_boot {
             emu.setup_direct_boot();
         }
-        emu
+        Ok(emu)
     }
 }
 

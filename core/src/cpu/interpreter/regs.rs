@@ -44,6 +44,14 @@ impl Regs {
         spsr_und: Spsr::from_raw::<false>(0),
     };
 
+    pub(super) fn r0_3(&self) -> [u32; 4] {
+        [self.cur[0], self.cur[1], self.cur[2], self.cur[3]]
+    }
+
+    pub(super) fn set_r0_3(&mut self, values: [u32; 4]) {
+        self.cur[..4].copy_from_slice(&values);
+    }
+
     pub(super) fn to_engine_regs(&self) -> EngineRegs {
         EngineRegs {
             gprs: self.cur,
@@ -102,17 +110,17 @@ impl Regs {
 
     pub(super) fn update_mode<const REG_BANK_ONLY: bool>(
         &mut self,
-        old_mode: Mode,
+        prev_mode: Mode,
         new_mode: Mode,
     ) {
-        if new_mode == old_mode {
+        if new_mode == prev_mode {
             return;
         }
         if !REG_BANK_ONLY {
             self.is_in_priv_mode = new_mode.is_privileged();
             self.is_in_exc_mode = new_mode.is_exception();
         }
-        match old_mode {
+        match prev_mode {
             Mode::Fiq => {
                 self.r8_14_fiq[0] = self.cur[8];
                 self.r8_14_fiq[1] = self.cur[9];

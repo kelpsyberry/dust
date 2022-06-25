@@ -9,7 +9,7 @@ pub mod dma;
 use super::debug;
 use super::{psr::Cpsr, timers::Timers, CoreData, Engine, Regs};
 use crate::{
-    cpu,
+    cpu::{self, hle_bios},
     emu::{swram::Swram, Emu, LocalExMemControl},
     utils::{Bytes, OwnedBytesCellPtr},
 };
@@ -23,6 +23,7 @@ pub struct Arm7<E: Engine> {
     #[cfg(feature = "debugger-hooks")]
     pub(super) debug: debug::Arm7Data<E>,
     pub engine_data: E::Arm7Data,
+    pub(super) hle_bios: hle_bios::arm7::State,
     bios: OwnedBytesCellPtr<BIOS_SIZE>,
     pub wram: OwnedBytesCellPtr<0x1_0000>,
     pub schedule: Schedule,
@@ -45,7 +46,7 @@ pub struct Arm7<E: Engine> {
 impl<E: Engine> Arm7<E> {
     pub(crate) fn new(
         engine_data: E::Arm7Data,
-        bios: OwnedBytesCellPtr<BIOS_SIZE>,
+        bios: Option<OwnedBytesCellPtr<BIOS_SIZE>>,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Self {
         let mut schedule = Schedule::new();
@@ -57,7 +58,12 @@ impl<E: Engine> Arm7<E> {
             #[cfg(feature = "debugger-hooks")]
             debug: debug::Arm7Data::new(),
             engine_data,
-            bios,
+            hle_bios: hle_bios::arm7::State::new(bios.is_none()),
+            bios: bios.unwrap_or_else(|| {
+                let buf = OwnedBytesCellPtr::new_zeroed();
+                unsafe { buf.as_byte_mut_slice() }.copy_from_slice(&hle_bios::arm7::BIOS);
+                buf
+            }),
             wram: OwnedBytesCellPtr::new_zeroed(),
             schedule,
             bus_ptrs: bus::ptrs::Ptrs::new_boxed(),
@@ -295,13 +301,13 @@ impl<E: Engine> Arm7<E> {
     }
 
     #[inline]
-    pub fn bios(&self) -> &Bytes<BIOS_SIZE> {
-        unsafe { &*self.bios.as_bytes_ptr() }
+    pub fn hle_bios_enabled(&self) -> bool {
+        self.hle_bios.enabled
     }
 
     #[inline]
-    pub fn into_bios(self) -> OwnedBytesCellPtr<BIOS_SIZE> {
-        self.bios
+    pub fn bios(&self) -> &Bytes<BIOS_SIZE> {
+        unsafe { &*self.bios.as_bytes_ptr() }
     }
 
     #[inline]
@@ -365,7 +371,7 @@ impl<E: Engine> Arm7<E> {
             emu.arm7.bus_ptrs.map_range(
                 bus::ptrs::mask::ALL,
                 emu.main_mem().as_ptr(),
-                0x40_0000,
+                emu.main_mem_mask().get() as usize + 1,
                 (0x0200_0000, 0x02FF_FFFF),
             );
             emu.arm7.bus_ptrs.map_range(

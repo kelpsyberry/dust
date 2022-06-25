@@ -96,12 +96,10 @@ export class Ui {
                     }
                     case FileId.Bios7: {
                         this.bios7 = new Uint8Array(buffer);
-                        this.toggleRomEnabledIfSystemFilesLoaded();
                         break;
                     }
                     case FileId.Bios9: {
                         this.bios9 = new Uint8Array(buffer);
-                        this.toggleRomEnabledIfSystemFilesLoaded();
                         break;
                     }
                     case FileId.Firmware: {
@@ -212,7 +210,7 @@ export class Ui {
     }
 
     toggleRomEnabledIfSystemFilesLoaded() {
-        if (this.files?.gameDb && this.bios7 && this.bios9 && this.firmware) {
+        if (this.files?.gameDb && this.firmware) {
             this.files.toggleEnabled(FileId.Rom, true);
         }
     }
@@ -263,8 +261,8 @@ export class Ui {
             {
                 type: UiToEmu.MessageType.Start,
                 rom: this.nextRomBuffer!,
-                bios7: this.bios7!,
-                bios9: this.bios9!,
+                bios7: this.bios7,
+                bios9: this.bios9,
                 firmware: this.firmware!,
                 saveType,
                 hasIR: (gameCode & 0xff) === 0x49,

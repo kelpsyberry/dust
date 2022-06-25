@@ -57,8 +57,8 @@ export namespace UiToEmu {
     export interface StartMessage {
         type: MessageType.Start;
         rom: Uint8Array;
-        bios7: Uint8Array;
-        bios9: Uint8Array;
+        bios7: Uint8Array | undefined;
+        bios9: Uint8Array | undefined;
         firmware: Uint8Array;
         saveType: SaveType | undefined;
         hasIR: boolean;

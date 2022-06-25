@@ -32,6 +32,7 @@ mod interpreter {
             filename
         ))?);
         writeln!(file, "[")?;
+        let mut key = 0_u16;
         for chunk in table.chunks(8) {
             for instr in chunk.iter() {
                 match *instr {
@@ -187,10 +188,13 @@ mod interpreter {
                     Instr::Mcr => write!(file, "mcr"),
                     Instr::Mrc => write!(file, "mrc"),
                     Instr::Swi => write!(file, "swi"),
-                    Instr::Undefined { .. } => write!(file, "undefined"),
+                    Instr::Undefined { .. } => {
+                        write!(file, "undefined::<{}>", !is_arm9 && key == 0x605)
+                    }
                     _ => unreachable!(),
                 }?;
                 write!(file, ",")?;
+                key += 1;
             }
             writeln!(file)?;
         }
@@ -208,6 +212,7 @@ mod interpreter {
             filename
         ))?);
         writeln!(file, "[")?;
+        let mut key = 0_u16;
         for chunk in table.chunks(8) {
             for instr in chunk.iter() {
                 match *instr {
@@ -220,10 +225,11 @@ mod interpreter {
                     UncondInstr::Cdp => write!(file, "cdp"),
                     UncondInstr::Mcr => write!(file, "mcr"),
                     UncondInstr::Mrc => write!(file, "mrc"),
-                    UncondInstr::Undefined => write!(file, "undefined"),
+                    UncondInstr::Undefined => write!(file, "undefined::<{}>", key == 0xF05),
                     _ => unreachable!(),
                 }?;
                 write!(file, ",")?;
+                key += 1;
             }
             writeln!(file)?;
         }

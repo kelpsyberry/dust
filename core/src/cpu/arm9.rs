@@ -14,7 +14,7 @@ use super::{psr::Cpsr, timers::Timers, CoreData, Engine, Regs};
 #[cfg(feature = "debugger-hooks")]
 use crate::cpu::Arm9Data;
 use crate::{
-    cpu,
+    cpu::{self, hle_bios},
     emu::{swram::Swram, Emu, LocalExMemControl},
     utils::{bitfield_debug, Bytes, OwnedBytesCellPtr},
 };
@@ -40,7 +40,8 @@ pub struct Arm9<E: Engine> {
     #[cfg(feature = "debugger-hooks")]
     pub(super) debug: debug::Arm9Data<E>,
     pub engine_data: E::Arm9Data,
-    pub bios: OwnedBytesCellPtr<BIOS_BUFFER_SIZE>,
+    pub(super) hle_bios: hle_bios::arm9::State,
+    bios: OwnedBytesCellPtr<BIOS_BUFFER_SIZE>,
     pub schedule: Schedule,
     bus_ptrs: Box<bus::ptrs::Ptrs>,
     bus_timings: Box<bus::timings::Timings>,
@@ -62,7 +63,7 @@ pub struct Arm9<E: Engine> {
 impl<E: Engine> Arm9<E> {
     pub(crate) fn new(
         engine_data: E::Arm9Data,
-        bios: OwnedBytesCellPtr<BIOS_BUFFER_SIZE>,
+        bios: Option<OwnedBytesCellPtr<BIOS_BUFFER_SIZE>>,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Self {
         let mut schedule = Schedule::new();
@@ -75,7 +76,13 @@ impl<E: Engine> Arm9<E> {
             #[cfg(feature = "debugger-hooks")]
             debug: debug::Arm9Data::new(),
             engine_data,
-            bios,
+            hle_bios: hle_bios::arm9::State::new(bios.is_none()),
+            bios: bios.unwrap_or_else(|| {
+                let buf = OwnedBytesCellPtr::new_zeroed();
+                (unsafe { buf.as_byte_mut_slice() })[..hle_bios::arm9::BIOS.len()]
+                    .copy_from_slice(&hle_bios::arm9::BIOS);
+                buf
+            }),
             schedule,
             bus_ptrs: bus::ptrs::Ptrs::new_boxed(),
             bus_timings: bus::timings::Timings::new_boxed(),
@@ -368,13 +375,13 @@ impl<E: Engine> Arm9<E> {
     }
 
     #[inline]
-    pub fn bios(&self) -> &Bytes<BIOS_BUFFER_SIZE> {
-        unsafe { &*self.bios.as_bytes_ptr() }
+    pub fn hle_bios_enabled(&self) -> bool {
+        self.hle_bios.enabled
     }
 
     #[inline]
-    pub fn into_bios(self) -> OwnedBytesCellPtr<BIOS_BUFFER_SIZE> {
-        self.bios
+    pub fn bios(&self) -> &Bytes<BIOS_BUFFER_SIZE> {
+        unsafe { &*self.bios.as_bytes_ptr() }
     }
 
     #[inline]
@@ -429,7 +436,7 @@ impl<E: Engine> Arm9<E> {
             emu.arm9.bus_ptrs.map_range(
                 bus::ptrs::mask::ALL,
                 emu.main_mem().as_ptr(),
-                0x40_0000,
+                emu.main_mem_mask().get() as usize + 1,
                 (0x0200_0000, 0x02FF_FFFF),
             );
             emu.gpu.vram.setup_arm9_bus_ptrs(&mut emu.arm9.bus_ptrs);
