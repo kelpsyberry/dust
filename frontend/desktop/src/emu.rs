@@ -257,7 +257,12 @@ pub(super) fn main(
 
     let mut emu_builder = dust_core::emu::Builder::new(
         Flash::new(
-            SaveContents::Existing(config.sys_files.firmware),
+            SaveContents::Existing(
+                config
+                    .sys_files
+                    .firmware
+                    .unwrap_or_else(|| firmware::default(config.model)),
+            ),
             firmware::id_for_model(config.model),
             #[cfg(feature = "log")]
             logger.new(slog::o!("fw" => "")),

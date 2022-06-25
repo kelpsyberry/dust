@@ -104,7 +104,6 @@ export class Ui {
                     }
                     case FileId.Firmware: {
                         this.firmware = new Uint8Array(buffer);
-                        this.toggleRomEnabledIfSystemFilesLoaded();
                         break;
                     }
                 }
@@ -210,7 +209,7 @@ export class Ui {
     }
 
     toggleRomEnabledIfSystemFilesLoaded() {
-        if (this.files?.gameDb && this.firmware) {
+        if (this.files?.gameDb) {
             this.files.toggleEnabled(FileId.Rom, true);
         }
     }
@@ -263,7 +262,7 @@ export class Ui {
                 rom: this.nextRomBuffer!,
                 bios7: this.bios7,
                 bios9: this.bios9,
-                firmware: this.firmware!,
+                firmware: this.firmware,
                 saveType,
                 hasIR: (gameCode & 0xff) === 0x49,
             },

@@ -316,7 +316,7 @@ impl<T> GameOverridable<T> {
 pub struct SysFiles {
     pub arm7_bios: Option<Box<Bytes<{ arm7::BIOS_SIZE }>>>,
     pub arm9_bios: Option<Box<Bytes<{ arm9::BIOS_SIZE }>>>,
-    pub firmware: BoxedByteSlice,
+    pub firmware: Option<BoxedByteSlice>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -354,7 +354,9 @@ impl fmt::Display for LaunchConfigWarning {
                         firmware::VerificationRegion::Ap2 => "Access Point 2",
                         firmware::VerificationRegion::Ap3 => "Access Point 3",
                         firmware::VerificationRegion::User0 => "User 0",
+                        firmware::VerificationRegion::User0IQue => "User 0 (iQue/DSi)",
                         firmware::VerificationRegion::User1 => "User 1",
+                        firmware::VerificationRegion::User1IQue => "User 1 (iQue/DSi)",
                     },
                     expected,
                     calculated
@@ -373,7 +375,6 @@ pub enum LaunchConfigError {
         expected: usize,
         got: u64,
     },
-    UnknownModel(firmware::ModelDetectionError),
 }
 
 impl fmt::Display for LaunchConfigError {
@@ -400,15 +401,6 @@ impl fmt::Display for LaunchConfigError {
                     f,
                     "Invalid {} size: expected {} bytes, got {} bytes",
                     SYS_FILE_NAMES[*file as usize], expected, got
-                )
-            }
-            LaunchConfigError::UnknownModel(_) => {
-                write!(
-                    f,
-                    concat!(
-                        "Couldn't detect DS model from the provided firmware, please specify one ",
-                        "directly",
-                    )
                 )
             }
         }
@@ -442,7 +434,7 @@ pub struct GameLaunchConfig {
 fn read_sys_files(
     paths: SysPaths,
     read_bios: bool,
-    bios_required: bool,
+    sys_files_required: bool,
     errors: &mut Vec<LaunchConfigError>,
 ) -> Option<SysFiles> {
     macro_rules! open_file {
@@ -471,7 +463,7 @@ fn read_sys_files(
     }
     let (arm7_bios, arm9_bios, firmware) = (
         if read_bios {
-            open_file!(arm7_bios, Arm7Bios, bios_required, |file| {
+            open_file!(arm7_bios, Arm7Bios, sys_files_required, |file| {
                 let len = file.metadata()?.len();
                 if len == arm7::BIOS_SIZE as u64 {
                     let mut buf = zeroed_box::<Bytes<{ arm7::BIOS_SIZE }>>();
@@ -490,7 +482,7 @@ fn read_sys_files(
             None
         },
         if read_bios {
-            open_file!(arm9_bios, Arm9Bios, bios_required, |file| {
+            open_file!(arm9_bios, Arm9Bios, sys_files_required, |file| {
                 let len = file.metadata()?.len();
                 if len == arm9::BIOS_SIZE as u64 {
                     let mut buf = zeroed_box::<Bytes<{ arm9::BIOS_SIZE }>>();
@@ -508,7 +500,7 @@ fn read_sys_files(
         } else {
             None
         },
-        open_file!(firmware, Firmware, true, |file| {
+        open_file!(firmware, Firmware, sys_files_required, |file| {
             let len = file.metadata()?.len() as usize;
             let mut buf = BoxedByteSlice::new_zeroed(len);
             file.read_exact(&mut buf[..])?;
@@ -521,13 +513,13 @@ fn read_sys_files(
     Some(SysFiles {
         arm7_bios,
         arm9_bios,
-        firmware: firmware.unwrap(),
+        firmware,
     })
 }
 
 fn common_launch_config(
     global_config: &Global,
-    bios_required: bool,
+    sys_files_required: bool,
     game_config: Option<&Game>,
 ) -> Result<(CommonLaunchConfig, Vec<LaunchConfigWarning>), Vec<LaunchConfigError>> {
     macro_rules! plain_setting {
@@ -576,7 +568,7 @@ fn common_launch_config(
     let mut warnings = Vec::new();
     let mut errors = Vec::new();
 
-    let prefer_hle_bios = !bios_required && plain_setting!(prefer_hle_bios);
+    let prefer_hle_bios = !sys_files_required && plain_setting!(prefer_hle_bios);
 
     let sys_files = read_sys_files(
         SysPaths {
@@ -585,30 +577,24 @@ fn common_launch_config(
             firmware: sys_path!(firmware, "firmware.bin"),
         },
         !prefer_hle_bios,
-        bios_required,
+        sys_files_required,
         &mut errors,
     );
 
-    let mut model = None;
-    if let Some(firmware) = sys_files.as_ref().map(|files| &files.firmware) {
-        model = match plain_setting!(model) {
-            ModelConfig::Auto => match firmware::detect_model(firmware.as_byte_slice()) {
-                Ok(model) => Some(model),
-                Err(error) => {
-                    errors.push(LaunchConfigError::UnknownModel(error));
-                    None
-                }
-            },
-            ModelConfig::Ds => Some(Model::Ds),
-            ModelConfig::Lite => Some(Model::Lite),
-            ModelConfig::Ique => Some(Model::Ique),
-            ModelConfig::IqueLite => Some(Model::IqueLite),
-            ModelConfig::Dsi => Some(Model::Dsi),
-        };
-        if let Some(model) = model {
-            if let Err(error) = firmware::verify(firmware.as_byte_slice(), model) {
-                warnings.push(LaunchConfigWarning::InvalidFirmware(error));
-            }
+    let firmware = sys_files.as_ref().and_then(|files| files.firmware.as_ref());
+    let model = match plain_setting!(model) {
+        ModelConfig::Auto => firmware
+            .and_then(|firmware| firmware::detect_model(firmware.as_byte_slice()).ok())
+            .unwrap_or_default(),
+        ModelConfig::Ds => Model::Ds,
+        ModelConfig::Lite => Model::Lite,
+        ModelConfig::Ique => Model::Ique,
+        ModelConfig::IqueLite => Model::IqueLite,
+        ModelConfig::Dsi => Model::Dsi,
+    };
+    if let Some(firmware) = firmware {
+        if let Err(error) = firmware::verify(firmware.as_byte_slice(), model) {
+            warnings.push(LaunchConfigWarning::InvalidFirmware(error));
         }
     }
 
@@ -635,7 +621,7 @@ fn common_launch_config(
         CommonLaunchConfig {
             sys_files: sys_files.unwrap(),
             skip_firmware,
-            model: model.unwrap(),
+            model,
             limit_framerate,
             screen_rotation,
             sync_to_audio,

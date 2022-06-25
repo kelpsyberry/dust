@@ -57,6 +57,12 @@ pub enum Model {
     Dsi,
 }
 
+impl Default for Model {
+    fn default() -> Self {
+        Model::Lite
+    }
+}
+
 #[derive(Clone)]
 pub enum SaveContents {
     Existing(utils::BoxedByteSlice),

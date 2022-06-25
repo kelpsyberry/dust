@@ -63,18 +63,6 @@ pub struct Date {
     pub days_from_sunday: u8,
 }
 
-impl Default for Date {
-    #[inline]
-    fn default() -> Self {
-        Date {
-            years_since_2000: 5,
-            month: 1,
-            day: 1,
-            days_from_sunday: 6,
-        }
-    }
-}
-
 pub trait Backend {
     fn get_time(&mut self) -> Time;
     fn get_date_time(&mut self) -> (Date, Time);

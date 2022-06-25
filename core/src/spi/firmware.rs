@@ -1,3 +1,6 @@
+mod default;
+pub use default::default;
+
 use super::Model;
 use crate::utils::ByteSlice;
 use core::ops::Range;
@@ -28,7 +31,9 @@ pub enum VerificationRegion {
     Ap2,
     Ap3,
     User0,
+    User0IQue,
     User1,
+    User1IQue,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,12 +72,13 @@ fn check_crc(
 //  - [`VerificationError::IncorrectCrc16`](VerificationError::IncorrectCrc16): the specified
 //    region's CRC16 checksum does not match with the one stored in the firmware.
 pub fn verify(firmware: ByteSlice, model: Model) -> Result<(), VerificationError> {
-    let expected_size = match model {
+    let has_ique_regions = matches!(model, Model::Ique | Model::IqueLite | Model::Dsi);
+    let expected_len = match model {
         Model::Dsi => 0x2_0000,
         Model::Ds | Model::Lite => 0x4_0000,
         Model::Ique | Model::IqueLite => 0x8_0000,
     };
-    if firmware.len() != expected_size {
+    if firmware.len() != expected_len {
         return Err(VerificationError::IncorrectSize(firmware.len()));
     }
 
@@ -113,13 +119,32 @@ pub fn verify(firmware: ByteSlice, model: Model) -> Result<(), VerificationError
         0x7_FE00 & mask..0x7_FE70 & mask,
         0x7_FE72 & mask,
     )?;
+    if has_ique_regions {
+        check_crc(
+            firmware,
+            VerificationRegion::User0IQue,
+            0xFFFF,
+            0x7_FE00 & mask..0x7_FEFD & mask,
+            0x7_FE72 & mask,
+        )?;
+    }
     check_crc(
         firmware,
         VerificationRegion::User1,
         0xFFFF,
         0x7_FF00 & mask..0x7_FF70 & mask,
         0x7_FF72 & mask,
-    )
+    )?;
+    if has_ique_regions {
+        check_crc(
+            firmware,
+            VerificationRegion::User1IQue,
+            0xFFFF,
+            0x7_FF00 & mask..0x7_FF70 & mask,
+            0x7_FF72 & mask,
+        )?;
+    }
+    Ok(())
 }
 
 pub fn id_for_model(model: Model) -> [u8; 20] {

@@ -333,7 +333,7 @@ impl<E: cpu::Engine> Emu<E> {
             (self.spi.firmware.contents().read_le::<u16>(0x20) as u32) << 3
         );
         // Firmware part 5 (data/graphics) CRC16
-        write_main_mem!(0x7F_F874, 0x359A_u16);
+        write_main_mem!(0x7F_F874, self.spi.firmware.contents().read_le::<u16>(0x26));
         // Firmware part 3/4 (arm7/9 GUI/Wi-Fi code) CRC16, zero at cart boot time
         write_main_mem!(0x7F_F876, 0_u16);
         // Last message from NDS9 to NDS7

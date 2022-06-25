@@ -175,7 +175,7 @@ impl EmuState {
 pub fn create_emu_state(
     arm7_bios_arr: Option<Uint8Array>,
     arm9_bios_arr: Option<Uint8Array>,
-    firmware_arr: Uint8Array,
+    firmware_arr: Option<Uint8Array>,
     rom_arr: Uint8Array,
     save_contents_arr: Option<Uint8Array>,
     save_type: Option<SaveType>,
@@ -200,8 +200,13 @@ pub fn create_emu_state(
         buf
     });
 
-    let mut firmware = BoxedByteSlice::new_zeroed(firmware_arr.length() as usize);
-    firmware_arr.copy_to(&mut firmware[..]);
+    let model = Model::from(model);
+
+    let firmware = firmware_arr.map(|arr| {
+        let mut buf = BoxedByteSlice::new_zeroed(arr.length() as usize);
+        arr.copy_to(&mut buf[..]);
+        buf
+    }).unwrap_or_else(|| firmware::default(model));
 
     let mut rom = BoxedByteSlice::new_zeroed(rom_arr.length().next_power_of_two() as usize);
     rom_arr.copy_to(&mut rom[..rom_arr.length() as usize]);
@@ -211,8 +216,6 @@ pub fn create_emu_state(
         save_contents_arr.copy_to(&mut save_contents[..]);
         save_contents
     });
-
-    let model = Model::from(model);
 
     let (ds_slot_rom, ds_slot_spi) = {
         let rom = ds_slot::rom::normal::Normal::new(
