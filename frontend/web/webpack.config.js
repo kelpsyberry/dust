@@ -28,6 +28,7 @@ const plugins = [
         patterns: [
             resolve(src, "index.html"),
             resolve(src, "resources"),
+            resolve(src, "_headers"),
             { from: pkg, to: "pkg" },
             {
                 from: resolve(__dirname, "../../game_db.json"),

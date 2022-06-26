@@ -8,7 +8,7 @@
 
 [![Web deploy status](https://github.com/Kelpsy/dust/actions/workflows/.github/workflows/deploy-web.yml/badge.svg?branch=main&event=push)](https://github.com/Kelpsy/dust/actions/workflows/deploy-web.yml?query=branch%3Amain+event%3Apush)
 
-[Web frontend](https://Kelpsy.github.io/dust)
+[Web frontend](https://dust-emu.netlify.app)
 
 
 [![Release build status](https://github.com/Kelpsy/dust/actions/workflows/.github/workflows/build-release.yml/badge.svg?branch=main&event=push)](https://github.com/Kelpsy/dust/actions/workflows/build-release.yml?query=branch%3Amain+event%3Apush)
