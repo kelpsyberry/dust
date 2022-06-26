@@ -1,9 +1,10 @@
 #![allow(clippy::unused_unit)]
+#![feature(once_cell)]
 
 mod audio;
 #[cfg(feature = "log")]
 mod console_log;
-mod renderer_3d;
+pub mod renderer_3d;
 
 use dust_core::{
     cpu::{arm7, arm9, interpreter::Interpreter},
@@ -363,7 +364,7 @@ pub fn create_emu_state(
         ds_slot_spi,
         Box::new(audio::Backend::new(audio_callback)),
         Box::new(dust_core::rtc::DummyBackend),
-        Box::new(renderer_3d::Renderer::new()),
+        Box::new(renderer_3d::EmuState::new()),
         #[cfg(feature = "log")]
         logger.clone(),
     );
@@ -384,4 +385,14 @@ pub fn create_emu_state(
         arm7_bios,
         arm9_bios,
     }
+}
+
+#[wasm_bindgen]
+pub fn internal_get_module() -> wasm_bindgen::JsValue {
+    wasm_bindgen::module()
+}
+
+#[wasm_bindgen]
+pub fn internal_get_memory() -> wasm_bindgen::JsValue {
+    wasm_bindgen::memory()
 }

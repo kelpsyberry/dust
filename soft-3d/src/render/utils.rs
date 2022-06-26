@@ -1,5 +1,5 @@
 use dust_core::gpu::engine_3d::{
-    InterpColor, PolyVertIndex, PolyVertsLen, Polygon, ScreenVertex, TexCoords,
+    InterpColor, PolyVertIndex, PolyVertsLen, Polygon, ScreenVertex, TexCoords, VertexAddr,
 };
 use std::simd::{i32x2, u32x4};
 
@@ -21,15 +21,15 @@ pub fn dec_poly_vert_index(i: PolyVertIndex, verts: PolyVertsLen) -> PolyVertInd
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Edge<'a> {
-    a: &'a ScreenVertex,
-    a_i: PolyVertIndex,
+pub struct Edge {
+    a_addr: VertexAddr,
     a_y: u8,
+    a_z: i32,
     a_w: u16,
 
-    b: &'a ScreenVertex,
-    b_i: PolyVertIndex,
+    b_addr: VertexAddr,
     b_y: u8,
+    b_z: i32,
     b_w: u16,
 
     x_ref: i32,
@@ -43,13 +43,15 @@ pub struct Edge<'a> {
     interp_data: InterpLineData<true>,
 }
 
-impl<'a> Edge<'a> {
+impl Edge {
     pub fn new(
         poly: &Polygon,
-        a: &'a ScreenVertex,
         a_i: PolyVertIndex,
-        b: &'a ScreenVertex,
+        a_addr: VertexAddr,
+        a: &ScreenVertex,
         b_i: PolyVertIndex,
+        b_addr: VertexAddr,
+        b: &ScreenVertex,
     ) -> Self {
         // Slope calculation based on https://github.com/StrikerX3/nds-interp
 
@@ -89,14 +91,14 @@ impl<'a> Edge<'a> {
         };
 
         Edge {
-            a,
-            a_i,
+            a_addr,
             a_y,
+            a_z: poly.depth_values[a_i.get() as usize],
             a_w,
 
-            b,
-            b_i,
+            b_addr,
             b_y,
+            b_z: poly.depth_values[b_i.get() as usize],
             b_w,
 
             x_ref,
@@ -115,28 +117,28 @@ impl<'a> Edge<'a> {
         }
     }
 
-    pub fn a(&self) -> &'a ScreenVertex {
-        self.a
+    pub fn a_addr(&self) -> VertexAddr {
+        self.a_addr
     }
 
-    pub fn a_i(&self) -> PolyVertIndex {
-        self.a_i
+    pub fn a_z(&self) -> i32 {
+        self.a_z
     }
 
     pub fn a_w(&self) -> u16 {
         self.a_w
     }
 
-    pub fn b(&self) -> &'a ScreenVertex {
-        self.b
-    }
-
-    pub fn b_i(&self) -> PolyVertIndex {
-        self.b_i
+    pub fn b_addr(&self) -> VertexAddr {
+        self.b_addr
     }
 
     pub fn b_y(&self) -> u8 {
         self.b_y
+    }
+
+    pub fn b_z(&self) -> i32 {
+        self.b_z
     }
 
     pub fn b_w(&self) -> u16 {

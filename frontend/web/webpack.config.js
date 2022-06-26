@@ -10,7 +10,7 @@ const src = resolve(__dirname, "src");
 const pkg = resolve(__dirname, "pkg");
 const dist = resolve(__dirname, "dist");
 
-const mode = "development";
+const mode = process.env.BUILD_MODE ?? "development";
 const sourceMap = mode === "development";
 const optimize = mode === "production";
 
@@ -21,6 +21,7 @@ const plugins = [
         outDir: resolve(__dirname, pkg),
         forceMode: "production",
         pluginLogLevel: "warn",
+        extraArgs: "--target web -- . -Zbuild-std=panic_abort,std",
     }),
     new MiniCssExtractPlugin(),
     new CopyPlugin({
@@ -43,16 +44,6 @@ const plugins = [
         ],
     }),
 ];
-
-if (optimize) {
-    plugins.push(
-        new (require("optimize-css-assets-webpack-plugin"))({
-            cssProcessorPluginOptions: {
-                preset: ["default", { discardComments: true }],
-            },
-        })
-    );
-}
 
 function pluginsForDir(dir) {
     if (optimize) {
@@ -170,6 +161,11 @@ module.exports = [
                 hot: false,
                 liveReload: false,
                 webSocketServer: false,
+                headers: {
+                    "Cross-Origin-Opener-Policy": "same-origin",
+                    "Cross-Origin-Embedder-Policy": "require-corp"
+                },
+                https: true,
             },
         },
         baseConfig
@@ -183,6 +179,18 @@ module.exports = [
             },
             target: "webworker",
             dependencies: ["ui"],
+        },
+        baseConfig
+    ),
+    Object.assign(
+        {
+            name: "renderer_3d",
+            plugins: pluginsForDir(resolve(src, "renderer_3d")),
+            entry: {
+                renderer_3d: resolve(src, "renderer_3d/renderer_3d.ts"),
+            },
+            target: "webworker",
+            dependencies: ["emu"],
         },
         baseConfig
     ),

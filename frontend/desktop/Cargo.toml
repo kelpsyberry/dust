@@ -26,7 +26,7 @@ compile-shaders = ["shaderc"]
 
 [dependencies]
 dust-core = { path = "../../core" }
-emu-utils = { git = "https://github.com/Kelpsy/emu-utils" }
+dust-soft-3d = { path = "../../soft-3d" }
 bitflags = { version = "1.3", optional = true }
 fxhash = "0.2"
 winit = { version = "0.26", features = ["serde"] }

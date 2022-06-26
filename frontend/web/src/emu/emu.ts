@@ -58,6 +58,7 @@ class FpsLimiter {
 
 (async () => {
     const wasm = await import("../../pkg");
+    await wasm.default();
     let playing = false;
     let fpsLimiter = new FpsLimiter(60, frame);
     let emu: wasm.EmuState | undefined;
@@ -109,6 +110,11 @@ class FpsLimiter {
                         );
                     }
                 );
+                sendMessage({
+                    type: EmuToUi.MessageType.StartRenderer,
+                    module: wasm.internal_get_module(),
+                    memory: wasm.internal_get_memory(),
+                });
                 break;
             }
 
@@ -119,6 +125,7 @@ class FpsLimiter {
 
             case UiToEmu.MessageType.Stop: {
                 const buffer = emu!.export_save();
+                emu!.free();
                 sendMessage(
                     {
                         type: EmuToUi.MessageType.Stopped,

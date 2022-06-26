@@ -7,6 +7,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  BUILD_MODE: production
 
 jobs:
   deploy:
@@ -21,6 +22,7 @@ jobs:
       with:
         toolchain: nightly
         override: true
+        components: rust-src
 
     - name: Setup Node
       uses: actions/setup-node@v2
@@ -41,6 +43,10 @@ jobs:
     - name: Build
       working-directory: frontend/web
       run: |
+        # Ugly hack to work around wasm-pack not supporting custom profiles
+        sed -i 's/debug = true//' ../../Cargo.toml
+        sed -i 's/\[profile\.ci\]//' ../../Cargo.toml
+        sed -i 's/inherits = "release"//' ../../Cargo.toml
         npm install
         npm run build
         rm dist/pkg/.gitignore

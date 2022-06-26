@@ -128,9 +128,10 @@ mod bounded {
     bounded_int_lit!(pub struct PrimMaxVerts(u8), max 4);
     bounded_int_lit!(pub struct PolyVertIndex(u8), max 9);
     bounded_int_lit!(pub struct PolyVertsLen(u8), max 10);
+    bounded_int_lit!(pub struct PolyAddr(u16), max 2047);
     bounded_int_lit!(pub struct VertexAddr(u16), max 6143);
 }
-pub use bounded::{PolyVertIndex, PolyVertsLen, VertexAddr};
+pub use bounded::{PolyAddr, PolyVertIndex, PolyVertsLen, VertexAddr};
 use bounded::{PrimMaxVerts, PrimVertIndex};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -142,30 +143,13 @@ pub struct Polygon {
     pub top_y: u8,
     pub bot_y: u8,
     pub vertices_len: PolyVertsLen,
-    pub tex_palette_base: u16,
-    pub tex_params: TextureParams,
     pub attrs: PolygonAttrs,
     pub is_front_facing: bool,
+    pub tex_params: TextureParams,
+    pub tex_palette_base: u16,
 }
 
 unsafe impl Zero for Polygon {}
-
-impl Polygon {
-    pub const fn new() -> Self {
-        Polygon {
-            depth_values: [0; 10],
-            w_values: [0; 10],
-            vertices: [VertexAddr::new(0); 10],
-            top_y: 0,
-            bot_y: 0,
-            vertices_len: PolyVertsLen::new(0),
-            tex_palette_base: 0,
-            tex_params: TextureParams(0),
-            attrs: PolygonAttrs(0),
-            is_front_facing: false,
-        }
-    }
-}
 
 bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]

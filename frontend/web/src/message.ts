@@ -96,6 +96,7 @@ export namespace UiToEmu {
 export namespace EmuToUi {
     export const enum MessageType {
         Loaded,
+        StartRenderer,
         ExportSave,
         RenderFrame,
         Stopped,
@@ -104,6 +105,12 @@ export namespace EmuToUi {
 
     export interface LoadedMessage {
         type: MessageType.Loaded;
+    }
+
+    export interface StartRendererMessage {
+        type: MessageType.StartRenderer;
+        module: WebAssembly.Module;
+        memory: WebAssembly.Memory;
     }
 
     export interface StopMessage {
@@ -130,6 +137,7 @@ export namespace EmuToUi {
 
     export type Message =
         | LoadedMessage
+        | StartRendererMessage
         | StopMessage
         | ExportSaveMessage
         | RenderFrameMessage

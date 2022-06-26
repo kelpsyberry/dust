@@ -31,11 +31,14 @@ export class Ui {
     private fbCoordsAttrib: number;
 
     private worker: Worker | undefined;
+    private rendererWorker: Worker | undefined;
     private gameTitle: string | undefined;
     private saveFilename: string | undefined;
 
     private nextRomFilename: string | undefined;
     private nextRomBuffer: Uint8Array | undefined;
+
+    private playing: boolean;
 
     constructor(touch: boolean) {
         this.canvasContainer = document.getElementById(
@@ -205,7 +208,16 @@ export class Ui {
             gl.STATIC_DRAW
         );
 
+        this.playing = false;
+
         this.frame();
+
+        window.addEventListener("beforeunload", () => {
+            if (!this.worker) {
+                return;
+            }
+            this.sendMessage({ type: UiToEmu.MessageType.Stop });
+        });
     }
 
     toggleRomEnabledIfSystemFilesLoaded() {
@@ -279,6 +291,15 @@ export class Ui {
     handleWorkerMessage(e: MessageEvent) {
         const message = e.data as EmuToUi.Message;
         switch (message.type) {
+            case EmuToUi.MessageType.StartRenderer: {
+                this.rendererWorker = new Worker("renderer_3d.bundle.js");
+                this.rendererWorker.postMessage({
+                    module: message.module,
+                    memory: message.memory,
+                });
+                break;
+            }
+
             case EmuToUi.MessageType.ExportSave: {
                 this.files.storeSaveToStorage(
                     this.saveFilename!,
@@ -458,34 +479,36 @@ export class Ui {
     }
 
     frame() {
-        const containerWidth = this.canvasContainer.clientWidth;
-        const containerHeight = this.canvasContainer.clientHeight;
-        const fbAspectRatio = 256 / 384;
-        let width = Math.floor(
-            Math.min(containerHeight * fbAspectRatio, containerWidth)
-        );
-        let height = Math.floor(width / fbAspectRatio);
-        this.canvas.style.width = `${width}px`;
-        this.canvas.style.height = `${height}px`;
-        width *= window.devicePixelRatio;
-        height *= window.devicePixelRatio;
-        this.canvas.width = width;
-        this.canvas.height = height;
-        this.gl.viewport(0, 0, width, height);
+        if (this.playing) {
+            const containerWidth = this.canvasContainer.clientWidth;
+            const containerHeight = this.canvasContainer.clientHeight;
+            const fbAspectRatio = 256 / 384;
+            let width = Math.floor(
+                Math.min(containerHeight * fbAspectRatio, containerWidth)
+            );
+            let height = Math.floor(width / fbAspectRatio);
+            this.canvas.style.width = `${width}px`;
+            this.canvas.style.height = `${height}px`;
+            width *= window.devicePixelRatio;
+            height *= window.devicePixelRatio;
+            this.canvas.width = width;
+            this.canvas.height = height;
+            this.gl.viewport(0, 0, width, height);
 
-        this.gl.clearColor(0, 0, 0, 1.0);
-        this.gl.clear(this.gl.COLOR_BUFFER_BIT);
-        this.gl.useProgram(this.fbProgram);
-        this.gl.vertexAttribPointer(
-            this.fbCoordsAttrib,
-            2,
-            this.gl.FLOAT,
-            false,
-            8,
-            0
-        );
-        this.gl.enableVertexAttribArray(this.fbCoordsAttrib);
-        this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
+            this.gl.clearColor(0, 0, 0, 1.0);
+            this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+            this.gl.useProgram(this.fbProgram);
+            this.gl.vertexAttribPointer(
+                this.fbCoordsAttrib,
+                2,
+                this.gl.FLOAT,
+                false,
+                8,
+                0
+            );
+            this.gl.enableVertexAttribArray(this.fbCoordsAttrib);
+            this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4);
+        }
 
         const canvasRect = this.canvas.getBoundingClientRect();
         const changes = this.input.update(
@@ -508,6 +531,7 @@ export class Ui {
 
     play() {
         document.body.classList.remove("paused");
+        this.playing = true;
         this.sendMessage({
             type: UiToEmu.MessageType.UpdatePlaying,
             value: true,
@@ -516,6 +540,7 @@ export class Ui {
 
     pause() {
         document.body.classList.add("paused");
+        this.playing = false;
         this.sendMessage({
             type: UiToEmu.MessageType.UpdatePlaying,
             value: false,
