@@ -46,6 +46,7 @@ pub mod gpu;
 pub mod ipc;
 pub mod rtc;
 pub mod spi;
+pub mod wifi;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]

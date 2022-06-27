@@ -210,8 +210,13 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
                         0
                     }
                 }
+            } else if addr >> 16 & 0x7F == 0 {
+                emu.wifi.read_8::<A>(addr as u16)
             } else {
-                // TODO: Wi-Fi
+                #[cfg(feature = "log")]
+                if !A::IS_DEBUG {
+                    slog::warn!(emu.arm7.logger, "Unknown read8 @ {:#010X}", addr);
+                }
                 0
             }
         }
@@ -424,8 +429,13 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
                         0
                     }
                 }
+            } else if addr >> 16 & 0x7F == 0 {
+                emu.wifi.read_16::<A>(addr as u16)
             } else {
-                // TODO: Wi-Fi
+                #[cfg(feature = "log")]
+                if !A::IS_DEBUG {
+                    slog::warn!(emu.arm7.logger, "Unknown read16 @ {:#010X}", addr);
+                }
                 0
             }
         }
@@ -645,8 +655,13 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
                         0
                     }
                 }
+            } else if addr >> 16 & 0x7F == 0 {
+                emu.wifi.read_32::<A>(addr as u16)
             } else {
-                // TODO: Wi-Fi
+                #[cfg(feature = "log")]
+                if !A::IS_DEBUG {
+                    slog::warn!(emu.arm7.logger, "Unknown read32 @ {:#010X}", addr);
+                }
                 0
             }
         }
@@ -889,8 +904,18 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
                         }
                     }
                 }
+            } else if addr >> 16 & 0x7F == 0 {
+                emu.wifi.write_8::<A>(addr as u16, value);
             } else {
-                // TODO: Wi-Fi
+                #[cfg(feature = "log")]
+                if !A::IS_DEBUG {
+                    slog::warn!(
+                        emu.arm7.logger,
+                        "Unknown write8 @ {:#010X}: {:#04X}",
+                        addr,
+                        value
+                    );
+                }
             }
         }
 
@@ -1229,8 +1254,18 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                         }
                     }
                 }
+            } else if addr >> 16 & 0x7F == 0 {
+                emu.wifi.write_16::<A>(addr as u16, value);
             } else {
-                // TODO: Wi-Fi
+                #[cfg(feature = "log")]
+                if !A::IS_DEBUG {
+                    slog::warn!(
+                        emu.arm7.logger,
+                        "Unknown write16 @ {:#010X}: {:#06X}",
+                        addr,
+                        value
+                    );
+                }
             }
         }
 
@@ -1470,8 +1505,18 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                         }
                     }
                 }
+            } else if addr >> 16 & 0x7F == 0 {
+                emu.wifi.write_32::<A>(addr as u16, value);
             } else {
-                // TODO: Wi-Fi
+                #[cfg(feature = "log")]
+                if !A::IS_DEBUG {
+                    slog::warn!(
+                        emu.arm7.logger,
+                        "Unknown write32 @ {:#010X}: {:#010X}",
+                        addr,
+                        value
+                    );
+                }
             }
         }
 

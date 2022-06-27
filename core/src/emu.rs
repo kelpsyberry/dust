@@ -24,6 +24,7 @@ use crate::{
         bitfield_debug, bounded_int_lit, schedule::RawTimestamp, BoxedByteSlice, ByteMutSlice,
         Bytes, OwnedBytesCellPtr,
     },
+    wifi::WiFi,
     Model,
 };
 #[cfg(feature = "xq-audio")]
@@ -99,6 +100,7 @@ pub struct Emu<E: cpu::Engine> {
     pub input: Input,
     pub audio_wifi_power_control: AudioWifiPowerControl,
     pub audio: Audio,
+    pub wifi: WiFi,
     rcnt: u16, // TODO: Move to SIO
     is_debugger: bool,
 }
@@ -240,6 +242,7 @@ impl Builder {
                 #[cfg(feature = "log")]
                 self.logger.new(slog::o!("audio" => "")),
             ),
+            wifi: WiFi::new(),
             rcnt: 0,
             schedule: global_schedule,
             arm7,
