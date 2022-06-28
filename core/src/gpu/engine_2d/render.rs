@@ -13,7 +13,7 @@ use crate::{
 use core::mem::MaybeUninit;
 
 pub struct FnPtrs<R: Role> {
-    render_scanline_bg_text: fn(&mut Engine2d<R>, bg_index: BgIndex, line: u16, vram: &Vram),
+    render_scanline_bg_text: fn(&mut Engine2d<R>, bg_index: BgIndex, line: u8, vram: &Vram),
 }
 
 impl<R: Role> FnPtrs<R> {
@@ -46,7 +46,7 @@ const fn rgb_18_to_rgba_32(value: u32) -> u32 {
 }
 
 impl<R: Role> Engine2d<R> {
-    fn apply_color_effects<const EFFECT: u8>(&self, scanline_buffer: &mut Scanline<u32>) {
+    fn apply_color_effects<const EFFECT: u8>(&mut self) {
         #[inline]
         fn blend(color_a: u32, color_b: u32, coeff_a: u32, coeff_b: u32) -> u32 {
             let r = ((color_a & 0x3F) * coeff_a + (color_b & 0x3F) * coeff_b).min(0x3F0);
@@ -77,7 +77,7 @@ impl<R: Role> Engine2d<R> {
         for i in 0..SCREEN_WIDTH {
             let pixel = self.bg_obj_scanline.0[i];
             let top = BgObjPixel(pixel as u32);
-            scanline_buffer.0[i] = if self.window.0[i].color_effects_enabled() {
+            self.bg_obj_scanline.0[i] = if self.window.0[i].color_effects_enabled() {
                 let bot = BgObjPixel((pixel >> 32) as u32);
                 let top_mask = top.color_effects_mask();
                 let bot_matches = bot.color_effects_mask() & target_2_mask != 0;
@@ -126,7 +126,7 @@ impl<R: Role> Engine2d<R> {
                 }
             } else {
                 top.0
-            };
+            } as u64;
         }
     }
 
@@ -156,7 +156,7 @@ impl<R: Role> Engine2d<R> {
         &mut self,
         vcount: u16,
         scanline_buffer: &mut Scanline<u32>,
-        vram: &Vram,
+        vram: &mut Vram,
         renderer_3d: &mut dyn engine_3d::Renderer,
     ) {
         // According to melonDS, if vcount falls outside the drawing range or 2D engine B is
@@ -165,101 +165,108 @@ impl<R: Role> Engine2d<R> {
             if R::IS_A && self.engine_3d_enabled_in_frame {
                 renderer_3d.skip_scanline();
             }
+            // TODO: Display capture interaction?
 
             scanline_buffer.0.fill(0xFFFF_FFFF);
             return;
         }
 
-        match if R::IS_A {
+        let vcount = vcount as u8;
+
+        let display_mode = if R::IS_A {
             self.control.display_mode_a()
         } else {
             self.control.display_mode_b()
-        } {
-            0 => {
-                if R::IS_A && self.engine_3d_enabled_in_frame {
-                    renderer_3d.skip_scanline();
+        };
+
+        let scanline_3d = if R::IS_A && self.engine_3d_enabled_in_frame {
+            let enabled_in_bg_obj = self.bgs[0].priority != 4 && self.control.bg0_3d();
+            if (self.capture_enabled_in_frame
+                && (self.capture_control.src_a_3d_only() || enabled_in_bg_obj))
+                || (display_mode == 1 && enabled_in_bg_obj)
+            {
+                Some(renderer_3d.read_scanline())
+            } else {
+                renderer_3d.skip_scanline();
+                None
+            }
+        } else {
+            None
+        };
+
+        if display_mode == 1
+            || (R::IS_A && self.capture_enabled_in_frame && !self.capture_control.src_a_3d_only())
+        {
+            self.window.0[..SCREEN_WIDTH].fill(WindowPixel(if self.control.wins_enabled() == 0 {
+                0x3F
+            } else {
+                self.window_control[2].0
+            }));
+
+            if self.control.obj_win_enabled() {
+                let obj_window_pixel = WindowPixel(self.window_control[3].0);
+                for (i, window_pixel) in self.window.0[..SCREEN_WIDTH].iter_mut().enumerate() {
+                    if self.obj_window[i >> 3] & 1 << (i & 7) != 0 {
+                        *window_pixel = obj_window_pixel;
+                    }
+                }
+            }
+
+            for i in (0..2).rev() {
+                if !self.windows_active[i] {
+                    continue;
                 }
 
+                let x_range = &self.window_ranges[i].x;
+                let x_start = x_range.start as usize;
+                let mut x_end = x_range.end as usize;
+                if x_end < x_start {
+                    x_end = 256;
+                }
+                self.window.0[x_start..x_end].fill(WindowPixel(self.window_control[i].0));
+            }
+
+            let backdrop = BgObjPixel(rgb_15_to_18(
+                vram.palette.read_le::<u16>((!R::IS_A as usize) << 10) as u32,
+            ))
+            .with_color_effects_mask(1 << 5)
+            .0;
+            self.bg_obj_scanline
+                .0
+                .fill(backdrop as u64 | (backdrop as u64) << 32);
+
+            [
+                Self::render_scanline_bgs_and_objs::<0>,
+                Self::render_scanline_bgs_and_objs::<1>,
+                Self::render_scanline_bgs_and_objs::<2>,
+                Self::render_scanline_bgs_and_objs::<3>,
+                Self::render_scanline_bgs_and_objs::<4>,
+                Self::render_scanline_bgs_and_objs::<5>,
+                Self::render_scanline_bgs_and_objs::<6>,
+                Self::render_scanline_bgs_and_objs::<7>,
+            ][self.control.bg_mode() as usize](self, vcount, vram, scanline_3d);
+            [
+                Self::apply_color_effects::<0>,
+                Self::apply_color_effects::<1>,
+                Self::apply_color_effects::<2>,
+                Self::apply_color_effects::<3>,
+            ][self.color_effects_control.color_effect() as usize](self);
+        }
+
+        #[allow(clippy::match_same_arms)]
+        match display_mode {
+            0 => {
                 scanline_buffer.0.fill(0xFFFF_FFFF);
                 return;
             }
 
-            1 => {
-                self.window.0[..SCREEN_WIDTH].fill(WindowPixel(
-                    if self.control.wins_enabled() == 0 {
-                        0x3F
-                    } else {
-                        self.window_control[2].0
-                    },
-                ));
-
-                if self.control.obj_win_enabled() {
-                    let obj_window_pixel = WindowPixel(self.window_control[3].0);
-                    for (i, window_pixel) in self.window.0[..SCREEN_WIDTH].iter_mut().enumerate() {
-                        if self.obj_window[i >> 3] & 1 << (i & 7) != 0 {
-                            *window_pixel = obj_window_pixel;
-                        }
-                    }
-                }
-
-                for i in (0..2).rev() {
-                    if !self.windows_active[i] {
-                        continue;
-                    }
-
-                    let x_range = &self.window_ranges[i].x;
-                    let x_start = x_range.start as usize;
-                    let mut x_end = x_range.end as usize;
-                    if x_end < x_start {
-                        x_end = 256;
-                    }
-                    self.window.0[x_start..x_end].fill(WindowPixel(self.window_control[i].0));
-                }
-
-                let backdrop = BgObjPixel(rgb_15_to_18(
-                    vram.palette.read_le::<u16>((!R::IS_A as usize) << 10) as u32,
-                ))
-                .with_color_effects_mask(1 << 5)
-                .0;
-                self.bg_obj_scanline
-                    .0
-                    .fill(backdrop as u64 | (backdrop as u64) << 32);
-
-                if R::IS_A
-                    && self.engine_3d_enabled_in_frame
-                    && (self.bgs[0].priority == 4 || !self.control.bg0_3d())
-                {
-                    renderer_3d.skip_scanline();
-                }
-
-                [
-                    Self::render_scanline_bgs_and_objs::<0>,
-                    Self::render_scanline_bgs_and_objs::<1>,
-                    Self::render_scanline_bgs_and_objs::<2>,
-                    Self::render_scanline_bgs_and_objs::<3>,
-                    Self::render_scanline_bgs_and_objs::<4>,
-                    Self::render_scanline_bgs_and_objs::<5>,
-                    Self::render_scanline_bgs_and_objs::<6>,
-                    Self::render_scanline_bgs_and_objs::<7>,
-                ][self.control.bg_mode() as usize](self, vcount, vram, renderer_3d);
-                [
-                    Self::apply_color_effects::<0>,
-                    Self::apply_color_effects::<1>,
-                    Self::apply_color_effects::<2>,
-                    Self::apply_color_effects::<3>,
-                ][self.color_effects_control.color_effect() as usize](
-                    self, scanline_buffer
-                );
-            }
+            1 => {}
 
             2 => {
-                if R::IS_A && self.engine_3d_enabled_in_frame {
-                    renderer_3d.skip_scanline();
-                }
-
                 // The bank must be mapped as LCDC VRAM to be used
                 let bank_index = self.control.a_vram_bank();
-                if vram.bank_control()[bank_index as usize].mst() == 0 {
+                let bank_control = vram.bank_control()[bank_index as usize];
+                if bank_control.enabled() && bank_control.mst() == 0 {
                     let bank = match bank_index {
                         0 => &vram.banks.a,
                         1 => &vram.banks.b,
@@ -278,43 +285,192 @@ impl<R: Role> Engine2d<R> {
             }
 
             _ => {
-                if R::IS_A && self.engine_3d_enabled_in_frame {
-                    renderer_3d.skip_scanline();
-                }
-
                 // TODO: Main memory display mode
+            }
+        }
+
+        #[allow(clippy::similar_names)]
+        if R::IS_A && self.capture_enabled_in_frame && vcount < self.capture_height {
+            let dst_bank_index = self.capture_control.dst_bank();
+            let dst_bank_control = vram.bank_control()[dst_bank_index as usize];
+            if dst_bank_control.enabled() && dst_bank_control.mst() == 0 {
+                let capture_width_shift = 7 + (self.capture_control.size() != 0) as u8;
+
+                let dst_bank = match dst_bank_index {
+                    0 => vram.banks.a.as_ptr(),
+                    1 => vram.banks.b.as_ptr(),
+                    2 => vram.banks.c.as_ptr(),
+                    _ => vram.banks.d.as_ptr(),
+                };
+
+                let dst_offset = (((self.capture_control.dst_offset_raw() as usize) << 15)
+                    + ((vcount as usize) << (1 + capture_width_shift)))
+                    & 0x1_FFFE;
+
+                let dst_line = unsafe { dst_bank.add(dst_offset) as *mut u16 };
+
+                let capture_source = self.capture_control.src();
+                let factor_a = self.capture_control.factor_a().min(16) as u16;
+                let factor_b = self.capture_control.factor_b().min(16) as u16;
+
+                let src_b_line = if capture_source != 0
+                    && (factor_b != 0 || capture_source & 2 == 0)
+                {
+                    if self.capture_control.src_b_display_fifo() {
+                        todo!("Display capture display FIFO source");
+                    } else {
+                        let src_bank_index = self.control.a_vram_bank();
+                        let src_bank_control = vram.bank_control()[src_bank_index as usize];
+                        if src_bank_control.enabled() && src_bank_control.mst() == 0 {
+                            let src_bank = match src_bank_index {
+                                0 => vram.banks.a.as_ptr(),
+                                1 => vram.banks.b.as_ptr(),
+                                2 => vram.banks.c.as_ptr(),
+                                _ => vram.banks.d.as_ptr(),
+                            };
+
+                            let src_offset = if self.control.display_mode_a() == 2 {
+                                (vcount as usize) << 9
+                            } else {
+                                (((self.capture_control.src_b_vram_offset_raw() as usize) << 15)
+                                    + ((vcount as usize) << 9))
+                                    & 0x1_FFFE
+                            };
+
+                            Some(unsafe { src_bank.add(src_offset) as *const u16 })
+                        } else {
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                unsafe {
+                    if capture_source == 1
+                        || (capture_source & 2 != 0 && factor_a == 0)
+                        || (self.capture_control.src_a_3d_only()
+                            && !self.engine_3d_enabled_in_frame)
+                    {
+                        if let Some(src_b_line) = src_b_line {
+                            if src_b_line != dst_line {
+                                dst_line
+                                    .copy_from_nonoverlapping(src_b_line, 1 << capture_width_shift);
+                            }
+                        } else {
+                            dst_line.write_bytes(0, 1 << capture_width_shift);
+                        }
+                    } else if self.capture_control.src_a_3d_only() {
+                        let scanline_3d = scanline_3d.unwrap_unchecked();
+                        if let Some(src_b_line) = src_b_line {
+                            for x in 0..1 << capture_width_shift {
+                                let a_pixel = scanline_3d.0[x];
+                                let a_r = (a_pixel >> 1) as u16 & 0x1F;
+                                let a_g = (a_pixel >> 7) as u16 & 0x1F;
+                                let a_b = (a_pixel >> 13) as u16 & 0x1F;
+                                let a_a = (a_pixel >> 18 & 0x1F != 0) as u16;
+
+                                let b_pixel = src_b_line.add(x).read();
+                                let b_r = b_pixel & 0x1F;
+                                let b_g = (b_pixel >> 5) & 0x1F;
+                                let b_b = (b_pixel >> 10) & 0x1F;
+                                let b_a = b_pixel >> 15;
+
+                                let r = (((a_r * a_a * factor_a) + (b_r * b_a * factor_b)) >> 4)
+                                    .min(0x1F);
+                                let g = (((a_g * a_a * factor_a) + (b_g * b_a * factor_b)) >> 4)
+                                    .min(0x1F);
+                                let b = (((a_b * a_a * factor_a) + (b_b * b_a * factor_b)) >> 4)
+                                    .min(0x1F);
+                                let a = a_a | b_a;
+
+                                dst_line.add(x).write(r | g << 5 | b << 10 | a << 15);
+                            }
+                        } else {
+                            for x in 0..1 << capture_width_shift {
+                                let pixel = scanline_3d.0[x];
+                                let r = (pixel >> 1) as u16 & 0x1F;
+                                let g = (pixel >> 7) as u16 & 0x1F;
+                                let b = (pixel >> 13) as u16 & 0x1F;
+                                let a = (pixel >> 18 & 0x1F != 0) as u16;
+                                dst_line.add(x).write(r | g << 5 | b << 10 | a << 15);
+                            }
+                        }
+                    } else if let Some(src_b_line) = src_b_line {
+                        for x in 0..1 << capture_width_shift {
+                            let a_pixel = self.bg_obj_scanline.0[x];
+                            let a_r = (a_pixel >> 1) as u16 & 0x1F;
+                            let a_g = (a_pixel >> 7) as u16 & 0x1F;
+                            let a_b = (a_pixel >> 13) as u16 & 0x1F;
+
+                            let b_pixel = src_b_line.add(x).read();
+                            let b_r = b_pixel & 0x1F;
+                            let b_g = (b_pixel >> 5) & 0x1F;
+                            let b_b = (b_pixel >> 10) & 0x1F;
+                            let b_a = b_pixel >> 15;
+
+                            let r = (((a_r * factor_a) + (b_r * b_a * factor_b)) >> 4).min(0x1F);
+                            let g = (((a_g * factor_a) + (b_g * b_a * factor_b)) >> 4).min(0x1F);
+                            let b = (((a_b * factor_a) + (b_b * b_a * factor_b)) >> 4).min(0x1F);
+
+                            dst_line.add(x).write(r | g << 5 | b << 10 | 0x8000);
+                        }
+                    } else {
+                        for x in 0..1 << capture_width_shift {
+                            let pixel = self.bg_obj_scanline.0[x];
+                            let r = (pixel >> 1) as u16 & 0x1F;
+                            let g = (pixel >> 7) as u16 & 0x1F;
+                            let b = (pixel >> 13) as u16 & 0x1F;
+                            dst_line.add(x).write(r | g << 5 | b << 10 | 0x8000);
+                        }
+                    }
+                }
             }
         }
 
         match self.master_brightness_control.mode() {
             1 if self.master_brightness_factor != 0 => {
-                for pixel in scanline_buffer.0.iter_mut() {
+                for (dst, src) in scanline_buffer
+                    .0
+                    .iter_mut()
+                    .zip(self.bg_obj_scanline.0.iter())
+                {
+                    let src = *src as u32;
                     let increment = {
-                        let complement = 0x3_FFFF ^ *pixel;
+                        let complement = 0x3_FFFF ^ src;
                         ((((complement & 0x3_F03F) * self.master_brightness_factor) & 0x3F_03F0)
                             | (((complement & 0xFC0) * self.master_brightness_factor) & 0xFC00))
                             >> 4
                     };
-                    *pixel = rgb_18_to_rgba_32(*pixel + increment);
+                    *dst = rgb_18_to_rgba_32(src + increment);
                 }
             }
 
             2 if self.master_brightness_factor != 0 => {
-                for pixel in scanline_buffer.0.iter_mut() {
+                for (dst, src) in scanline_buffer
+                    .0
+                    .iter_mut()
+                    .zip(self.bg_obj_scanline.0.iter())
+                {
+                    let src = *src as u32;
                     let decrement = {
-                        ((((*pixel & 0x3_F03F) * self.master_brightness_factor) & 0x3F_03F0)
-                            | (((*pixel & 0xFC0) * self.master_brightness_factor) & 0xFC00))
+                        ((((src & 0x3_F03F) * self.master_brightness_factor) & 0x3F_03F0)
+                            | (((src & 0xFC0) * self.master_brightness_factor) & 0xFC00))
                             >> 4
                     };
-                    *pixel = rgb_18_to_rgba_32(*pixel - decrement);
+                    *dst = rgb_18_to_rgba_32(src - decrement);
                 }
             }
 
             3 => unimplemented!("Unknown 2D engine brightness mode 3"),
 
             _ => {
-                for pixel in scanline_buffer.0.iter_mut() {
-                    *pixel = rgb_18_to_rgba_32(*pixel);
+                for (dst, src) in scanline_buffer
+                    .0
+                    .iter_mut()
+                    .zip(self.bg_obj_scanline.0.iter())
+                {
+                    *dst = rgb_18_to_rgba_32(*src as u32);
                 }
             }
         }
@@ -322,9 +478,9 @@ impl<R: Role> Engine2d<R> {
 
     fn render_scanline_bgs_and_objs<const BG_MODE: u8>(
         &mut self,
-        line: u16,
+        line: u8,
         vram: &Vram,
-        renderer_3d: &mut dyn engine_3d::Renderer,
+        scanline_3d: Option<&Scanline<u32, SCREEN_WIDTH>>,
     ) {
         let render_affine = [
             Self::render_scanline_bg_affine::<false>,
@@ -409,11 +565,11 @@ impl<R: Role> Engine2d<R> {
             if self.bgs[0].priority == priority {
                 if R::IS_A && self.control.bg0_3d() {
                     if self.engine_3d_enabled_in_frame {
-                        let scanline = renderer_3d.read_scanline();
+                        let scanline_3d = unsafe { scanline_3d.unwrap_unchecked() };
                         let pixel_attrs = BgObjPixel(0).with_color_effects_mask(1).with_is_3d(true);
                         // TODO: 3D layer scrolling
                         for i in 0..SCREEN_WIDTH {
-                            let pixel = scanline.0[i];
+                            let pixel = scanline_3d.0[i];
                             if pixel >> 19 != 0 {
                                 self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64)
                                     << 32
@@ -423,7 +579,7 @@ impl<R: Role> Engine2d<R> {
                             }
                         }
                     }
-                } else {
+                } else if BG_MODE != 6 {
                     (self.render_fns.render_scanline_bg_text)(self, BgIndex::new(0), line, vram);
                 }
             }
@@ -906,8 +1062,66 @@ impl<R: Role> Engine2d<R> {
                 + rel_y_in_square_obj * params[3] as i32,
         ];
 
+        let obj_x_outside_mask = !((0x800 << width_shift) - 1);
+        let obj_y_outside_mask = !((0x800 << height_shift) - 1);
+
         if attrs.0.mode() == 3 {
-            // TODO: Bitmap sprites
+            let alpha = match attrs.2.palette_number() {
+                0 => return,
+                value => value + 1,
+            };
+
+            let tile_number = attrs.2.tile_number() as u32;
+
+            let (tile_base, y_shift) = if self.control.obj_bitmap_1d_mapping() {
+                if self.control.bitmap_objs_256x256() {
+                    return;
+                }
+                (
+                    tile_number
+                        << if R::IS_A {
+                            7 + self.control.a_obj_bitmap_1d_boundary()
+                        } else {
+                            7
+                        },
+                    width_shift + 1,
+                )
+            } else if self.control.bitmap_objs_256x256() {
+                (
+                    ((tile_number & 0x1F) << 4) + ((tile_number & !0x1F) << 7),
+                    9,
+                )
+            } else {
+                (((tile_number & 0xF) << 4) + ((tile_number & !0xF) << 7), 8)
+            };
+
+            let pixel_attrs = ObjPixel(0)
+                .with_priority(attrs.2.bg_priority())
+                .with_force_blending(true)
+                .with_use_raw_color(true)
+                .with_custom_alpha(true)
+                .with_alpha(alpha);
+
+            for x in start_x..end_x {
+                if (pos[0] & obj_x_outside_mask) | (pos[1] & obj_y_outside_mask) == 0 {
+                    let pixel_addr =
+                        tile_base + (pos[0] as u32 >> 8) + (pos[1] as u32 >> 8 << y_shift);
+                    let color = if R::IS_A {
+                        vram.read_a_obj::<u16>(pixel_addr)
+                    } else {
+                        vram.read_b_obj::<u16>(pixel_addr)
+                    };
+                    if color & 0x8000 != 0 {
+                        unsafe {
+                            *self.obj_scanline.0.get_unchecked_mut(x) =
+                                pixel_attrs.with_raw_color(color);
+                        }
+                    }
+                }
+
+                pos[0] = pos[0].wrapping_add(params[0] as i32);
+                pos[1] = pos[1].wrapping_add(params[2] as i32);
+            }
         } else {
             let tile_base = if R::IS_A {
                 self.control.a_tile_base()
@@ -926,9 +1140,6 @@ impl<R: Role> Engine2d<R> {
                 .with_priority(attrs.2.bg_priority())
                 .with_force_blending(attrs.0.mode() == 1)
                 .with_use_raw_color(false);
-
-            let obj_x_outside_mask = !((0x800 << width_shift) - 1);
-            let obj_y_outside_mask = !((0x800 << height_shift) - 1);
 
             if attrs.0.use_256_colors() {
                 let pal_base = if self.control.obj_ext_pal_enabled() {
@@ -1075,7 +1286,71 @@ impl<R: Role> Engine2d<R> {
         };
 
         if attrs.0.mode() == 3 {
-            // TODO: Bitmap sprites
+            let alpha = match attrs.2.palette_number() {
+                0 => return,
+                value => value + 1,
+            };
+
+            let tile_number = attrs.2.tile_number() as u32;
+
+            let mut tile_base = if self.control.obj_bitmap_1d_mapping() {
+                if self.control.bitmap_objs_256x256() {
+                    return;
+                }
+                (tile_number
+                    << if R::IS_A {
+                        7 + self.control.a_obj_bitmap_1d_boundary()
+                    } else {
+                        7
+                    })
+                    + (y_in_obj << (width_shift + 1))
+            } else if self.control.bitmap_objs_256x256() {
+                ((tile_number & 0x1F) << 4) + ((tile_number & !0x1F) << 7) + (y_in_obj << 9)
+            } else {
+                ((tile_number & 0xF) << 4) + ((tile_number & !0xF) << 7) + (y_in_obj << 8)
+            };
+
+            let pixel_attrs = ObjPixel(0)
+                .with_priority(attrs.2.bg_priority())
+                .with_force_blending(true)
+                .with_use_raw_color(true)
+                .with_custom_alpha(true)
+                .with_alpha(alpha);
+
+            let x_in_obj_new_tile_compare = if X_FLIP { 3 } else { 0 };
+
+            let tile_base_incr = if X_FLIP { -8_i32 } else { 8 };
+            tile_base += (x_in_obj >> 3) << 4;
+            let mut pixels = 0;
+
+            macro_rules! read_pixels {
+                () => {
+                    pixels = if R::IS_A {
+                        vram.read_a_obj::<u64>(tile_base)
+                    } else {
+                        vram.read_b_obj::<u64>(tile_base)
+                    };
+                    tile_base = tile_base.wrapping_add(tile_base_incr as u32);
+                };
+            }
+
+            if x_in_obj & 3 != x_in_obj_new_tile_compare {
+                read_pixels!();
+            }
+
+            for x in start_x..end_x {
+                if x_in_obj & 3 == x_in_obj_new_tile_compare {
+                    read_pixels!();
+                }
+                let color = pixels.wrapping_shr(x_in_obj << 4) as u16;
+                if color & 0x8000 != 0 {
+                    unsafe {
+                        *self.obj_scanline.0.get_unchecked_mut(x) =
+                            pixel_attrs.with_raw_color(color);
+                    }
+                }
+                x_in_obj = x_in_obj.wrapping_add(x_in_obj_incr as u32);
+            }
         } else {
             let mut tile_base = if R::IS_A {
                 self.control.a_tile_base()

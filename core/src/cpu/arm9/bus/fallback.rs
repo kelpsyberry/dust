@@ -39,7 +39,9 @@ pub fn read_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u8 {
 
         #[allow(clippy::match_same_arms)]
         0x04 => match addr & 0x00FF_FFFF {
-            0x000..=0x003 | 0x008..=0x057 | 0x06C..=0x06D => emu.gpu.engine_2d_a.read_8::<A>(addr),
+            0x000..=0x003 | 0x008..=0x057 | 0x064..=0x067 | 0x06C..=0x06D => {
+                emu.gpu.engine_2d_a.read_8::<A>(addr)
+            }
             0x06E..=0x06F => 0,
 
             0x004 => emu.gpu.disp_status_9().0 as u8,
@@ -261,7 +263,9 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
 
         #[allow(clippy::match_same_arms)]
         0x04 => match addr & 0x00FF_FFFE {
-            0x000..=0x002 | 0x008..=0x056 | 0x06C => emu.gpu.engine_2d_a.read_16::<A>(addr),
+            0x000..=0x002 | 0x008..=0x056 | 0x064 | 0x066 | 0x06C => {
+                emu.gpu.engine_2d_a.read_16::<A>(addr)
+            }
             0x06E => 0,
 
             0x004 => emu.gpu.disp_status_9().0,
@@ -354,7 +358,23 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
             0x214 => emu.arm9.irqs.requested().0 as u16,
             0x216 => (emu.arm9.irqs.requested().0 >> 16) as u16,
 
-            0x246 => (emu.swram.control().0 as u16) << 8,
+            0x240 => {
+                emu.gpu.vram.bank_control()[0].0 as u16
+                    | (emu.gpu.vram.bank_control()[1].0 as u16) << 8
+            }
+            0x242 => {
+                emu.gpu.vram.bank_control()[2].0 as u16
+                    | (emu.gpu.vram.bank_control()[3].0 as u16) << 8
+            }
+            0x244 => {
+                emu.gpu.vram.bank_control()[4].0 as u16
+                    | (emu.gpu.vram.bank_control()[5].0 as u16) << 8
+            }
+            0x246 => emu.gpu.vram.bank_control()[6].0 as u16 | (emu.swram.control().0 as u16) << 8,
+            0x248 => {
+                emu.gpu.vram.bank_control()[7].0 as u16
+                    | (emu.gpu.vram.bank_control()[8].0 as u16) << 8
+            }
 
             0x280 => emu.arm9.div_engine.control().0,
             0x282 => 0,
@@ -454,7 +474,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
         },
 
         0x04 => match addr & 0x00FF_FFFC {
-            0x000 | 0x008..=0x054 | 0x06C => emu.gpu.engine_2d_a.read_32::<A>(addr),
+            0x000 | 0x008..=0x054 | 0x064 | 0x06C => emu.gpu.engine_2d_a.read_32::<A>(addr),
 
             0x004 => emu.gpu.disp_status_9().0 as u32 | (emu.gpu.vcount() as u32) << 16,
 
@@ -531,7 +551,22 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
             0x210 => emu.arm9.irqs.enabled().0,
             0x214 => emu.arm9.irqs.requested().0,
 
-            0x244 => (emu.swram.control().0 as u32) << 24,
+            0x240 => {
+                emu.gpu.vram.bank_control()[0].0 as u32
+                    | (emu.gpu.vram.bank_control()[1].0 as u32) << 8
+                    | (emu.gpu.vram.bank_control()[2].0 as u32) << 16
+                    | (emu.gpu.vram.bank_control()[3].0 as u32) << 24
+            }
+            0x244 => {
+                emu.gpu.vram.bank_control()[4].0 as u32
+                    | (emu.gpu.vram.bank_control()[5].0 as u32) << 8
+                    | (emu.gpu.vram.bank_control()[6].0 as u32) << 16
+                    | (emu.swram.control().0 as u32) << 24
+            }
+            0x248 => {
+                emu.gpu.vram.bank_control()[7].0 as u32
+                    | (emu.gpu.vram.bank_control()[8].0 as u32) << 8
+            }
 
             0x280 => emu.arm9.div_engine.control().0 as u32,
             0x290 => emu.arm9.div_engine.num() as u32,
@@ -654,7 +689,7 @@ pub fn write_8<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u8)
 
         #[allow(clippy::match_same_arms)]
         0x04 => match addr & 0x00FF_FFFF {
-            0x000..=0x003 | 0x008..=0x057 | 0x06C..=0x06D => {
+            0x000..=0x003 | 0x008..=0x057 | 0x064..=0x06D => {
                 emu.gpu.engine_2d_a.write_8::<A>(addr, value);
             }
 
@@ -918,7 +953,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
         0x04 => {
             #[allow(clippy::match_same_arms)]
             match addr & 0x00FF_FFFE {
-                0x000..=0x002 | 0x008..=0x056 | 0x06C => {
+                0x000..=0x002 | 0x008..=0x056 | 0x064..=0x06C => {
                     emu.gpu.engine_2d_a.write_16::<A>(addr, value);
                 }
 
@@ -1331,7 +1366,7 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
 
         0x04 => {
             match addr & 0x00FF_FFFC {
-                0x000 | 0x008..=0x054 | 0x06C => {
+                0x000 | 0x008..=0x054 | 0x064..=0x06C => {
                     emu.gpu.engine_2d_a.write_32::<A>(addr, value);
                 }
 

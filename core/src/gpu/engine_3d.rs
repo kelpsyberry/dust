@@ -809,6 +809,7 @@ impl Engine3d {
                     // t = --------------------- = ---------------------
                     //     ±(x1 - x0) - w1 + w0    $coord_diff - w1 + w0
                     let denom = $coord_diff + $w - $other_w;
+                    #[allow(clippy::neg_multiply)]
                     if denom != 0 {
                         let mut vert = $vert.interpolate($other, $numer, denom);
                         vert.coords[$axis_i] = $sign * vert.coords[3];

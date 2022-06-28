@@ -74,7 +74,7 @@ pub fn read_bg_text_tiles<'a, R: Role>(
 pub fn render_scanline_bg_text<R: Role>(
     engine: &mut Engine2d<R>,
     bg_index: BgIndex,
-    line: u16,
+    line: u8,
     vram: &Vram,
 ) {
     let bg = &engine.bgs[bg_index.get() as usize];

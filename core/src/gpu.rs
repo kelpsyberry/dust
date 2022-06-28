@@ -245,7 +245,7 @@ impl Gpu {
                             .as_mut_ptr()
                             .add(scanline_base)
                             as *mut Scanline<u32>),
-                        &emu.gpu.vram,
+                        &mut emu.gpu.vram,
                         &mut *emu.gpu.engine_3d.renderer,
                     );
                     emu.gpu.engine_2d_b.render_scanline(
@@ -254,7 +254,7 @@ impl Gpu {
                             .as_mut_ptr()
                             .add(scanline_base)
                             as *mut Scanline<u32>),
-                        &emu.gpu.vram,
+                        &mut emu.gpu.vram,
                         &mut *emu.gpu.engine_3d.renderer,
                     );
                 }
@@ -332,6 +332,8 @@ impl Gpu {
             } else {
                 emu.gpu.engine_3d.swap_buffers_missed(&emu.gpu.vram);
             }
+            emu.gpu.engine_2d_a.start_vblank();
+            emu.gpu.engine_2d_b.start_vblank();
             if emu.gpu.power_control.display_enabled() {
                 emu.gpu.disp_status_7.set_vblank(true);
                 if emu.gpu.disp_status_7.vblank_irq_enabled() {

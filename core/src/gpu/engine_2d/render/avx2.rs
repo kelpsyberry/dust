@@ -25,7 +25,7 @@ unsafe fn rgb_15_to_18(values: __m256i, data: [__m256i; 3]) -> __m256i {
 pub fn render_scanline_bg_text<R: Role>(
     engine: &mut Engine2d<R>,
     bg_index: BgIndex,
-    line: u16,
+    line: u8,
     vram: &Vram,
 ) {
     let bg = &engine.bgs[bg_index.get() as usize];

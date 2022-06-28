@@ -1,6 +1,6 @@
 use super::{
-    BgControl, BgIndex, BlendCoeffsRaw, BrightnessControl, ColorEffectsControl, Control, Engine2d,
-    Role, WindowControl,
+    BgControl, BgIndex, BlendCoeffsRaw, BrightnessControl, CaptureControl, ColorEffectsControl,
+    Control, Engine2d, Role, WindowControl,
 };
 use crate::cpu::bus::AccessType;
 
@@ -20,6 +20,10 @@ impl<R: Role> Engine2d<R> {
             0x0D => (self.bgs[2].control.0 >> 8) as u8,
             0x0E => self.bgs[3].control.0 as u8,
             0x0F => (self.bgs[3].control.0 >> 8) as u8,
+            0x64 => self.capture_control.0 as u8,
+            0x65 => (self.capture_control.0 >> 8) as u8,
+            0x66 => (self.capture_control.0 >> 16) as u8,
+            0x67 => (self.capture_control.0 >> 24) as u8,
             _ => {
                 #[cfg(feature = "log")]
                 if !A::IS_DEBUG {
@@ -43,6 +47,8 @@ impl<R: Role> Engine2d<R> {
             0x4A => self.window_control[2].0 as u16 | (self.window_control[3].0 as u16) << 8,
             0x50 => self.color_effects_control.0,
             0x52 => self.blend_coeffs_raw.0,
+            0x64 => self.capture_control.0 as u16,
+            0x66 => (self.capture_control.0 >> 16) as u16,
             0x6C => self.master_brightness_control.0,
             _ => {
                 #[cfg(feature = "log")]
@@ -67,6 +73,7 @@ impl<R: Role> Engine2d<R> {
                     | (self.window_control[3].0 as u32) << 24
             }
             0x50 => self.color_effects_control.0 as u32 | (self.blend_coeffs_raw.0 as u32) << 16,
+            0x64 => self.capture_control.0,
             0x6C => self.master_brightness_control.0 as u32,
             _ => {
                 #[cfg(feature = "log")]
@@ -163,6 +170,18 @@ impl<R: Role> Engine2d<R> {
             0x45 => self.window_ranges[0].y.start = value,
             0x46 => self.window_ranges[1].y.end = value,
             0x47 => self.window_ranges[1].y.start = value,
+            0x64 => self.write_capture_control(CaptureControl(
+                (self.capture_control.0 & 0xFFFF_FF00) | value as u32,
+            )),
+            0x65 => self.write_capture_control(CaptureControl(
+                (self.capture_control.0 & 0xFFFF_00FF) | (value as u32) << 8,
+            )),
+            0x66 => self.write_capture_control(CaptureControl(
+                (self.capture_control.0 & 0xFF00_FFFF) | (value as u32) << 16,
+            )),
+            0x67 => self.write_capture_control(CaptureControl(
+                (self.capture_control.0 & 0x00FF_FFFF) | (value as u32) << 24,
+            )),
             _ =>
             {
                 #[cfg(feature = "log")]
@@ -260,6 +279,12 @@ impl<R: Role> Engine2d<R> {
             0x50 => self.write_color_effects_control(ColorEffectsControl(value)),
             0x52 => self.write_blend_coeffs_raw(BlendCoeffsRaw(value)),
             0x54 => self.write_brightness_coeff(value as u8),
+            0x64 => self.write_capture_control(CaptureControl(
+                (self.capture_control.0 & 0xFFFF_0000) | value as u32,
+            )),
+            0x66 => self.write_capture_control(CaptureControl(
+                (self.capture_control.0 & 0x0000_FFFF) | (value as u32) << 16,
+            )),
             0x6C => self.write_master_brightness_control(BrightnessControl(value)),
             _ =>
             {
@@ -355,6 +380,7 @@ impl<R: Role> Engine2d<R> {
                 self.write_blend_coeffs_raw(BlendCoeffsRaw((value >> 16) as u16));
             }
             0x54 => self.write_brightness_coeff(value as u8),
+            0x64 => self.write_capture_control(CaptureControl(value)),
             0x6C => self.write_master_brightness_control(BrightnessControl(value as u16)),
             _ =>
             {

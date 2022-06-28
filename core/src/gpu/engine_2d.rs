@@ -271,6 +271,22 @@ bitfield_debug! {
     }
 }
 
+bitfield_debug! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub struct CaptureControl(u32) {
+        pub factor_a: u8 @ 0..=4,
+        pub factor_b: u8 @ 8..=12,
+        pub dst_bank: u8 @ 16..=17,
+        pub dst_offset_raw: u8 @ 18..=19,
+        pub size: u8 @ 20..=21,
+        pub src_a_3d_only: bool @ 24,
+        pub src_b_display_fifo: bool @ 25,
+        pub src_b_vram_offset_raw: u8 @ 26..=27,
+        pub src: u8 @ 29..=30,
+        pub enabled: bool @ 31,
+    }
+}
+
 pub struct Engine2d<R: Role> {
     #[cfg(feature = "log")]
     logger: slog::Logger,
@@ -296,6 +312,9 @@ pub struct Engine2d<R: Role> {
     obj_scanline: Scanline<ObjPixel>,
     // Allow for slightly out-of-bounds SIMD accesses
     window: Scanline<WindowPixel, { SCREEN_WIDTH + 7 }>,
+    capture_control: CaptureControl,
+    capture_enabled_in_frame: bool,
+    capture_height: u8,
 }
 
 impl<R: Role> Engine2d<R> {
@@ -340,6 +359,9 @@ impl<R: Role> Engine2d<R> {
             bg_obj_scanline: Scanline([0; SCREEN_WIDTH]),
             obj_scanline: Scanline([ObjPixel(0); SCREEN_WIDTH]),
             window: Scanline([WindowPixel(0); SCREEN_WIDTH + 7]),
+            capture_control: CaptureControl(0),
+            capture_enabled_in_frame: false,
+            capture_height: 128,
         }
     }
 
@@ -449,9 +471,29 @@ impl<R: Role> Engine2d<R> {
         self.brightness_coeff = (value & 0x1F).min(16);
     }
 
+    #[inline]
+    pub fn capture_control(&self) -> CaptureControl {
+        self.capture_control
+    }
+
+    #[inline]
+    pub fn write_capture_control(&mut self, value: CaptureControl) {
+        if R::IS_A {
+            self.capture_control.0 = value.0 & 0xEF3F_1F1F;
+            self.capture_height = [128, 64, 128, 192][value.size() as usize];
+        }
+    }
+
+    pub(super) fn start_vblank(&mut self) {
+        if R::IS_A && self.capture_enabled_in_frame {
+            self.capture_control.set_enabled(false);
+        }
+    }
+
     pub(super) fn end_vblank(&mut self) {
         if R::IS_A {
             self.engine_3d_enabled_in_frame = self.engine_3d_enabled;
+            self.capture_enabled_in_frame = self.capture_control.enabled();
         }
         // TODO: When does this happen? This is just what might make the most sense, but GBATEK
         // doesn't say.
