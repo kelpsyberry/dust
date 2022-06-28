@@ -1,4 +1,3 @@
-use dust_soft_3d::{RawRenderer, RenderingData};
 use dust_core::{
     gpu::{
         engine_3d::{
@@ -8,6 +7,7 @@ use dust_core::{
     },
     utils::{zeroed_box, Bytes},
 };
+use dust_soft_3d::{RawRenderer, RenderingData};
 use std::{
     cell::UnsafeCell,
     hint,

@@ -203,11 +203,13 @@ pub fn create_emu_state(
 
     let model = Model::from(model);
 
-    let firmware = firmware_arr.map(|arr| {
-        let mut buf = BoxedByteSlice::new_zeroed(arr.length() as usize);
-        arr.copy_to(&mut buf[..]);
-        buf
-    }).unwrap_or_else(|| firmware::default(model));
+    let firmware = firmware_arr
+        .map(|arr| {
+            let mut buf = BoxedByteSlice::new_zeroed(arr.length() as usize);
+            arr.copy_to(&mut buf[..]);
+            buf
+        })
+        .unwrap_or_else(|| firmware::default(model));
 
     let mut rom = BoxedByteSlice::new_zeroed(rom_arr.length().next_power_of_two() as usize);
     rom_arr.copy_to(&mut rom[..rom_arr.length() as usize]);

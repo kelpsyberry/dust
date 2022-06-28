@@ -8,8 +8,8 @@ pub struct Flash {
     logger: slog::Logger,
     pub contents: flash::Flash,
     has_ir: bool,
-    first: bool,
-    accessing_flash: bool,
+    ir_cmd: u8,
+    first_ir_data_byte: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,8 +38,8 @@ impl Flash {
             )
             .unwrap(),
             has_ir,
-            first: false,
-            accessing_flash: false,
+            ir_cmd: 0,
+            first_ir_data_byte: false,
             #[cfg(feature = "log")]
             logger,
         })
@@ -49,8 +49,8 @@ impl Flash {
     pub fn reset(self) -> Self {
         Flash {
             contents: self.contents.reset(),
-            first: false,
-            accessing_flash: false,
+            ir_cmd: 0,
+            first_ir_data_byte: false,
             ..self
         }
     }
@@ -115,28 +115,40 @@ impl super::SpiDevice for Flash {
     fn write_data(&mut self, value: u8, first: bool, last: bool) -> u8 {
         if self.has_ir {
             if first {
-                self.accessing_flash = value == 0x00;
-                self.first = true;
-                return 0xFF;
-            }
-            let first = self.first;
-            self.first = false;
-            if self.accessing_flash {
-                self.contents.handle_byte(value, first, last)
+                self.ir_cmd = value;
+                self.first_ir_data_byte = true;
+                0
             } else {
-                #[cfg(feature = "log")]
-                slog::info!(
-                    self.logger,
-                    "IR: {:#04X}{}",
-                    value,
-                    match (first, last) {
-                        (false, false) => "",
-                        (true, false) => " (first)",
-                        (false, true) => " (last)",
-                        (true, true) => " (first, last)",
+                let first = self.first_ir_data_byte;
+                self.first_ir_data_byte = false;
+                match self.ir_cmd {
+                    0x00 => {
+                        // Pass-through to FLASH chip
+                        self.contents.handle_byte(value, first, last)
                     }
-                );
-                0xFF
+
+                    0x08 => {
+                        // Read ID
+                        0xAA
+                    }
+
+                    command => {
+                        #[cfg(feature = "log")]
+                        slog::warn!(
+                            self.logger,
+                            "Unknown IR byte (command {:#04X}): {:#04X}{}",
+                            command,
+                            value,
+                            match (first, last) {
+                                (false, false) => "",
+                                (true, false) => " (first)",
+                                (false, true) => " (last)",
+                                (true, true) => " (first, last)",
+                            }
+                        );
+                        0
+                    }
+                }
             }
         } else {
             self.contents.handle_byte(value, first, last)

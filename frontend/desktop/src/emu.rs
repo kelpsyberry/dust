@@ -1,7 +1,7 @@
 #[cfg(feature = "gdb-server")]
 mod gdb_server;
-mod rtc;
 mod renderer_3d;
+mod rtc;
 
 #[cfg(feature = "debug-views")]
 use super::debug_views;
