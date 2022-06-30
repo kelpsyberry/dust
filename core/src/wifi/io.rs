@@ -8,8 +8,10 @@ impl WiFi {
 
     fn write_io<A: AccessType>(&mut self, mut addr: u16, value: u8) {
         addr &= 0xFFF;
+        #[allow(clippy::match_same_arms)]
         match addr {
             0x03D => return,
+
             0x159 => {
                 let index = self.mmio[0x158];
                 match value >> 4 {
@@ -32,7 +34,9 @@ impl WiFi {
                     _ => {}
                 }
             }
+
             0x15C..=0x15F => return,
+
             _ => {}
         }
         self.mmio[addr as usize] = value;

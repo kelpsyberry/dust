@@ -4,11 +4,16 @@ use utils::{dec_poly_vert_index, inc_poly_vert_index, Edge, InterpLineData};
 use super::RenderingData;
 use dust_core::{
     gpu::{
-        engine_3d::{InterpColor, PolyAddr, PolyVertIndex, PolygonAttrs, TexCoords, TextureParams},
+        engine_3d::{
+            Color, InterpColor, PolyAddr, PolyVertIndex, PolygonAttrs, TexCoords, TextureParams,
+        },
         Scanline,
     },
     utils::{bitfield_debug, zeroed_box, Zero},
 };
+
+type DepthTestFn = fn(u32, u32, PixelAttrs) -> bool;
+type ProcessPixelFn = fn(&RenderingData, &RenderingPolygon, TexCoords, InterpColor) -> InterpColor;
 
 #[derive(Clone, Copy)]
 struct RenderingPolygon {
@@ -25,32 +30,40 @@ struct RenderingPolygon {
     bot_i: PolyVertIndex,
     alpha: u8,
     id: u8,
-    depth_test: fn(u32, u32, PixelAttrs) -> bool,
-    process_pixel: fn(&RenderingData, &RenderingPolygon, TexCoords, InterpColor) -> InterpColor,
+    is_front_facing: bool,
+    depth_test: DepthTestFn,
+    process_pixel: ProcessPixelFn,
 }
 
 bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     struct PixelAttrs(pub u32) {
+        pub edge_mask: u8 @ 0..=3,
+        pub top_edge: bool @ 0,
+        pub bottom_edge: bool @ 1,
+        pub right_edge: bool @ 2,
+        pub left_edge: bool @ 3,
+
         pub translucent: bool @ 13,
         pub back_facing: bool @ 14,
 
         pub fog_enabled: bool @ 15,
 
-        pub edge_mask: u8 @ 16..=19,
-        pub top_edge: bool @ 16,
-        pub bottom_edge: bool @ 17,
-        pub right_edge: bool @ 18,
-        pub left_edge: bool @ 19,
-
-        pub translucent_id: u8 @ 18..=23,
+        pub translucent_id: u8 @ 16..=22,
         pub opaque_id: u8 @ 24..=29,
     }
 }
 
 impl PixelAttrs {
-    fn from_opaque_poly_attrs(attrs: PolygonAttrs) -> Self {
-        PixelAttrs(attrs.0 & 0x3F00_8000)
+    fn from_opaque_poly_attrs(poly: &RenderingPolygon) -> Self {
+        PixelAttrs(poly.attrs.0 & 0x3F00_8000).with_back_facing(!poly.is_front_facing)
+    }
+
+    fn from_translucent_poly_attrs(poly: &RenderingPolygon, opaque: PixelAttrs) -> Self {
+        PixelAttrs(opaque.0 & 0x3F00_8000)
+            .with_translucent(true)
+            .with_back_facing(!poly.is_front_facing)
+            .with_translucent_id(poly.id | 0x40)
     }
 }
 
@@ -66,12 +79,10 @@ fn decode_rgb_5(color: u16, alpha: u16) -> InterpColor {
 }
 
 fn rgb_5_to_6(color: InterpColor) -> InterpColor {
-    (color << InterpColor::splat(1)) - color.lanes_ne(InterpColor::splat(0)).to_int().cast::<u16>()
-}
-
-fn encode_rgb_6(color: InterpColor) -> u32 {
-    let [r, g, b, a] = color.to_array();
-    r as u32 | (g as u32) << 6 | (b as u32) << 12 | (a as u32 >> 1) << 18
+    let mut result = (color << InterpColor::splat(1))
+        - color.lanes_ne(InterpColor::splat(0)).to_int().cast::<u16>();
+    result[3] >>= 1;
+    result
 }
 
 fn process_pixel<const FORMAT: u8, const MODE: u8>(
@@ -91,9 +102,9 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
         _ => vert_color,
     };
     vert_blend_color[3] = if poly.alpha == 0 {
-        0x3F
+        0x1F
     } else {
-        (poly.alpha << 1 | 1) as u16
+        poly.alpha as u16
     };
 
     let blended_color = if FORMAT == 0 {
@@ -275,15 +286,15 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
         match MODE {
             1 => match tex_color[3] {
                 0 => vert_blend_color,
-                0x3F => {
+                0x1F => {
                     let mut color = tex_color;
                     color[3] = vert_blend_color[3];
                     color
                 }
                 _ => {
                     let mut color = (tex_color * InterpColor::splat(tex_color[3])
-                        + vert_blend_color * InterpColor::splat(vert_blend_color[3]))
-                        >> InterpColor::splat(6);
+                        + vert_blend_color * InterpColor::splat(31 - tex_color[3]))
+                        >> InterpColor::splat(5);
                     color[3] = vert_blend_color[3];
                     color
                 }
@@ -292,7 +303,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
             _ => {
                 ((tex_color + InterpColor::splat(1)) * (vert_blend_color + InterpColor::splat(1))
                     - InterpColor::splat(1))
-                    >> InterpColor::splat(6)
+                    >> InterpColor::from_array([6, 6, 6, 5])
             }
         }
     };
@@ -300,14 +311,56 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
     if MODE == 3 {
         // TODO: Toon table
         let toon_color = rgb_5_to_6(InterpColor::from_array([0x1F, 0x1F, 0x1F, 0]));
-        (blended_color + toon_color).min(InterpColor::from_array([0x3F, 0x3F, 0x3F, 0x3F]))
+        (blended_color + toon_color).min(InterpColor::from_array([0x3F, 0x3F, 0x3F, 0x1F]))
     } else {
         blended_color
     }
 }
 
+static PROCESS_PIXEL_TEXTURES_ENABLED: [ProcessPixelFn; 32] = [
+    process_pixel::<0, 0>,
+    process_pixel::<1, 0>,
+    process_pixel::<2, 0>,
+    process_pixel::<3, 0>,
+    process_pixel::<4, 0>,
+    process_pixel::<5, 0>,
+    process_pixel::<6, 0>,
+    process_pixel::<7, 0>,
+    process_pixel::<0, 1>,
+    process_pixel::<1, 1>,
+    process_pixel::<2, 1>,
+    process_pixel::<3, 1>,
+    process_pixel::<4, 1>,
+    process_pixel::<5, 1>,
+    process_pixel::<6, 1>,
+    process_pixel::<7, 1>,
+    process_pixel::<0, 2>,
+    process_pixel::<1, 2>,
+    process_pixel::<2, 2>,
+    process_pixel::<3, 2>,
+    process_pixel::<4, 2>,
+    process_pixel::<5, 2>,
+    process_pixel::<6, 2>,
+    process_pixel::<7, 2>,
+    process_pixel::<0, 3>,
+    process_pixel::<1, 3>,
+    process_pixel::<2, 3>,
+    process_pixel::<3, 3>,
+    process_pixel::<4, 3>,
+    process_pixel::<5, 3>,
+    process_pixel::<6, 3>,
+    process_pixel::<7, 3>,
+];
+
+static PROCESS_PIXEL_TEXTURES_DISABLED: [ProcessPixelFn; 4] = [
+    process_pixel::<0, 0>,
+    process_pixel::<0, 1>,
+    process_pixel::<0, 2>,
+    process_pixel::<0, 3>,
+];
+
 pub struct Renderer {
-    color_buffer: Box<[u64; 256]>,
+    color_buffer: Box<[Color; 256]>,
     depth_buffer: Box<[u32; 256]>,
     attr_buffer: Box<[PixelAttrs; 256]>,
     polys: Vec<RenderingPolygon>,
@@ -316,7 +369,7 @@ pub struct Renderer {
 impl Renderer {
     pub fn new() -> Self {
         Renderer {
-            color_buffer: zeroed_box(),
+            color_buffer: Box::new([Color::splat(0); 256]),
             depth_buffer: zeroed_box(),
             attr_buffer: zeroed_box(),
             polys: Vec::with_capacity(2048),
@@ -370,47 +423,9 @@ impl Renderer {
                     mode => mode,
                 };
                 if rendering_data.control.texture_mapping_enabled() {
-                    [
-                        process_pixel::<0, 0>,
-                        process_pixel::<1, 0>,
-                        process_pixel::<2, 0>,
-                        process_pixel::<3, 0>,
-                        process_pixel::<4, 0>,
-                        process_pixel::<5, 0>,
-                        process_pixel::<6, 0>,
-                        process_pixel::<7, 0>,
-                        process_pixel::<0, 1>,
-                        process_pixel::<1, 1>,
-                        process_pixel::<2, 1>,
-                        process_pixel::<3, 1>,
-                        process_pixel::<4, 1>,
-                        process_pixel::<5, 1>,
-                        process_pixel::<6, 1>,
-                        process_pixel::<7, 1>,
-                        process_pixel::<0, 2>,
-                        process_pixel::<1, 2>,
-                        process_pixel::<2, 2>,
-                        process_pixel::<3, 2>,
-                        process_pixel::<4, 2>,
-                        process_pixel::<5, 2>,
-                        process_pixel::<6, 2>,
-                        process_pixel::<7, 2>,
-                        process_pixel::<0, 3>,
-                        process_pixel::<1, 3>,
-                        process_pixel::<2, 3>,
-                        process_pixel::<3, 3>,
-                        process_pixel::<4, 3>,
-                        process_pixel::<5, 3>,
-                        process_pixel::<6, 3>,
-                        process_pixel::<7, 3>,
-                    ][(mode << 3 | poly.tex_params.format()) as usize]
+                    PROCESS_PIXEL_TEXTURES_ENABLED[(mode << 3 | poly.tex_params.format()) as usize]
                 } else {
-                    [
-                        process_pixel::<0, 0>,
-                        process_pixel::<0, 1>,
-                        process_pixel::<0, 2>,
-                        process_pixel::<0, 3>,
-                    ][mode as usize]
+                    PROCESS_PIXEL_TEXTURES_DISABLED[mode as usize]
                 }
             };
 
@@ -452,6 +467,7 @@ impl Renderer {
                     height: 1,
                     alpha: poly.attrs.alpha(),
                     id: poly.attrs.id(),
+                    is_front_facing: poly.is_front_facing,
                     edges: [
                         Edge::new(
                             poly,
@@ -522,6 +538,7 @@ impl Renderer {
                     height: poly.bot_y - poly.top_y,
                     alpha: poly.attrs.alpha(),
                     id: poly.attrs.id(),
+                    is_front_facing: poly.is_front_facing,
                     edges: [
                         Edge::new(
                             poly,
@@ -560,7 +577,7 @@ impl Renderer {
     ) {
         scanline.0.fill(0);
 
-        self.color_buffer.fill(0);
+        self.color_buffer.fill(Color::splat(0));
         self.depth_buffer.fill(0xFF_FFFF);
         self.attr_buffer.fill(PixelAttrs(0));
 
@@ -674,10 +691,39 @@ impl Renderer {
                         if (poly.depth_test)(depth, self.depth_buffer[x], self.attr_buffer[x]) {
                             let vert_color = interp.color(l_vert_color, r_vert_color);
                             let uv = interp.uv(l_uv, r_uv);
-                            let color = (poly.process_pixel)(rendering_data, poly, uv, vert_color);
-                            scanline.0[x] = encode_rgb_6(color);
-                            self.depth_buffer[x] = depth;
-                            self.attr_buffer[x] = PixelAttrs::from_opaque_poly_attrs(poly.attrs);
+                            let mut color =
+                                (poly.process_pixel)(rendering_data, poly, uv, vert_color);
+                            let alpha = color[3];
+                            if alpha != 0 {
+                                if alpha == 0x1F {
+                                    self.color_buffer[x] = color.cast();
+                                    self.depth_buffer[x] = depth;
+                                    self.attr_buffer[x] = PixelAttrs::from_opaque_poly_attrs(poly);
+                                } else {
+                                    let prev_attrs = self.attr_buffer[x];
+                                    if prev_attrs.translucent_id() != poly.id | 0x40 {
+                                        if rendering_data.control.alpha_blending_enabled() {
+                                            let prev_color = self.color_buffer[x].cast();
+                                            let prev_alpha = prev_color[3];
+                                            if prev_alpha != 0 {
+                                                color = ((color * InterpColor::splat(alpha + 1))
+                                                    + (prev_color
+                                                        * InterpColor::splat(31 - alpha)))
+                                                    >> InterpColor::splat(5);
+                                                color[3] = alpha.max(prev_alpha);
+                                            }
+                                        }
+                                        self.color_buffer[x] = color.cast();
+                                        if poly.attrs.update_depth_for_translucent() {
+                                            self.depth_buffer[x] = depth;
+                                        }
+                                        self.attr_buffer[x] =
+                                            PixelAttrs::from_translucent_poly_attrs(
+                                                poly, prev_attrs,
+                                            );
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -692,13 +738,43 @@ impl Renderer {
                     if (poly.depth_test)(depth, self.depth_buffer[x], self.attr_buffer[x]) {
                         let vert_color = interp.color(l_vert_color, r_vert_color);
                         let uv = interp.uv(l_uv, r_uv);
-                        let color = (poly.process_pixel)(rendering_data, poly, uv, vert_color);
-                        scanline.0[x] = encode_rgb_6(color);
-                        self.depth_buffer[x] = depth;
-                        self.attr_buffer[x] = PixelAttrs::from_opaque_poly_attrs(poly.attrs);
+                        let mut color = (poly.process_pixel)(rendering_data, poly, uv, vert_color);
+                        let alpha = color[3];
+                        if alpha != 0 {
+                            if alpha == 0x1F {
+                                self.color_buffer[x] = color.cast();
+                                self.depth_buffer[x] = depth;
+                                self.attr_buffer[x] = PixelAttrs::from_opaque_poly_attrs(poly);
+                            } else {
+                                let prev_attrs = self.attr_buffer[x];
+                                if prev_attrs.translucent_id() != poly.id | 0x40 {
+                                    if rendering_data.control.alpha_blending_enabled() {
+                                        let prev_color = self.color_buffer[x].cast();
+                                        let prev_alpha = prev_color[3];
+                                        if prev_alpha != 0 {
+                                            color = ((color * InterpColor::splat(alpha + 1))
+                                                + (prev_color * InterpColor::splat(31 - alpha)))
+                                                >> InterpColor::splat(5);
+                                            color[3] = alpha.max(prev_alpha);
+                                        }
+                                    }
+                                    self.color_buffer[x] = color.cast();
+                                    if poly.attrs.update_depth_for_translucent() {
+                                        self.depth_buffer[x] = depth;
+                                    }
+                                    self.attr_buffer[x] =
+                                        PixelAttrs::from_translucent_poly_attrs(poly, prev_attrs);
+                                }
+                            }
+                        }
                     }
                 }
             }
+        }
+
+        for x in 0..256 {
+            let [r, g, b, a] = self.color_buffer[x].to_array();
+            scanline.0[x] = r as u32 | (g as u32) << 6 | (b as u32) << 12 | (a as u32) << 18
         }
     }
 }

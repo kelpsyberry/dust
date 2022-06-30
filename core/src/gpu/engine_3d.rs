@@ -57,7 +57,7 @@ struct FifoEntry {
 bitfield_debug! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     pub struct SwapBuffersAttrs(pub u8) {
-        pub auto_sort_translucent: bool @ 0,
+        pub translucent_auto_sort_disabled: bool @ 0,
         pub w_buffering: bool @ 1,
     }
 }
@@ -145,6 +145,7 @@ pub struct Polygon {
     pub vertices_len: PolyVertsLen,
     pub attrs: PolygonAttrs,
     pub is_front_facing: bool,
+    pub is_translucent: bool,
     pub tex_params: TextureParams,
     pub tex_palette_base: u16,
 }
@@ -916,6 +917,8 @@ impl Engine3d {
         poly.tex_params = self.tex_params;
         poly.attrs = self.cur_poly_attrs;
         poly.is_front_facing = is_front_facing;
+        poly.is_translucent = matches!(poly.attrs.alpha(), 1..=30)
+            || (matches!(poly.attrs.mode(), 0 | 2) && matches!(poly.tex_params.format(), 1 | 6));
 
         if connect_to_last_strip_prim {
             poly.vertices[..2].copy_from_slice(&self.last_strip_prim_vert_indices);
@@ -925,27 +928,31 @@ impl Engine3d {
         let mut bot_y = 0;
 
         let viewport_origin = ConversionScreenCoords::from_array([
-            self.viewport[0] as i32,
-            191_u8.wrapping_sub(self.viewport[3]) as i32,
+            self.viewport[0] as i64,
+            191_u8.wrapping_sub(self.viewport[3]) as i64,
         ]);
         let viewport_size = ConversionScreenCoords::from_array([
-            (self.viewport[2] as i32 - self.viewport[0] as i32 + 1) & 0x1FF,
+            (self.viewport[2] as i64 - self.viewport[0] as i64 + 1) & 0x1FF,
             self.viewport[3]
                 .wrapping_sub(self.viewport[1])
-                .wrapping_add(1) as i32,
+                .wrapping_add(1) as i64,
         ]);
 
         for (vert, vert_addr) in buffer_0[shared_verts..clipped_verts_len]
-            .iter()
+            .iter_mut()
             .zip(&mut poly.vertices[shared_verts..clipped_verts_len])
         {
+            vert.coords[3] &= 0x00FF_FFFF;
             let w = vert.coords[3];
             let coords = if w == 0 {
                 // TODO: What should actually happen for W == 0?
                 ScreenCoords::splat(0)
             } else {
-                let w_2 = ConversionScreenCoords::splat(w);
-                ((ConversionScreenCoords::from_array([vert.coords[0], -vert.coords[1]]) + w_2)
+                let w_2 = ConversionScreenCoords::splat(w as i64);
+                ((ConversionScreenCoords::from_array([
+                    vert.coords[0] as i64,
+                    -vert.coords[1] as i64,
+                ]) + w_2)
                     * viewport_size
                     / (w_2 << ConversionScreenCoords::splat(1))
                     + viewport_origin)
@@ -980,7 +987,7 @@ impl Engine3d {
             let w = vert.coords[3];
             leading_zeros = leading_zeros.min(w.leading_zeros());
             poly.depth_values[i] = if self.swap_buffers_attrs.w_buffering() {
-                w & 0xFF_FFFF
+                w
             } else if w != 0 {
                 (((((vert.coords[2] as i64) << 14) / w as i64) + 0x3FFF) << 9) as i32 & 0xFF_FFFF
             } else {
@@ -1043,23 +1050,30 @@ impl Engine3d {
         if emu.gpu.engine_3d.rendering_enabled {
             // According to melonDS, the sort order is determined by these things, in order of
             // decreasing priority:
-            // - Being translucent/opaque (translucent polygons always come first, GBATEK says this
-            //   too)
+            // - Being translucent/opaque (opaque polygons always come first, GBATEK says this too)
             // - Bottom Y (lower first)
             // - Top Y (lower first)
             // - Submit order (thus needing a stable sort)
-            if emu.gpu.engine_3d.swap_buffers_attrs.auto_sort_translucent() {
+            if emu
+                .gpu
+                .engine_3d
+                .swap_buffers_attrs
+                .translucent_auto_sort_disabled()
+            {
                 emu.gpu.engine_3d.poly_ram[..emu.gpu.engine_3d.poly_ram_level as usize]
                     .sort_by_key(|poly| {
-                        ((1..31).contains(&poly.attrs.alpha()) as u32) << 16
-                            | (poly.bot_y as u32) << 8
-                            | poly.top_y as u32
+                        if poly.is_translucent {
+                            0x1_0000
+                        } else {
+                            (poly.bot_y as u32) << 8 | poly.top_y as u32
+                        }
                     });
             } else {
                 emu.gpu.engine_3d.poly_ram[..emu.gpu.engine_3d.poly_ram_level as usize]
-                    .sort_by_key(|poly| match poly.attrs.alpha() {
-                        1..=30 => 0x1_0000,
-                        _ => (poly.bot_y as u32) << 8 | poly.top_y as u32,
+                    .sort_by_key(|poly| {
+                        (poly.is_translucent as u32) << 16
+                            | (poly.bot_y as u32) << 8
+                            | poly.top_y as u32
                     });
             }
             unsafe {

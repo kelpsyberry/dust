@@ -78,11 +78,12 @@ class FpsLimiter {
         const now = performance.now();
         if (now - lastSave >= 1000) {
             lastSave = now;
+            const buffer = emu!.export_save();
             sendMessage({
                 type: EmuToUi.MessageType.ExportSave,
-                buffer: emu!.export_save(),
+                buffer,
                 triggerDownload: false,
-            });
+            }, [buffer.buffer]);
         }
     }
 

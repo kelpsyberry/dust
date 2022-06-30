@@ -1,10 +1,10 @@
 use crate::utils::Zero;
-use core::simd::{i16x2, i32x2, i32x4, i64x2, i64x4, simd_swizzle, u16x2, u16x4, u8x4};
+use core::simd::{i16x2, i32x4, i64x2, i64x4, mask64x4, simd_swizzle, u16x2, u16x4, u8x4};
 
 pub type TexCoords = i16x2;
 pub type Color = u8x4;
 pub type InterpColor = u16x4;
-pub type ConversionScreenCoords = i32x2;
+pub type ConversionScreenCoords = i64x2;
 pub type ScreenCoords = u16x2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,7 +61,14 @@ pub fn front_facing(v0: &Vertex, v1: &Vertex, v2: &Vertex) -> bool {
     // the actual calculation for a front-facing polygon is just:
     // ((v2 - v1) × (v0 - v1)) · v1 >= 0
     let v1_64 = v1.coords.cast::<i64>();
-    let normal = cross_w_as_z(v2.coords.cast() - v1_64, v0.coords.cast() - v1_64);
+    let mut normal = cross_w_as_z(v2.coords.cast() - v1_64, v0.coords.cast() - v1_64);
+    // Normalize the normal's components so that they fit in a 32-bit integer, to avoid overflows
+    while ((normal >> i64x4::splat(31) ^ normal >> i64x4::splat(63)).lanes_ne(i64x4::splat(0))
+        & mask64x4::from_array([true, true, true, false]))
+    .any()
+    {
+        normal >>= i64x4::splat(4);
+    }
     (normal * simd_swizzle!(v1_64, [0, 1, 3, 2])).reduce_sum() >= 0
 }
 
