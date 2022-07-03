@@ -91,7 +91,6 @@
 - Finished 3D rendering
 - Wi-Fi
 - RTC alarms
-- More accurate direct boot
 - ARM7 regular open bus (the ARM9 seems to always return 0)
 - Keep the ARM9 running while running a DMA and executing code from TCM, though that would require an accurate implementation of bus stalling, which doesn't seem feasible without a large amount of boilerplate and a noticeable performance impact
 - Sleep mode
@@ -102,7 +101,6 @@
 # Non-essential but wanted additions
 
 ## Core
-- HLE BIOS
 - Savestates
 
 ## Frontends
