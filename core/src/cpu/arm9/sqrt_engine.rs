@@ -1,9 +1,9 @@
 use super::{event_slots, Event, Schedule, Timestamp};
-use crate::{cpu::Schedule as _, utils::bitfield_debug};
+use crate::cpu::Schedule as _;
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Control(pub u16) {
+    pub const struct Control(pub u16): Debug {
         pub input_64_bit: bool @ 0,
         pub busy: bool @ 15,
     }

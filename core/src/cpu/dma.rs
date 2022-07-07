@@ -1,8 +1,6 @@
-use crate::utils::bitfield_debug;
-
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Control(pub u32) {
+    pub const struct Control(pub u32): Debug {
         pub dst_addr_control: u8 @ 21..=22,
         pub src_addr_control: u8 @ 23..=24,
         pub repeat: bool @ 25,

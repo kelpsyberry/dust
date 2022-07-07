@@ -1,10 +1,10 @@
-use crate::utils::{bitfield_debug, bounded_int};
+use crate::utils::bounded_int;
 
 // TODO: Implement INT1 and INT2 (and also expose them)
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Control(pub u16) {
+    pub const struct Control(pub u16): Debug {
         pub data: u8 @ 0..=0,
         pub clock: bool @ 1,
         pub chipselect: bool @ 2,
@@ -27,9 +27,9 @@ impl RegIndex {
     pub const FREE: Self = RegIndex::new(0b111);
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Status1(pub u8) {
+    pub const struct Status1(pub u8): Debug {
         pub reset: bool @ 0,
         pub is_in_24_hour_mode: bool @ 1,
         pub int1_flag: bool @ 4,
@@ -39,9 +39,9 @@ bitfield_debug! {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Status2(pub u8) {
+    pub const struct Status2(pub u8): Debug {
         pub int1_mode: u8 @ 0..=3,
         pub int2_enabled: bool @ 6,
         pub test_mode: bool @ 7,

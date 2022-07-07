@@ -3,7 +3,6 @@ use crate::cpu::bus::{r_disable_flags, RDisableFlags};
 #[cfg(feature = "bft-w")]
 use crate::cpu::bus::{w_disable_flags, WDisableFlags};
 use crate::utils::{zeroed_box, Zero};
-use cfg_if::cfg_if;
 
 pub type Mask = u8;
 pub mod mask {
@@ -17,9 +16,7 @@ pub mod mask {
 
 pub(in super::super) type Attrs = u8;
 pub(in super::super) mod attrs {
-    use cfg_if::cfg_if;
-
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(any(feature = "bft-r", feature = "bft-w"))] {
             use super::{mask, Attrs};
 
@@ -30,7 +27,7 @@ pub(in super::super) mod attrs {
             pub const BAK_MASK_W: Attrs = mask::W_ALL << BAK_MASK_START;
             pub const BAK_MASK_ALL: Attrs = mask::ALL << BAK_MASK_START;
 
-            cfg_if! {
+            cfg_if::cfg_if! {
                 if #[cfg(all(feature = "bft-r", not(feature = "bft-w")))] {
                     pub const R_DISABLE_START: u32 = 6;
                     pub const R_DISABLE_ALL: Attrs = super::r_disable_flags::ALL << R_DISABLE_START;
@@ -43,7 +40,7 @@ pub(in super::super) mod attrs {
     }
 }
 
-cfg_if! {
+cfg_if::cfg_if! {
     if #[cfg(all(feature = "bft-r", feature = "bft-w"))] {
         type DisableAttrs = u8;
         mod disable_attrs {

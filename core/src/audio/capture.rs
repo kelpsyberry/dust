@@ -1,16 +1,16 @@
 use crate::{
     cpu::{self, arm7, bus::DmaAccess},
     emu::Emu,
-    utils::{bitfield_debug, Bytes},
+    utils::Bytes,
 };
 
 // TODO: The capture units could actually need a higher resolution than the mixer (capturing
 // channel output, for example), maybe they should get their own events on the scheduler in that
 // case?
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Control(pub u8) {
+    pub const struct Control(pub u8): Debug {
         pub addition: bool @ 0,
         pub capture_channel: bool @ 1,
         pub one_shot: bool @ 2,

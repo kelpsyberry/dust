@@ -132,12 +132,12 @@ impl super::SpiDevice for Flash {
                         0xAA
                     }
 
-                    command => {
+                    _command => {
                         #[cfg(feature = "log")]
                         slog::warn!(
                             self.logger,
                             "Unknown IR byte (command {:#04X}): {:#04X}{}",
-                            command,
+                            _command,
                             value,
                             match (first, last) {
                                 (false, false) => "",

@@ -1,6 +1,6 @@
 use crate::{
     cpu::{Irqs, Schedule},
-    utils::{bitfield_debug, schedule::RawTimestamp},
+    utils::schedule::RawTimestamp,
 };
 use core::ops::Add;
 
@@ -16,9 +16,9 @@ impl Add for Timestamp {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Control(pub u8) {
+    pub const struct Control(pub u8): Debug {
         pub prescaler: u8 @ 0..=1,
         pub count_up_timing: bool @ 2,
         pub irq_enabled: bool @ 6,

@@ -5,7 +5,7 @@ pub mod vram;
 use crate::{
     cpu::{arm7, arm9, Engine},
     emu::{self, event_slots, Emu, Timestamp},
-    utils::{bitfield_debug, schedule::RawTimestamp, zeroed_box, Fill8, Zero},
+    utils::{schedule::RawTimestamp, zeroed_box, Fill8, Zero},
 };
 use engine_2d::Engine2d;
 use engine_3d::Engine3d;
@@ -18,9 +18,9 @@ pub enum Event {
     FinishFrame,
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct PowerControl(pub u16) {
+    pub const struct PowerControl(pub u16): Debug {
         pub display_enabled: bool @ 0,
         pub engine_2d_a_enabled: bool @ 1,
         pub engine_3d_rendering_enabled: bool @ 2,
@@ -30,9 +30,9 @@ bitfield_debug! {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct DispStatus(pub u16) {
+    pub const struct DispStatus(pub u16): Debug {
         pub vblank: bool @ 0,
         pub hblank: bool @ 1,
         pub vcount_match: bool @ 2,

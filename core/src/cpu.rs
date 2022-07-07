@@ -20,7 +20,6 @@ pub mod jit;
 pub mod timers;
 
 use crate::emu::Emu;
-use cfg_if::cfg_if;
 use psr::{Cpsr, Spsr};
 
 pub trait Engine: Sized {
@@ -68,7 +67,7 @@ pub trait CoreData {
     fn jump_and_link(emu: &mut Emu<Self::Engine>, addr: u32, lr: u32);
     fn return_from_hle_swi(emu: &mut Emu<Self::Engine>, r0_3: [u32; 4]);
 
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(any(feature = "debugger-hooks", doc))] {
             #[doc(cfg(feature = "debugger-hooks"))]
             fn set_swi_hook(&mut self, hook: &Option<debug::SwiHook<Self::Engine>>);
@@ -117,7 +116,7 @@ pub trait Arm9Data: CoreData {
     fn run_stalled_until(emu: &mut Emu<Self::Engine>, end_time: arm9::Timestamp);
     fn run_until(emu: &mut Emu<Self::Engine>, end_time: arm9::Timestamp);
 
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(any(feature = "debugger-hooks", doc))] {
             #[doc(cfg(feature = "debugger-hooks"))]
             fn set_prefetch_abort_hook(

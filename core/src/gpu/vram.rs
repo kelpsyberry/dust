@@ -3,22 +3,22 @@ mod bank_cnt;
 
 use crate::{
     cpu::{arm7, arm9},
-    utils::{bitfield_debug, zero, zeroed_box, OwnedBytesCellPtr, Zero},
+    utils::{zero, zeroed_box, OwnedBytesCellPtr, Zero},
 };
 use core::cell::{Cell, UnsafeCell};
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct BankControl(pub u8) {
+    pub const struct BankControl(pub u8): Debug {
         pub mst: u8 @ 0..=2,
         pub offset: u8 @ 3..=4,
         pub enabled: bool @ 7,
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Arm7Status(pub u8) {
+    pub const struct Arm7Status(pub u8): Debug {
         pub c_used_as_arm7: bool @ 0,
         pub d_used_as_arm7: bool @ 1,
     }

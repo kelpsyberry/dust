@@ -21,7 +21,6 @@ use crate::{
     gpu::engine_3d::Engine3d,
     utils::schedule::RawTimestamp,
 };
-use cfg_if::cfg_if;
 use core::intrinsics::unlikely;
 
 #[cfg(feature = "interp-arm9-interlocks")]
@@ -947,7 +946,7 @@ impl CoreData for EngineData {
         return_from_hle_swi(emu);
     }
 
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(feature = "debugger-hooks")] {
             #[inline]
             fn set_swi_hook(&mut self, _hook: &Option<debug::SwiHook<Interpreter>>) {}
@@ -1042,7 +1041,7 @@ impl Arm9Data for EngineData {
     #[inline]
     fn set_t_bit_load_disabled(&mut self, _value: bool) {}
 
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(feature = "debugger-hooks")] {
             #[inline]
             fn set_prefetch_abort_hook(

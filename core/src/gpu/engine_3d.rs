@@ -13,7 +13,7 @@ use crate::{
     },
     emu::{self, Emu},
     gpu::vram::Vram,
-    utils::{bitfield_debug, schedule::RawTimestamp, zeroed_box, Fifo, Zero},
+    utils::{schedule::RawTimestamp, zeroed_box, Fifo, Zero},
 };
 use core::{
     mem::{replace, transmute},
@@ -22,9 +22,9 @@ use core::{
 use matrix::{Matrix, MatrixBuffer};
 use vertex::{ConversionScreenCoords, Vertex};
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct GxStatus(pub u32) {
+    pub const struct GxStatus(pub u32): Debug {
         pub test_busy: bool @ 0,
         pub box_test_result: bool @ 1,
         pub pos_vec_matrix_stack_level: u8 @ 8..12,
@@ -39,9 +39,9 @@ bitfield_debug! {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct PolyVertRamLevel(pub u32) {
+    pub const struct PolyVertRamLevel(pub u32): Debug {
         pub poly_ram_level: u16 @ 0..=11,
         pub vert_ram_level: u16 @ 16..=28,
     }
@@ -54,9 +54,9 @@ struct FifoEntry {
     param: u32,
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct SwapBuffersAttrs(pub u8) {
+    pub const struct SwapBuffersAttrs(pub u8): Debug {
         pub translucent_auto_sort_disabled: bool @ 0,
         pub w_buffering: bool @ 1,
     }
@@ -79,9 +79,9 @@ struct Light {
     color: i32x4,
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct PolygonAttrs(pub u32) {
+    pub const struct PolygonAttrs(pub u32): Debug {
         pub lights_mask: u8 @ 0..=3,
         pub mode: u8 @ 4..=5,
         pub show_back: bool @ 6,
@@ -96,9 +96,9 @@ bitfield_debug! {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct TextureParams(pub u32) {
+    pub const struct TextureParams(pub u32): Debug {
         pub vram_off: u16 @ 0..=15,
         pub repeat_s: bool @ 16,
         pub repeat_t: bool @ 17,
@@ -152,9 +152,9 @@ pub struct Polygon {
 
 unsafe impl Zero for Polygon {}
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct RenderingControl(pub u16) {
+    pub const struct RenderingControl(pub u16): Debug {
         pub texture_mapping_enabled: bool @ 0,
         pub highlight_shading_enabled: bool @ 1,
         pub alpha_test_enabled: bool @ 2,
@@ -170,9 +170,9 @@ bitfield_debug! {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct ClearControl(pub u16) {
+    pub const struct ClearControl(pub u16): Debug {
         pub alpha: u8 @ 0..=4,
         pub poly_id: u8 @ 8..=13,
     }

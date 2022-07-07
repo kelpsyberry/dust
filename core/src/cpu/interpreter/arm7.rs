@@ -17,7 +17,6 @@ use crate::{
     emu::Emu,
     utils::schedule::RawTimestamp,
 };
-use cfg_if::cfg_if;
 
 pub struct EngineData {
     #[cfg(feature = "interp-pipeline-accurate-reloads")]
@@ -452,7 +451,7 @@ impl CoreData for EngineData {
         return_from_hle_swi(emu);
     }
 
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(feature = "debugger-hooks")] {
             #[inline]
             fn set_swi_hook(&mut self, _hook: &Option<debug::SwiHook<Interpreter>>) {}

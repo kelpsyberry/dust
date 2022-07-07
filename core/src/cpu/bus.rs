@@ -1,6 +1,4 @@
-use cfg_if::cfg_if;
-
-cfg_if! {
+cfg_if::cfg_if! {
     if #[cfg(feature = "bft-r")] {
         pub type RDisableFlags = u8;
         pub mod r_disable_flags {
@@ -11,7 +9,7 @@ cfg_if! {
     }
 }
 
-cfg_if! {
+cfg_if::cfg_if! {
     if #[cfg(feature = "bft-w")] {
         pub type WDisableFlags = u8;
         pub mod w_disable_flags {

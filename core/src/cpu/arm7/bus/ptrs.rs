@@ -14,9 +14,7 @@ pub mod mask {
 
 type Attrs = u8;
 mod attrs {
-    use cfg_if::cfg_if;
-
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(any(feature = "bft-r", feature = "bft-w"))] {
             use super::{mask, Attrs};
 
@@ -27,13 +25,13 @@ mod attrs {
             pub const BAK_MASK_W: Attrs = mask::W << BAK_MASK_START;
             pub const BAK_MASK_ALL: Attrs = mask::ALL << BAK_MASK_START;
 
-            cfg_if! {
+            cfg_if::cfg_if! {
                 if #[cfg(feature = "bft-r")] {
                     pub const R_DISABLE_START: u32 = 5;
                     pub const R_DISABLE_ALL: Attrs = super::r_disable_flags::ALL << R_DISABLE_START;
                 }
             }
-            cfg_if! {
+            cfg_if::cfg_if! {
                 if #[cfg(feature = "bft-w")] {
                     pub const W_DISABLE_START: u32 = 6;
                     pub const W_DISABLE_ALL: Attrs = super::w_disable_flags::ALL << W_DISABLE_START;

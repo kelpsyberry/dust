@@ -2,7 +2,6 @@ mod io;
 mod render;
 
 use super::{Scanline, SCREEN_WIDTH};
-use crate::utils::bitfield_debug;
 use core::{marker::PhantomData, ops::Range};
 
 pub trait Role {
@@ -22,9 +21,9 @@ impl Role for EngineB {
     const BG_VRAM_MASK: u32 = 0x1_FFFF;
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Control(pub u32) {
+    pub const struct Control(pub u32): Debug {
         pub bg_mode: u8 @ 0..=2,
         pub bg0_3d: bool @ 3,
         pub obj_tile_1d_mapping: bool @ 4,
@@ -69,17 +68,17 @@ impl Control {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct BrightnessControl(pub u16) {
+    pub const struct BrightnessControl(pub u16): Debug {
         pub factor: u8 @ 0..=4,
         pub mode: u8 @ 14..=15,
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct BgControl(pub u16) {
+    pub const struct BgControl(pub u16): Debug {
         pub priority: u8 @ 0..=1,
         pub use_direct_color_extended_bg: bool @ 2,
         pub tile_base_raw: u8 @ 2..=5,
@@ -105,26 +104,26 @@ impl BgControl {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct ColorEffectsControl(pub u16) {
+    pub const struct ColorEffectsControl(pub u16): Debug {
         pub target_1_mask: u8 @ 0..=5,
         pub color_effect: u8 @ 6..=7,
         pub target_2_mask: u8 @ 8..=13,
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct BlendCoeffsRaw(pub u16) {
+    pub const struct BlendCoeffsRaw(pub u16): Debug {
         pub a_coeff: u8 @ 0..=4,
         pub b_coeff: u8 @ 8..=12,
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct OamAttr0(u16) {
+    pub const struct OamAttr0(u16): Debug {
         pub y_start: u8 @ 0..=7,
         pub rot_scale: bool @ 8,
         pub double_size: bool @ 9, // Rot/scale sprites
@@ -136,9 +135,9 @@ bitfield_debug! {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct OamAttr1(u16) {
+    pub const struct OamAttr1(u16): Debug {
         pub x_start_raw: u16 @ 0..=8,
         pub rot_scale_params_index: u8 @ 9..=13, // Rot/scale sprite,
         pub x_flip: bool @ 12, // Normal sprites
@@ -154,9 +153,9 @@ impl OamAttr1 {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct OamAttr2(u16) {
+    pub const struct OamAttr2(u16): Debug {
         pub tile_number: u16 @ 0..=9,
         pub bg_priority: u8 @ 10..=11,
         pub palette_number: u8 @ 12..=15,
@@ -223,9 +222,9 @@ impl AffineBgData {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct WindowControl(u8) {
+    pub const struct WindowControl(u8): Debug {
         pub bg_obj_mask: u8 @ 0..=4,
         pub color_effects_enabled: bool @ 5,
     }
@@ -237,9 +236,9 @@ pub struct WindowRanges {
     pub y: Range<u8>,
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    struct ObjPixel(u32) {
+    const struct ObjPixel(u32): Debug {
         pub pal_color: u16 @ 0..=11,
         pub raw_color: u16 @ 0..=15,
         pub priority: u8 @ 16..=18,
@@ -251,9 +250,9 @@ bitfield_debug! {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    struct BgObjPixel(u32) {
+    const struct BgObjPixel(u32): Debug {
         pub rgb: u32 @ 0..=17,
         pub is_3d: bool @ 18,
         pub alpha: u8 @ 19..=23,
@@ -263,17 +262,17 @@ bitfield_debug! {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    struct WindowPixel(u8) {
+    const struct WindowPixel(u8): Debug {
         pub bg_obj_mask: u8 @ 0..=4,
         pub color_effects_enabled: bool @ 5,
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct CaptureControl(u32) {
+    pub const struct CaptureControl(u32): Debug {
         pub factor_a: u8 @ 0..=4,
         pub factor_b: u8 @ 8..=12,
         pub dst_bank: u8 @ 16..=17,

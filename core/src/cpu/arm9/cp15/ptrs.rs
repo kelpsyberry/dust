@@ -18,11 +18,9 @@ use crate::{
 
 type Attrs = u8;
 mod attrs {
-    use cfg_if::cfg_if;
-
     // R/X/W8/W16_32 mask in bits 0-3
 
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(any(feature = "bft-r", feature = "bft-w"))] {
             use super::{mask, Attrs};
 
@@ -53,20 +51,19 @@ type MapAttrs = u8;
 mod map_attrs {
     #[cfg(any(feature = "bft-r", feature = "bft-w"))]
     use super::MapAttrs;
-    use cfg_if::cfg_if;
 
     // "R/W/X mapped to CPU-local memory" mask in bits 0-2
 
     #[cfg(any(feature = "bft-r", feature = "bft-w"))]
     pub const DISABLE_START: u32 = 3;
 
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(feature = "bft-r")] {
             pub const R_DISABLE_START: u32 = DISABLE_START;
             pub const R_DISABLE_ALL: MapAttrs = super::r_disable_flags::ALL << R_DISABLE_START;
         }
     }
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(feature = "bft-w")] {
             pub const W_DISABLE_START: u32 = DISABLE_START + 1;
             pub const W_DISABLE_ALL: MapAttrs = super::w_disable_flags::ALL << W_DISABLE_START;

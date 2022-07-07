@@ -1,7 +1,6 @@
 pub use super::super::engines_common::*;
 
 use crate::cpu::psr::Cpsr;
-use cfg_if::cfg_if;
 
 static COND_TABLE: [u16; 0x10] = [
     0xF0F0, // EQ    (z)
@@ -43,7 +42,7 @@ pub enum StateSource {
     Cpsr,
 }
 
-cfg_if! {
+cfg_if::cfg_if! {
     if #[cfg(feature = "interp-pipeline")] {
         #[cfg(feature = "interp-pipeline-accurate-reloads")]
         pub type PipelineEntry = u64;

@@ -6,7 +6,7 @@ use crate::utils::schedule::RawTimestamp;
 use crate::{
     cpu::{self, arm7, bus::DmaAccess},
     emu::Emu,
-    utils::{bitfield_debug, Bytes, MemValue},
+    utils::{Bytes, MemValue},
 };
 use core::mem;
 
@@ -24,9 +24,9 @@ use core::mem;
 //       however, a way to avoid scheduler overload would have to be devised, and channel timing
 //       and startup delays would have to be emulated more accurately.
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Control(pub u32) {
+    pub const struct Control(pub u32): Debug {
         pub volume_raw: u8 @ 0..=6,
         pub volume_shift_raw: u8 @ 8..=9,
         pub hold: bool @ 15,

@@ -1,5 +1,5 @@
-use crate::utils::{bitfield::UnsafeFrom, bitfield_debug};
 use core::{convert::TryFrom, mem::transmute};
+use proc_bitfield::UnsafeFrom;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -49,7 +49,7 @@ impl TryFrom<u8> for Mode {
 
 impl UnsafeFrom<u8> for Mode {
     #[inline]
-    unsafe fn from(raw: u8) -> Self {
+    unsafe fn unsafe_from(raw: u8) -> Self {
         transmute(raw)
     }
 }
@@ -66,9 +66,9 @@ const fn apply_psr_mask<const ARM9: bool>(value: u32) -> u32 {
     (value & if ARM9 { 0xF800_00EF } else { 0xF000_00EF }) | 0x10
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Cpsr(u32) {
+    pub const struct Cpsr(u32): Debug {
         pub raw: u32 [read_only] @ ..,
         pub mode: u8 [unsafe Mode] @ 0..=3,
         pub thumb_state: bool @ 5,
@@ -124,7 +124,7 @@ impl Cpsr {
 
 impl UnsafeFrom<u32> for Cpsr {
     #[inline]
-    unsafe fn from(raw: u32) -> Self {
+    unsafe fn unsafe_from(raw: u32) -> Self {
         Cpsr(raw)
     }
 }
@@ -138,9 +138,9 @@ impl TryFrom<Spsr> for Cpsr {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Spsr(u32) {
+    pub const struct Spsr(u32): Debug {
         pub raw: u32 [read_only] @ ..,
         pub mode_raw: u8 @ 0..=3,
         pub mode: u8 [try_get Mode, set Mode] @ 0..=3,

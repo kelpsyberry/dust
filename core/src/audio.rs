@@ -5,17 +5,16 @@ mod io;
 use crate::{
     cpu::{self, arm7, Schedule as _},
     emu::Emu,
-    utils::{bitfield_debug, schedule::RawTimestamp},
+    utils::schedule::RawTimestamp,
 };
 use capture::CaptureUnit;
-use cfg_if::cfg_if;
 use channel::Channel;
 #[cfg(feature = "xq-audio")]
 use core::num::NonZeroU32;
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Control(pub u16) {
+    pub const struct Control(pub u16): Debug {
         pub master_volume_raw: u8 @ 0..=6,
         pub l_output_src: u8 @ 8..=9,
         pub r_output_src: u8 @ 10..=11,
@@ -35,7 +34,7 @@ pub enum ChannelInterpMethod {
 type RawChannelSample = i32;
 type RawMixerInterpSample = i64;
 
-cfg_if! {
+cfg_if::cfg_if! {
     if #[cfg(feature = "xq-audio")] {
         type InterpSample = f64;
         pub type OutputSample = f32;
@@ -164,7 +163,7 @@ impl Audio {
         }
     }
 
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(feature = "xq-audio")] {
             #[inline]
             pub fn custom_sample_rate(&self) -> Option<NonZeroU32> {

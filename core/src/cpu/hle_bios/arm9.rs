@@ -41,71 +41,76 @@ pub static BIOS: [u8; arm9::BIOS_SIZE] = {
     bytes
 };
 
-fn bit_unpack<E: Engine>(emu: &mut Emu<E>, src_addr: u32, dst_addr: u32, unpack_data_addr: u32) {
+fn bit_unpack<E: Engine>(
+    _emu: &mut Emu<E>,
+    _src_addr: u32,
+    _dst_addr: u32,
+    _unpack_data_addr: u32,
+) {
     // TODO
     #[cfg(feature = "log")]
-    slog::error!(emu.arm9.logger, "Unimplemented BitUnPack SWI");
+    slog::error!(_emu.arm9.logger, "Unimplemented BitUnPack SWI");
 }
 
-fn diff_8_unfilter_write_8<E: Engine>(emu: &mut Emu<E>) {
+fn diff_8_unfilter_write_8<E: Engine>(_emu: &mut Emu<E>) {
     // TODO
     #[cfg(feature = "log")]
     slog::error!(
-        emu.arm9.logger,
+        _emu.arm9.logger,
         "Unimplemented Diff8bitUnFilterWrite8bit SWI"
     );
 }
 
-fn diff_16_unfilter<E: Engine>(emu: &mut Emu<E>) {
+fn diff_16_unfilter<E: Engine>(_emu: &mut Emu<E>) {
     // TODO
     #[cfg(feature = "log")]
     slog::error!(
-        emu.arm9.logger,
+        _emu.arm9.logger,
         "Unimplemented Diff8bitUnFilterWrite16bit SWI"
     );
 }
 
-fn huff_uncomp_read_callback<E: Engine>(emu: &mut Emu<E>) {
+fn huff_uncomp_read_callback<E: Engine>(_emu: &mut Emu<E>) {
     // TODO
     #[cfg(feature = "log")]
     slog::error!(
-        emu.arm9.logger,
+        _emu.arm9.logger,
         "Unimplemented HuffUnCompReadByCallback SWI"
     );
 }
 
-fn lz77_uncomp_read_normal_write_8<E: Engine>(emu: &mut Emu<E>) {
+fn lz77_uncomp_read_normal_write_8<E: Engine>(_emu: &mut Emu<E>) {
     // TODO
     #[cfg(feature = "log")]
     slog::error!(
-        emu.arm9.logger,
+        _emu.arm9.logger,
         "Unimplemented LZ77UnCompReadNormalWrite8bit SWI"
     );
 }
 
-fn lz77_uncomp_read_callback_write_16<E: Engine>(emu: &mut Emu<E>) {
+fn lz77_uncomp_read_callback_write_16<E: Engine>(_emu: &mut Emu<E>) {
     // TODO
     #[cfg(feature = "log")]
     slog::error!(
-        emu.arm9.logger,
+        _emu.arm9.logger,
         "Unimplemented LZ77UnCompReadByCallbackWrite16bit SWI"
     );
 }
 
-fn rl_uncomp_read_normal_write_8<E: Engine>(emu: &mut Emu<E>) {
+fn rl_uncomp_read_normal_write_8<E: Engine>(_emu: &mut Emu<E>) {
     // TODO
     #[cfg(feature = "log")]
     slog::error!(
-        emu.arm9.logger,
+        _emu.arm9.logger,
         "Unimplemented RLUnCompReadNormalWrite8bit SWI"
     );
 }
 
-fn rl_uncomp_read_callback_write_16<E: Engine>(emu: &mut Emu<E>) {
+fn rl_uncomp_read_callback_write_16<E: Engine>(_emu: &mut Emu<E>) {
     // TODO
     #[cfg(feature = "log")]
     slog::error!(
-        emu.arm9.logger,
+        _emu.arm9.logger,
         "Unimplemented RLUnCompReadByCallbackWrite16bit SWI"
     );
 }
@@ -222,10 +227,10 @@ pub fn resume_intr_wait<E: Engine>(emu: &mut Emu<E>) {
     }
 }
 
-fn soft_reset<E: Engine>(emu: &mut Emu<E>) {
+fn soft_reset<E: Engine>(_emu: &mut Emu<E>) {
     // TODO
     #[cfg(feature = "log")]
-    slog::error!(emu.arm9.logger, "Unimplemented SoftReset SWI");
+    slog::error!(_emu.arm9.logger, "Unimplemented SoftReset SWI");
 }
 
 fn wait_by_loop<E: Engine>(emu: &mut Emu<E>, iterations: i32) -> u32 {
@@ -251,6 +256,7 @@ impl State {
     }
 }
 
+#[cfg(feature = "log")]
 static SWI_NAMES: [&str; 0x20] = [
     "SoftReset",
     "?",

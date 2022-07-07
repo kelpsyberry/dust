@@ -6,15 +6,14 @@ use crate::{
     cpu::{arm7, Schedule as _},
     emu::{self, input},
     flash::Flash,
-    utils::bitfield_debug,
     Model,
 };
 use power::Power;
 use tsc::Tsc;
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Control(pub u16) {
+    pub const struct Control(pub u16): Debug {
         pub baud_rate: u8 @ 0..=1,
         pub busy: bool @ 7,
         pub device: u8 @ 8..=9,

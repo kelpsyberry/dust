@@ -219,6 +219,7 @@ impl<E: Engine> Arm7Data<E> {
         }
     }
 }
+
 pub(super) struct Arm9Data<E: Engine> {
     pub swi_hook: Option<SwiHook<E>>,
     pub undef_hook: Option<UndefHook<E>>,

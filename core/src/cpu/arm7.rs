@@ -13,7 +13,6 @@ use crate::{
     emu::{swram::Swram, Emu, LocalExMemControl},
     utils::{Bytes, OwnedBytesCellPtr},
 };
-use cfg_if::cfg_if;
 
 pub const BIOS_SIZE: usize = 0x4000;
 
@@ -146,7 +145,7 @@ impl<E: Engine> Arm7<E> {
         self.engine_data.set_regs(regs);
     }
 
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(any(feature = "debugger-hooks", doc))] {
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]

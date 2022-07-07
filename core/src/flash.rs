@@ -1,11 +1,11 @@
 use crate::{
-    utils::{bitfield_debug, zeroed_box, BoxedByteSlice, ByteMutSlice, ByteSlice},
+    utils::{zeroed_box, BoxedByteSlice, ByteMutSlice, ByteSlice},
     SaveContents,
 };
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Status(pub u8) {
+    pub const struct Status(pub u8): Debug {
         pub write_in_progress: bool @ 0,
         pub write_enabled: bool @ 1,
     }

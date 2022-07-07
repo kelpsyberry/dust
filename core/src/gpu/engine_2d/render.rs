@@ -1,6 +1,7 @@
 mod all;
 #[cfg(target_arch = "x86_64")]
 mod avx2;
+mod common;
 
 use super::{
     AffineBgIndex, BgIndex, BgObjPixel, Engine2d, OamAttr0, OamAttr1, OamAttr2, ObjPixel, Role,
@@ -10,7 +11,6 @@ use crate::{
     gpu::{engine_3d, vram::Vram, Scanline, SCREEN_HEIGHT, SCREEN_WIDTH},
     utils::make_zero,
 };
-use core::mem::MaybeUninit;
 
 pub struct FnPtrs<R: Role> {
     render_scanline_bg_text: fn(&mut Engine2d<R>, bg_index: BgIndex, line: u8, vram: &Vram),

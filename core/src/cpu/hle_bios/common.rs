@@ -43,9 +43,7 @@ pub fn crc16(init: u32, len: u32, r3: u32, mut f: impl FnMut() -> u16) -> (u32, 
         value = f() as u32;
         for shift in (0..16).step_by(4) {
             let crc_xor = CRC_TABLE[crc as usize & 0xF];
-            crc = crc >> 4
-                ^ crc_xor
-                ^ CRC_TABLE[(value >> shift & 0xF) as usize];
+            crc = crc >> 4 ^ crc_xor ^ CRC_TABLE[(value >> shift & 0xF) as usize];
         }
     }
     (crc as u32, value)

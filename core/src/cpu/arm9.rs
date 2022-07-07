@@ -16,16 +16,15 @@ use crate::cpu::Arm9Data;
 use crate::{
     cpu::{self, hle_bios},
     emu::{swram::Swram, Emu, LocalExMemControl},
-    utils::{bitfield_debug, Bytes, OwnedBytesCellPtr},
+    utils::{Bytes, OwnedBytesCellPtr},
 };
-use cfg_if::cfg_if;
 use cp15::Cp15;
 use div_engine::DivEngine;
 use sqrt_engine::SqrtEngine;
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct PostBootFlag(pub u8) {
+    pub const struct PostBootFlag(pub u8): Debug {
         pub booted: bool @ 0,
         pub extra_bit: bool @ 1,
     }
@@ -166,7 +165,7 @@ impl<E: Engine> Arm9<E> {
         self.engine_data.set_regs(values);
     }
 
-    cfg_if! {
+    cfg_if::cfg_if! {
         if #[cfg(any(feature = "debugger-hooks", doc))] {
             #[doc(cfg(feature = "debugger-hooks"))]
             #[inline]

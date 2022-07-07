@@ -114,7 +114,7 @@ impl fmt::Display for ParseError {
 
 impl fmt::Debug for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("parse error")
+        <Self as fmt::Display>::fmt(self, f)
     }
 }
 

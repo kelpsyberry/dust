@@ -9,7 +9,7 @@ use dust_core::{
         },
         Scanline,
     },
-    utils::{bitfield_debug, zeroed_box, Zero},
+    utils::{zeroed_box, Zero},
 };
 
 type DepthTestFn = fn(u32, u32, PixelAttrs) -> bool;
@@ -35,9 +35,9 @@ struct RenderingPolygon {
     process_pixel: ProcessPixelFn,
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    struct PixelAttrs(pub u32) {
+    const struct PixelAttrs(pub u32): Debug {
         pub edge_mask: u8 @ 0..=3,
         pub top_edge: bool @ 0,
         pub bottom_edge: bool @ 1,
@@ -389,22 +389,21 @@ impl Renderer {
 
             let depth_test: fn(u32, u32, PixelAttrs) -> bool = if poly.attrs.depth_test_equal() {
                 if rendering_data.w_buffering {
-                    |a, b: u32, _b_attrs| b.wrapping_sub(a).wrapping_add(0xFF) <= 0x1FE
+                    |a, b: u32, _b_attrs| a.wrapping_sub(b).wrapping_add(0xFF) <= 0x1FE
                 } else {
-                    |a, b, _b_attrs| b.wrapping_sub(a).wrapping_add(0x200) <= 0x400
+                    |a, b, _b_attrs| a.wrapping_sub(b).wrapping_add(0x200) <= 0x400
                 }
             } else if poly.is_front_facing {
                 |a, b, b_attrs| {
-                    if b_attrs.0
-                        & PixelAttrs(0)
-                            .with_translucent(true)
-                            .with_back_facing(true)
-                            .0
-                        == PixelAttrs(0)
-                            .with_translucent(false)
-                            .with_back_facing(true)
-                            .0
-                    {
+                    const MASK: u32 = PixelAttrs(0)
+                        .with_translucent(true)
+                        .with_back_facing(true)
+                        .0;
+                    const VALUE: u32 = PixelAttrs(0)
+                        .with_translucent(false)
+                        .with_back_facing(true)
+                        .0;
+                    if b_attrs.0 & MASK == VALUE {
                         a <= b
                     } else {
                         a < b

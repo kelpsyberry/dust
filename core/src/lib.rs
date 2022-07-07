@@ -8,7 +8,10 @@
     maybe_uninit_uninit_array,
     maybe_uninit_slice,
     label_break_value,
-    portable_simd
+    portable_simd,
+    const_mut_refs,
+    const_trait_impl,
+    const_convert
 )]
 #![warn(clippy::pedantic)]
 #![allow(
@@ -33,8 +36,6 @@
     clippy::if_same_then_else, // False positives
 )]
 
-extern crate bitflags;
-extern crate cfg_if;
 pub extern crate emu_utils as utils;
 
 pub mod audio;

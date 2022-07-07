@@ -21,20 +21,22 @@ use crate::{
     rtc::{self, Rtc},
     spi,
     utils::{
-        bitfield_debug, bounded_int_lit, schedule::RawTimestamp, BoxedByteSlice, ByteMutSlice,
-        Bytes, OwnedBytesCellPtr,
+        bounded_int_lit, schedule::RawTimestamp, BoxedByteSlice, ByteMutSlice, Bytes,
+        OwnedBytesCellPtr,
     },
     wifi::WiFi,
     Model,
 };
+use core::fmt;
 #[cfg(feature = "xq-audio")]
 use core::num::NonZeroU32;
 use input::Input;
+use std::error::Error;
 use swram::Swram;
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct LocalExMemControl(pub u8) {
+    pub const struct LocalExMemControl(pub u8): Debug {
         pub gba_slot_sram_access_time: u8 @ 0..=1,
         pub gba_slot_rom_1st_access_time: u8 @ 2..=3,
         pub gba_slot_rom_2nd_access_time: bool @ 4,
@@ -62,9 +64,9 @@ impl LocalExMemControl {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct GlobalExMemControl(pub u16) {
+    pub const struct GlobalExMemControl(pub u16): Debug {
         pub arm7_gba_slot_access: bool @ 7,
         pub arm7_ds_slot_access: bool @ 11,
         pub sync_main_mem: bool @ 14,
@@ -72,9 +74,9 @@ bitfield_debug! {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct AudioWifiPowerControl(pub u8) {
+    pub const struct AudioWifiPowerControl(pub u8): Debug {
         pub speaker_enabled: bool @ 0,
         pub wifi_enabled: bool @ 1,
     }
@@ -130,6 +132,26 @@ pub struct Builder {
     pub audio_channel_interp_method: audio::ChannelInterpMethod,
 }
 
+pub enum BuildError {
+    MissingSysFiles,
+}
+
+impl Error for BuildError {}
+
+impl fmt::Display for BuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BuildError::MissingSysFiles => f.write_str("missing system files"),
+        }
+    }
+}
+
+impl fmt::Debug for BuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <Self as fmt::Display>::fmt(self, f)
+    }
+}
+
 impl Builder {
     #[inline]
     #[allow(clippy::too_many_arguments)]
@@ -168,9 +190,9 @@ impl Builder {
         }
     }
 
-    pub fn build<E: cpu::Engine>(self, engine: E) -> Result<Emu<E>, ()> {
+    pub fn build<E: cpu::Engine>(self, engine: E) -> Result<Emu<E>, BuildError> {
         if (self.arm7_bios.is_none() || self.arm9_bios.is_none()) && !self.direct_boot {
-            return Err(());
+            return Err(BuildError::MissingSysFiles);
         }
 
         let (global_engine_data, arm7_engine_data, arm9_engine_data) = engine.into_data();

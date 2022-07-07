@@ -5,6 +5,7 @@ use crate::{
 };
 
 impl Engine3d {
+    #[allow(clippy::match_same_arms)]
     pub(crate) fn read_8<A: AccessType>(&mut self, addr: u16) -> u8 {
         match addr & 0xFFF {
             0x320 => self.line_buffer_level(),
@@ -49,6 +50,7 @@ impl Engine3d {
         }
     }
 
+    #[allow(clippy::match_same_arms)]
     pub(crate) fn read_16<A: AccessType>(&mut self, addr: u16) -> u16 {
         match addr & 0xFFE {
             0x320 => self.line_buffer_level() as u16,

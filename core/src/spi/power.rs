@@ -1,20 +1,19 @@
 use crate::{
     cpu::{arm7, Schedule as _},
     emu,
-    utils::bitfield_debug,
 };
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct RegIndex(pub u8) {
+    pub const struct RegIndex(pub u8): Debug {
         pub reg: u8 @ 0..=6,
         pub read: bool @ 7,
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Control(pub u8) {
+    pub const struct Control(pub u8): Debug {
         pub sound_amplifier_enabled: bool @ 0,
         pub sound_amplifier_muted: bool @ 1,
         pub lower_backlight_enabled: bool @ 2,
@@ -39,16 +38,16 @@ pub enum PowerLedState {
     BlinkingFast,
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct MicAmplifierGainControl(pub u8) {
+    pub const struct MicAmplifierGainControl(pub u8): Debug {
         pub gain_shift: u8 @ 0..=1,
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct DsLiteBacklightControl(pub u8) {
+    pub const struct DsLiteBacklightControl(pub u8): Debug {
         pub backlight_level: u8 @ 0..=1,
         pub max_level_with_ext_power: bool @ 2,
         pub external_power: bool @ 3,

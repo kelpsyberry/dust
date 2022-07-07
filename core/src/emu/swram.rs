@@ -1,13 +1,13 @@
 use crate::{
     cpu::{self, arm7::Arm7, arm9::Arm9},
-    utils::{bitfield_debug, OwnedBytesCellPtr},
+    utils::OwnedBytesCellPtr,
 };
 #[cfg(any(feature = "bft-r", feature = "bft-w"))]
 use core::ptr;
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Control(pub u8) {
+    pub const struct Control(pub u8): Debug {
         pub layout: u8 @ 0..=1,
     }
 }

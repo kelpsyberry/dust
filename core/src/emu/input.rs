@@ -1,5 +1,5 @@
 use super::Emu;
-use crate::{cpu, utils::bitfield_debug};
+use crate::cpu;
 use bitflags::bitflags;
 
 bitflags! {
@@ -20,9 +20,9 @@ bitflags! {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct Status(pub u32) {
+    pub const struct Status(pub u32): Debug {
         pub a: bool @ 0,
         pub b: bool @ 1,
         pub select: bool @ 2,
@@ -41,9 +41,9 @@ bitfield_debug! {
     }
 }
 
-bitfield_debug! {
+proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub struct KeyIrqControl(pub u16) {
+    pub const struct KeyIrqControl(pub u16): Debug {
         pub a: bool @ 0,
         pub b: bool @ 1,
         pub select: bool @ 2,

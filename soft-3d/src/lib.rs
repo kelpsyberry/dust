@@ -1,4 +1,4 @@
-#![feature(portable_simd)]
+#![feature(portable_simd, const_mut_refs, const_trait_impl)]
 
 mod render;
 pub use render::Renderer as RawRenderer;
