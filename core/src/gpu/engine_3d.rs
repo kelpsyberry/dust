@@ -181,15 +181,25 @@ proc_bitfield::bitfield! {
 #[derive(Clone, Debug)]
 pub struct RenderingState {
     pub control: RenderingControl,
-    pub edge_colors: [Color; 8],
-    pub clear_color: Color,
-    pub alpha_test_ref: u8,
-    pub rear_plane_fog_enabled: bool,
-    pub clear_alpha: u8,
-    pub clear_poly_id: u8,
-    pub clear_depth: u16,
+
     pub texture_dirty: u8,
     pub tex_pal_dirty: u8,
+
+    pub alpha_test_ref: u8,
+
+    pub clear_color: Color,
+    pub clear_poly_id: u8,
+    pub clear_depth: u16,
+    pub clear_image_offset: [u8; 2],
+
+    pub toon_colors: [Color; 0x20],
+
+    pub edge_colors: [Color; 8],
+
+    pub fog_color: Color,
+    pub fog_densities: [u8; 0x20],
+    pub fog_offset: u16,
+    pub rear_plane_fog_enabled: bool,
 }
 
 pub struct Engine3d {
@@ -263,12 +273,12 @@ pub struct Engine3d {
     rendering_state: RenderingState,
 }
 
-fn decode_rgb_5(value: u32) -> Color {
+fn decode_rgb_5(value: u16, alpha: u8) -> Color {
     Color::from_array([
         value as u8 & 0x1F,
         (value >> 5) as u8 & 0x1F,
         (value >> 10) as u8 & 0x1F,
-        0,
+        alpha,
     ])
 }
 
@@ -366,15 +376,25 @@ impl Engine3d {
 
             rendering_state: RenderingState {
                 control: RenderingControl(0),
-                edge_colors: [Color::splat(0); 8],
-                clear_color: Color::splat(0),
-                alpha_test_ref: 0,
-                rear_plane_fog_enabled: false,
-                clear_alpha: 0,
-                clear_poly_id: 0,
-                clear_depth: 0,
+
                 texture_dirty: 0xF,
                 tex_pal_dirty: 0x3F,
+
+                alpha_test_ref: 0,
+
+                clear_color: Color::splat(0),
+                clear_poly_id: 0,
+                clear_depth: 0,
+                clear_image_offset: [0; 2],
+
+                toon_colors: [Color::splat(0); 0x20],
+
+                edge_colors: [Color::splat(0); 8],
+
+                fog_color: Color::splat(0),
+                fog_densities: [0; 0x20],
+                fog_offset: 0,
+                rear_plane_fog_enabled: false,
             },
         }
     }
@@ -1476,7 +1496,7 @@ impl Engine3d {
 
                 0x20 => {
                     // COLOR
-                    emu.gpu.engine_3d.vert_color = rgb_5_to_6(decode_rgb_5(first_param));
+                    emu.gpu.engine_3d.vert_color = rgb_5_to_6(decode_rgb_5(first_param as u16, 0));
                 }
 
                 0x21 => {
@@ -1597,9 +1617,10 @@ impl Engine3d {
 
                 0x30 => {
                     // DIF_AMB
-                    let diffuse_color = decode_rgb_5(first_param);
+                    let diffuse_color = decode_rgb_5(first_param as u16, 0);
                     emu.gpu.engine_3d.diffuse_color = diffuse_color.cast();
-                    emu.gpu.engine_3d.ambient_color = decode_rgb_5(first_param >> 16).cast();
+                    emu.gpu.engine_3d.ambient_color =
+                        decode_rgb_5((first_param >> 16) as u16, 0).cast();
                     if first_param & 1 << 15 != 0 {
                         emu.gpu.engine_3d.vert_color = rgb_5_to_6(diffuse_color);
                     }
@@ -1607,8 +1628,9 @@ impl Engine3d {
 
                 0x31 => {
                     // SPE_EMI
-                    emu.gpu.engine_3d.specular_color = decode_rgb_5(first_param).cast();
-                    emu.gpu.engine_3d.emission_color = decode_rgb_5(first_param >> 16).cast();
+                    emu.gpu.engine_3d.specular_color = decode_rgb_5(first_param as u16, 0).cast();
+                    emu.gpu.engine_3d.emission_color =
+                        decode_rgb_5((first_param >> 16) as u16, 0).cast();
                     emu.gpu.engine_3d.shininess_table_enabled = first_param & 1 << 15 != 0;
                 }
 
@@ -1633,7 +1655,7 @@ impl Engine3d {
                 0x33 => {
                     // LIGHT_COLOR
                     emu.gpu.engine_3d.lights[(first_param >> 30) as usize].color =
-                        decode_rgb_5(first_param).cast();
+                        decode_rgb_5(first_param as u16, 0).cast();
                 }
 
                 0x34 => {

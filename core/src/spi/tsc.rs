@@ -93,7 +93,7 @@ impl Tsc {
             0 => {
                 #[cfg(feature = "log")]
                 if value.single_ended_mode() {
-                    slog::warn!(
+                    slog::debug!(
                         self.logger,
                         "Reading from unimplemented channel 0 (temperature 0)"
                     );
@@ -118,7 +118,7 @@ impl Tsc {
             }
             3 => {
                 #[cfg(feature = "log")]
-                slog::warn!(
+                slog::debug!(
                     self.logger,
                     "Reading from unimplemented channel 3 (Z1-position)"
                 );
@@ -126,7 +126,7 @@ impl Tsc {
             }
             4 => {
                 #[cfg(feature = "log")]
-                slog::warn!(
+                slog::debug!(
                     self.logger,
                     "Reading from unimplemented channel 4 (Z2-position)"
                 );
@@ -155,7 +155,7 @@ impl Tsc {
             _ => {
                 #[cfg(feature = "log")]
                 if value.single_ended_mode() {
-                    slog::warn!(
+                    slog::debug!(
                         self.logger,
                         "Reading from unimplemented channel 7 (temperature 1)"
                     );

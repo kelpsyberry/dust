@@ -159,29 +159,27 @@ impl Edge {
 
     pub fn line_x_range(&self, y: u8) -> (u16, u16) {
         let line_x_disp = self.x_incr * (y - self.a_y) as i32;
-        let start_x = if self.is_negative {
+        let start_frac_x = if self.is_negative {
             self.x_ref - line_x_disp
         } else {
             self.x_ref + line_x_disp
         };
+        let start_x = (start_frac_x >> 18).clamp(0, 255) as u16;
         if self.is_x_major {
             if self.is_negative {
                 (
-                    (((start_x + (0x1FF - (start_x & 0x1FF)) - self.x_incr) >> 18) + 1)
-                        .clamp(0, 256) as u16,
-                    (start_x >> 18).clamp(0, 256) as u16,
+                    (((start_frac_x + (0x1FF - (start_frac_x & 0x1FF)) - self.x_incr) >> 18) + 1)
+                        .clamp(0, 255) as u16,
+                    start_x,
                 )
             } else {
                 (
-                    (start_x >> 18).clamp(0, 256) as u16,
-                    ((((start_x & !0x1FF) + self.x_incr) >> 18).clamp(0, 256) as u16),
+                    start_x,
+                    (((((start_frac_x & !0x1FF) + self.x_incr) >> 18) - 1).clamp(0, 255) as u16),
                 )
             }
         } else {
-            (
-                (start_x >> 18).clamp(0, 256) as u16,
-                ((start_x >> 18) + 1).clamp(0, 256) as u16,
-            )
+            (start_x, start_x)
         }
     }
 
@@ -284,7 +282,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
         let factor = self.p_factor as u32;
         let a = a.cast::<u32>();
         let b = b.cast::<u32>();
-        let lower = a.lanes_le(b);
+        let lower = a.lanes_lt(b);
         let min = lower.select(a, b);
         let max = lower.select(b, a);
         let factor = lower.select(
@@ -298,7 +296,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
         let factor = self.p_factor as i32;
         let a = a.cast::<i32>();
         let b = b.cast::<i32>();
-        let lower = a.lanes_le(b);
+        let lower = a.lanes_lt(b);
         let min = lower.select(a, b);
         let max = lower.select(b, a);
         let factor = lower.select(

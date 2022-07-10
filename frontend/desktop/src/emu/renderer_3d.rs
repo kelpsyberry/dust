@@ -57,13 +57,14 @@ impl RendererTrair for Renderer {
     ) {
         self.wait_for_line(SCREEN_HEIGHT as u8 - 1);
 
-        let rendering_data = unsafe { &mut *self.shared_data.rendering_data.get() };
-        rendering_data.control = state.control;
-        rendering_data.copy_texture_data(texture, tex_pal, state);
-        rendering_data.vert_ram[..vert_ram.len()].copy_from_slice(vert_ram);
-        rendering_data.poly_ram[..poly_ram.len()].copy_from_slice(poly_ram);
-        rendering_data.poly_ram_level = poly_ram.len() as u16;
-        rendering_data.w_buffering = w_buffering;
+        unsafe { &mut *self.shared_data.rendering_data.get() }.prepare(
+            texture,
+            tex_pal,
+            vert_ram,
+            poly_ram,
+            state,
+            w_buffering,
+        );
 
         self.shared_data
             .processing_scanline
@@ -79,8 +80,8 @@ impl RendererTrair for Renderer {
     ) {
         self.wait_for_line(SCREEN_HEIGHT as u8 - 1);
 
-        let rendering_data = unsafe { &mut *self.shared_data.rendering_data.get() };
-        rendering_data.copy_texture_data(texture, tex_pal, state);
+        unsafe { &mut *self.shared_data.rendering_data.get() }
+            .repeat_last_frame(texture, tex_pal, state);
 
         self.shared_data
             .processing_scanline

@@ -409,7 +409,7 @@ impl Channel {
         self.repeat_mode = match self.control.repeat_mode_raw() {
             0 => {
                 #[cfg(feature = "log")]
-                slog::warn!(self.logger, "Using untested repeat mode 0 (manual)");
+                slog::debug!(self.logger, "Using untested repeat mode 0 (manual)");
                 RepeatMode::Manual
             }
             2 => RepeatMode::OneShot,

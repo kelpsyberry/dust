@@ -85,6 +85,11 @@ fn rgb_5_to_6(color: InterpColor) -> InterpColor {
     result
 }
 
+fn expand_depth(depth: u16) -> u32 {
+    let depth = depth as u32;
+    depth << 9 | ((depth.wrapping_add(1) as i32) << 16 >> 31 & 0x1FF) as u32
+}
+
 fn process_pixel<const FORMAT: u8, const MODE: u8>(
     rendering_data: &RenderingData,
     poly: &RenderingPolygon,
@@ -94,10 +99,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
     let vert_color = vert_color >> InterpColor::splat(3);
 
     let mut vert_blend_color = match MODE {
-        2 => {
-            // TODO: Toon table
-            rgb_5_to_6(InterpColor::from_array([0x1F, 0x1F, 0x1F, 0]))
-        }
+        2 => rgb_5_to_6(rendering_data.toon_colors[vert_color[0] as usize >> 1].cast()),
         3 => InterpColor::splat(vert_color[0]),
         _ => vert_color,
     };
@@ -309,8 +311,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
     };
 
     if MODE == 3 {
-        // TODO: Toon table
-        let toon_color = rgb_5_to_6(InterpColor::from_array([0x1F, 0x1F, 0x1F, 0]));
+        let toon_color = rgb_5_to_6(rendering_data.toon_colors[vert_color[0] as usize >> 1].cast());
         (blended_color + toon_color).min(InterpColor::from_array([0x3F, 0x3F, 0x3F, 0x1F]))
     } else {
         blended_color
@@ -576,9 +577,44 @@ impl Renderer {
     ) {
         scanline.0.fill(0);
 
-        self.color_buffer.fill(Color::splat(0));
-        self.depth_buffer.fill(0xFF_FFFF);
-        self.attr_buffer.fill(PixelAttrs(0));
+        if rendering_data.control.rear_plane_bitmap_enabled() {
+            let line_base = (y.wrapping_add(rendering_data.clear_image_offset[1]) as usize) << 9;
+            let mut x_in_image = rendering_data.clear_image_offset[0];
+
+            let color_line_base = 0x4_0000 | line_base;
+            for x in 0..256 {
+                let raw_color = rendering_data
+                    .texture
+                    .read_le(color_line_base | (x_in_image as usize) << 1);
+                self.color_buffer[x] = rgb_5_to_6(decode_rgb_5(
+                    raw_color,
+                    if raw_color >> 15 != 0 { 31 } else { 0 },
+                ))
+                .cast();
+                x_in_image = x_in_image.wrapping_add(1);
+            }
+
+            let depth_line_base = 0x4_0000 | line_base;
+            let pixel_attrs = PixelAttrs(0).with_opaque_id(rendering_data.clear_poly_id);
+            for x in 0..256 {
+                let raw_depth = rendering_data
+                    .texture
+                    .read_le(depth_line_base | (x_in_image as usize) << 1);
+                self.depth_buffer[x] = expand_depth(raw_depth);
+                self.attr_buffer[x] = pixel_attrs.with_fog_enabled(raw_depth >> 15 != 0);
+                x_in_image = x_in_image.wrapping_add(1);
+            }
+        } else {
+            self.color_buffer
+                .fill(rgb_5_to_6(rendering_data.clear_color.cast()).cast());
+            self.depth_buffer
+                .fill(expand_depth(rendering_data.clear_depth));
+            self.attr_buffer.fill(
+                PixelAttrs(0)
+                    .with_opaque_id(rendering_data.clear_poly_id)
+                    .with_fog_enabled(rendering_data.rear_plane_fog_enabled),
+            );
+        }
 
         for poly in self.polys.iter_mut() {
             if y.wrapping_sub(poly.top_y) >= poly.height {
@@ -634,23 +670,14 @@ impl Renderer {
             let mut edges = [&poly.edges[0], &poly.edges[1]];
             let mut ranges = edges.map(|edge| edge.line_x_range(y));
 
-            // Breaks EoS...?
-            // if edges[1].x_incr == 0 {
-            //     ranges[1].0 = ranges[1].0.saturating_sub(1);
-            //     ranges[1].1 = ranges[1].1.saturating_sub(1);
-            // }
-
             if ranges[1].1 <= ranges[0].0 {
                 edges.swap(0, 1);
                 ranges.swap(0, 1);
             }
 
-            ranges[0].0 = ranges[0].0.max(0);
-            ranges[0].1 = ranges[0].1.max(1);
-
             let x_span_start = ranges[0].0;
             let x_span_end = ranges[1].1;
-            let x_span_len = x_span_end - x_span_start;
+            let x_span_len = x_span_end + 1 - x_span_start;
             let wireframe = poly.alpha == 0;
 
             let fill_all_edges = wireframe
@@ -666,7 +693,7 @@ impl Renderer {
             let edge_mask = (y == poly.top_y) as u8 | (y == poly.bot_y - 1) as u8;
 
             let [(l_vert_color, l_uv, l_depth, l_w), (r_vert_color, r_uv, r_depth, r_w)] =
-                [(edges[0], x_span_start), (edges[1], x_span_end - 1)].map(|(edge, x)| {
+                [(edges[0], x_span_start), (edges[1], x_span_end)].map(|(edge, x)| {
                     let a = &rendering_data.vert_ram[edge.a_addr().get() as usize];
                     let b = &rendering_data.vert_ram[edge.b_addr().get() as usize];
                     let interp = edge.edge_interp(y, x);
@@ -681,7 +708,7 @@ impl Renderer {
 
             for i in 0..2 {
                 if fill_edges[i] {
-                    for x in ranges[i].0..ranges[i].1 {
+                    for x in ranges[i].0..=ranges[i].1 {
                         let interp = x_interp.set_x(x - x_span_start, x_span_len);
                         let x = x as usize;
                         let depth = interp.depth(l_depth, r_depth, rendering_data.w_buffering)
@@ -693,7 +720,7 @@ impl Renderer {
                             let mut color =
                                 (poly.process_pixel)(rendering_data, poly, uv, vert_color);
                             let alpha = color[3];
-                            if alpha != 0 {
+                            if alpha > rendering_data.alpha_test_ref as u16 {
                                 if alpha == 0x1F {
                                     self.color_buffer[x] = color.cast();
                                     self.depth_buffer[x] = depth;
@@ -729,7 +756,7 @@ impl Renderer {
             }
 
             if !wireframe || edge_mask != 0 {
-                for x in ranges[0].1..ranges[1].0 {
+                for x in ranges[0].1 + 1..ranges[1].0 {
                     let interp = x_interp.set_x(x - x_span_start, x_span_len);
                     let x = x as usize;
                     let depth = interp.depth(l_depth, r_depth, rendering_data.w_buffering) as u32
@@ -739,7 +766,7 @@ impl Renderer {
                         let uv = interp.uv(l_uv, r_uv);
                         let mut color = (poly.process_pixel)(rendering_data, poly, uv, vert_color);
                         let alpha = color[3];
-                        if alpha != 0 {
+                        if alpha > rendering_data.alpha_test_ref as u16 {
                             if alpha == 0x1F {
                                 self.color_buffer[x] = color.cast();
                                 self.depth_buffer[x] = depth;
