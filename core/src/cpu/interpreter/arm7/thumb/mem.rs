@@ -158,6 +158,7 @@ pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     let mut cur_addr =
         reg!(emu.arm7, 13).wrapping_sub(((instr as u8).count_ones() + PUSH_R14 as u32) << 2);
     reg!(emu.arm7, 13) = cur_addr;
+    #[allow(unused_mut)]
     let mut timings = emu.arm7.bus_timings.get(cur_addr);
     let mut access_cycles = timings.n32;
     for reg in 0..8 {
@@ -165,10 +166,15 @@ pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
             bus::write_32::<CpuAccess, _>(emu, cur_addr, reg!(emu.arm7, reg));
             add_cycles(emu, access_cycles as RawTimestamp);
             cur_addr = cur_addr.wrapping_add(4);
+            #[cfg(feature = "interp-timing-details")]
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm7.bus_timings.get(cur_addr);
                 access_cycles = timings.n32;
             } else {
+                access_cycles = timings.s32;
+            }
+            #[cfg(not(feature = "interp-timing-details"))]
+            {
                 access_cycles = timings.s32;
             }
         }
@@ -193,6 +199,7 @@ pub fn pop<const POP_R15: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
         reg!(emu.arm7, 15) = result;
         return reload_pipeline::<{ StateSource::Thumb }>(emu);
     }
+    #[allow(unused_mut)]
     let mut timings = emu.arm7.bus_timings.get(cur_addr);
     let mut access_cycles = timings.n32;
     for reg in 0..8 {
@@ -201,10 +208,15 @@ pub fn pop<const POP_R15: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
             reg!(emu.arm7, reg) = result;
             add_cycles(emu, access_cycles as RawTimestamp);
             cur_addr = cur_addr.wrapping_add(4);
+            #[cfg(feature = "interp-timing-details")]
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm7.bus_timings.get(cur_addr);
                 access_cycles = timings.n32;
             } else {
+                access_cycles = timings.s32;
+            }
+            #[cfg(not(feature = "interp-timing-details"))]
+            {
                 access_cycles = timings.s32;
             }
         }
@@ -235,6 +247,7 @@ pub fn ldmia(emu: &mut Emu<Interpreter>, instr: u16) {
         return reload_pipeline::<{ StateSource::Thumb }>(emu);
     }
     reg!(emu.arm7, base_reg) = cur_addr.wrapping_add((instr as u8).count_ones() << 2);
+    #[allow(unused_mut)]
     let mut timings = emu.arm7.bus_timings.get(cur_addr);
     let mut access_cycles = timings.n32;
     for reg in 0..8 {
@@ -243,10 +256,15 @@ pub fn ldmia(emu: &mut Emu<Interpreter>, instr: u16) {
             reg!(emu.arm7, reg) = result;
             add_cycles(emu, access_cycles as RawTimestamp);
             cur_addr = cur_addr.wrapping_add(4);
+            #[cfg(feature = "interp-timing-details")]
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm7.bus_timings.get(cur_addr);
                 access_cycles = timings.n32;
             } else {
+                access_cycles = timings.s32;
+            }
+            #[cfg(not(feature = "interp-timing-details"))]
+            {
                 access_cycles = timings.s32;
             }
         }
@@ -268,6 +286,7 @@ pub fn stmia(emu: &mut Emu<Interpreter>, instr: u16) {
         return;
     }
     let end_addr = cur_addr.wrapping_add((instr as u8).count_ones() << 2);
+    #[allow(unused_mut)]
     let mut timings = emu.arm7.bus_timings.get(cur_addr);
     let mut access_cycles = timings.n32;
     for reg in 0..8 {
@@ -275,10 +294,15 @@ pub fn stmia(emu: &mut Emu<Interpreter>, instr: u16) {
             bus::write_32::<CpuAccess, _>(emu, cur_addr, reg!(emu.arm7, reg));
             add_cycles(emu, access_cycles as RawTimestamp);
             cur_addr = cur_addr.wrapping_add(4);
+            #[cfg(feature = "interp-timing-details")]
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm7.bus_timings.get(cur_addr);
                 access_cycles = timings.n32;
             } else {
+                access_cycles = timings.s32;
+            }
+            #[cfg(not(feature = "interp-timing-details"))]
+            {
                 access_cycles = timings.s32;
             }
             reg!(emu.arm7, base_reg) = end_addr;

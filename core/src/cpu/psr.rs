@@ -47,14 +47,14 @@ impl TryFrom<u8> for Mode {
     }
 }
 
-impl UnsafeFrom<u8> for Mode {
+impl const UnsafeFrom<u8> for Mode {
     #[inline]
     unsafe fn unsafe_from(raw: u8) -> Self {
         transmute(raw)
     }
 }
 
-impl From<Mode> for u8 {
+impl const From<Mode> for u8 {
     #[inline]
     fn from(mode: Mode) -> Self {
         mode as u8

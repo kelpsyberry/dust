@@ -757,12 +757,14 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
         cur_addr = cur_addr.wrapping_add(4);
     }
     let mut not_first = false;
+    #[allow(unused_mut)]
     let mut timings = emu.arm9.cp15.timings.get(cur_addr);
     let mut access_cycles = timings.r_n32_data;
+    let mut data_cycles = 1;
     for reg in 0..15 {
         if instr & 1 << reg != 0 {
             if not_first {
-                add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
+                add_cycles(emu, data_cycles as RawTimestamp);
             }
             if unlikely(!can_read(
                 emu,
@@ -786,12 +788,17 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
                 return handle_data_abort::<false>(emu, cur_addr);
             }
             reg!(emu.arm9, reg) = bus::read_32::<CpuAccess, _, false>(emu, cur_addr);
-            emu.arm9.engine_data.data_cycles = access_cycles;
+            data_cycles = access_cycles;
             cur_addr = cur_addr.wrapping_add(4);
+            #[cfg(feature = "interp-timing-details")]
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm9.cp15.timings.get(cur_addr);
                 access_cycles = timings.r_n32_data;
             } else {
+                access_cycles = timings.r_s32_data;
+            }
+            #[cfg(not(feature = "interp-timing-details"))]
+            {
                 access_cycles = timings.r_s32_data;
             }
             not_first = true;
@@ -804,17 +811,21 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
                 .regs
                 .update_mode::<true>(Mode::User, emu.arm9.engine_data.regs.cpsr.mode());
         }
+        emu.arm9.engine_data.data_cycles = data_cycles;
         if instr as u16 & (instr as u16 - 1) == 0 {
             // Only one register present, add an internal cycle
-            add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
-            emu.arm9.engine_data.data_cycles = 1;
+            #[cfg(feature = "interp-timing-details")]
+            {
+                add_cycles(emu, data_cycles as RawTimestamp);
+                emu.arm9.engine_data.data_cycles = 1;
+            }
         } else if !S_BIT {
             let last_reg = (15 - (instr as u16).leading_zeros()) as u8;
             add_interlock(emu, last_reg, 1, 1);
         }
     } else {
         if not_first {
-            add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
+            add_cycles(emu, data_cycles as RawTimestamp);
         }
         emu.arm9.engine_data.data_cycles = 1;
         if unlikely(!can_read(
@@ -898,12 +909,14 @@ pub fn stm<
         cur_addr = cur_addr.wrapping_add(4);
     }
     let mut not_first = false;
+    #[allow(unused_mut)]
     let mut timings = emu.arm9.cp15.timings.get(cur_addr);
     let mut access_cycles = timings.w_n32_data;
+    let mut data_cycles = 1;
     for reg in 0..16 {
         if instr & 1 << reg != 0 {
             if not_first {
-                add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
+                add_cycles(emu, data_cycles as RawTimestamp);
             } else if !BANK_SWITCH {
                 apply_reg_interlock_1::<true>(emu, reg);
             }
@@ -923,6 +936,7 @@ pub fn stm<
                         .update_mode::<true>(Mode::User, emu.arm9.engine_data.regs.cpsr.mode());
                 }
                 add_bus_cycles(emu, 2);
+                #[cfg(feature = "interp-timing-details")]
                 add_cycles(
                     emu,
                     (instr as u16 & !((1 << reg) - 1)).count_ones() as RawTimestamp,
@@ -930,12 +944,17 @@ pub fn stm<
                 return handle_data_abort::<false>(emu, cur_addr);
             }
             bus::write_32::<CpuAccess, _>(emu, cur_addr, reg!(emu.arm9, reg));
-            emu.arm9.engine_data.data_cycles = access_cycles;
+            data_cycles = access_cycles;
             cur_addr = cur_addr.wrapping_add(4);
+            #[cfg(feature = "interp-timing-details")]
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm9.cp15.timings.get(cur_addr);
                 access_cycles = timings.w_n32_data;
             } else {
+                access_cycles = timings.w_s32_data;
+            }
+            #[cfg(not(feature = "interp-timing-details"))]
+            {
                 access_cycles = timings.w_s32_data;
             }
             not_first = true;
@@ -948,9 +967,11 @@ pub fn stm<
             .update_mode::<true>(Mode::User, emu.arm9.engine_data.regs.cpsr.mode());
     }
     add_bus_cycles(emu, 2);
+    emu.arm9.engine_data.data_cycles = data_cycles;
+    #[cfg(feature = "interp-timing-details")]
     if instr as u16 & (instr as u16 - 1) == 0 {
         // Only one register present, add an internal cycle
-        add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
+        add_cycles(emu, data_cycles as RawTimestamp);
         emu.arm9.engine_data.data_cycles = 1;
     }
     if WRITEBACK {

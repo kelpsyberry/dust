@@ -17,6 +17,7 @@ jit = ["bft-w"]
 
 pu-checks = []
 
+interp-timing-details = []
 interp-pipeline = []
 interp-pipeline-accurate-reloads = ["interp-pipeline"]
 interp-arm9-interlocks = ["interp-pipeline"]
@@ -28,7 +29,7 @@ debugger-hooks = ["bft-r", "bft-w"]
 
 [dependencies]
 emu-utils = { git = "https://github.com/Kelpsy/emu-utils" }
-proc-bitfield = { version = "0.0.1", features = ["nightly"] }
+proc-bitfield = { version = "0.0.2", features = ["nightly"] }
 bitflags = "1.2"
 cfg-if = "1.0"
 slog = { version = "2.7", optional = true }

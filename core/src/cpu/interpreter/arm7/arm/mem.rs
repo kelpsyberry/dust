@@ -400,6 +400,7 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
     if PREINC {
         cur_addr = cur_addr.wrapping_add(4);
     }
+    #[allow(unused_mut)]
     let mut timings = emu.arm7.bus_timings.get(cur_addr);
     let mut access_cycles = timings.n32;
     for reg in 0..15 {
@@ -408,10 +409,15 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
             reg!(emu.arm7, reg) = result;
             add_cycles(emu, access_cycles as RawTimestamp);
             cur_addr = cur_addr.wrapping_add(4);
+            #[cfg(feature = "interp-timing-details")]
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm7.bus_timings.get(cur_addr);
                 access_cycles = timings.n32;
             } else {
+                access_cycles = timings.s32;
+            }
+            #[cfg(not(feature = "interp-timing-details"))]
+            {
                 access_cycles = timings.s32;
             }
         }
@@ -495,6 +501,7 @@ pub fn stm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
     if PREINC {
         cur_addr = cur_addr.wrapping_add(4);
     }
+    #[allow(unused_mut)]
     let mut timings = emu.arm7.bus_timings.get(cur_addr);
     let mut access_cycles = timings.n32;
     for reg in 0..16 {
@@ -502,10 +509,15 @@ pub fn stm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
             bus::write_32::<CpuAccess, _>(emu, cur_addr, reg!(emu.arm7, reg));
             add_cycles(emu, access_cycles as RawTimestamp);
             cur_addr = cur_addr.wrapping_add(4);
+            #[cfg(feature = "interp-timing-details")]
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm7.bus_timings.get(cur_addr);
                 access_cycles = timings.n32;
             } else {
+                access_cycles = timings.s32;
+            }
+            #[cfg(not(feature = "interp-timing-details"))]
+            {
                 access_cycles = timings.s32;
             }
             if WRITEBACK {

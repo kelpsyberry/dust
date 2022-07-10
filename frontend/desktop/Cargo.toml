@@ -12,6 +12,7 @@ jit = ["dust-core/jit"]
 
 pu-checks = ["dust-core/pu-checks"]
 
+interp-timing-details = ["dust-core/interp-timing-details"]
 interp-pipeline = ["dust-core/interp-pipeline"]
 interp-pipeline-accurate-reloads = ["interp-pipeline", "dust-core/interp-pipeline-accurate-reloads"]
 interp-arm9-interlocks = ["dust-core/interp-arm9-interlocks"]

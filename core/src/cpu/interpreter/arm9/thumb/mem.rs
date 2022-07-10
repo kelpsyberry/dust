@@ -312,12 +312,14 @@ pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
         reg!(emu.arm9, 13).wrapping_sub(((instr as u8).count_ones() + PUSH_R14 as u32) << 2);
     let mut cur_addr = start_addr;
     let mut not_first = false;
+    #[allow(unused_mut)]
     let mut timings = emu.arm9.cp15.timings.get(cur_addr);
     let mut access_cycles = timings.w_n32_data;
+    let mut data_cycles = 1;
     for reg in 0..8 {
         if instr & 1 << reg != 0 {
             if not_first {
-                add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
+                add_cycles(emu, data_cycles as RawTimestamp);
             } else {
                 apply_reg_interlock_1::<true>(emu, reg);
             }
@@ -331,6 +333,7 @@ pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
                 // from that point on take 1 cycle).
                 emu.arm9.engine_data.data_cycles = 1;
                 add_bus_cycles(emu, 2);
+                #[cfg(feature = "interp-timing-details")]
                 add_cycles(
                     emu,
                     ((instr as u8 & !((1 << reg) - 1)).count_ones() + PUSH_R14 as u32)
@@ -339,12 +342,17 @@ pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
                 return handle_data_abort::<true>(emu, cur_addr);
             }
             bus::write_32::<CpuAccess, _>(emu, cur_addr, reg!(emu.arm9, reg));
-            emu.arm9.engine_data.data_cycles = access_cycles;
+            data_cycles = access_cycles;
             cur_addr = cur_addr.wrapping_add(4);
+            #[cfg(feature = "interp-timing-details")]
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm9.cp15.timings.get(cur_addr);
                 access_cycles = timings.w_n32_data;
             } else {
+                access_cycles = timings.w_s32_data;
+            }
+            #[cfg(not(feature = "interp-timing-details"))]
+            {
                 access_cycles = timings.w_s32_data;
             }
             not_first = true;
@@ -352,7 +360,7 @@ pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     }
     if PUSH_R14 {
         if not_first {
-            add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
+            add_cycles(emu, data_cycles as RawTimestamp);
         }
         if unlikely(!can_write(
             emu,
@@ -365,16 +373,18 @@ pub fn push<const PUSH_R14: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
             return handle_data_abort::<false>(emu, cur_addr);
         }
         bus::write_32::<CpuAccess, _>(emu, cur_addr, reg!(emu.arm9, 14));
-        emu.arm9.engine_data.data_cycles = access_cycles;
+        data_cycles = access_cycles;
     }
     add_bus_cycles(emu, 2);
+    emu.arm9.engine_data.data_cycles = data_cycles;
+    #[cfg(feature = "interp-timing-details")]
     if if PUSH_R14 {
         instr as u8 == 0
     } else {
         instr as u8 & (instr as u8 - 1) == 0
     } {
         // Only one register present, add an internal cycle
-        add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
+        add_cycles(emu, data_cycles as RawTimestamp);
         emu.arm9.engine_data.data_cycles = 1;
     }
     reg!(emu.arm9, 13) = start_addr;
@@ -391,12 +401,14 @@ pub fn pop<const POP_R15: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     }
     let mut cur_addr = reg!(emu.arm9, 13);
     let mut not_first = false;
+    #[allow(unused_mut)]
     let mut timings = emu.arm9.cp15.timings.get(cur_addr);
     let mut access_cycles = timings.r_n32_data;
+    let mut data_cycles = 1;
     for reg in 0..8 {
         if instr & 1 << reg != 0 {
             if not_first {
-                add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
+                add_cycles(emu, data_cycles as RawTimestamp);
             }
             if unlikely(!can_read(
                 emu,
@@ -407,6 +419,7 @@ pub fn pop<const POP_R15: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
                 // the exception (unclear what that means for timings, it's assumed all accesses
                 // from that point on take 1 cycle).
                 emu.arm9.engine_data.data_cycles = 1;
+                #[cfg(feature = "interp-timing-details")]
                 add_cycles(
                     emu,
                     ((instr as u8 & !((1 << reg) - 1)).count_ones() + POP_R15 as u32)
@@ -415,13 +428,18 @@ pub fn pop<const POP_R15: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
                 return handle_data_abort::<true>(emu, cur_addr);
             }
             let result = bus::read_32::<CpuAccess, _, false>(emu, cur_addr);
-            emu.arm9.engine_data.data_cycles = access_cycles;
+            data_cycles = access_cycles;
             reg!(emu.arm9, reg) = result;
             cur_addr = cur_addr.wrapping_add(4);
+            #[cfg(feature = "interp-timing-details")]
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm9.cp15.timings.get(cur_addr);
                 access_cycles = timings.r_n32_data;
             } else {
+                access_cycles = timings.r_s32_data;
+            }
+            #[cfg(not(feature = "interp-timing-details"))]
+            {
                 access_cycles = timings.r_s32_data;
             }
             not_first = true;
@@ -429,7 +447,7 @@ pub fn pop<const POP_R15: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     }
     if POP_R15 {
         if not_first {
-            add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
+            add_cycles(emu, data_cycles as RawTimestamp);
         }
         emu.arm9.engine_data.data_cycles = 1;
         if unlikely(!can_read(
@@ -449,13 +467,19 @@ pub fn pop<const POP_R15: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
         } else {
             reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
         }
-    } else if instr as u8 & (instr as u8 - 1) == 0 {
-        // Only one register present, add an internal cycle
-        add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
-        emu.arm9.engine_data.data_cycles = 1;
     } else {
-        let last_reg = (7 - (instr as u8).leading_zeros()) as u8;
-        add_interlock(emu, last_reg, 1, 1);
+        emu.arm9.engine_data.data_cycles = data_cycles;
+        if instr as u8 & (instr as u8 - 1) == 0 {
+            // Only one register present, add an internal cycle
+            #[cfg(feature = "interp-timing-details")]
+            {
+                add_cycles(emu, data_cycles as RawTimestamp);
+                emu.arm9.engine_data.data_cycles = 1;
+            }
+        } else {
+            let last_reg = (7 - (instr as u8).leading_zeros()) as u8;
+            add_interlock(emu, last_reg, 1, 1);
+        }
     }
     reg!(emu.arm9, 13) = cur_addr;
 }
@@ -473,12 +497,14 @@ pub fn ldmia(emu: &mut Emu<Interpreter>, instr: u16) {
         return;
     }
     let mut not_first = false;
+    #[allow(unused_mut)]
     let mut timings = emu.arm9.cp15.timings.get(cur_addr);
     let mut access_cycles = timings.r_n32_data;
+    let mut data_cycles = 1;
     for reg in 0..8 {
         if instr & 1 << reg != 0 {
             if not_first {
-                add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
+                add_cycles(emu, data_cycles as RawTimestamp);
             }
             if unlikely(!can_read(
                 emu,
@@ -489,6 +515,7 @@ pub fn ldmia(emu: &mut Emu<Interpreter>, instr: u16) {
                 // the exception (unclear what that means for timings, it's assumed all accesses
                 // from that point on take 1 cycle).
                 emu.arm9.engine_data.data_cycles = 1;
+                #[cfg(feature = "interp-timing-details")]
                 add_cycles(
                     emu,
                     (instr as u8 & !((1 << reg) - 1)).count_ones() as RawTimestamp,
@@ -496,22 +523,31 @@ pub fn ldmia(emu: &mut Emu<Interpreter>, instr: u16) {
                 return handle_data_abort::<true>(emu, cur_addr);
             }
             let result = bus::read_32::<CpuAccess, _, false>(emu, cur_addr);
-            emu.arm9.engine_data.data_cycles = access_cycles;
+            data_cycles = access_cycles;
             reg!(emu.arm9, reg) = result;
             cur_addr = cur_addr.wrapping_add(4);
+            #[cfg(feature = "interp-timing-details")]
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm9.cp15.timings.get(cur_addr);
                 access_cycles = timings.r_n32_data;
             } else {
                 access_cycles = timings.r_s32_data;
             }
+            #[cfg(not(feature = "interp-timing-details"))]
+            {
+                access_cycles = timings.r_s32_data;
+            }
             not_first = true;
         }
     }
+    emu.arm9.engine_data.data_cycles = data_cycles;
     if instr as u8 & (instr as u8 - 1) == 0 {
         // Only one register present, add an internal cycle
-        add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
-        emu.arm9.engine_data.data_cycles = 1;
+        #[cfg(feature = "interp-timing-details")]
+        {
+            add_cycles(emu, data_cycles as RawTimestamp);
+            emu.arm9.engine_data.data_cycles = 1;
+        }
     } else {
         let last_reg = (7 - (instr as u8).leading_zeros()) as u8;
         add_interlock(emu, last_reg, 1, 1);
@@ -534,12 +570,14 @@ pub fn stmia(emu: &mut Emu<Interpreter>, instr: u16) {
         return;
     }
     let mut not_first = false;
+    #[allow(unused_mut)]
     let mut timings = emu.arm9.cp15.timings.get(cur_addr);
     let mut access_cycles = timings.w_n32_data;
+    let mut data_cycles = 1;
     for reg in 0..8 {
         if instr & 1 << reg != 0 {
             if not_first {
-                add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
+                add_cycles(emu, data_cycles as RawTimestamp);
             } else {
                 apply_reg_interlock_1::<true>(emu, reg);
             }
@@ -553,6 +591,7 @@ pub fn stmia(emu: &mut Emu<Interpreter>, instr: u16) {
                 // from that point on take 1 cycle).
                 emu.arm9.engine_data.data_cycles = 1;
                 add_bus_cycles(emu, 2);
+                #[cfg(feature = "interp-timing-details")]
                 add_cycles(
                     emu,
                     (instr as u8 & !((1 << reg) - 1)).count_ones() as RawTimestamp,
@@ -560,24 +599,28 @@ pub fn stmia(emu: &mut Emu<Interpreter>, instr: u16) {
                 return handle_data_abort::<true>(emu, cur_addr);
             }
             bus::write_32::<CpuAccess, _>(emu, cur_addr, reg!(emu.arm9, reg));
-            emu.arm9.engine_data.data_cycles = access_cycles;
+            data_cycles = access_cycles;
             cur_addr = cur_addr.wrapping_add(4);
+            #[cfg(feature = "interp-timing-details")]
             if cur_addr & 0x3FC == 0 {
                 timings = emu.arm9.cp15.timings.get(cur_addr);
                 access_cycles = timings.w_n32_data;
             } else {
                 access_cycles = timings.w_s32_data;
             }
+            #[cfg(not(feature = "interp-timing-details"))]
+            {
+                access_cycles = timings.w_s32_data;
+            }
             not_first = true;
         }
     }
+    emu.arm9.engine_data.data_cycles = data_cycles;
+    #[cfg(feature = "interp-timing-details")]
     if instr as u8 & (instr as u8 - 1) == 0 {
         // Only one register present, add an internal cycle
-        add_cycles(emu, emu.arm9.engine_data.data_cycles as RawTimestamp);
+        add_cycles(emu, data_cycles as RawTimestamp);
         emu.arm9.engine_data.data_cycles = 1;
-    } else {
-        let last_reg = (7 - (instr as u8).leading_zeros()) as u8;
-        add_interlock(emu, last_reg, 1, 1);
     }
     reg!(emu.arm9, base_reg) = cur_addr;
 }
