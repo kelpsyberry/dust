@@ -160,6 +160,7 @@ impl super::RomDevice for Normal {
                 );
                 output[..output_len.get() as usize].fill(0xFF);
             }
+
             Stage::Key1 => {
                 #[cfg(feature = "log")]
                 let prev_cmd = cmd.clone();
@@ -200,7 +201,7 @@ impl super::RomDevice for Normal {
                         // TODO: What's the actual range of the address command bytes?
                         // TODO: What happens if the read goes out of bounds? (Though it can only
                         //       happen for homebrew)
-                        let start_addr = 0x4000 | (cmd[2] as usize & 0x30 << 8);
+                        let start_addr = 0x4000 | (cmd[2] as usize & 0x30) << 8;
                         for start_i in (0..output_len.get() as usize).step_by(0x1000) {
                             let len = (output_len.get() as usize - start_i).min(0x1000);
                             output[start_i..start_i + len]
@@ -232,6 +233,7 @@ impl super::RomDevice for Normal {
                 );
                 make_zero(&mut output[..output_len.get() as usize]);
             }
+
             Stage::Key2 => {
                 #[cfg(feature = "log")]
                 slog::trace!(self.logger, "KEY2: {:016X}", cmd.read_be::<u64>(0));
