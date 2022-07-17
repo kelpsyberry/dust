@@ -1,9 +1,10 @@
 use super::super::RomOutputLen;
-use crate::utils::{ByteMutSlice, Bytes};
+use crate::utils::{ByteMutSlice, Bytes, Savestate};
 
-#[derive(Clone)]
+#[derive(Clone, Savestate)]
 pub struct Empty {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     logger: slog::Logger,
 }
 

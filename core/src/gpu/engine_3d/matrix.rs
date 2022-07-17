@@ -1,3 +1,4 @@
+use crate::utils::Savestate;
 use core::ops::Mul;
 use core::simd::{i32x4, i64x4, Simd, SimdElement};
 
@@ -5,7 +6,7 @@ use core::simd::{i32x4, i64x4, Simd, SimdElement};
 #[repr(align(16))]
 pub struct MatrixBuffer<const LEN: usize>(pub [i32; LEN]);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Savestate)]
 #[repr(align(64))]
 pub struct Matrix(pub [i32x4; 4]);
 

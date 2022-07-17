@@ -1,5 +1,5 @@
 use super::Emu;
-use crate::cpu;
+use crate::{cpu, utils::Savestate};
 use bitflags::bitflags;
 
 bitflags! {
@@ -21,7 +21,7 @@ bitflags! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Status(pub u32): Debug {
         pub a: bool @ 0,
         pub b: bool @ 1,
@@ -42,7 +42,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct KeyIrqControl(pub u16): Debug {
         pub a: bool @ 0,
         pub b: bool @ 1,
@@ -60,6 +60,7 @@ proc_bitfield::bitfield! {
     }
 }
 
+#[derive(Savestate)]
 pub struct Input {
     pub(crate) status: Status,
     key_irq_control: [KeyIrqControl; 2],

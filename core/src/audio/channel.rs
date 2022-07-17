@@ -6,7 +6,7 @@ use crate::utils::schedule::RawTimestamp;
 use crate::{
     cpu::{self, arm7, bus::DmaAccess},
     emu::Emu,
-    utils::{Bytes, MemValue},
+    utils::{Bytes, MemValue, Savestate},
 };
 use core::mem;
 
@@ -25,7 +25,7 @@ use core::mem;
 //       and startup delays would have to be emulated more accurately.
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Control(pub u32): Debug {
         pub volume_raw: u8 @ 0..=6,
         pub volume_shift_raw: u8 @ 8..=9,
@@ -90,14 +90,14 @@ impl Control {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 pub enum RepeatMode {
     Manual,
     LoopInfinite,
     OneShot,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 pub enum Format {
     Pcm8,
     Pcm16,
@@ -108,12 +108,17 @@ pub enum Format {
 }
 
 mod bounded {
-    use crate::utils::bounded_int_lit;
+    use crate::utils::{bounded_int_lit, bounded_int_savestate};
     bounded_int_lit!(pub struct Index(u8), max 15);
+    bounded_int_savestate!(Index(u8));
     bounded_int_lit!(pub struct WaveDuty(u8), max 7);
+    bounded_int_savestate!(WaveDuty(u8));
     bounded_int_lit!(pub struct FifoReadPos(u8), max 0x1F);
+    bounded_int_savestate!(FifoReadPos(u8));
     bounded_int_lit!(pub struct FifoWritePos(u8), max 0x1C, mask 0x1C);
+    bounded_int_savestate!(FifoWritePos(u8));
     bounded_int_lit!(pub struct AdpcmIndex(u8), max 88);
+    bounded_int_savestate!(AdpcmIndex(u8));
 }
 pub use bounded::*;
 
@@ -142,8 +147,11 @@ static PSG_TABLE: [i16; 64] = [
     -0x7FFF, -0x7FFF, -0x7FFF, -0x7FFF, -0x7FFF, -0x7FFF, -0x7FFF, -0x7FFF,
 ];
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Channel {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     logger: slog::Logger,
     last_update_time: arm7::Timestamp,
     control: Control,
@@ -175,6 +183,7 @@ pub struct Channel {
     adpcm_byte: u8,
     noise_lfsr: u16,
     #[cfg(feature = "xq-audio")]
+    #[savestate(skip)]
     hist: [InterpSample; 4],
     #[cfg(feature = "xq-audio")]
     last_sample_time: Option<arm7::Timestamp>,

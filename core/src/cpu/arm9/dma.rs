@@ -8,11 +8,11 @@ use crate::{
     },
     emu::Emu,
     gpu::engine_3d::Engine3d,
-    utils::schedule::RawTimestamp,
+    utils::{schedule::RawTimestamp, Savestate},
 };
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 pub enum Timing {
     Immediate,    // x
     VBlank,       // x

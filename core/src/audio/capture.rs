@@ -1,7 +1,7 @@
 use crate::{
     cpu::{self, arm7, bus::DmaAccess},
     emu::Emu,
-    utils::Bytes,
+    utils::{Bytes, Savestate},
 };
 
 // TODO: The capture units could actually need a higher resolution than the mixer (capturing
@@ -9,7 +9,7 @@ use crate::{
 // case?
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Control(pub u8): Debug {
         pub addition: bool @ 0,
         pub capture_channel: bool @ 1,
@@ -20,13 +20,17 @@ proc_bitfield::bitfield! {
 }
 
 mod bounded {
-    use crate::utils::bounded_int_lit;
+    use crate::utils::{bounded_int_lit, bounded_int_savestate};
     bounded_int_lit!(pub struct Index(u8), max 15);
+    bounded_int_savestate!(Index(u8));
     bounded_int_lit!(pub struct FifoReadPos(u8), max 0x1C, mask 0x1C);
+    bounded_int_savestate!(FifoReadPos(u8));
     bounded_int_lit!(pub struct FifoWritePos(u8), max 0x1F);
+    bounded_int_savestate!(FifoWritePos(u8));
 }
 pub use bounded::*;
 
+#[derive(Savestate)]
 pub struct CaptureUnit {
     control: Control,
     addition_enabled: bool,

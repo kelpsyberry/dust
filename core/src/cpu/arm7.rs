@@ -11,22 +11,29 @@ use super::{psr::Cpsr, timers::Timers, CoreData, Engine, Regs};
 use crate::{
     cpu::{self, hle_bios},
     emu::{swram::Swram, Emu, LocalExMemControl},
-    utils::{Bytes, OwnedBytesCellPtr},
+    utils::{Bytes, OwnedBytesCellPtr, Savestate},
 };
 
 pub const BIOS_SIZE: usize = 0x4000;
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Arm7<E: Engine> {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     pub(super) logger: slog::Logger,
     #[cfg(feature = "debugger-hooks")]
+    #[savestate(skip)]
     pub(super) debug: debug::Arm7Data<E>,
     pub engine_data: E::Arm7Data,
     pub(super) hle_bios: hle_bios::arm7::State,
+    #[savestate(skip)]
     bios: OwnedBytesCellPtr<BIOS_SIZE>,
     pub wram: OwnedBytesCellPtr<0x1_0000>,
     pub schedule: Schedule,
+    #[savestate(skip)]
     pub(super) bus_ptrs: Box<bus::ptrs::Ptrs>,
+    #[savestate(skip)]
     pub(super) bus_timings: Box<bus::timings::Timings>,
     pub irqs: Irqs,
     pub timers: Timers<Schedule>,
@@ -37,8 +44,10 @@ pub struct Arm7<E: Engine> {
     pub dma: cpu::dma::Controller<dma::Timing, ()>,
     last_dma_words: [u32; 4],
     #[cfg(feature = "debugger-hooks")]
+    #[savestate(skip)]
     pub stopped: bool,
     #[cfg(feature = "debugger-hooks")]
+    #[savestate(skip)]
     pub(crate) stopped_by_debug_hook: bool,
 }
 

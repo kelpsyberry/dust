@@ -1,8 +1,10 @@
-use crate::utils::{ByteMutSlice, ByteSlice};
+use crate::utils::{ByteMutSlice, ByteSlice, Savestate};
 
-#[derive(Clone)]
+#[derive(Clone, Savestate)]
+#[load(in_place_only)]
 pub struct Empty {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     logger: slog::Logger,
 }
 

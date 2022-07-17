@@ -138,8 +138,8 @@ impl<R: Role> Engine2d<R> {
             }
 
             let y_range = &self.window_ranges[i].y;
-            let y_start = y_range.start;
-            let mut y_end = y_range.end;
+            let y_start = y_range.0;
+            let mut y_end = y_range.1;
             if y_end < y_start {
                 y_end = 192;
             }
@@ -218,8 +218,8 @@ impl<R: Role> Engine2d<R> {
                 }
 
                 let x_range = &self.window_ranges[i].x;
-                let x_start = x_range.start as usize;
-                let mut x_end = x_range.end as usize;
+                let x_start = x_range.0 as usize;
+                let mut x_end = x_range.1 as usize;
                 if x_end < x_start {
                     x_end = 256;
                 }

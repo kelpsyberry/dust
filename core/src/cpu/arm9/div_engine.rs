@@ -1,8 +1,11 @@
 use super::{event_slots, Event, Schedule, Timestamp};
-use crate::{cpu::Schedule as _, utils::schedule::RawTimestamp};
+use crate::{
+    cpu::Schedule as _,
+    utils::{schedule::RawTimestamp, Savestate},
+};
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Control(pub u16): Debug {
         pub mode: u8 @ 0..=1,
         pub div_by_0: bool @ 14,
@@ -10,6 +13,7 @@ proc_bitfield::bitfield! {
     }
 }
 
+#[derive(Savestate)]
 pub struct DivEngine {
     control: Control,
     num: i64,

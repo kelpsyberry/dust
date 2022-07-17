@@ -6,6 +6,7 @@ use crate::{
         CoreData, Engine, Schedule,
     },
     emu::Emu,
+    utils::Savestate,
 };
 
 #[allow(clippy::unusual_byte_groupings)]
@@ -240,6 +241,7 @@ fn wait_by_loop<E: Engine>(emu: &mut Emu<E>, iterations: i32) -> u32 {
     (iterations - 1).min(0) as u32
 }
 
+#[derive(Savestate)]
 pub struct State {
     pub enabled: bool,
     swi_r0_3: [u32; 4],

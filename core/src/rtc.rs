@@ -1,9 +1,9 @@
-use crate::utils::bounded_int;
+use crate::utils::Savestate;
 
 // TODO: Implement INT1 and INT2 (and also expose them)
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Control(pub u16): Debug {
         pub data: u8 @ 0..=0,
         pub clock: bool @ 1,
@@ -14,7 +14,12 @@ proc_bitfield::bitfield! {
     }
 }
 
-bounded_int!(pub struct RegIndex(u8), max 7);
+mod bounded {
+    use crate::utils::{bounded_int_lit, bounded_int_savestate};
+    bounded_int_lit!(pub struct RegIndex(u8), max 7);
+    bounded_int_savestate!(RegIndex(u8));
+}
+pub use bounded::*;
 
 impl RegIndex {
     pub const STATUS1: Self = RegIndex::new(0b000);
@@ -28,7 +33,7 @@ impl RegIndex {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Status1(pub u8): Debug {
         pub reset: bool @ 0,
         pub is_in_24_hour_mode: bool @ 1,
@@ -40,7 +45,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Status2(pub u8): Debug {
         pub int1_mode: u8 @ 0..=3,
         pub int2_enabled: bool @ 6,
@@ -99,9 +104,13 @@ impl Backend for DummyBackend {
     fn set_date_time(&mut self, _: (Date, Time)) {}
 }
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Rtc {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     logger: slog::Logger,
+    #[savestate(skip)]
     pub backend: Box<dyn Backend>,
     latched_date_time: [u8; 7],
     date_written: bool,

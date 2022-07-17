@@ -1,4 +1,4 @@
-use crate::utils::Zero;
+use crate::utils::{Savestate, Zero};
 use core::simd::{i16x2, i32x4, i64x2, i64x4, mask64x4, simd_swizzle, u16x2, u16x4, u8x4};
 
 pub type TexCoords = i16x2;
@@ -7,7 +7,7 @@ pub type InterpColor = u16x4;
 pub type ConversionScreenCoords = i64x2;
 pub type ScreenCoords = u16x2;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 #[repr(C)]
 pub struct Vertex {
     pub coords: i32x4,
@@ -72,7 +72,7 @@ pub fn front_facing(v0: &Vertex, v1: &Vertex, v2: &Vertex) -> bool {
     (normal * simd_swizzle!(v1_64, [0, 1, 3, 2])).reduce_sum() >= 0
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 #[repr(C)]
 pub struct ScreenVertex {
     pub coords: ScreenCoords,

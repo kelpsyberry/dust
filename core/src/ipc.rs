@@ -1,10 +1,10 @@
 use crate::{
     cpu::{arm7, arm9},
-    utils::Fifo,
+    utils::{Fifo, Savestate},
 };
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Sync(pub u16): Debug {
         pub recv: u8 @ 0..=3,
         pub send: u8 @ 8..=11,
@@ -14,7 +14,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct FifoControl(pub u16): Debug {
         pub send_fifo_empty: bool @ 0,
         pub send_fifo_full: bool @ 1,
@@ -28,6 +28,7 @@ proc_bitfield::bitfield! {
     }
 }
 
+#[derive(Savestate)]
 pub struct Ipc {
     sync_7: Sync,
     fifo_control_7: FifoControl,

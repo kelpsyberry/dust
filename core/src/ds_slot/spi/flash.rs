@@ -1,12 +1,15 @@
-use crate::{flash, SaveContents};
+use crate::{flash, utils::Savestate, SaveContents};
 
 pub type Status = flash::Status;
 
-#[derive(Clone)]
+#[derive(Clone, Savestate)]
+#[load(in_place_only)]
 pub struct Flash {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     logger: slog::Logger,
     pub contents: flash::Flash,
+    #[savestate(skip)]
     has_ir: bool,
     ir_cmd: u8,
     first_ir_data_byte: bool,

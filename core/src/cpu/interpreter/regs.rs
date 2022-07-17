@@ -1,8 +1,11 @@
 use super::super::Regs as EngineRegs;
-use crate::cpu::psr::{Cpsr, Mode, Spsr};
+use crate::{
+    cpu::psr::{Cpsr, Mode, Spsr},
+    utils::Savestate,
+};
 
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Savestate)]
 pub struct Regs {
     pub cur: [u32; 16],
     pub(super) cpsr: Cpsr,

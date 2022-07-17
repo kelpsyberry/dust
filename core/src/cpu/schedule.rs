@@ -1,5 +1,8 @@
 use super::timers;
-use crate::emu;
+use crate::{
+    emu,
+    utils::{Loadable, LoadableInPlace, Storable},
+};
 
 pub trait Schedule {
     type Timestamp: Copy
@@ -10,9 +13,12 @@ pub trait Schedule {
         + PartialEq
         + Eq
         + PartialOrd
-        + Ord;
-    type Event: Copy;
-    type EventSlotIndex: Copy;
+        + Ord
+        + Loadable
+        + LoadableInPlace
+        + Storable;
+    type Event: Copy + Loadable + LoadableInPlace + Storable;
+    type EventSlotIndex: Copy + Loadable + LoadableInPlace + Storable;
 
     fn cur_time(&self) -> Self::Timestamp;
     fn set_cur_time(&mut self, value: Self::Timestamp);

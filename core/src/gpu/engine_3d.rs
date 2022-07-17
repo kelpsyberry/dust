@@ -13,7 +13,9 @@ use crate::{
     },
     emu::{self, Emu},
     gpu::vram::Vram,
-    utils::{schedule::RawTimestamp, zeroed_box, Fifo, Zero},
+    utils::{
+        load_slice_in_place, schedule::RawTimestamp, store_slice, zeroed_box, Fifo, Savestate, Zero,
+    },
 };
 use core::{
     mem::{replace, transmute},
@@ -23,7 +25,7 @@ use matrix::{Matrix, MatrixBuffer};
 use vertex::{ConversionScreenCoords, Vertex};
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct GxStatus(pub u32): Debug {
         pub test_busy: bool @ 0,
         pub box_test_result: bool @ 1,
@@ -40,29 +42,31 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct PolyVertRamLevel(pub u32): Debug {
         pub poly_ram_level: u16 @ 0..=11,
         pub vert_ram_level: u16 @ 16..=28,
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(align(8))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
+#[repr(C, align(8))]
 struct FifoEntry {
     command: u8,
     param: u32,
 }
 
+unsafe impl Zero for FifoEntry {}
+
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct SwapBuffersAttrs(pub u8): Debug {
         pub translucent_auto_sort_disabled: bool @ 0,
         pub w_buffering: bool @ 1,
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 #[repr(u8)]
 #[allow(dead_code)] // Initialized through `transmute`
 enum MatrixMode {
@@ -72,7 +76,7 @@ enum MatrixMode {
     Texture,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 struct Light {
     direction: [i16; 3],
     half_vec: [i16; 3],
@@ -80,7 +84,7 @@ struct Light {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct PolygonAttrs(pub u32): Debug {
         pub lights_mask: u8 @ 0..=3,
         pub mode: u8 @ 4..=5,
@@ -97,7 +101,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct TextureParams(pub u32): Debug {
         pub vram_off: u16 @ 0..=15,
         pub repeat_s: bool @ 16,
@@ -112,7 +116,7 @@ proc_bitfield::bitfield! {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 #[repr(u8)]
 #[allow(dead_code)] // Initialized through `transmute`
 enum PrimitiveType {
@@ -123,18 +127,24 @@ enum PrimitiveType {
 }
 
 mod bounded {
-    use crate::utils::bounded_int_lit;
+    use crate::utils::{bounded_int_lit, bounded_int_savestate};
     bounded_int_lit!(pub struct PrimVertIndex(u8), max 3);
+    bounded_int_savestate!(PrimVertIndex(u8));
     bounded_int_lit!(pub struct PrimMaxVerts(u8), max 4);
+    bounded_int_savestate!(PrimMaxVerts(u8));
     bounded_int_lit!(pub struct PolyVertIndex(u8), max 9);
+    bounded_int_savestate!(PolyVertIndex(u8));
     bounded_int_lit!(pub struct PolyVertsLen(u8), max 10);
+    bounded_int_savestate!(PolyVertsLen(u8));
     bounded_int_lit!(pub struct PolyAddr(u16), max 2047);
+    bounded_int_savestate!(PolyAddr(u16));
     bounded_int_lit!(pub struct VertexAddr(u16), max 6143);
+    bounded_int_savestate!(VertexAddr(u16));
 }
 pub use bounded::{PolyAddr, PolyVertIndex, PolyVertsLen, VertexAddr};
 use bounded::{PrimMaxVerts, PrimVertIndex};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 #[repr(C)]
 pub struct Polygon {
     pub vertices: [VertexAddr; 10],
@@ -153,7 +163,7 @@ pub struct Polygon {
 unsafe impl Zero for Polygon {}
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct RenderingControl(pub u16): Debug {
         pub texture_mapping_enabled: bool @ 0,
         pub highlight_shading_enabled: bool @ 1,
@@ -178,11 +188,15 @@ proc_bitfield::bitfield! {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Savestate)]
 pub struct RenderingState {
     pub control: RenderingControl,
 
+    #[load(value = "0xF")]
+    #[store(skip)]
     pub texture_dirty: u8,
+    #[load(value = "0x3F")]
+    #[store(skip)]
     pub tex_pal_dirty: u8,
 
     pub alpha_test_ref: u8,
@@ -202,9 +216,13 @@ pub struct RenderingState {
     pub rear_plane_fog_enabled: bool,
 }
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Engine3d {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     logger: slog::Logger,
+    #[savestate(skip)]
     pub renderer: Box<dyn Renderer>,
 
     pub(super) gx_enabled: bool,
@@ -267,7 +285,15 @@ pub struct Engine3d {
 
     vert_ram_level: u16,
     poly_ram_level: u16,
+    #[load(
+        with_in_place = "load_slice_in_place(&mut vert_ram[..*vert_ram_level as usize], save)?"
+    )]
+    #[store(with = "store_slice(&mut vert_ram[..*vert_ram_level as usize], save)?")]
     vert_ram: Box<[ScreenVertex; 6144]>,
+    #[load(
+        with_in_place = "load_slice_in_place(&mut poly_ram[..*poly_ram_level as usize], save)?"
+    )]
+    #[store(with = "store_slice(&mut poly_ram[..*poly_ram_level as usize], save)?")]
     poly_ram: Box<[Polygon; 2048]>,
 
     rendering_state: RenderingState,

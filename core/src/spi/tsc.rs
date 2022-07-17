@@ -1,7 +1,7 @@
-use crate::emu::input;
+use crate::{emu::input, utils::Savestate};
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct ControlByte(pub u8): Debug {
         pub power_down_mode: u8 @ 0..=1,
         pub single_ended_mode: bool @ 2,
@@ -11,9 +11,13 @@ proc_bitfield::bitfield! {
     }
 }
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Tsc {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     logger: slog::Logger,
+    #[savestate(skip)]
     is_ds_lite: bool,
     pen_down: bool,
     pos: u8,

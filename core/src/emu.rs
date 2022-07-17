@@ -10,7 +10,7 @@ use crate::{
     cpu::{
         self,
         arm7::{self, Arm7},
-        arm9::{self, Arm9},
+        arm9::{self, cp15::Cp15, Arm9},
         bus::CpuAccess,
         Arm7Data, Arm9Data, CoreData, Schedule as _,
     },
@@ -21,8 +21,8 @@ use crate::{
     rtc::{self, Rtc},
     spi,
     utils::{
-        bounded_int_lit, schedule::RawTimestamp, BoxedByteSlice, ByteMutSlice, Bytes,
-        OwnedBytesCellPtr,
+        schedule::RawTimestamp, BoxedByteSlice, ByteMutSlice, Bytes, OwnedBytesCellPtr,
+        ReadSavestate, Savestate, WriteSavestate,
     },
     wifi::WiFi,
     Model,
@@ -35,7 +35,7 @@ use std::error::Error;
 use swram::Swram;
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct LocalExMemControl(pub u8): Debug {
         pub gba_slot_sram_access_time: u8 @ 0..=1,
         pub gba_slot_rom_1st_access_time: u8 @ 2..=3,
@@ -65,7 +65,7 @@ impl LocalExMemControl {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct GlobalExMemControl(pub u16): Debug {
         pub arm7_gba_slot_access: bool @ 7,
         pub arm7_ds_slot_access: bool @ 11,
@@ -75,21 +75,31 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct AudioWifiPowerControl(pub u8): Debug {
         pub speaker_enabled: bool @ 0,
         pub wifi_enabled: bool @ 1,
     }
 }
 
-bounded_int_lit!(pub struct MainMemMask(u32), min 0x3F_FFFF, max 0x7F_FFFF);
+mod bounded {
+    use crate::utils::{bounded_int_lit, bounded_int_savestate};
+    bounded_int_lit!(pub struct MainMemMask(u32), min 0x3F_FFFF, max 0x7F_FFFF);
+    bounded_int_savestate!(MainMemMask(u32));
+}
+pub use bounded::*;
 
+#[derive(Savestate)]
+#[load(in_place_only, post = "self.post_load(save)?")]
+#[store(post = "self.post_store(save)?")]
 pub struct Emu<E: cpu::Engine> {
     #[allow(dead_code)]
     pub(crate) global_engine_data: E::GlobalData,
     pub arm7: Arm7<E>,
     pub arm9: Arm9<E>,
+    #[savestate(skip)]
     main_mem: OwnedBytesCellPtr<0x80_0000>,
+    #[savestate(skip)]
     main_mem_mask: MainMemMask,
     pub swram: Swram,
     pub schedule: Schedule,
@@ -105,6 +115,42 @@ pub struct Emu<E: cpu::Engine> {
     pub wifi: WiFi,
     rcnt: u16, // TODO: Move to SIO
     is_debugger: bool,
+}
+
+impl<E: cpu::Engine> Emu<E> {
+    fn post_load<S: ReadSavestate>(&mut self, save: &mut S) -> Result<(), S::Error> {
+        save.start_field(b"main_mem")?;
+        if self.is_debugger {
+            self.main_mem_mask = MainMemMask::new(0x7F_FFFF);
+            save.load_into(&mut self.main_mem)?;
+        } else {
+            self.main_mem_mask = MainMemMask::new(0x3F_FFFF);
+            save.load_into(unsafe {
+                &mut *(self.main_mem.as_bytes_ptr() as *mut Bytes<0x40_0000>)
+            })?;
+        }
+
+        E::Arm7Data::post_load(self);
+        E::Arm9Data::post_load(self);
+        self.swram.recalc(&mut self.arm7, &mut self.arm9);
+        self.gpu
+            .vram
+            .restore_mappings(&mut self.arm7, &mut self.arm9);
+        arm9::cp15::Cp15::post_load(self);
+        #[cfg(feature = "xq-audio")]
+        Audio::update_next_scaled_sample_index(self);
+
+        Ok(())
+    }
+
+    fn post_store<S: WriteSavestate>(&mut self, save: &mut S) -> Result<(), S::Error> {
+        save.start_field(b"main_mem")?;
+        if self.is_debugger {
+            save.store(&mut self.main_mem)
+        } else {
+            save.store(unsafe { &mut *(self.main_mem.as_bytes_ptr() as *mut Bytes<0x40_0000>) })
+        }
+    }
 }
 
 pub struct Builder {
@@ -125,7 +171,7 @@ pub struct Builder {
     pub direct_boot: bool,
     pub batch_duration: u32,
     pub first_launch: bool,
-    pub audio_sample_chunk_size: usize,
+    pub audio_sample_chunk_size: u16,
     #[cfg(feature = "xq-audio")]
     pub audio_custom_sample_rate: Option<NonZeroU32>,
     #[cfg(feature = "xq-audio")]
@@ -418,9 +464,9 @@ impl<E: cpu::Engine> Emu<E> {
         self.arm7.set_post_boot_flag(true);
         self.arm9.set_post_boot_flag(arm9::PostBootFlag(1));
         self.audio.write_bias(0x200);
-        Arm9::write_cp15_dtcm_control(self, arm9::cp15::TcmControl(0x0300_000A));
-        Arm9::write_cp15_itcm_control(self, arm9::cp15::TcmControl(0x20));
-        Arm9::write_cp15_control(self, arm9::cp15::Control(0x0005_2078));
+        Cp15::write_dtcm_control(self, arm9::cp15::TcmControl(0x0300_000A));
+        Cp15::write_itcm_control(self, arm9::cp15::TcmControl(0x20));
+        Cp15::write_control(self, arm9::cp15::Control(0x0005_2078));
         self.swram
             .write_control(swram::Control(3), &mut self.arm7, &mut self.arm9);
         self.gpu.write_power_control(gpu::PowerControl(0x820F));

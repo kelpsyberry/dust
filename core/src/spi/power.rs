@@ -1,10 +1,11 @@
 use crate::{
     cpu::{arm7, Schedule as _},
     emu,
+    utils::Savestate,
 };
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct RegIndex(pub u8): Debug {
         pub reg: u8 @ 0..=6,
         pub read: bool @ 7,
@@ -12,7 +13,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Control(pub u8): Debug {
         pub sound_amplifier_enabled: bool @ 0,
         pub sound_amplifier_muted: bool @ 1,
@@ -24,14 +25,14 @@ proc_bitfield::bitfield! {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Savestate)]
 pub enum SoundLevel {
     Muted,
     Low,
     Normal,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Savestate)]
 pub enum PowerLedState {
     Normal,
     Blinking,
@@ -39,14 +40,14 @@ pub enum PowerLedState {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct MicAmplifierGainControl(pub u8): Debug {
         pub gain_shift: u8 @ 0..=1,
     }
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct DsLiteBacklightControl(pub u8): Debug {
         pub backlight_level: u8 @ 0..=1,
         pub max_level_with_ext_power: bool @ 2,
@@ -54,7 +55,7 @@ proc_bitfield::bitfield! {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Savestate)]
 pub enum DsLiteBacklightLevel {
     Low,
     Medium,
@@ -62,8 +63,12 @@ pub enum DsLiteBacklightLevel {
     Max,
 }
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Power {
+    #[savestate(skip)]
     is_ds_lite: bool,
+    #[savestate(skip)]
     reg_mask: u8,
     cur_reg_index: RegIndex,
     control: Control,

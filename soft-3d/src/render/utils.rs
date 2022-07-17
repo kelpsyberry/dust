@@ -225,7 +225,7 @@ impl<const EDGE: bool> InterpLineData<EDGE> {
 
         let (p_w0_numer, p_w0_denom, p_w1_denom) = if EDGE {
             if a_w & 1 != 0 && b_w & 1 == 0 {
-                (a_w >> 1, a_w.wrapping_add(1) >> 1, b_w >> 1)
+                (a_w >> 1, ((a_w as u32 + 1) >> 1) as u16, b_w >> 1)
             } else {
                 (a_w >> 1, a_w >> 1, b_w >> 1)
             }

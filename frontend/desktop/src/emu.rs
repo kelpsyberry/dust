@@ -47,7 +47,7 @@ pub struct SharedState {
 pub enum Message {
     UpdateInput(input::Changes),
     UpdateSavePath(Option<PathBuf>),
-    UpdateAudioSampleChunkSize(u32),
+    UpdateAudioSampleChunkSize(u16),
     #[cfg(feature = "xq-audio")]
     UpdateAudioCustomSampleRate(Option<NonZeroU32>),
     #[cfg(feature = "xq-audio")]
@@ -286,7 +286,7 @@ pub(super) fn main(
     emu_builder.model = config.model;
     emu_builder.direct_boot = direct_boot;
     // TODO: Set batch_duration and first_launch?
-    emu_builder.audio_sample_chunk_size = config.audio_sample_chunk_size.value as usize;
+    emu_builder.audio_sample_chunk_size = config.audio_sample_chunk_size.value;
     #[cfg(feature = "xq-audio")]
     {
         emu_builder.audio_custom_sample_rate = config.audio_custom_sample_rate.value;
@@ -358,7 +358,7 @@ pub(super) fn main(
                 }
 
                 Message::UpdateAudioSampleChunkSize(chunk_size) => {
-                    emu.audio.sample_chunk_size = chunk_size as usize;
+                    emu.audio.sample_chunk_size = chunk_size;
                 }
 
                 #[cfg(feature = "xq-audio")]

@@ -2,9 +2,10 @@ mod io;
 mod render;
 
 use super::{Scanline, SCREEN_WIDTH};
-use core::{marker::PhantomData, ops::Range};
+use crate::utils::{LoadableInPlace, Savestate, Storable};
+use core::marker::PhantomData;
 
-pub trait Role {
+pub trait Role: LoadableInPlace + Storable {
     const IS_A: bool;
     const BG_VRAM_MASK: u32;
 }
@@ -15,14 +16,44 @@ impl Role for EngineA {
     const BG_VRAM_MASK: u32 = 0x7_FFFF;
 }
 
+impl LoadableInPlace for EngineA {
+    fn load_in_place<S: emu_utils::ReadSavestate>(
+        &mut self,
+        _save: &mut S,
+    ) -> Result<(), S::Error> {
+        Ok(())
+    }
+}
+
+impl Storable for EngineA {
+    fn store<S: emu_utils::WriteSavestate>(&mut self, _save: &mut S) -> Result<(), S::Error> {
+        Ok(())
+    }
+}
+
 pub enum EngineB {}
 impl Role for EngineB {
     const IS_A: bool = false;
     const BG_VRAM_MASK: u32 = 0x1_FFFF;
 }
 
+impl LoadableInPlace for EngineB {
+    fn load_in_place<S: emu_utils::ReadSavestate>(
+        &mut self,
+        _save: &mut S,
+    ) -> Result<(), S::Error> {
+        Ok(())
+    }
+}
+
+impl Storable for EngineB {
+    fn store<S: emu_utils::WriteSavestate>(&mut self, _save: &mut S) -> Result<(), S::Error> {
+        Ok(())
+    }
+}
+
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Control(pub u32): Debug {
         pub bg_mode: u8 @ 0..=2,
         pub bg0_3d: bool @ 3,
@@ -69,7 +100,7 @@ impl Control {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct BrightnessControl(pub u16): Debug {
         pub factor: u8 @ 0..=4,
         pub mode: u8 @ 14..=15,
@@ -77,7 +108,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct BgControl(pub u16): Debug {
         pub priority: u8 @ 0..=1,
         pub use_direct_color_extended_bg: bool @ 2,
@@ -105,7 +136,7 @@ impl BgControl {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct ColorEffectsControl(pub u16): Debug {
         pub target_1_mask: u8 @ 0..=5,
         pub color_effect: u8 @ 6..=7,
@@ -114,7 +145,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct BlendCoeffsRaw(pub u16): Debug {
         pub a_coeff: u8 @ 0..=4,
         pub b_coeff: u8 @ 8..=12,
@@ -182,7 +213,7 @@ mod bounded {
 }
 pub use bounded::{AffineBgIndex, BgIndex};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Savestate)]
 pub struct Bg {
     control: BgControl,
     priority: u8,
@@ -197,7 +228,7 @@ impl Bg {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Savestate)]
 pub struct AffineBgData {
     ref_points: [i32; 2],
     pub params: [i16; 4],
@@ -223,17 +254,17 @@ impl AffineBgData {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct WindowControl(u8): Debug {
         pub bg_obj_mask: u8 @ 0..=4,
         pub color_effects_enabled: bool @ 5,
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Savestate)]
 pub struct WindowRanges {
-    pub x: Range<u8>,
-    pub y: Range<u8>,
+    pub x: (u8, u8),
+    pub y: (u8, u8),
 }
 
 proc_bitfield::bitfield! {
@@ -271,7 +302,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct CaptureControl(u32): Debug {
         pub factor_a: u8 @ 0..=4,
         pub factor_b: u8 @ 8..=12,
@@ -286,10 +317,15 @@ proc_bitfield::bitfield! {
     }
 }
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Engine2d<R: Role> {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     logger: slog::Logger,
+    #[savestate(skip)]
     _role: PhantomData<R>,
+    #[savestate(skip)]
     render_fns: render::FnPtrs<R>,
     pub(super) enabled: bool,
     pub(super) engine_3d_enabled: bool,
@@ -307,9 +343,12 @@ pub struct Engine2d<R: Role> {
     brightness_coeff: u8,
     windows_active: [bool; 2],
     obj_window: [u8; SCREEN_WIDTH / 8],
+    #[savestate(skip)]
     bg_obj_scanline: Scanline<u64>,
+    #[savestate(skip)]
     obj_scanline: Scanline<ObjPixel>,
     // Allow for slightly out-of-bounds SIMD accesses
+    #[savestate(skip)]
     window: Scanline<WindowPixel, { SCREEN_WIDTH + 7 }>,
     capture_control: CaptureControl,
     capture_enabled_in_frame: bool,
@@ -340,8 +379,14 @@ impl<R: Role> Engine2d<R> {
                 pos: [0; 2],
             }; 2],
             window_ranges: [
-                WindowRanges { x: 0..0, y: 0..0 },
-                WindowRanges { x: 0..0, y: 0..0 },
+                WindowRanges {
+                    x: (0, 0),
+                    y: (0, 0),
+                },
+                WindowRanges {
+                    x: (0, 0),
+                    y: (0, 0),
+                },
             ],
             window_control: [
                 WindowControl(0),

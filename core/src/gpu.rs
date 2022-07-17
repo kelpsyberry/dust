@@ -5,13 +5,13 @@ pub mod vram;
 use crate::{
     cpu::{arm7, arm9, Engine},
     emu::{self, event_slots, Emu, Timestamp},
-    utils::{schedule::RawTimestamp, zeroed_box, Fill8, Zero},
+    utils::{schedule::RawTimestamp, zeroed_box, Fill8, Savestate, Zero},
 };
 use engine_2d::Engine2d;
 use engine_3d::Engine3d;
 use vram::Vram;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 pub enum Event {
     EndHDraw,
     EndHBlank,
@@ -19,7 +19,7 @@ pub enum Event {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct PowerControl(pub u16): Debug {
         pub display_enabled: bool @ 0,
         pub engine_2d_a_enabled: bool @ 1,
@@ -31,7 +31,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct DispStatus(pub u16): Debug {
         pub vblank: bool @ 0,
         pub hblank: bool @ 1,
@@ -72,7 +72,10 @@ pub struct Framebuffer(pub [[u32; SCREEN_WIDTH * SCREEN_HEIGHT]; 2]);
 unsafe impl Zero for Framebuffer {}
 unsafe impl Fill8 for Framebuffer {}
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Gpu {
+    #[savestate(skip)]
     pub framebuffer: Box<Framebuffer>,
     power_control: PowerControl,
     vcount: u16,

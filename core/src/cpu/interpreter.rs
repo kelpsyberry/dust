@@ -4,6 +4,7 @@ mod alu_utils;
 mod common;
 
 use super::Engine;
+use crate::utils::Savestate;
 
 macro_rules! reg {
     ($cpu: expr, $reg: expr) => {
@@ -58,6 +59,7 @@ macro_rules! update_spsr {
 mod arm7;
 mod arm9;
 
+#[derive(Savestate)]
 pub struct Interpreter;
 
 impl Engine for Interpreter {

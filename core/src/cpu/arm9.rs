@@ -16,14 +16,14 @@ use crate::cpu::Arm9Data;
 use crate::{
     cpu::{self, hle_bios},
     emu::{swram::Swram, Emu, LocalExMemControl},
-    utils::{Bytes, OwnedBytesCellPtr},
+    utils::{Bytes, OwnedBytesCellPtr, Savestate},
 };
 use cp15::Cp15;
 use div_engine::DivEngine;
 use sqrt_engine::SqrtEngine;
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct PostBootFlag(pub u8): Debug {
         pub booted: bool @ 0,
         pub extra_bit: bool @ 1,
@@ -33,16 +33,23 @@ proc_bitfield::bitfield! {
 pub const BIOS_SIZE: usize = 0x1000;
 pub const BIOS_BUFFER_SIZE: usize = bus::ptrs::Ptrs::PAGE_SIZE;
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Arm9<E: Engine> {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     pub(super) logger: slog::Logger,
     #[cfg(feature = "debugger-hooks")]
+    #[savestate(skip)]
     pub(super) debug: debug::Arm9Data<E>,
     pub engine_data: E::Arm9Data,
     pub(super) hle_bios: hle_bios::arm9::State,
+    #[savestate(skip)]
     bios: OwnedBytesCellPtr<BIOS_BUFFER_SIZE>,
     pub schedule: Schedule,
+    #[savestate(skip)]
     bus_ptrs: Box<bus::ptrs::Ptrs>,
+    #[savestate(skip)]
     bus_timings: Box<bus::timings::Timings>,
     pub cp15: Cp15,
     pub irqs: Irqs,
@@ -54,8 +61,10 @@ pub struct Arm9<E: Engine> {
     pub div_engine: DivEngine,
     pub sqrt_engine: SqrtEngine,
     #[cfg(feature = "debugger-hooks")]
+    #[savestate(skip)]
     pub stopped: bool,
     #[cfg(feature = "debugger-hooks")]
+    #[savestate(skip)]
     pub(crate) stopped_by_debug_hook: bool,
 }
 

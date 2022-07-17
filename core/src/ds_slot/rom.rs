@@ -6,7 +6,7 @@ pub mod icon;
 pub mod normal;
 
 use super::RomOutputLen;
-use crate::utils::{ByteMutSlice, Bytes};
+use crate::utils::{ByteMutSlice, Bytes, Savestate};
 
 trait RomDevice {
     fn read(&self, addr: u32, output: ByteMutSlice);
@@ -20,7 +20,8 @@ trait RomDevice {
     );
 }
 
-#[derive(Clone)]
+#[derive(Clone, Savestate)]
+#[load(in_place_only)]
 pub enum Rom {
     Normal(normal::Normal),
     Empty(Empty),

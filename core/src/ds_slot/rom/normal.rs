@@ -1,7 +1,7 @@
 use super::{super::RomOutputLen, key1};
 use crate::{
     cpu::arm7,
-    utils::{make_zero, BoxedByteSlice, ByteMutSlice, Bytes},
+    utils::{make_zero, BoxedByteSlice, ByteMutSlice, Bytes, Savestate},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -9,7 +9,7 @@ pub enum CreationError {
     SizeNotPowerOfTwo,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Savestate)]
 enum Stage {
     Initial,
     Key1,
@@ -17,14 +17,20 @@ enum Stage {
     // Invalid,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Savestate)]
+#[load(in_place_only)]
 pub struct Normal {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     logger: slog::Logger,
+    #[savestate(skip)]
     rom: BoxedByteSlice,
+    #[savestate(skip)]
     rom_mask: u32,
+    #[savestate(skip)]
     chip_id: u32,
-    key_buf: Option<Box<key1::KeyBuffer>>, // Always at level 2
+    #[savestate(skip)]
+    key_buf: Option<Box<key1::KeyBuffer<false>>>, // Always at level 2
     stage: Stage,
 }
 
@@ -90,8 +96,7 @@ impl super::RomDevice for Normal {
             let mut secure_area = ByteMutSlice::new(&mut self.rom[arm9_code_start..]);
             if secure_area.read_le::<u32>(0) == 0xE7FF_DEFF {
                 secure_area[..8].copy_from_slice(b"encryObj");
-                let mut level_3_key_buf = key_buf.clone();
-                level_3_key_buf.make_level_3::<2>();
+                let level_3_key_buf = key_buf.level_3::<2>();
                 for i in (0..0x800).step_by(8) {
                     let res = level_3_key_buf
                         .encrypt_64_bit([secure_area.read_le(i), secure_area.read_le(4 + i)]);

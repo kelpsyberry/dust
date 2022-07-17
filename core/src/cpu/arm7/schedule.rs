@@ -4,14 +4,14 @@ use crate::{
     ds_slot::DsSlot,
     emu::{self, Emu},
     utils::{
-        bounded_int,
         schedule::{self, RawTimestamp},
+        Savestate,
     },
 };
 use core::ops::Add;
 
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Savestate)]
 pub struct Timestamp(pub RawTimestamp);
 
 impl Add for Timestamp {
@@ -64,7 +64,7 @@ impl From<Timestamp> for timers::Timestamp {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 pub enum Event {
     Shutdown,           // Max 1
     DsSlotRomDataReady, // Max 1
@@ -96,7 +96,13 @@ pub mod event_slots {
         TIMERS_START..TIMERS_END 4,
     }
 }
-bounded_int!(pub struct EventSlotIndex(u8), max (event_slots::LEN - 1) as u8);
+
+mod bounded {
+    use crate::utils::{bounded_int, bounded_int_savestate};
+    bounded_int!(pub struct EventSlotIndex(u8), max (super::event_slots::LEN - 1) as u8);
+    bounded_int_savestate!(EventSlotIndex(u8));
+}
+pub use bounded::*;
 
 impl From<usize> for EventSlotIndex {
     #[inline]
@@ -113,7 +119,7 @@ impl From<EventSlotIndex> for usize {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Savestate)]
 #[repr(C)]
 pub struct Schedule {
     cur_time: Timestamp,

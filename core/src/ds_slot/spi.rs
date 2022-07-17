@@ -4,7 +4,7 @@ pub mod eeprom_4k;
 pub mod eeprom_fram;
 pub mod flash;
 
-use crate::utils::{ByteMutSlice, ByteSlice};
+use crate::utils::{ByteMutSlice, ByteSlice, Savestate};
 
 trait SpiDevice {
     fn contents(&self) -> ByteSlice;
@@ -15,7 +15,8 @@ trait SpiDevice {
     fn write_data(&mut self, data: u8, first: bool, last: bool) -> u8;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Savestate)]
+#[load(in_place_only)]
 pub enum Spi {
     Eeprom4k(eeprom_4k::Eeprom4k),
     EepromFram(eeprom_fram::EepromFram),

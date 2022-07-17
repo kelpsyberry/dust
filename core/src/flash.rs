@@ -1,25 +1,31 @@
 use crate::{
-    utils::{zeroed_box, BoxedByteSlice, ByteMutSlice, ByteSlice},
+    utils::{zeroed_box, BoxedByteSlice, ByteMutSlice, ByteSlice, Savestate},
     SaveContents,
 };
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Status(pub u8): Debug {
         pub write_in_progress: bool @ 0,
         pub write_enabled: bool @ 1,
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Savestate)]
+#[load(in_place_only)]
 pub struct Flash {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     logger: slog::Logger,
 
+    #[savestate(skip)]
     id: [u8; 20],
 
+    #[savestate(skip)]
     contents: BoxedByteSlice,
+    #[savestate(skip)]
     contents_len_mask: u32,
+    #[savestate(skip)]
     contents_dirty: bool,
 
     status: Status,

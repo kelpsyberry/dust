@@ -5,7 +5,7 @@ mod io;
 use crate::{
     cpu::{self, arm7, Schedule as _},
     emu::Emu,
-    utils::schedule::RawTimestamp,
+    utils::{schedule::RawTimestamp, Savestate},
 };
 use capture::CaptureUnit;
 use channel::Channel;
@@ -13,7 +13,7 @@ use channel::Channel;
 use core::num::NonZeroU32;
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Control(pub u16): Debug {
         pub master_volume_raw: u8 @ 0..=6,
         pub l_output_src: u8 @ 8..=9,
@@ -50,7 +50,7 @@ const SYS_CLOCK_RATE: RawTimestamp = 1 << 25;
 const CYCLES_PER_SAMPLE: RawTimestamp = 1024;
 
 // Default to at most 15.625 ms of audio, assuming the default sample rate
-pub const DEFAULT_OUTPUT_SAMPLE_CHUNK_SIZE: usize = 0x200;
+pub const DEFAULT_OUTPUT_SAMPLE_CHUNK_SIZE: u16 = 0x200;
 
 pub trait Backend {
     #[allow(clippy::ptr_arg)] // Intended behavior, the Vec gets drained
@@ -71,24 +71,34 @@ pub struct ChannelAudioCaptureData {
     pub buffers: [Vec<i16>; 16],
 }
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Audio {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     logger: slog::Logger,
+    #[savestate(skip)]
     pub backend: Box<dyn Backend>,
+    #[savestate(skip)]
     sample_chunk: Vec<[OutputSample; 2]>,
-    pub sample_chunk_size: usize,
+    #[savestate(skip)]
+    pub sample_chunk_size: u16,
     pub channels: [Channel; 16],
     pub capture: [CaptureUnit; 2],
     control: Control,
     bias: u16,
     master_volume: u8,
     #[cfg(feature = "xq-audio")]
+    #[savestate(skip)]
     custom_sample_rate: Option<NonZeroU32>,
     #[cfg(feature = "xq-audio")]
+    #[savestate(skip)]
     next_scaled_sample_index: RawTimestamp,
     #[cfg(feature = "xq-audio")]
+    #[savestate(skip)]
     channel_interp_method: ChannelInterpMethod,
     #[cfg(feature = "channel-audio-capture")]
+    #[savestate(skip)]
     pub channel_audio_capture_data: ChannelAudioCaptureData,
 }
 
@@ -96,7 +106,7 @@ impl Audio {
     pub(crate) fn new(
         backend: Box<dyn Backend>,
         arm7_schedule: &mut arm7::Schedule,
-        sample_chunk_size: usize,
+        sample_chunk_size: u16,
         #[cfg(feature = "xq-audio")] custom_sample_rate: Option<NonZeroU32>,
         #[cfg(feature = "xq-audio")] channel_interp_method: ChannelInterpMethod,
         #[cfg(feature = "log")] logger: slog::Logger,
@@ -130,7 +140,7 @@ impl Audio {
             #[cfg(feature = "log")]
             logger,
             backend,
-            sample_chunk: Vec::with_capacity(sample_chunk_size),
+            sample_chunk: Vec::with_capacity(sample_chunk_size as usize),
             sample_chunk_size,
             channels,
             capture: [CaptureUnit::new(), CaptureUnit::new()],
@@ -165,6 +175,26 @@ impl Audio {
 
     cfg_if::cfg_if! {
         if #[cfg(feature = "xq-audio")] {
+            pub(super) fn update_next_scaled_sample_index<E: cpu::Engine>(emu: &mut Emu<E>) {
+                emu.audio.sample_chunk.clear();
+                if emu.arm7.schedule.schedule().is_scheduled(arm7::event_slots::XQ_AUDIO) {
+                    emu.arm7.schedule.cancel_event(arm7::event_slots::XQ_AUDIO);
+                }
+                if let Some(custom_sample_rate) = emu.audio.custom_sample_rate {
+                    emu.audio.next_scaled_sample_index =
+                        ((emu.arm7.schedule.cur_time().0 as u128 * custom_sample_rate.get() as u128
+                            + (SYS_CLOCK_RATE - 1) as u128)
+                            / SYS_CLOCK_RATE as u128) as RawTimestamp;
+                    let next_scaled_sample_timestamp = arm7::Timestamp(
+                        (emu.audio.next_scaled_sample_index as u128 * SYS_CLOCK_RATE as u128
+                            / custom_sample_rate.get() as u128) as RawTimestamp,
+                    );
+                    emu.arm7
+                        .schedule
+                        .schedule_event(arm7::event_slots::XQ_AUDIO, next_scaled_sample_timestamp);
+                }
+            }
+
             #[inline]
             pub fn custom_sample_rate(&self) -> Option<NonZeroU32> {
                 self.custom_sample_rate
@@ -175,27 +205,8 @@ impl Audio {
                 if value == emu.audio.custom_sample_rate {
                     return;
                 }
-                emu.audio.sample_chunk.clear();
-                if emu.audio.custom_sample_rate.is_some() {
-                    emu.arm7.schedule.cancel_event(arm7::event_slots::XQ_AUDIO);
-                }
                 emu.audio.custom_sample_rate = value;
-                if let Some(custom_sample_rate) = value {
-                    emu.audio.next_scaled_sample_index = ((emu.arm7.schedule.cur_time().0 as u128
-                        * custom_sample_rate.get() as u128
-                        + (SYS_CLOCK_RATE - 1) as u128)
-                        / SYS_CLOCK_RATE as u128)
-                        as RawTimestamp;
-                    let next_scaled_sample_timestamp = arm7::Timestamp(
-                        (emu.audio.next_scaled_sample_index as u128
-                            * SYS_CLOCK_RATE as u128
-                            / custom_sample_rate.get() as u128)
-                            as RawTimestamp,
-                    );
-                    emu.arm7
-                        .schedule
-                        .schedule_event(arm7::event_slots::XQ_AUDIO, next_scaled_sample_timestamp);
-                }
+                Self::update_next_scaled_sample_index(emu);
             }
 
             #[inline]
@@ -408,7 +419,7 @@ impl Audio {
         #[cfg(not(feature = "xq-audio"))]
         {
             emu.audio.sample_chunk.push(output);
-            if emu.audio.sample_chunk.len() >= emu.audio.sample_chunk_size {
+            if emu.audio.sample_chunk.len() >= emu.audio.sample_chunk_size as usize {
                 emu.audio
                     .backend
                     .handle_sample_chunk(&mut emu.audio.sample_chunk);
@@ -520,7 +531,7 @@ impl Audio {
         };
 
         emu.audio.sample_chunk.push(output);
-        if emu.audio.sample_chunk.len() >= emu.audio.sample_chunk_size {
+        if emu.audio.sample_chunk.len() >= emu.audio.sample_chunk_size as usize {
             emu.audio
                 .backend
                 .handle_sample_chunk(&mut emu.audio.sample_chunk);

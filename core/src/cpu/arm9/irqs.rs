@@ -1,5 +1,8 @@
 use super::Schedule;
-use crate::cpu::{self, dma, timers, Schedule as _};
+use crate::{
+    cpu::{self, dma, timers, Schedule as _},
+    utils::Savestate,
+};
 
 pub trait ScheduleUpdate {
     fn stop_execution(self);
@@ -16,7 +19,7 @@ impl ScheduleUpdate for &mut Schedule {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct IrqFlags(pub u32): Debug {
         pub vblank: bool @ 0,                       // x
         pub hblank: bool @ 1,                       // x
@@ -40,6 +43,7 @@ proc_bitfield::bitfield! {
     }
 }
 
+#[derive(Savestate)]
 pub struct Irqs {
     enabled: IrqFlags,
     requested: IrqFlags,

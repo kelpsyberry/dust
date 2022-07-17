@@ -19,17 +19,19 @@ use crate::{
     ds_slot::DsSlot,
     emu::Emu,
     gpu::engine_3d::Engine3d,
-    utils::schedule::RawTimestamp,
+    utils::{schedule::RawTimestamp, Savestate},
 };
 use core::intrinsics::unlikely;
 
 #[cfg(feature = "interp-arm9-interlocks")]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Savestate)]
 struct Interlock {
     port_ab: RawTimestamp,
     port_c: RawTimestamp,
 }
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct EngineData {
     #[cfg(feature = "interp-pipeline-accurate-reloads")]
     r15_increment: u32,
@@ -44,6 +46,7 @@ pub struct EngineData {
     interlocks: [Interlock; 16],
     data_cycles: u8,
     #[cfg(feature = "debugger-hooks")]
+    #[savestate(skip)]
     next_breakpoint_addr: u32,
     exc_vectors_start: u32,
 }
@@ -320,23 +323,23 @@ fn add_bus_cycles(emu: &mut Emu<Interpreter>, cycles: RawTimestamp) {
     }
 }
 
+macro_rules! get_next_breakpoint {
+    ($emu: expr, $addr: expr, $mask: expr) => {
+        #[cfg(feature = "debugger-hooks")]
+        if !$emu.arm9.debug.breakpoints.is_empty() {
+            let (Ok(i) | Err(i)) = $emu.arm9.debug.breakpoints.binary_search(&$addr);
+            $emu.arm9.engine_data.next_breakpoint_addr =
+                $emu.arm9.debug.breakpoints[if i >= $emu.arm9.debug.breakpoints.len() {
+                    0
+                } else {
+                    i
+                }] & !$mask;
+        }
+    };
+}
+
 fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Interpreter>) {
     let mut addr = reg!(emu.arm9, 15);
-
-    macro_rules! get_next_breakpoint {
-        ($mask: expr) => {
-            #[cfg(feature = "debugger-hooks")]
-            if !emu.arm9.debug.breakpoints.is_empty() {
-                let (Ok(i) | Err(i)) = emu.arm9.debug.breakpoints.binary_search(&addr);
-                emu.arm9.engine_data.next_breakpoint_addr =
-                    emu.arm9.debug.breakpoints[if i >= emu.arm9.debug.breakpoints.len() {
-                        0
-                    } else {
-                        i
-                    }] & !$mask;
-            }
-        };
-    }
 
     if match STATE_SOURCE {
         StateSource::Arm => false,
@@ -353,7 +356,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Interpreter>) 
         StateSource::Cpsr => emu.arm9.engine_data.regs.cpsr.thumb_state(),
     } {
         addr &= !1;
-        get_next_breakpoint!(1);
+        get_next_breakpoint!(emu, addr, 1);
         // NOTE: The ARM9 should actually only merge thumb code fetches from the system bus and not
         // from TCM, but timings are the same as long as concurrent data/code access waitstates are
         // not emulated.
@@ -444,7 +447,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Interpreter>) 
         }
     } else {
         addr &= !3;
-        get_next_breakpoint!(3);
+        get_next_breakpoint!(emu, addr, 3);
         #[cfg(feature = "interp-pipeline")]
         {
             if unlikely(!can_execute(
@@ -898,6 +901,15 @@ impl CoreData for EngineData {
         };
         reg!(emu.arm9, 15) = entry_addr;
         reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
+    }
+
+    #[inline]
+    fn post_load(_emu: &mut Emu<Interpreter>) {
+        get_next_breakpoint!(
+            _emu,
+            reg!(_emu.arm9, 15),
+            1 | (!_emu.arm9.engine_data.regs.cpsr.thumb_state() as u32) << 1
+        );
     }
 
     #[inline]

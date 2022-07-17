@@ -1,5 +1,5 @@
 use crate::{
-    utils::{BoxedByteSlice, ByteMutSlice, ByteSlice},
+    utils::{BoxedByteSlice, ByteMutSlice, ByteSlice, Savestate},
     SaveContents,
 };
 
@@ -11,7 +11,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Status(pub u8): Debug {
         pub write_in_progress: bool @ 0,
         pub write_enabled: bool @ 1,
@@ -19,12 +19,16 @@ proc_bitfield::bitfield! {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Savestate)]
+#[load(in_place_only)]
 pub struct Eeprom4k {
     #[cfg(feature = "log")]
+    #[savestate(skip)]
     logger: slog::Logger,
 
+    #[savestate(skip)]
     contents: BoxedByteSlice,
+    #[savestate(skip)]
     contents_dirty: bool,
 
     status: Status,

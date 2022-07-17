@@ -5,7 +5,7 @@ use super::super::{
 };
 use crate::{
     cpu::{
-        arm9::{bus, Arm9},
+        arm9::{bus, cp15::Cp15},
         bus::CpuAccess,
         hle_bios,
         interpreter::Interpreter,
@@ -116,7 +116,7 @@ pub fn mcr(emu: &mut Emu<Interpreter>, instr: u32) {
         apply_reg_interlock_1::<false>(emu, src_reg);
         add_bus_cycles(emu, 1);
         prefetch_arm::<true, true>(emu);
-        Arm9::write_cp15_reg(
+        Cp15::write_reg(
             emu,
             (instr >> 21 & 7) as u8,
             (instr >> 16 & 0xF) as u8,
@@ -132,7 +132,7 @@ pub fn mcr(emu: &mut Emu<Interpreter>, instr: u32) {
 pub fn mrc(emu: &mut Emu<Interpreter>, instr: u32) {
     if likely(emu.arm9.engine_data.regs.is_in_priv_mode() && instr >> 8 & 0xF == 15) {
         prefetch_arm::<true, true>(emu);
-        let result = Arm9::read_cp15_reg(
+        let result = Cp15::read_reg(
             emu,
             (instr >> 21 & 7) as u8,
             (instr >> 16 & 0xF) as u8,

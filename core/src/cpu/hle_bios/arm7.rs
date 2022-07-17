@@ -6,6 +6,7 @@ use crate::{
         CoreData, Engine, Schedule,
     },
     emu::Emu,
+    utils::Savestate,
 };
 
 static SINE_TABLE: [u16; 0x40] = [
@@ -409,6 +410,7 @@ fn get_boot_procs<E: Engine>(_emu: &mut Emu<E>) {
     slog::error!(_emu.arm7.logger, "Unimplemented GetBootProcs SWI");
 }
 
+#[derive(Savestate)]
 pub struct State {
     pub enabled: bool,
     swi_r0_3: [u32; 4],

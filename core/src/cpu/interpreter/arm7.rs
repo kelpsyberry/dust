@@ -15,9 +15,11 @@ use crate::{
         Arm7Data, CoreData, Schedule as _,
     },
     emu::Emu,
-    utils::schedule::RawTimestamp,
+    utils::{schedule::RawTimestamp, Savestate},
 };
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct EngineData {
     #[cfg(feature = "interp-pipeline-accurate-reloads")]
     r15_increment: u32,
@@ -26,6 +28,7 @@ pub struct EngineData {
     pipeline: [PipelineEntry; 2],
     prefetch_nseq: bool,
     #[cfg(feature = "debugger-hooks")]
+    #[savestate(skip)]
     next_breakpoint_addr: u32,
 }
 
@@ -44,6 +47,21 @@ impl EngineData {
     }
 }
 
+macro_rules! get_next_breakpoint {
+    ($emu: expr, $addr: expr, $mask: expr) => {
+        #[cfg(feature = "debugger-hooks")]
+        if !$emu.arm7.debug.breakpoints.is_empty() {
+            let (Ok(i) | Err(i)) = $emu.arm7.debug.breakpoints.binary_search(&$addr);
+            $emu.arm7.engine_data.next_breakpoint_addr =
+                $emu.arm7.debug.breakpoints[if i >= $emu.arm7.debug.breakpoints.len() {
+                    0
+                } else {
+                    i
+                }] & !$mask;
+        }
+    };
+}
+
 fn multiply_cycles(mut op: u32) -> RawTimestamp {
     op ^= ((op as i32) >> 31) as u32;
     4 - ((op | 1).leading_zeros() >> 3) as RawTimestamp
@@ -58,21 +76,6 @@ fn add_cycles(emu: &mut Emu<Interpreter>, cycles: RawTimestamp) {
 
 fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Interpreter>) {
     let mut addr = reg!(emu.arm7, 15);
-
-    macro_rules! get_next_breakpoint {
-        ($mask: expr) => {
-            #[cfg(feature = "debugger-hooks")]
-            if !emu.arm7.debug.breakpoints.is_empty() {
-                let (Ok(i) | Err(i)) = emu.arm7.debug.breakpoints.binary_search(&addr);
-                emu.arm7.engine_data.next_breakpoint_addr =
-                    emu.arm7.debug.breakpoints[if i >= emu.arm7.debug.breakpoints.len() {
-                        0
-                    } else {
-                        i
-                    }] & !$mask;
-            }
-        };
-    }
 
     if match STATE_SOURCE {
         StateSource::Arm => false,
@@ -89,7 +92,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Interpreter>) 
         StateSource::Cpsr => emu.arm7.engine_data.regs.cpsr.thumb_state(),
     } {
         addr &= !1;
-        get_next_breakpoint!(1);
+        get_next_breakpoint!(emu, addr, 1);
         #[cfg(feature = "interp-pipeline")]
         {
             emu.arm7.engine_data.pipeline[0] =
@@ -120,7 +123,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Interpreter>) 
         }
     } else {
         addr &= !3;
-        get_next_breakpoint!(3);
+        get_next_breakpoint!(emu, addr, 3);
         #[cfg(feature = "interp-pipeline")]
         {
             emu.arm7.engine_data.pipeline[0] =
@@ -403,6 +406,15 @@ impl CoreData for EngineData {
         emu.arm7.engine_data.prefetch_nseq = true;
         reg!(emu.arm7, 15) = entry_addr;
         reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
+    }
+
+    #[inline]
+    fn post_load(_emu: &mut Emu<Interpreter>) {
+        get_next_breakpoint!(
+            _emu,
+            reg!(_emu.arm7, 15),
+            1 | (!_emu.arm7.engine_data.regs.cpsr.thumb_state() as u32) << 1
+        );
     }
 
     #[inline]

@@ -19,18 +19,21 @@ pub mod interpreter;
 pub mod jit;
 pub mod timers;
 
-use crate::emu::Emu;
+use crate::{
+    emu::Emu,
+    utils::{LoadableInPlace, Savestate, Storable},
+};
 use psr::{Cpsr, Spsr};
 
-pub trait Engine: Sized {
-    type GlobalData;
-    type Arm7Data: Arm7Data + CoreData<Engine = Self>;
-    type Arm9Data: Arm9Data + CoreData<Engine = Self>;
+pub trait Engine: Sized + LoadableInPlace + Storable {
+    type GlobalData: LoadableInPlace + Storable;
+    type Arm7Data: Arm7Data + CoreData<Engine = Self> + LoadableInPlace + Storable;
+    type Arm9Data: Arm9Data + CoreData<Engine = Self> + LoadableInPlace + Storable;
 
     fn into_data(self) -> (Self::GlobalData, Self::Arm7Data, Self::Arm9Data);
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Savestate)]
 pub struct Regs {
     pub gprs: [u32; 16],
     pub cpsr: Cpsr,
@@ -54,6 +57,8 @@ pub trait CoreData {
 
     fn setup(emu: &mut Emu<Self::Engine>);
     fn setup_direct_boot(emu: &mut Emu<Self::Engine>, entry_addr: u32);
+
+    fn post_load(emu: &mut Emu<Self::Engine>);
 
     fn invalidate_word(&mut self, addr: u32);
     fn invalidate_word_range(&mut self, bounds: (u32, u32));

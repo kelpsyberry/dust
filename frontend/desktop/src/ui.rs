@@ -49,7 +49,7 @@ struct CurrentConfig {
 
     sync_to_audio: config::GameOverridable<bool>,
     audio_volume: config::GameOverridable<f32>,
-    audio_sample_chunk_size: config::GameOverridable<u32>,
+    audio_sample_chunk_size: config::GameOverridable<u16>,
     audio_interp_method: config::GameOverridable<audio::InterpMethod>,
     #[cfg(feature = "xq-audio")]
     audio_custom_sample_rate: config::GameOverridable<(Option<NonZeroU32>, Option<NonZeroU32>)>,

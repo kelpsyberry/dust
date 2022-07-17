@@ -2,7 +2,7 @@ use super::{BankControl, Vram};
 use crate::{
     cpu::{
         self,
-        arm7::{self, Arm7},
+        arm7::{self, bus::ptrs::mask as arm7_ptr_mask, Arm7},
         arm9::{bus::ptrs::mask as ptr_mask, Arm9},
     },
     gpu::engine_3d::Engine3d,
@@ -273,6 +273,357 @@ macro_rules! unmap_region {
 }
 
 impl Vram {
+    pub(super) fn flush_writeback(&mut self) {
+        macro_rules! flush_usage {
+            (
+                $usage: ident, $region_shift: expr, $mirrored_banks_mask: expr,
+                ($($bit: literal => $bank: ident $(mirror $mirror_mask: expr)?,)*)
+            ) => {
+                for (region, mapped) in self.map.$usage.iter().enumerate() {
+                    let mapped = mapped.get();
+                    if mapped == 0 {
+                        continue;
+                    }
+                    let usage_addr_range = region << $region_shift..(region + 1) << $region_shift;
+                    unsafe {
+                        let writeback_arr = &mut *self.writeback.$usage.get();
+                        #[allow(clippy::bad_bit_mask)]
+                        let clear = if mapped & (mapped - 1) == 0 {
+                            'flush_bank: {
+                                $(
+                                    if mapped & 1 << $bit != 0 {
+                                        let bank_start =
+                                            usage_addr_range.start & (self.banks.$bank.len() - 1);
+                                        let bank_end = (usage_addr_range.end - 1)
+                                            & (self.banks.$bank.len() - 1);
+                                        let usage_end =
+                                            usage_addr_range.start + (bank_end - bank_start);
+                                        self.banks.$bank.as_byte_mut_slice().get_unchecked_mut(
+                                            bank_start..=bank_end,
+                                        ).copy_from_slice(
+                                            &self.$usage
+                                                .as_byte_slice()
+                                                .get_unchecked(usage_addr_range.start..=usage_end)
+                                        );
+                                        break 'flush_bank;
+                                    }
+                                )*
+                            }
+                            mapped & $mirrored_banks_mask != 0
+                        } else {
+                            for usage_addr in usage_addr_range.clone() {
+                                if *writeback_arr.get_unchecked(usage_addr / usize::BITS as usize)
+                                    & 1 << (usage_addr & (usize::BITS - 1) as usize)
+                                    != 0
+                                {
+                                    $(
+                                        if mapped & 1 << $bit != 0 {
+                                            self.banks.$bank.write_unchecked(
+                                                usage_addr & (self.banks.$bank.len() - 1),
+                                                self.$usage.read_unchecked(usage_addr),
+                                            );
+                                        }
+                                    )*
+                                }
+                            }
+                            true
+                        };
+                        if clear {
+                            writeback_arr.get_unchecked_mut(
+                                usage_addr_range.start / usize::BITS as usize
+                                    ..usage_addr_range.end / usize::BITS as usize
+                            ).fill(0);
+                        }
+                    }
+                }
+            }
+        }
+
+        flush_usage!(
+            a_bg, 14, 0x60,
+            (
+                0 => a,
+                1 => b,
+                2 => c,
+                3 => d,
+                4 => e,
+                5 => f,
+                6 => g,
+            )
+        );
+        flush_usage!(
+            a_obj, 14, 0x18,
+            (
+                0 => a,
+                1 => b,
+                2 => e,
+                3 => f,
+                4 => g,
+            )
+        );
+        flush_usage!(
+            b_bg, 15, 6,
+            (
+                0 => c,
+                1 => h,
+                2 => i,
+            )
+        );
+        flush_usage!(
+            b_obj, 17, 2,
+            (
+                0 => d,
+                1 => i,
+            )
+        );
+        flush_usage!(
+            arm7, 17, 0,
+            (
+                0 => c,
+                1 => d,
+            )
+        );
+    }
+
+    pub(crate) fn restore_mappings<E: cpu::Engine>(
+        &mut self,
+        arm7: &mut Arm7<E>,
+        arm9: &mut Arm9<E>,
+    ) {
+        macro_rules! map_lcdc_banks {
+            ($(
+                $i: expr, $bank: ident, $regions_lower_bound: expr, $regions_upper_bound: expr;
+            )*) => {
+                $({
+                    let bank_control = self.bank_control[$i];
+                    if bank_control.enabled() && bank_control.mst() == 0 {
+                        self.map_lcdc(
+                            arm9,
+                            $regions_lower_bound,
+                            $regions_upper_bound,
+                            self.banks.$bank.as_ptr(),
+                        );
+                    } else {
+                        self.unmap_lcdc(arm9, $regions_lower_bound, $regions_upper_bound);
+                    }
+                })*
+            };
+        }
+
+        unsafe {
+            map_lcdc_banks!(
+                0, a, 0x00, 0x07;
+                1, b, 0x08, 0x0F;
+                2, c, 0x10, 0x17;
+                3, d, 0x18, 0x1F;
+                4, e, 0x20, 0x23;
+                5, f, 0x24, 0x24;
+                6, g, 0x25, 0x25;
+                7, h, 0x26, 0x27;
+                8, i, 0x28, 0x28;
+            );
+        }
+
+        if self.bank_control[7].enabled() && self.bank_control[7].mst() == 2 {
+            self.b_bg_ext_pal_ptr = self.banks.h.as_ptr();
+        } else {
+            self.b_bg_ext_pal_ptr = self.zero_buffer.as_ptr();
+        }
+
+        if self.bank_control[8].enabled() && self.bank_control[8].mst() == 3 {
+            self.b_obj_ext_pal_ptr = self.banks.i.as_ptr();
+        } else {
+            self.b_obj_ext_pal_ptr = self.zero_buffer.as_ptr();
+        }
+
+        macro_rules! restore_region {
+            (
+                cpu_visible $cpu: expr, $cpu_r_mask: expr, $cpu_rw_mask: expr,
+                $usage: ident, $region_shift: expr, $mirrored_banks_mask: expr,
+                $cpu_start_addr: expr, $cpu_end_addr: expr,
+                ($($bit: literal => $bank: ident,)*)
+            ) => {{
+                (&mut *self.writeback.$usage.get()).fill(0);
+                for (region, mapped) in self.map.$usage.iter().enumerate() {
+                    let mapped = mapped.get();
+                    let usage_addr_range = region << $region_shift..(region + 1) << $region_shift;
+                    let mask = if mapped == 0 {
+                        self.$usage
+                            .as_byte_mut_slice()
+                            .get_unchecked_mut(usage_addr_range.clone())
+                            .fill(0);
+                        $cpu_r_mask
+                    } else if mapped & (mapped - 1) == 0 {
+                        'copy_bank: {
+                            $(
+                                if mapped & 1 << $bit != 0 {
+                                    copy_slice_wrapping_unchecked_with_dst_range(
+                                        &self.$usage,
+                                        &self.banks.$bank,
+                                        usage_addr_range,
+                                    );
+                                    break 'copy_bank;
+                                }
+                            )*
+                        }
+                        #[allow(clippy::bad_bit_mask)]
+                        if mapped & $mirrored_banks_mask == 0 {
+                            $cpu_rw_mask
+                        } else {
+                            $cpu_r_mask
+                        }
+                    } else {
+                        self.$usage
+                            .as_byte_mut_slice()
+                            .get_unchecked_mut(usage_addr_range.clone())
+                            .fill(0);
+                        $(
+                            if mapped & 1 << $bit != 0 {
+                                or_assign_slice_wrapping_unchecked(
+                                    &self.$usage,
+                                    &self.banks.$bank,
+                                    usage_addr_range.clone(),
+                                );
+                            }
+                        )*
+                        $cpu_r_mask
+                    };
+                    map_cpu_visible!(
+                        $cpu, mask, $cpu_start_addr, $cpu_end_addr,
+                        self.$usage, region, $region_shift
+                    );
+                }
+            }};
+            (
+                $usage: ident, $region_shift: expr,
+                ($($bit: literal => $bank: ident,)*)
+            ) => {{
+                for (region, mapped) in self.map.$usage.iter().enumerate() {
+                    let mapped = mapped.get();
+                    let usage_addr_range = region << $region_shift..(region + 1) << $region_shift;
+                    if mapped == 0 {
+                        self.$usage.as_byte_mut_slice().get_unchecked_mut(usage_addr_range).fill(0);
+                    } else if mapped & (mapped - 1) == 0 {
+                        $(
+                            if mapped & 1 << $bit != 0 {
+                                copy_slice_wrapping_unchecked_with_dst_range(
+                                    &self.$usage,
+                                    &self.banks.$bank,
+                                    usage_addr_range.clone(),
+                                );
+                                continue;
+                            }
+                        )*
+                    } else {
+                        self.$usage
+                            .as_byte_mut_slice()
+                            .get_unchecked_mut(usage_addr_range.clone())
+                            .fill(0);
+                        $(
+                            if mapped & 1 << $bit != 0 {
+                                or_assign_slice_wrapping_unchecked(
+                                    &self.$usage,
+                                    &self.banks.$bank,
+                                    usage_addr_range.clone(),
+                                );
+                            }
+                        )*
+                    }
+                }
+            }};
+        }
+
+        unsafe {
+            restore_region!(
+                a_bg_ext_pal, 14,
+                (
+                    0 => e,
+                    1 => f,
+                    2 => g,
+                )
+            );
+            restore_region!(
+                a_obj_ext_pal, 13,
+                (
+                    0 => f,
+                    1 => g,
+                )
+            );
+            restore_region!(
+                texture, 17,
+                (
+                    0 => a,
+                    1 => b,
+                    2 => c,
+                    3 => d,
+                )
+            );
+            restore_region!(
+                tex_pal, 14,
+                (
+                    0 => e,
+                    1 => f,
+                    2 => g,
+                )
+            );
+
+            restore_region!(
+                cpu_visible arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32,
+                a_bg, 14, 0x60,
+                0x0600_0000, 0x0620_0000,
+                (
+                    0 => a,
+                    1 => b,
+                    2 => c,
+                    3 => d,
+                    4 => e,
+                    5 => f,
+                    6 => g,
+                )
+            );
+            restore_region!(
+                cpu_visible arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32,
+                a_obj, 14, 0x18,
+                0x0640_0000, 0x0660_0000,
+                (
+                    0 => a,
+                    1 => b,
+                    2 => e,
+                    3 => f,
+                    4 => g,
+                )
+            );
+            restore_region!(
+                cpu_visible arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32,
+                b_bg, 15, 6,
+                0x0620_0000, 0x0640_0000,
+                (
+                    0 => c,
+                    1 => h,
+                    2 => i,
+                )
+            );
+            restore_region!(
+                cpu_visible arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32,
+                b_obj, 17, 2,
+                0x0660_0000, 0x0680_0000,
+                (
+                    0 => d,
+                    1 => i,
+                )
+            );
+            restore_region!(
+                cpu_visible arm7, arm7_ptr_mask::R, arm7_ptr_mask::ALL,
+                arm7, 17, 0,
+                0x0600_0000, 0x0700_0000,
+                (
+                    0 => c,
+                    1 => d,
+                )
+            );
+        }
+    }
+
     unsafe fn map_lcdc<E: cpu::Engine>(
         &mut self,
         arm9: &mut Arm9<E>,
@@ -634,7 +985,6 @@ impl Vram {
         bank: &OwnedBytesCellPtr<LEN>,
         region: usize,
     ) {
-        use arm7::bus::ptrs::mask as ptr_mask;
         map_region!(
             wb self,
             arm7, 17, 0,
@@ -642,7 +992,7 @@ impl Vram {
                 0 => c,
                 1 => d,
             ),
-            arm7, ptr_mask::R, ptr_mask::ALL, 0x0600_0000, 0x0700_0000,
+            arm7, arm7_ptr_mask::R, arm7_ptr_mask::ALL, 0x0600_0000, 0x0700_0000,
             bank, BANK_BIT, region
         );
     }

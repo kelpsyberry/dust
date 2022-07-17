@@ -1,11 +1,11 @@
 use crate::{
     cpu::{Irqs, Schedule},
-    utils::schedule::RawTimestamp,
+    utils::{schedule::RawTimestamp, Savestate},
 };
 use core::ops::Add;
 
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Savestate)]
 pub struct Timestamp(pub RawTimestamp);
 
 impl Add for Timestamp {
@@ -17,7 +17,7 @@ impl Add for Timestamp {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Control(pub u8): Debug {
         pub prescaler: u8 @ 0..=1,
         pub count_up_timing: bool @ 2,
@@ -27,8 +27,9 @@ proc_bitfield::bitfield! {
 }
 
 mod bounded {
-    use crate::utils::bounded_int_lit;
+    use crate::utils::{bounded_int_lit, bounded_int_savestate};
     bounded_int_lit!(pub struct Index(u8), max 3);
+    bounded_int_savestate!(Index(u8));
 }
 pub use bounded::Index;
 
@@ -37,7 +38,10 @@ pub use bounded::Index;
 // emulator, this means that the cycle counter doesn't have to be reset but just masked based on the
 // new prescaler value, and is equivalent to the (masked) current timestamp when starting a timer.
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Timer<S: Schedule> {
+    #[savestate(skip)]
     event_slot: S::EventSlotIndex,
     control: Control,
     cycle_shift: u8,
@@ -94,6 +98,8 @@ impl<S: Schedule> Timer<S> {
     }
 }
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Timers<S: Schedule>(pub [Timer<S>; 4]);
 
 impl<S: Schedule> Timers<S> {

@@ -1,7 +1,8 @@
 mod io;
 
-use crate::utils::{zeroed_box, Bytes};
+use crate::utils::{zeroed_box, Bytes, Savestate};
 
+#[derive(Savestate)]
 pub struct WiFi {
     pub mmio: Box<Bytes<0x1000>>,
     pub ram: Box<Bytes<0x2000>>,

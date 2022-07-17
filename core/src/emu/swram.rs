@@ -1,33 +1,43 @@
 use crate::{
     cpu::{self, arm7::Arm7, arm9::Arm9},
-    utils::OwnedBytesCellPtr,
+    utils::{OwnedBytesCellPtr, Savestate},
 };
 #[cfg(any(feature = "bft-r", feature = "bft-w"))]
 use core::ptr;
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Control(pub u8): Debug {
         pub layout: u8 @ 0..=1,
     }
 }
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Swram {
     contents: OwnedBytesCellPtr<0x8000>,
     control: Control,
+
     #[cfg(any(feature = "bft-r", feature = "bft-w"))]
+    #[savestate(skip)]
     arm7_ptr: *mut u8,
     #[cfg(any(feature = "bft-r", feature = "bft-w"))]
+    #[savestate(skip)]
     arm7_mask: u16,
     #[cfg(feature = "bft-r")]
+    #[savestate(skip)]
     arm9_r_ptr: *const u8,
     #[cfg(feature = "bft-w")]
+    #[savestate(skip)]
     arm9_w_ptr: *mut u8,
     #[cfg(any(feature = "bft-r", feature = "bft-w"))]
+    #[savestate(skip)]
     arm9_mask: u16,
     #[cfg(feature = "bft-r")]
+    #[savestate(skip)]
     zero_buffer: OwnedBytesCellPtr<4>,
     #[cfg(feature = "bft-w")]
+    #[savestate(skip)]
     ignore_buffer: OwnedBytesCellPtr<4>,
 }
 
@@ -36,6 +46,7 @@ impl Swram {
         Swram {
             contents: OwnedBytesCellPtr::new_zeroed(),
             control: Control(0),
+
             #[cfg(any(feature = "bft-r", feature = "bft-w"))]
             arm7_ptr: ptr::null_mut(),
             #[cfg(any(feature = "bft-r", feature = "bft-w"))]

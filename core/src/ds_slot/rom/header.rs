@@ -1,5 +1,5 @@
 use crate::ds_slot::RomControl;
-use crate::utils::{bounded_int_lit, ByteSlice};
+use crate::utils::ByteSlice;
 
 #[derive(Clone, Copy)]
 pub struct Header<'a>(ByteSlice<'a>);
@@ -11,7 +11,11 @@ pub enum UnitCode {
     Dsi = 3,
 }
 
-bounded_int_lit!(pub struct EncryptionSeed(u8), max 7);
+mod bounded {
+    use crate::utils::bounded_int_lit;
+    bounded_int_lit!(pub struct EncryptionSeed(u8), max 7);
+}
+pub use bounded::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Region {

@@ -7,10 +7,10 @@ use crate::{
         Engine, Irqs, Schedule as _,
     },
     emu::Emu,
-    utils::schedule::RawTimestamp,
+    utils::{schedule::RawTimestamp, Savestate},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 pub enum Timing {
     Immediate, // x
     VBlank,    // x

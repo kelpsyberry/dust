@@ -1,24 +1,19 @@
 use crate::{cpu::arm7, utils::Bytes};
 
 #[derive(Clone)]
-pub struct KeyBuffer {
+pub struct KeyBuffer<const LEVEL_3: bool> {
     key_buf: [u32; 0x412],
     key_code: [u32; 3],
-    level_3: bool,
 }
 
-impl KeyBuffer {
+impl<const LEVEL_3: bool> KeyBuffer<LEVEL_3> {
     pub fn new<const MODULO: usize>(id_code: u32, arm7_bios: &Bytes<{ arm7::BIOS_SIZE }>) -> Self {
         let key_code = [id_code, id_code >> 1, id_code << 1];
         let mut key_buf = [0; 0x412];
         for (i, word) in key_buf.iter_mut().enumerate() {
             *word = arm7_bios.read_le(0x30 + (i << 2));
         }
-        let mut result = KeyBuffer {
-            key_buf,
-            key_code,
-            level_3: false,
-        };
+        let mut result = KeyBuffer { key_buf, key_code };
         result.apply_key_code::<MODULO>();
         result.apply_key_code::<MODULO>();
         result
@@ -67,14 +62,17 @@ impl KeyBuffer {
             self.key_buf[i + 1] = scratch[0];
         }
     }
+}
 
-    pub fn make_level_3<const MODULO: usize>(&mut self) {
-        if self.level_3 {
-            return;
-        }
-        self.level_3 = true;
-        self.key_code[1] <<= 1;
-        self.key_code[2] >>= 1;
-        self.apply_key_code::<MODULO>();
+impl KeyBuffer<false> {
+    pub fn level_3<const MODULO: usize>(&self) -> KeyBuffer<true> {
+        let mut result = KeyBuffer {
+            key_buf: self.key_buf,
+            key_code: self.key_code,
+        };
+        result.key_code[1] <<= 1;
+        result.key_code[2] >>= 1;
+        result.apply_key_code::<MODULO>();
+        result
     }
 }

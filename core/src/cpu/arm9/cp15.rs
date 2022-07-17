@@ -5,11 +5,10 @@ pub(super) mod timings;
 #[cfg(feature = "pu-checks")]
 use perms::PermMap;
 
-use super::Arm9;
 use crate::{
     cpu::{Arm9Data, Engine},
     emu::Emu,
-    utils::OwnedBytesCellPtr,
+    utils::{OwnedBytesCellPtr, Savestate},
 };
 use ptrs::Ptrs;
 use timings::{Cycles, Timings};
@@ -25,7 +24,7 @@ mod map_mask {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Control(pub u32): Debug {
         pub pu_enabled: bool @ 0,                     // x
         pub data_cache_enabled: bool @ 2,             // x
@@ -42,7 +41,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct PuRegionControl(pub u32): Debug {
         pub enabled: bool @ 0,
         pub size_shift: u8 @ 1..=5,
@@ -69,7 +68,7 @@ impl PuRegionControl {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct PuRegionRawAccessPerms(pub u8): Debug {
         pub data_2: u8 [read_only] @ 4..=5,
         pub data: u8 @ 4..=7,
@@ -79,7 +78,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct PuRegionCacheAttrs(pub u8): Debug {
         pub write_bufferable: bool @ 0,
         pub code_cachable: bool @ 1,
@@ -89,7 +88,7 @@ proc_bitfield::bitfield! {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 pub struct PuRegion {
     pub active: bool,
     pub raw_perms: PuRegionRawAccessPerms,
@@ -101,7 +100,7 @@ pub struct PuRegion {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct TcmControl(pub u32): Debug {
         pub size_shift: u8 @ 1..=5,
         pub raw_base_addr: u32 @ 12..=31,
@@ -126,7 +125,7 @@ impl TcmControl {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Savestate)]
 pub enum TcmMode {
     Disabled,
     Load,
@@ -162,13 +161,15 @@ impl TcmMode {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct CacheLockdownControl(pub u32): Debug {
         pub segment: u8 @ 0..=1,
         pub load: bool @ 31,
     }
 }
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct Cp15 {
     itcm: OwnedBytesCellPtr<0x8000>,
     dtcm: OwnedBytesCellPtr<0x4000>,
@@ -192,8 +193,11 @@ pub struct Cp15 {
     code_cache_lockdown_control: CacheLockdownControl,
     pub trace_process_id: u32,
     #[cfg(feature = "pu-checks")]
+    #[savestate(skip)]
     pub(in super::super) perm_map: Box<PermMap>,
+    #[savestate(skip)]
     pub(super) ptrs: Box<Ptrs>,
+    #[savestate(skip)]
     pub(in super::super) timings: Box<Timings>,
 }
 
@@ -319,9 +323,266 @@ impl Cp15 {
     }
 }
 
-impl<E: Engine> Arm9<E> {
+macro_rules! merge_ranges {
+    ($arr: expr) => {
+        if $arr[0].0 == $arr[1].0
+            && $arr[1].1 .0 as u64 <= $arr[0].1 .1 as u64 + 1
+            && $arr[1].1 .1 as u64 + 1 >= $arr[0].1 .0 as u64
+        {
+            $arr[0].1 .0 = $arr[0].1 .0.min($arr[1].1 .0);
+            $arr[0].1 .1 = $arr[0].1 .1.max($arr[1].1 .1);
+            $arr[1].0 = 0;
+        }
+    };
+}
+
+impl Cp15 {
     #[allow(clippy::similar_names)]
-    pub fn write_cp15_control(emu: &mut Emu<E>, value: Control) {
+    fn restore_tcm(&mut self) {
+        #[cfg(any(feature = "bft-r", feature = "bft-w"))]
+        {
+            if self.dtcm_mode == TcmMode::Disabled {
+                self.dtcm_addr_check_mask = 0;
+                self.dtcm_addr_check_value = 0xFFFF_FFFF;
+            } else {
+                self.dtcm_addr_check_mask = !((self.dtcm_control.size() - 1) as u32);
+                self.dtcm_addr_check_value = self.dtcm_bounds.0;
+            }
+
+            if self.itcm_mode == TcmMode::Disabled {
+                self.itcm_addr_check_mask = 0;
+                self.itcm_addr_check_value = 0xFFFF_FFFF;
+            } else {
+                self.itcm_addr_check_mask = !self.itcm_upper_bound;
+                self.itcm_addr_check_value = 0;
+            }
+        }
+
+        let mut overlay_dtcm = (0, (0, 0));
+        let mut overlay_itcm = [(0, (0, 0)); 2];
+
+        if self.dtcm_mode != TcmMode::Disabled {
+            overlay_dtcm = (self.dtcm_mode.rw_load_mode_mask(), self.dtcm_bounds);
+        }
+
+        if self.itcm_mode != TcmMode::Disabled {
+            overlay_itcm = [
+                (
+                    overlay_dtcm.0 & (self.itcm_mode.rw_load_mode_mask()),
+                    self.dtcm_bounds,
+                ),
+                (
+                    self.itcm_mode.rwx_load_mode_mask(),
+                    (0, self.itcm_upper_bound),
+                ),
+            ];
+        }
+
+        merge_ranges!(overlay_itcm);
+
+        {
+            let (map_mask, bounds) = overlay_dtcm;
+            if map_mask != 0 {
+                unsafe {
+                    self.ptrs.map_cpu_local_subrange(
+                        map_mask,
+                        self.dtcm.as_ptr(),
+                        0x4000,
+                        self.dtcm_bounds,
+                        bounds,
+                    );
+                }
+                self.timings.set_cpu_local_subrange(
+                    map_mask,
+                    Cycles::repeat(1),
+                    self.dtcm_bounds,
+                    bounds,
+                );
+            }
+        }
+
+        for (map_mask, bounds) in overlay_itcm {
+            if map_mask == 0 {
+                continue;
+            }
+            unsafe {
+                self.ptrs.map_cpu_local_subrange(
+                    map_mask,
+                    self.itcm.as_ptr(),
+                    0x8000,
+                    (0, self.itcm_upper_bound),
+                    bounds,
+                );
+            }
+            self.timings.set_cpu_local_subrange(
+                map_mask,
+                Cycles::repeat(1),
+                (0, self.itcm_upper_bound),
+                bounds,
+            );
+        }
+    }
+
+    pub(crate) fn post_load<E: Engine>(emu: &mut Emu<E>) {
+        emu.arm9.cp15.ptrs.copy_sys_bus(&emu.arm9.bus_ptrs);
+        emu.arm9.cp15.timings.copy_sys_bus(&emu.arm9.bus_timings);
+
+        emu.arm9.cp15.restore_tcm();
+        Self::remap_all_pu_regions(emu);
+    }
+
+    #[allow(clippy::similar_names)]
+    fn remap_tcm<E: Engine>(emu: &mut Emu<E>, prev_dtcm_mode: TcmMode, prev_itcm_mode: TcmMode) {
+        if emu.arm9.cp15.dtcm_mode == prev_dtcm_mode && emu.arm9.cp15.itcm_mode == prev_itcm_mode {
+            return;
+        }
+
+        #[cfg(any(feature = "bft-r", feature = "bft-w"))]
+        {
+            if emu.arm9.cp15.dtcm_mode == TcmMode::Disabled {
+                emu.arm9.cp15.dtcm_addr_check_mask = 0;
+                emu.arm9.cp15.dtcm_addr_check_value = 0xFFFF_FFFF;
+            } else {
+                emu.arm9.cp15.dtcm_addr_check_mask =
+                    !((emu.arm9.cp15.dtcm_control.size() - 1) as u32);
+                emu.arm9.cp15.dtcm_addr_check_value = emu.arm9.cp15.dtcm_bounds.0;
+            }
+
+            if emu.arm9.cp15.itcm_mode == TcmMode::Disabled {
+                emu.arm9.cp15.itcm_addr_check_mask = 0;
+                emu.arm9.cp15.itcm_addr_check_value = 0xFFFF_FFFF;
+            } else {
+                emu.arm9.cp15.itcm_addr_check_mask = !emu.arm9.cp15.itcm_upper_bound;
+                emu.arm9.cp15.itcm_addr_check_value = 0;
+            }
+        }
+
+        let mut unmap = [(0, (0, 0)); 2];
+        let mut overlay_dtcm = [(0, (0, 0)); 2];
+        let mut overlay_itcm = [(0, (0, 0)); 2];
+
+        if emu.arm9.cp15.dtcm_mode != TcmMode::Disabled {
+            emu.arm9.cp15.check_dtcm_size();
+            match (prev_dtcm_mode, emu.arm9.cp15.dtcm_mode) {
+                (TcmMode::Disabled, _) => {
+                    overlay_dtcm[0] = (
+                        emu.arm9.cp15.dtcm_mode.rw_load_mode_mask(),
+                        emu.arm9.cp15.dtcm_bounds,
+                    );
+                }
+                (TcmMode::Load, TcmMode::Normal) => {
+                    overlay_dtcm[0] = (map_mask::R_DATA, emu.arm9.cp15.dtcm_bounds);
+                }
+                (TcmMode::Normal, TcmMode::Load) => {
+                    unmap[0] = (map_mask::R_DATA, emu.arm9.cp15.dtcm_bounds);
+                }
+                _ => {}
+            }
+        } else if prev_dtcm_mode != TcmMode::Disabled {
+            unmap[0] = (
+                prev_dtcm_mode.rw_load_mode_mask(),
+                emu.arm9.cp15.dtcm_bounds,
+            );
+        }
+
+        if emu.arm9.cp15.itcm_mode != TcmMode::Disabled {
+            emu.arm9.cp15.check_itcm_size();
+            overlay_itcm[0] = (
+                (overlay_dtcm[0].0 | unmap[0].0) & (emu.arm9.cp15.itcm_mode.rw_load_mode_mask()),
+                emu.arm9.cp15.dtcm_bounds,
+            );
+            match (prev_itcm_mode, emu.arm9.cp15.itcm_mode) {
+                (TcmMode::Disabled, _) => {
+                    overlay_itcm[1] = (
+                        emu.arm9.cp15.itcm_mode.rwx_load_mode_mask(),
+                        (0, emu.arm9.cp15.itcm_upper_bound),
+                    );
+                }
+                (TcmMode::Load, TcmMode::Normal) => {
+                    overlay_itcm[1] = (map_mask::R_ALL, (0, emu.arm9.cp15.itcm_upper_bound));
+                }
+                (TcmMode::Normal, TcmMode::Load) => {
+                    unmap[1] = (map_mask::R_ALL, (0, emu.arm9.cp15.itcm_upper_bound));
+                }
+                _ => {}
+            }
+        } else if prev_itcm_mode != TcmMode::Disabled {
+            unmap[1] = (
+                prev_itcm_mode.rwx_load_mode_mask(),
+                (0, emu.arm9.cp15.itcm_upper_bound),
+            );
+        }
+
+        if unmap[1].0 != 0 && emu.arm9.cp15.dtcm_mode != TcmMode::Disabled {
+            overlay_dtcm[1] = (
+                unmap[1].0 & (emu.arm9.cp15.dtcm_mode.rw_load_mode_mask()),
+                (0, emu.arm9.cp15.itcm_upper_bound),
+            );
+        }
+
+        merge_ranges!(unmap);
+        merge_ranges!(overlay_dtcm);
+        merge_ranges!(overlay_itcm);
+
+        for (map_mask, bounds) in unmap {
+            if map_mask == 0 {
+                continue;
+            }
+            emu.arm9
+                .cp15
+                .ptrs
+                .unmap_cpu_local_range(map_mask, bounds, &emu.arm9.bus_ptrs);
+            emu.arm9
+                .cp15
+                .timings
+                .unset_cpu_local_range(map_mask, bounds, &emu.arm9.bus_timings);
+        }
+
+        for (map_mask, bounds) in overlay_dtcm {
+            if map_mask == 0 {
+                continue;
+            }
+            unsafe {
+                emu.arm9.cp15.ptrs.map_cpu_local_subrange(
+                    map_mask,
+                    emu.arm9.cp15.dtcm.as_ptr(),
+                    0x4000,
+                    emu.arm9.cp15.dtcm_bounds,
+                    bounds,
+                );
+            }
+            emu.arm9.cp15.timings.set_cpu_local_subrange(
+                map_mask,
+                Cycles::repeat(1),
+                emu.arm9.cp15.dtcm_bounds,
+                bounds,
+            );
+        }
+
+        for (map_mask, bounds) in overlay_itcm {
+            if map_mask == 0 {
+                continue;
+            }
+            unsafe {
+                emu.arm9.cp15.ptrs.map_cpu_local_subrange(
+                    map_mask,
+                    emu.arm9.cp15.itcm.as_ptr(),
+                    0x8000,
+                    (0, emu.arm9.cp15.itcm_upper_bound),
+                    bounds,
+                );
+            }
+            emu.arm9.cp15.timings.set_cpu_local_subrange(
+                map_mask,
+                Cycles::repeat(1),
+                (0, emu.arm9.cp15.itcm_upper_bound),
+                bounds,
+            );
+        }
+    }
+
+    #[allow(clippy::similar_names)]
+    pub fn write_control<E: Engine>(emu: &mut Emu<E>, value: Control) {
         let prev_value = emu.arm9.cp15.control;
         emu.arm9.cp15.control.0 =
             (emu.arm9.cp15.control.0 & !0x000F_F085) | (value.0 & 0x000F_F085);
@@ -344,159 +605,7 @@ impl<E: Engine> Arm9<E> {
         let itcm_mode = TcmMode::from_control_bits(value.0 >> 18);
         emu.arm9.cp15.dtcm_mode = dtcm_mode;
         emu.arm9.cp15.itcm_mode = itcm_mode;
-
-        if dtcm_mode != prev_dtcm_mode || itcm_mode != prev_itcm_mode {
-            #[cfg(any(feature = "bft-r", feature = "bft-w"))]
-            {
-                if dtcm_mode == TcmMode::Disabled {
-                    emu.arm9.cp15.dtcm_addr_check_mask = 0;
-                    emu.arm9.cp15.dtcm_addr_check_value = 0xFFFF_FFFF;
-                } else {
-                    emu.arm9.cp15.dtcm_addr_check_mask =
-                        !((emu.arm9.cp15.dtcm_control.size() - 1) as u32);
-                    emu.arm9.cp15.dtcm_addr_check_value = emu.arm9.cp15.dtcm_bounds.0;
-                }
-
-                if itcm_mode == TcmMode::Disabled {
-                    emu.arm9.cp15.itcm_addr_check_mask = 0;
-                    emu.arm9.cp15.itcm_addr_check_value = 0xFFFF_FFFF;
-                } else {
-                    emu.arm9.cp15.itcm_addr_check_mask = !emu.arm9.cp15.itcm_upper_bound;
-                    emu.arm9.cp15.itcm_addr_check_value = 0;
-                }
-            }
-
-            let mut unmap = [(0, (0, 0)); 2];
-            let mut overlay_dtcm = [(0, (0, 0)); 2];
-            let mut overlay_itcm = [(0, (0, 0)); 2];
-
-            if dtcm_mode != TcmMode::Disabled {
-                Self::check_dtcm_size(emu);
-                match (prev_dtcm_mode, dtcm_mode) {
-                    (TcmMode::Disabled, _) => {
-                        overlay_dtcm[0] =
-                            (dtcm_mode.rw_load_mode_mask(), emu.arm9.cp15.dtcm_bounds);
-                    }
-                    (TcmMode::Load, TcmMode::Normal) => {
-                        overlay_dtcm[0] = (map_mask::R_DATA, emu.arm9.cp15.dtcm_bounds);
-                    }
-                    (TcmMode::Normal, TcmMode::Load) => {
-                        unmap[0] = (map_mask::R_DATA, emu.arm9.cp15.dtcm_bounds);
-                    }
-                    _ => {}
-                }
-            } else if prev_dtcm_mode != TcmMode::Disabled {
-                unmap[0] = (
-                    prev_dtcm_mode.rw_load_mode_mask(),
-                    emu.arm9.cp15.dtcm_bounds,
-                );
-            }
-
-            if itcm_mode != TcmMode::Disabled {
-                Self::check_itcm_size(emu);
-                overlay_itcm[0] = (
-                    (overlay_dtcm[0].0 | unmap[0].0) & (itcm_mode.rw_load_mode_mask()),
-                    emu.arm9.cp15.dtcm_bounds,
-                );
-                match (prev_itcm_mode, itcm_mode) {
-                    (TcmMode::Disabled, _) => {
-                        overlay_itcm[1] = (
-                            itcm_mode.rwx_load_mode_mask(),
-                            (0, emu.arm9.cp15.itcm_upper_bound),
-                        );
-                    }
-                    (TcmMode::Load, TcmMode::Normal) => {
-                        overlay_itcm[1] = (map_mask::R_ALL, (0, emu.arm9.cp15.itcm_upper_bound));
-                    }
-                    (TcmMode::Normal, TcmMode::Load) => {
-                        unmap[1] = (map_mask::R_ALL, (0, emu.arm9.cp15.itcm_upper_bound));
-                    }
-                    _ => {}
-                }
-            } else if prev_itcm_mode != TcmMode::Disabled {
-                unmap[1] = (
-                    prev_itcm_mode.rwx_load_mode_mask(),
-                    (0, emu.arm9.cp15.itcm_upper_bound),
-                );
-            }
-
-            if unmap[1].0 != 0 && dtcm_mode != TcmMode::Disabled {
-                overlay_dtcm[1] = (
-                    unmap[1].0 & (dtcm_mode.rw_load_mode_mask()),
-                    (0, emu.arm9.cp15.itcm_upper_bound),
-                );
-            }
-
-            macro_rules! merge_ranges {
-                ($arr: expr) => {
-                    if $arr[0].0 == $arr[1].0
-                        && $arr[1].1 .0 as u64 <= $arr[0].1 .1 as u64 + 1
-                        && $arr[1].1 .1 as u64 + 1 >= $arr[0].1 .0 as u64
-                    {
-                        $arr[0].1 .0 = $arr[0].1 .0.min($arr[1].1 .0);
-                        $arr[0].1 .1 = $arr[0].1 .1.max($arr[1].1 .1);
-                        $arr[1].0 = 0;
-                    }
-                };
-            }
-            merge_ranges!(unmap);
-            merge_ranges!(overlay_dtcm);
-            merge_ranges!(overlay_itcm);
-
-            for (map_mask, bounds) in unmap {
-                if map_mask != 0 {
-                    emu.arm9
-                        .cp15
-                        .ptrs
-                        .unmap_cpu_local_range(map_mask, bounds, &emu.arm9.bus_ptrs);
-                    emu.arm9.cp15.timings.unset_cpu_local_range(
-                        map_mask,
-                        bounds,
-                        &emu.arm9.bus_timings,
-                    );
-                }
-            }
-
-            for (map_mask, bounds) in overlay_dtcm {
-                if map_mask != 0 {
-                    unsafe {
-                        emu.arm9.cp15.ptrs.map_cpu_local_subrange(
-                            map_mask,
-                            emu.arm9.cp15.dtcm.as_ptr(),
-                            0x4000,
-                            emu.arm9.cp15.dtcm_bounds,
-                            bounds,
-                        );
-                    }
-                    emu.arm9.cp15.timings.set_cpu_local_subrange(
-                        map_mask,
-                        Cycles::repeat(1),
-                        emu.arm9.cp15.dtcm_bounds,
-                        bounds,
-                    );
-                }
-            }
-
-            for (map_mask, bounds) in overlay_itcm {
-                if map_mask != 0 {
-                    unsafe {
-                        emu.arm9.cp15.ptrs.map_cpu_local_subrange(
-                            map_mask,
-                            emu.arm9.cp15.itcm.as_ptr(),
-                            0x8000,
-                            (0, emu.arm9.cp15.itcm_upper_bound),
-                            bounds,
-                        );
-                    }
-                    emu.arm9.cp15.timings.set_cpu_local_subrange(
-                        map_mask,
-                        Cycles::repeat(1),
-                        (0, emu.arm9.cp15.itcm_upper_bound),
-                        bounds,
-                    );
-                }
-            }
-        }
+        Self::remap_tcm(emu, prev_dtcm_mode, prev_itcm_mode);
 
         let changed_cache_control_bits = Control((value.0 ^ prev_value.0) & 0x1005);
         if Control(prev_value.0 | value.0).pu_enabled() && changed_cache_control_bits.0 != 0 {
@@ -569,7 +678,7 @@ impl<E: Engine> Arm9<E> {
         }
     }
 
-    fn remap_all_pu_regions(emu: &mut Emu<E>) {
+    fn remap_all_pu_regions<E: Engine>(emu: &mut Emu<E>) {
         #[cfg(feature = "pu-checks")]
         {
             emu.arm9.cp15.perm_map.set_all(0);
@@ -586,7 +695,7 @@ impl<E: Engine> Arm9<E> {
     }
 
     #[allow(clippy::similar_names)]
-    fn remap_all_pu_region_cache_attrs(emu: &mut Emu<E>, map_mask: MapMask) {
+    fn remap_all_pu_region_cache_attrs<E: Engine>(emu: &mut Emu<E>, map_mask: MapMask) {
         emu.arm9.cp15.timings.copy_sys_bus(&emu.arm9.bus_timings);
 
         for region in &emu.arm9.cp15.pu_regions {
@@ -646,7 +755,7 @@ impl<E: Engine> Arm9<E> {
     }
 
     #[allow(clippy::similar_names)]
-    fn map_all_pu_region_subrange_cache_attrs(
+    fn map_all_pu_region_subrange_cache_attrs<E: Engine>(
         emu: &mut Emu<E>,
         map_mask: MapMask,
         bounds: (u32, u32),
@@ -713,15 +822,15 @@ impl<E: Engine> Arm9<E> {
         }
     }
 
-    fn check_dtcm_size(emu: &mut Emu<E>) {
-        let size_shift = emu.arm9.cp15.dtcm_control.size_shift();
+    fn check_dtcm_size(&self) {
+        let size_shift = self.dtcm_control.size_shift();
         assert!(
             (3..=23).contains(&size_shift),
             "Unpredictable DTCM size shift specified: {}",
             size_shift
         );
-        let base_addr = emu.arm9.cp15.dtcm_control.base_addr();
-        let size = emu.arm9.cp15.dtcm_control.size();
+        let base_addr = self.dtcm_control.base_addr();
+        let size = self.dtcm_control.size();
         assert!(
             base_addr & (size - 1) as u32 == 0,
             "Unpredictable misaligned DTCM base address specified: {:#010X} (size is {:#X})",
@@ -740,7 +849,7 @@ impl<E: Engine> Arm9<E> {
     }
 
     #[allow(clippy::similar_names)]
-    pub fn write_cp15_dtcm_control(emu: &mut Emu<E>, value: TcmControl) {
+    pub fn write_dtcm_control<E: Engine>(emu: &mut Emu<E>, value: TcmControl) {
         let prev_control = emu.arm9.cp15.dtcm_control;
         emu.arm9.cp15.dtcm_control.0 = value.0 & 0xFFFF_F03E;
 
@@ -755,7 +864,7 @@ impl<E: Engine> Arm9<E> {
             return;
         }
 
-        Self::check_dtcm_size(emu);
+        emu.arm9.cp15.check_dtcm_size();
 
         #[cfg(any(feature = "bft-r", feature = "bft-w"))]
         {
@@ -817,14 +926,14 @@ impl<E: Engine> Arm9<E> {
         Self::map_all_pu_region_subrange_cache_attrs(emu, dtcm_map_mask, prev_bounds);
     }
 
-    fn check_itcm_size(emu: &mut Emu<E>) {
-        let size_shift = emu.arm9.cp15.itcm_control.size_shift();
+    fn check_itcm_size(&self) {
+        let size_shift = self.itcm_control.size_shift();
         assert!(
             (3..=23).contains(&size_shift),
             "Unpredictable ITCM size shift specified: {}",
             size_shift
         );
-        let size = emu.arm9.cp15.itcm_control.size();
+        let size = self.itcm_control.size();
         assert!(
             size >= Ptrs::PAGE_SIZE.max(Timings::PAGE_SIZE) as u64,
             concat!(
@@ -837,7 +946,7 @@ impl<E: Engine> Arm9<E> {
     }
 
     #[allow(clippy::similar_names)]
-    pub fn write_cp15_itcm_control(emu: &mut Emu<E>, value: TcmControl) {
+    pub fn write_itcm_control<E: Engine>(emu: &mut Emu<E>, value: TcmControl) {
         let prev_control = emu.arm9.cp15.itcm_control;
         emu.arm9.cp15.itcm_control.0 = value.0 & 0x3E;
 
@@ -852,7 +961,7 @@ impl<E: Engine> Arm9<E> {
             return;
         }
 
-        Self::check_itcm_size(emu);
+        emu.arm9.cp15.check_itcm_size();
 
         #[cfg(any(feature = "bft-r", feature = "bft-w"))]
         {
@@ -900,7 +1009,13 @@ impl<E: Engine> Arm9<E> {
         Self::map_all_pu_region_subrange_cache_attrs(emu, itcm_map_mask, prev_bounds);
     }
 
-    pub fn read_cp15_reg(emu: &mut Emu<E>, opcode_1: u8, cn: u8, cm: u8, opcode_2: u8) -> u32 {
+    pub fn read_reg<E: Engine>(
+        emu: &mut Emu<E>,
+        opcode_1: u8,
+        cn: u8,
+        cm: u8,
+        opcode_2: u8,
+    ) -> u32 {
         if opcode_1 != 0 {
             #[cfg(feature = "log")]
             slog::warn!(
@@ -1025,7 +1140,7 @@ impl<E: Engine> Arm9<E> {
         }
     }
 
-    pub fn write_cp15_reg(
+    pub fn write_reg<E: Engine>(
         emu: &mut Emu<E>,
         opcode_1: u8,
         cn: u8,
@@ -1056,7 +1171,7 @@ impl<E: Engine> Arm9<E> {
             value,
         );
         match (cn, cm, opcode_2) {
-            (1, 0, 0) => Self::write_cp15_control(emu, Control(value)), // Control
+            (1, 0, 0) => Self::write_control(emu, Control(value)), // Control
 
             // Data cache configuration
             (2, 0, 0) => {
@@ -1421,8 +1536,8 @@ impl<E: Engine> Arm9<E> {
                 emu.arm9.cp15.code_cache_lockdown_control.0 = value & 0x8000_0003;
             }
 
-            (9, 1, 0) => Self::write_cp15_dtcm_control(emu, TcmControl(value)), // DTCM base and size
-            (9, 1, 1) => Self::write_cp15_itcm_control(emu, TcmControl(value)), // ITCM base and size
+            (9, 1, 0) => Self::write_dtcm_control(emu, TcmControl(value)), // DTCM base and size
+            (9, 1, 1) => Self::write_itcm_control(emu, TcmControl(value)), // ITCM base and size
 
             (13, 0..=1, 1) => emu.arm9.cp15.trace_process_id = value, // Trace process identifier
 

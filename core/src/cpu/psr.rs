@@ -1,8 +1,9 @@
+use crate::utils::Savestate;
 use core::{convert::TryFrom, mem::transmute};
 use proc_bitfield::UnsafeFrom;
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Savestate)]
 pub enum Mode {
     User = 0x0,
     Fiq = 0x1,
@@ -67,7 +68,7 @@ const fn apply_psr_mask<const ARM9: bool>(value: u32) -> u32 {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Cpsr(u32): Debug {
         pub raw: u32 [read_only] @ ..,
         pub mode: u8 [unsafe Mode] @ 0..=3,
@@ -139,7 +140,7 @@ impl TryFrom<Spsr> for Cpsr {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Spsr(u32): Debug {
         pub raw: u32 [read_only] @ ..,
         pub mode_raw: u8 @ 0..=3,

@@ -27,11 +27,11 @@ pub mod spi;
 use crate::{
     cpu::{arm7, arm9, Engine, Schedule as _},
     emu::{Emu, Timestamp},
-    utils::{schedule::RawTimestamp, zeroed_box, Bytes},
+    utils::{schedule::RawTimestamp, zeroed_box, Bytes, Savestate},
 };
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct AuxSpiControl(pub u16): Debug {
         pub spi_baud_rate: u8 @ 0..=1,
         pub spi_hold: bool @ 6,
@@ -45,7 +45,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct RomControl(pub u32): Debug {
         // Applied after the command is sent (unless bit 30 is set)
         pub leading_gap_length: u16 @ 0..=12,
@@ -68,12 +68,16 @@ proc_bitfield::bitfield! {
 }
 
 mod bounded {
-    use crate::utils::bounded_int_lit;
+    use crate::utils::{bounded_int_lit, bounded_int_savestate};
     bounded_int_lit!(pub struct RomOutputLen(u16), max 0x4000);
+    bounded_int_savestate!(RomOutputLen(u16));
     bounded_int_lit!(pub struct RomOutputPos(u16), max 0x3FFC, mask 0x3FFC);
+    bounded_int_savestate!(RomOutputPos(u16));
 }
 pub use bounded::{RomOutputLen, RomOutputPos};
 
+#[derive(Savestate)]
+#[load(in_place_only)]
 pub struct DsSlot {
     pub rom: rom::Rom,
     pub spi: spi::Spi,

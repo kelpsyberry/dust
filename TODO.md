@@ -100,9 +100,6 @@
 
 # Non-essential but wanted additions
 
-## Core
-- Savestates
-
 ## Frontends
 - Hardware 3D renderer
 - Configuration editor

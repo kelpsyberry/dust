@@ -3,12 +3,12 @@ mod bank_cnt;
 
 use crate::{
     cpu::{arm7, arm9},
-    utils::{zero, zeroed_box, OwnedBytesCellPtr, Zero},
+    utils::{zero, zeroed_box, OwnedBytesCellPtr, Savestate, Zero},
 };
 use core::cell::{Cell, UnsafeCell};
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct BankControl(pub u8): Debug {
         pub mst: u8 @ 0..=2,
         pub offset: u8 @ 3..=4,
@@ -17,7 +17,7 @@ proc_bitfield::bitfield! {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct Arm7Status(pub u8): Debug {
         pub c_used_as_arm7: bool @ 0,
         pub d_used_as_arm7: bool @ 1,
@@ -25,6 +25,7 @@ proc_bitfield::bitfield! {
 }
 
 #[repr(C)]
+#[derive(Savestate)]
 pub struct Banks {
     pub a: OwnedBytesCellPtr<0x2_0000>,
     pub b: OwnedBytesCellPtr<0x2_0000>,
@@ -38,6 +39,7 @@ pub struct Banks {
 }
 
 #[repr(C)]
+#[derive(Savestate)]
 struct Map {
     // NOTE: The cells are an ugly hack to avoid macros but also work around simultaneous mutable
     // and immutable borrows
@@ -47,8 +49,6 @@ struct Map {
     a_obj_ext_pal: [Cell<u8>; 1],
     b_bg: [Cell<u8>; 4],
     b_obj: [Cell<u8>; 1],
-    b_bg_ext_pal: [Cell<u8>; 2],
-    b_obj_ext_pal: u8,
     texture: [Cell<u8>; 4],
     tex_pal: [Cell<u8>; 6],
     arm7: [Cell<u8>; 2],
@@ -57,7 +57,7 @@ struct Map {
 unsafe impl Zero for Map {}
 
 #[repr(C)]
-struct Modified {
+struct Writeback {
     // NOTE: Same as `Map`
     a_bg: UnsafeCell<[usize; 0x8_0000 / usize::BITS as usize]>,
     a_obj: UnsafeCell<[usize; 0x4_0000 / usize::BITS as usize]>,
@@ -66,35 +66,54 @@ struct Modified {
     arm7: UnsafeCell<[usize; 0x4_0000 / usize::BITS as usize]>,
 }
 
-unsafe impl Zero for Modified {}
+unsafe impl Zero for Writeback {}
 
 #[repr(C)]
+#[derive(Savestate)]
+#[load(in_place_only)]
+#[store(pre = "self.flush_writeback()")]
 pub struct Vram {
     bank_control: [BankControl; 9],
     arm7_status: Arm7Status,
     pub(super) banks: Banks,
     map: Map,
-    writeback: Box<Modified>,
+    #[savestate(skip)]
+    writeback: Box<Writeback>,
 
+    #[savestate(skip)]
     lcdc_r_ptrs: [*const u8; 0x40], // 0x4000 B granularity
-    lcdc_w_ptrs: [*mut u8; 0x40],   // 0x4000 B granularity
+    #[savestate(skip)]
+    lcdc_w_ptrs: [*mut u8; 0x40], // 0x4000 B granularity
+    #[savestate(skip)]
     a_bg: OwnedBytesCellPtr<0x8_0000>,
+    #[savestate(skip)]
     a_obj: OwnedBytesCellPtr<0x4_0000>,
+    #[savestate(skip)]
     pub(super) a_bg_ext_pal: OwnedBytesCellPtr<0x8000>,
+    #[savestate(skip)]
     pub(super) a_obj_ext_pal: OwnedBytesCellPtr<0x2000>,
+    #[savestate(skip)]
     b_bg: OwnedBytesCellPtr<0x2_0000>,
+    #[savestate(skip)]
     b_obj: OwnedBytesCellPtr<0x2_0000>,
+    #[savestate(skip)]
     pub(super) b_bg_ext_pal_ptr: *const u8,
+    #[savestate(skip)]
     pub(super) b_obj_ext_pal_ptr: *const u8,
+    #[savestate(skip)]
     pub(super) texture: OwnedBytesCellPtr<0x8_0000>,
+    #[savestate(skip)]
     pub(super) tex_pal: OwnedBytesCellPtr<0x1_8000>,
+    #[savestate(skip)]
     arm7: OwnedBytesCellPtr<0x4_0000>,
 
     // Six bytes need to be added to allow for 64-bit loads from the last color
     pub palette: OwnedBytesCellPtr<0x806>,
     pub oam: OwnedBytesCellPtr<0x800>,
 
+    #[savestate(skip)]
     zero_buffer: OwnedBytesCellPtr<0x8000>, // Used to return zero for reads
+    #[savestate(skip)]
     ignore_buffer: OwnedBytesCellPtr<0x8000>, // Used to ignore writes
 }
 
