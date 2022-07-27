@@ -214,7 +214,7 @@ impl View for AudioChannels {
                 2.0,
                 false,
                 true,
-                self.data.control.0 as usize,
+                self.data.control.0,
                 &[
                     BitfieldCommand::Field("Vol", 7),
                     BitfieldCommand::Skip(1),

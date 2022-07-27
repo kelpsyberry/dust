@@ -9,6 +9,7 @@
 mod server;
 use server::Server;
 
+use ahash::AHashMap as HashMap;
 use bitflags::bitflags;
 use dust_core::{
     cpu::{
@@ -22,7 +23,6 @@ use dust_core::{
     emu::Emu,
     utils::schedule::RawTimestamp,
 };
-use fxhash::FxHashMap;
 use gdb_protocol::packet::{CheckedPacket, Kind as PacketKind};
 use std::{cell::RefCell, io::Write, net::ToSocketAddrs, rc::Rc, str};
 
@@ -91,7 +91,7 @@ pub struct GdbServer {
     target_stopped: bool,
     pub remaining_step_cycles: RawTimestamp,
     waiting_for_stop: bool,
-    sw_breakpoints: FxHashMap<u32, (u32, u32)>,
+    sw_breakpoints: HashMap<u32, (u32, u32)>,
     stop_cause: Rc<RefCell<StopCause>>,
 }
 
@@ -151,7 +151,7 @@ impl GdbServer {
             target_stopped: false,
             remaining_step_cycles: 0,
             waiting_for_stop: false,
-            sw_breakpoints: FxHashMap::default(),
+            sw_breakpoints: HashMap::default(),
             stop_cause: Rc::new(RefCell::new(StopCause::Break)),
         })
     }

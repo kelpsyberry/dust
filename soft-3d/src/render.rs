@@ -2,6 +2,7 @@ mod utils;
 use utils::{dec_poly_vert_index, inc_poly_vert_index, Edge, InterpLineData};
 
 use super::RenderingData;
+use core::simd::SimdPartialEq;
 use dust_core::{
     gpu::{
         engine_3d::{
@@ -80,7 +81,7 @@ fn decode_rgb_5(color: u16, alpha: u16) -> InterpColor {
 
 fn rgb_5_to_6(color: InterpColor) -> InterpColor {
     let mut result = (color << InterpColor::splat(1))
-        - color.lanes_ne(InterpColor::splat(0)).to_int().cast::<u16>();
+        - color.simd_ne(InterpColor::splat(0)).to_int().cast::<u16>();
     result[3] >>= 1;
     result
 }

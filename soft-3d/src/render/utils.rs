@@ -1,7 +1,7 @@
+use core::simd::{i32x2, u32x4, SimdPartialOrd};
 use dust_core::gpu::engine_3d::{
     InterpColor, PolyVertIndex, PolyVertsLen, Polygon, ScreenVertex, TexCoords, VertexAddr,
 };
-use std::simd::{i32x2, u32x4};
 
 pub fn inc_poly_vert_index(i: PolyVertIndex, verts: PolyVertsLen) -> PolyVertIndex {
     let new = i.get() + 1;
@@ -282,7 +282,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
         let factor = self.p_factor as u32;
         let a = a.cast::<u32>();
         let b = b.cast::<u32>();
-        let lower = a.lanes_lt(b);
+        let lower = a.simd_lt(b);
         let min = lower.select(a, b);
         let max = lower.select(b, a);
         let factor = lower.select(
@@ -296,7 +296,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
         let factor = self.p_factor as i32;
         let a = a.cast::<i32>();
         let b = b.cast::<i32>();
-        let lower = a.lanes_lt(b);
+        let lower = a.simd_lt(b);
         let min = lower.select(a, b);
         let max = lower.select(b, a);
         let factor = lower.select(

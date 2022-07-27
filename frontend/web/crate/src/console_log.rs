@@ -1,4 +1,4 @@
-use slog::*;
+use slog::{Drain, Key, Level, Never, OwnedKVList, Record, KV};
 use std::{
     cell::RefCell,
     fmt,
@@ -25,7 +25,7 @@ impl Drain for Console {
         let mut message = String::new();
         {
             let mut history_ref = self.history.borrow_mut();
-            let mut serializer = CompactFormatSerializer::new(&mut *history_ref);
+            let mut serializer = CompactFormatSerializer::new(&mut history_ref);
             let _ = values.serialize(record, &mut serializer);
             serializer.finish()
         };

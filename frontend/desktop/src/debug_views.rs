@@ -16,8 +16,8 @@ mod audio_channels;
 use audio_channels::AudioChannels;
 
 use super::ui::window::Window;
+use ahash::AHashMap as HashMap;
 use dust_core::{cpu, emu::Emu};
-use fxhash::FxHashMap;
 use std::collections::hash_map::Entry;
 
 pub type ViewKey = u32;
@@ -129,7 +129,7 @@ macro_rules! declare_structs {
                 $s_view_ident: Option<(<$s_view_ty as View>::EmuState, bool)>,
             )*
             $(
-                $i_view_ident: FxHashMap<ViewKey, (<$i_view_ty as View>::EmuState, bool)>,
+                $i_view_ident: HashMap<ViewKey, (<$i_view_ty as View>::EmuState, bool)>,
             )*
         }
 
@@ -140,7 +140,7 @@ macro_rules! declare_structs {
                         $s_view_ident: None,
                     )*
                     $(
-                        $i_view_ident: FxHashMap::default(),
+                        $i_view_ident: HashMap::default(),
                     )*
                 }
             }
@@ -300,7 +300,7 @@ macro_rules! declare_structs {
                 $s_view_ident: Option<<$s_view_ty as View>::FrameData>,
             )*
             $(
-                $i_view_ident: FxHashMap<ViewKey, <$i_view_ty as View>::FrameData>,
+                $i_view_ident: HashMap<ViewKey, <$i_view_ty as View>::FrameData>,
             )*
         }
 
@@ -312,7 +312,7 @@ macro_rules! declare_structs {
                         $s_view_ident: None,
                     )*
                     $(
-                        $i_view_ident: FxHashMap::default(),
+                        $i_view_ident: HashMap::default(),
                     )*
                 }
             }
@@ -333,7 +333,7 @@ macro_rules! declare_structs {
                 $s_view_ident: Option<($s_view_ty, bool)>,
             )*
             $(
-                $i_view_ident: FxHashMap<ViewKey, ($i_view_ty, bool)>,
+                $i_view_ident: HashMap<ViewKey, ($i_view_ty, bool)>,
             )*
         }
 
@@ -346,7 +346,7 @@ macro_rules! declare_structs {
                         $s_view_ident: None,
                     )*
                     $(
-                        $i_view_ident: FxHashMap::default(),
+                        $i_view_ident: HashMap::default(),
                     )*
                 }
             }

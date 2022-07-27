@@ -18,7 +18,7 @@ pub enum Action {
     Reset,
     Stop,
     ToggleFullscreenRender,
-    ToggleAudioSync,
+    ToggleSyncToAudio,
     ToggleFramerateLimit,
 }
 

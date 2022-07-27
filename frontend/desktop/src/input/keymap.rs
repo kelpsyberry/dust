@@ -2,8 +2,8 @@ use super::{
     trigger::{self, Trigger},
     Action,
 };
+use ahash::AHashMap as HashMap;
 use dust_core::emu::input::Keys;
-use fxhash::FxHashMap;
 use serde::{
     de::{MapAccess, Visitor},
     ser::SerializeMap,
@@ -33,17 +33,17 @@ static ACTION_IDENTS: &[(Action, &str)] = &[
     (Action::Reset, "reset"),
     (Action::Stop, "stop"),
     (Action::ToggleFullscreenRender, "toggle-fullscreen-render"),
-    (Action::ToggleAudioSync, "toggle-audio-sync"),
+    (Action::ToggleSyncToAudio, "toggle-sync-to-audio"),
     (Action::ToggleFramerateLimit, "toggle-framerate-limit"),
 ];
 
 #[derive(Clone, Debug)]
 pub struct Keymap {
-    pub keypad: FxHashMap<Keys, Option<Trigger>>,
-    pub hotkeys: FxHashMap<Action, Option<Trigger>>,
+    pub keypad: HashMap<Keys, Option<Trigger>>,
+    pub hotkeys: HashMap<Action, Option<Trigger>>,
 }
 
-fn default_keypad_map() -> FxHashMap<Keys, Option<Trigger>> {
+fn default_keypad_map() -> HashMap<Keys, Option<Trigger>> {
     [
         (Keys::A, Some(Trigger::KeyCode(VirtualKeyCode::X))),
         (Keys::B, Some(Trigger::KeyCode(VirtualKeyCode::Z))),
@@ -72,13 +72,13 @@ fn default_keypad_map() -> FxHashMap<Keys, Option<Trigger>> {
     .collect()
 }
 
-fn default_hotkey_map() -> FxHashMap<Action, Option<Trigger>> {
+fn default_hotkey_map() -> HashMap<Action, Option<Trigger>> {
     [
         (Action::PlayPause, None),
         (Action::Reset, None),
         (Action::Stop, None),
         (Action::ToggleFullscreenRender, None),
-        (Action::ToggleAudioSync, None),
+        (Action::ToggleSyncToAudio, None),
         (Action::ToggleFramerateLimit, None),
     ]
     .into_iter()
@@ -99,7 +99,7 @@ impl Serialize for Keymap {
         use serde::ser::SerializeStruct;
 
         struct TriggerMap<'a, T: 'static + Eq, U: 'static + Serialize>(
-            &'a FxHashMap<T, U>,
+            &'a HashMap<T, U>,
             &'static [(T, &'static str)],
         );
         impl<'a, T: 'static + Eq, U: 'static + Serialize> Serialize for TriggerMap<'a, T, U> {
@@ -129,14 +129,14 @@ impl<'de> Deserialize<'de> for Keymap {
         );
 
         impl<'de, T: 'static + Eq + Hash + Copy> Visitor<'de> for TriggerMapVisitor<T> {
-            type Value = FxHashMap<T, Option<Trigger>>;
+            type Value = HashMap<T, Option<Trigger>>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str(self.1)
             }
 
             fn visit_map<M: MapAccess<'de>>(self, mut access: M) -> Result<Self::Value, M::Error> {
-                let mut map = FxHashMap::with_capacity_and_hasher(
+                let mut map = HashMap::with_capacity_and_hasher(
                     access.size_hint().unwrap_or(0),
                     Default::default(),
                 );
@@ -151,7 +151,7 @@ impl<'de> Deserialize<'de> for Keymap {
             }
         }
 
-        struct DeserializedKeypadMap(FxHashMap<Keys, Option<Trigger>>);
+        struct DeserializedKeypadMap(HashMap<Keys, Option<Trigger>>);
 
         impl<'de> Deserialize<'de> for DeserializedKeypadMap {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -167,7 +167,7 @@ impl<'de> Deserialize<'de> for Keymap {
             }
         }
 
-        struct DeserializedHotkeyMap(FxHashMap<Action, Option<Trigger>>);
+        struct DeserializedHotkeyMap(HashMap<Action, Option<Trigger>>);
 
         impl<'de> Deserialize<'de> for DeserializedHotkeyMap {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

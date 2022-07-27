@@ -5,6 +5,7 @@ use cocoa::{
     base::id,
     foundation::NSRect,
 };
+use copypasta::{ClipboardContext, ClipboardProvider};
 use std::{iter, mem::ManuallyDrop, path::PathBuf, time::Instant};
 #[cfg(target_os = "macos")]
 use winit::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
@@ -214,6 +215,18 @@ pub enum ControlFlow {
     Exit,
 }
 
+struct ClipboardBackend(ClipboardContext);
+
+impl imgui::ClipboardBackend for ClipboardBackend {
+    fn get(&mut self) -> Option<String> {
+        self.0.get_contents().ok()
+    }
+
+    fn set(&mut self, value: &str) {
+        let _ = self.0.set_contents(value.to_string());
+    }
+}
+
 impl Builder {
     pub async fn new(
         title: impl Into<String>,
@@ -247,6 +260,9 @@ impl Builder {
         let mut imgui = imgui::Context::create();
 
         imgui.set_ini_filename(imgui_config_path);
+        if let Ok(ctx) = ClipboardContext::new() {
+            imgui.set_clipboard_backend(ClipboardBackend(ctx));
+        }
         let imgui_io = imgui.io_mut();
         imgui_io.config_windows_move_from_title_bar_only = true;
         imgui_io.config_flags |= imgui::ConfigFlags::IS_SRGB | imgui::ConfigFlags::DOCKING_ENABLE;

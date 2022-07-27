@@ -1,5 +1,7 @@
 use crate::utils::{Savestate, Zero};
-use core::simd::{i16x2, i32x4, i64x2, i64x4, mask64x4, simd_swizzle, u16x2, u16x4, u8x4};
+use core::simd::{
+    i16x2, i32x4, i64x2, i64x4, mask64x4, simd_swizzle, u16x2, u16x4, u8x4, SimdInt, SimdPartialEq,
+};
 
 pub type TexCoords = i16x2;
 pub type Color = u8x4;
@@ -18,7 +20,7 @@ pub struct Vertex {
 unsafe impl Zero for Vertex {}
 
 impl Vertex {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Vertex {
             coords: i32x4::splat(0),
             uv: TexCoords::splat(0),
@@ -63,7 +65,7 @@ pub fn front_facing(v0: &Vertex, v1: &Vertex, v2: &Vertex) -> bool {
     let v1_64 = v1.coords.cast::<i64>();
     let mut normal = cross_w_as_z(v2.coords.cast() - v1_64, v0.coords.cast() - v1_64);
     // Normalize the normal's components so that they fit in a 32-bit integer, to avoid overflows
-    while ((normal >> i64x4::splat(31) ^ normal >> i64x4::splat(63)).lanes_ne(i64x4::splat(0))
+    while ((normal >> i64x4::splat(31) ^ normal >> i64x4::splat(63)).simd_ne(i64x4::splat(0))
         & mask64x4::from_array([true, true, true, false]))
     .any()
     {
@@ -81,13 +83,3 @@ pub struct ScreenVertex {
 }
 
 unsafe impl Zero for ScreenVertex {}
-
-impl ScreenVertex {
-    pub const fn new() -> Self {
-        ScreenVertex {
-            coords: ScreenCoords::splat(0),
-            uv: TexCoords::splat(0),
-            color: InterpColor::splat(0),
-        }
-    }
-}

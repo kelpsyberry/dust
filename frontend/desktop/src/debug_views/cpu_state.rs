@@ -142,14 +142,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
             ui.text("CPSR:");
             {
                 let _frame_rounding = ui.push_style_var(StyleVar::FrameRounding(0.0));
-                bitfield(
-                    ui,
-                    2.0,
-                    false,
-                    true,
-                    reg_values.cpsr.raw() as usize,
-                    psr_fields,
-                );
+                bitfield(ui, 2.0, false, true, reg_values.cpsr.raw(), psr_fields);
             }
 
             ui.text(&format!(
@@ -163,14 +156,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
             if mode.is_exception() {
                 {
                     let _frame_rounding = ui.push_style_var(StyleVar::FrameRounding(0.0));
-                    bitfield(
-                        ui,
-                        2.0,
-                        false,
-                        true,
-                        reg_values.spsr.raw() as usize,
-                        psr_fields,
-                    );
+                    bitfield(ui, 2.0, false, true, reg_values.spsr.raw(), psr_fields);
                 }
 
                 ui.text(&format!(
@@ -366,7 +352,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                             {
                                 let _frame_rounding =
                                     ui.push_style_var(StyleVar::FrameRounding(0.0));
-                                bitfield(ui, 2.0, false, true, spsr.raw() as usize, psr_fields);
+                                bitfield(ui, 2.0, false, true, spsr.raw(), psr_fields);
                             }
 
                             ui.text(&format!(

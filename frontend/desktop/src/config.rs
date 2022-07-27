@@ -75,7 +75,7 @@ pub struct Global {
     pub screen_integer_scale: bool,
     pub game_db_path: Option<PathBuf>,
     pub logging_kind: LoggingKind,
-    pub imgui_log_history_capacity: usize,
+    pub imgui_log_history_capacity: u32,
     pub window_size: (u32, u32),
     pub imgui_config_path: Option<PathBuf>,
     pub hide_macos_title_bar: bool,
@@ -434,11 +434,11 @@ pub struct GameLaunchConfig {
 fn read_sys_files(
     paths: SysPaths,
     read_bios: bool,
-    sys_files_required: bool,
+    required: bool,
     errors: &mut Vec<LaunchConfigError>,
 ) -> Option<SysFiles> {
     macro_rules! open_file {
-        ($field: ident, $file: ident, $required: expr, |$file_ident: ident| $f: expr) => {
+        ($field: ident, $file: ident, |$file_ident: ident| $f: expr) => {
             match paths.$field {
                 Some(path) => {
                     let result: Result<_, io::Error> = try {
@@ -446,14 +446,14 @@ fn read_sys_files(
                         $f
                     };
                     result.unwrap_or_else(|err| {
-                        if $required {
+                        if required {
                             errors.push(LaunchConfigError::SysFileError(SystemFile::$file, err));
                         }
                         None
                     })
                 }
                 None => {
-                    if $required {
+                    if required {
                         errors.push(LaunchConfigError::MissingSysPath(SystemFile::$file));
                     }
                     None
@@ -463,7 +463,7 @@ fn read_sys_files(
     }
     let (arm7_bios, arm9_bios, firmware) = (
         if read_bios {
-            open_file!(arm7_bios, Arm7Bios, sys_files_required, |file| {
+            open_file!(arm7_bios, Arm7Bios, |file| {
                 let len = file.metadata()?.len();
                 if len == arm7::BIOS_SIZE as u64 {
                     let mut buf = zeroed_box::<Bytes<{ arm7::BIOS_SIZE }>>();
@@ -482,7 +482,7 @@ fn read_sys_files(
             None
         },
         if read_bios {
-            open_file!(arm9_bios, Arm9Bios, sys_files_required, |file| {
+            open_file!(arm9_bios, Arm9Bios, |file| {
                 let len = file.metadata()?.len();
                 if len == arm9::BIOS_SIZE as u64 {
                     let mut buf = zeroed_box::<Bytes<{ arm9::BIOS_SIZE }>>();
@@ -500,7 +500,7 @@ fn read_sys_files(
         } else {
             None
         },
-        open_file!(firmware, Firmware, sys_files_required, |file| {
+        open_file!(firmware, Firmware, |file| {
             let len = file.metadata()?.len() as usize;
             let mut buf = BoxedByteSlice::new_zeroed(len);
             file.read_exact(&mut buf[..])?;
@@ -519,7 +519,7 @@ fn read_sys_files(
 
 fn common_launch_config(
     global_config: &Global,
-    sys_files_required: bool,
+    is_firmware: bool,
     game_config: Option<&Game>,
 ) -> Result<(CommonLaunchConfig, Vec<LaunchConfigWarning>), Vec<LaunchConfigError>> {
     macro_rules! plain_setting {
@@ -568,7 +568,7 @@ fn common_launch_config(
     let mut warnings = Vec::new();
     let mut errors = Vec::new();
 
-    let prefer_hle_bios = !sys_files_required && plain_setting!(prefer_hle_bios);
+    let prefer_hle_bios = !is_firmware && plain_setting!(prefer_hle_bios);
 
     let sys_files = read_sys_files(
         SysPaths {
@@ -577,7 +577,7 @@ fn common_launch_config(
             firmware: sys_path!(firmware, "firmware.bin"),
         },
         !prefer_hle_bios,
-        sys_files_required,
+        is_firmware,
         &mut errors,
     );
 
@@ -602,7 +602,7 @@ fn common_launch_config(
         return Err(errors);
     }
 
-    let skip_firmware = plain_setting!(skip_firmware);
+    let skip_firmware = !is_firmware && (prefer_hle_bios || plain_setting!(skip_firmware));
     let pause_on_launch = plain_setting!(pause_on_launch);
     let limit_framerate = game_overridable!(limit_framerate);
     let screen_rotation = game_overridable!(screen_rotation);

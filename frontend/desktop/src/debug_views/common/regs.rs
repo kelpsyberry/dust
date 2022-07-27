@@ -46,7 +46,7 @@ pub fn bitfield(
     spacing: f32,
     exact_sizing: bool,
     show_skip_values: bool,
-    value: usize,
+    value: u32,
     cmds: &[BitfieldCommand],
 ) {
     let mut field_widths: Vec<f32> = vec![];

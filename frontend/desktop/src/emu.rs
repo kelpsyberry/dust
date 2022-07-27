@@ -10,15 +10,14 @@ use super::{
 };
 use dust_core::{
     audio::DummyBackend as DummyAudioBackend,
-    cpu::interpreter::Interpreter,
+    cpu::{arm7, interpreter::Interpreter},
     ds_slot::{self, rom::Rom as DsSlotRom, spi::Spi as DsSlotSpi},
     emu::RunOutput,
     flash::Flash,
     spi::firmware,
-    utils::BoxedByteSlice,
+    utils::{BoxedByteSlice, Bytes},
     SaveContents,
 };
-use parking_lot::RwLock;
 #[cfg(feature = "gdb-server")]
 use std::net::SocketAddr;
 #[cfg(feature = "xq-audio")]
@@ -29,16 +28,19 @@ use std::{
     io::{self, Read},
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, Instant},
 };
 
 pub struct SharedState {
+    // UI to emu
     pub playing: AtomicBool,
     pub limit_framerate: AtomicBool,
-    pub autosave_interval: RwLock<Duration>,
+    pub autosave_interval_ns: AtomicU64,
+
+    // Emu to UI
     pub stopped: AtomicBool,
     #[cfg(feature = "gdb-server")]
     pub gdb_server_active: AtomicBool,
@@ -52,10 +54,12 @@ pub enum Message {
     UpdateAudioCustomSampleRate(Option<NonZeroU32>),
     #[cfg(feature = "xq-audio")]
     UpdateAudioChannelInterpMethod(dust_core::audio::ChannelInterpMethod),
-    UpdateAudioSync(bool),
+    UpdateSyncToAudio(bool),
     #[cfg(feature = "debug-views")]
     DebugViews(debug_views::Message),
+    CreateSavestate,
     Reset,
+    Stop,
 }
 
 pub struct DsSlot {
@@ -64,27 +68,16 @@ pub struct DsSlot {
     pub has_ir: bool,
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn main(
-    config: CommonLaunchConfig,
-    mut cur_save_path: Option<PathBuf>,
+fn setup_ds_slot(
     ds_slot: Option<DsSlot>,
-    audio_tx_data: Option<audio::SenderData>,
-    mut frame_tx: triple_buffer::Sender<FrameData>,
-    message_rx: crossbeam_channel::Receiver<Message>,
-    shared_state: Arc<SharedState>,
-    #[cfg(feature = "gdb-server")] gdb_server_addr: SocketAddr,
-    #[cfg(feature = "log")] logger: slog::Logger,
-) -> triple_buffer::Sender<FrameData> {
-    let hle_bios_enabled =
-        config.sys_files.arm7_bios.is_none() || config.sys_files.arm9_bios.is_none();
-    let direct_boot = ds_slot.is_some() && (config.skip_firmware || hle_bios_enabled);
-    let mut sync_to_audio = config.sync_to_audio.value;
-
-    let (ds_slot_rom, ds_slot_spi) = if let Some(ds_slot) = ds_slot {
+    arm7_bios: &Option<Box<Bytes<{ arm7::BIOS_SIZE }>>>,
+    cur_save_path: &Option<PathBuf>,
+    #[cfg(feature = "log")] logger: &slog::Logger,
+) -> (ds_slot::rom::Rom, ds_slot::spi::Spi) {
+    if let Some(ds_slot) = ds_slot {
         let rom = ds_slot::rom::normal::Normal::new(
             ds_slot.rom,
-            config.sys_files.arm7_bios.as_deref(),
+            arm7_bios.as_deref(),
             #[cfg(feature = "log")]
             logger.new(slog::o!("ds_rom" => "normal")),
         )
@@ -253,7 +246,31 @@ pub(super) fn main(
             )
             .into(),
         )
-    };
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn main(
+    config: CommonLaunchConfig,
+    mut cur_save_path: Option<PathBuf>,
+    ds_slot: Option<DsSlot>,
+    audio_tx_data: Option<audio::SenderData>,
+    mut frame_tx: triple_buffer::Sender<FrameData>,
+    message_rx: crossbeam_channel::Receiver<Message>,
+    shared_state: Arc<SharedState>,
+    #[cfg(feature = "gdb-server")] gdb_server_addr: SocketAddr,
+    #[cfg(feature = "log")] logger: slog::Logger,
+) -> triple_buffer::Sender<FrameData> {
+    let skip_firmware = config.skip_firmware;
+    let mut sync_to_audio = config.sync_to_audio.value;
+
+    let (ds_slot_rom, ds_slot_spi) = setup_ds_slot(
+        ds_slot,
+        &config.sys_files.arm7_bios,
+        &cur_save_path,
+        #[cfg(feature = "log")]
+        &logger,
+    );
 
     let mut emu_builder = dust_core::emu::Builder::new(
         Flash::new(
@@ -284,7 +301,7 @@ pub(super) fn main(
     emu_builder.arm9_bios = config.sys_files.arm9_bios.clone();
 
     emu_builder.model = config.model;
-    emu_builder.direct_boot = direct_boot;
+    emu_builder.direct_boot = skip_firmware;
     // TODO: Set batch_duration and first_launch?
     emu_builder.audio_sample_chunk_size = config.audio_sample_chunk_size.value;
     #[cfg(feature = "xq-audio")]
@@ -305,32 +322,30 @@ pub(super) fn main(
 
     let mut last_save_flush_time = last_frame_time;
 
-    macro_rules! save {
-        ($save_path: expr) => {
-            if emu.ds_slot.spi.contents_dirty()
-                && $save_path
-                    .parent()
-                    .map(|parent| fs::create_dir_all(parent).is_ok())
-                    .unwrap_or(true)
-                && fs::write($save_path, &emu.ds_slot.spi.contents()[..]).is_ok()
-            {
-                emu.ds_slot.spi.mark_contents_flushed();
-            }
-        };
-    }
-
     #[cfg(feature = "debug-views")]
     let mut debug_views = debug_views::EmuState::new();
 
     #[cfg(feature = "gdb-server")]
     let mut gdb_server = None;
 
-    loop {
-        let mut reset_triggered = false;
+    macro_rules! save {
+        () => {
+            if let Some(save_path) = &cur_save_path {
+                if emu.ds_slot.spi.contents_dirty()
+                    && save_path
+                        .parent()
+                        .map(|parent| fs::create_dir_all(parent).is_ok())
+                        .unwrap_or(true)
+                    && fs::write(save_path, &emu.ds_slot.spi.contents()[..]).is_ok()
+                {
+                    emu.ds_slot.spi.mark_contents_flushed();
+                }
+            }
+        };
+    }
 
-        if shared_state.stopped.load(Ordering::Relaxed) {
-            break;
-        }
+    'run_loop: loop {
+        let mut reset_triggered = false;
 
         for message in message_rx.try_iter() {
             match message {
@@ -371,7 +386,7 @@ pub(super) fn main(
                     emu.audio.set_channel_interp_method(interp_method);
                 }
 
-                Message::UpdateAudioSync(new_sync_to_audio) => {
+                Message::UpdateSyncToAudio(new_sync_to_audio) => {
                     sync_to_audio = new_sync_to_audio;
                     if let Some(data) = &audio_tx_data {
                         emu.audio.backend = Box::new(audio::Sender::new(data, sync_to_audio));
@@ -383,8 +398,16 @@ pub(super) fn main(
                     debug_views.handle_message(&mut emu, message);
                 }
 
+                Message::CreateSavestate => {
+                    todo!();
+                }
+
                 Message::Reset => {
                     reset_triggered = true;
+                }
+
+                Message::Stop => {
+                    break 'run_loop;
                 }
             }
         }
@@ -447,7 +470,7 @@ pub(super) fn main(
             emu_builder.arm9_bios = config.sys_files.arm9_bios.clone();
 
             emu_builder.model = config.model;
-            emu_builder.direct_boot = direct_boot;
+            emu_builder.direct_boot = skip_firmware;
             // TODO: Set batch_duration and first_launch?
             emu_builder.audio_sample_chunk_size = emu.audio.sample_chunk_size;
             #[cfg(feature = "xq-audio")]
@@ -513,12 +536,12 @@ pub(super) fn main(
 
         frame_tx.finish();
 
-        if let Some(save_path) = &cur_save_path {
-            let now = Instant::now();
-            if now - last_save_flush_time >= *shared_state.autosave_interval.read() {
-                last_save_flush_time = now;
-                save!(save_path);
-            }
+        let now = Instant::now();
+        if now - last_save_flush_time
+            >= Duration::from_nanos(shared_state.autosave_interval_ns.load(Ordering::Relaxed))
+        {
+            last_save_flush_time = now;
+            save!();
         }
 
         if !playing || shared_state.limit_framerate.load(Ordering::Relaxed) {
@@ -539,6 +562,8 @@ pub(super) fn main(
             }
         }
     }
+
+    save!();
 
     frame_tx
 }

@@ -1,9 +1,7 @@
-#[cfg(feature = "log")]
-mod imgui_log;
 #[allow(dead_code)]
 pub mod imgui_wgpu;
 #[cfg(feature = "log")]
-mod logging;
+mod log;
 pub mod window;
 
 #[cfg(feature = "debug-views")]
@@ -22,7 +20,8 @@ use dust_core::{
     gpu::{SCREEN_HEIGHT, SCREEN_WIDTH},
     utils::{zeroed_box, BoxedByteSlice},
 };
-use parking_lot::RwLock;
+#[cfg(feature = "log")]
+use log::ImguiLogData;
 use rfd::FileDialog;
 #[cfg(feature = "xq-audio")]
 use std::num::NonZeroU32;
@@ -36,11 +35,10 @@ use std::{
     path::{Path, PathBuf},
     slice,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     thread,
-    time::Duration,
 };
 
 struct CurrentConfig {
@@ -171,7 +169,7 @@ struct UiState {
     audio_channel: Option<audio::Channel>,
 
     #[cfg(feature = "log")]
-    imgui_log: Option<(imgui_log::Console, imgui_log::Sender, bool)>,
+    imgui_log_data: Option<ImguiLogData>,
     #[cfg(feature = "log")]
     logger: slog::Logger,
 
@@ -206,7 +204,7 @@ impl UiState {
 
     fn update_sync_to_audio(&mut self) {
         if let Some(emu) = &self.emu_state {
-            emu.send_message(emu::Message::UpdateAudioSync(
+            emu.send_message(emu::Message::UpdateSyncToAudio(
                 self.current_config.sync_to_audio.value,
             ));
         }
@@ -508,9 +506,10 @@ impl UiState {
         let shared_state = Arc::new(emu::SharedState {
             playing: AtomicBool::new(playing),
             limit_framerate: AtomicBool::new(self.current_config.limit_framerate.value),
-            autosave_interval: RwLock::new(Duration::from_secs_f32(
-                config.autosave_interval_ms.value / 1000.0,
-            )),
+            autosave_interval_ns: AtomicU64::new(
+                (config.autosave_interval_ms.value as f64 * 1_000_000.0) as u64,
+            ),
+
             stopped: AtomicBool::new(false),
             #[cfg(feature = "gdb-server")]
             gdb_server_active: AtomicBool::new(false),
@@ -551,7 +550,7 @@ impl UiState {
 
     fn stop(&mut self) {
         if let Some(emu) = self.emu_state.take() {
-            emu.shared_state.stopped.store(true, Ordering::Relaxed);
+            emu.send_message(emu::Message::Stop);
             self.frame_tx = Some(emu.thread.join().expect("Couldn't join emulation thread"));
 
             if let Some(mut game_config) = emu.game_config {
@@ -747,10 +746,10 @@ pub fn main() {
         });
 
     #[cfg(feature = "log")]
-    let mut imgui_log = None;
+    let mut imgui_log_data = None;
     #[cfg(feature = "log")]
-    let logger = logging::init(
-        &mut imgui_log,
+    let logger = log::init(
+        &mut imgui_log_data,
         global_config.contents.logging_kind,
         global_config.contents.imgui_log_history_capacity,
     );
@@ -838,7 +837,7 @@ pub fn main() {
         audio_channel,
 
         #[cfg(feature = "log")]
-        imgui_log,
+        imgui_log_data,
         #[cfg(feature = "log")]
         logger,
 
@@ -956,7 +955,7 @@ pub fn main() {
                     }
                     input::Action::ToggleFullscreenRender => state
                         .toggle_fullscreen_render(!state.global_config.contents.fullscreen_render),
-                    input::Action::ToggleAudioSync => {
+                    input::Action::ToggleSyncToAudio => {
                         state.toggle_audio_sync(!state.current_config.sync_to_audio.value)
                     }
                     input::Action::ToggleFramerateLimit => {
@@ -1276,7 +1275,7 @@ pub fn main() {
                     });
 
                     #[cfg(feature = "log")]
-                    let imgui_log_enabled = state.imgui_log.is_some();
+                    let imgui_log_enabled = state.imgui_log_data.is_some();
                     #[cfg(not(feature = "log"))]
                     let imgui_log_enabled = false;
                     if cfg!(any(feature = "debug-views", feature = "gdb-server"))
@@ -1288,8 +1287,9 @@ pub fn main() {
                             let mut separator_needed = false;
 
                             #[cfg(feature = "log")]
-                            if let Some((_, _, console_visible)) = &mut state.imgui_log {
-                                ui.menu_item_config("Log").build_with_ref(console_visible);
+                            if let Some(log_data) = &mut state.imgui_log_data {
+                                ui.menu_item_config("Log")
+                                    .build_with_ref(&mut log_data.console_opened);
                                 separator_needed = true;
                             }
                             #[cfg(feature = "gdb-server")]
@@ -1349,13 +1349,18 @@ pub fn main() {
             }
 
             #[cfg(feature = "log")]
-            if let Some((console, _, console_visible)) = &mut state.imgui_log {
-                console.process_messages();
-                if *console_visible {
+            if let Some(log_data) = &mut state.imgui_log_data {
+                let _ = log_data.console.process_async(log_data.rx.try_iter());
+                if log_data.console_opened {
                     let _window_padding =
                         ui.push_style_var(imgui::StyleVar::WindowPadding([6.0; 2]));
-                    let _item_spacing = ui.push_style_var(imgui::StyleVar::ItemSpacing([0.0; 2]));
-                    console.render_window(ui, Some(window.mono_font), console_visible);
+                    log_data.console.render_window(
+                        ui,
+                        Some(window.mono_font),
+                        0.0,
+                        2.0,
+                        &mut log_data.console_opened,
+                    );
                 }
             }
 
