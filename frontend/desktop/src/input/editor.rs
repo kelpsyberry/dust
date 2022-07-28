@@ -93,7 +93,7 @@ static ACTIONS: &[(Action, &str)] = &[
         Action::ToggleFullscreenRender,
         "Toggle fullscreen rendering",
     ),
-    (Action::ToggleSyncToAudio, "Toggle audio sync"),
+    (Action::ToggleSyncToAudio, "Toggle sync to audio"),
     (Action::ToggleFramerateLimit, "Toggle framerate limit"),
 ];
 

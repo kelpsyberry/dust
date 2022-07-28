@@ -1,12 +1,13 @@
-use super::{super::RomOutputLen, key1};
+use super::{super::RomOutputLen, key1, Contents};
 use crate::{
     cpu::arm7,
-    utils::{make_zero, BoxedByteSlice, ByteMutSlice, Bytes, Savestate},
+    utils::{make_zero, ByteMutSlice, Bytes, Savestate},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CreationError {
     SizeNotPowerOfTwo,
+    SizeTooSmall,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
@@ -17,14 +18,14 @@ enum Stage {
     // Invalid,
 }
 
-#[derive(Clone, Savestate)]
+#[derive(Savestate)]
 #[load(in_place_only)]
 pub struct Normal {
     #[cfg(feature = "log")]
     #[savestate(skip)]
     logger: slog::Logger,
     #[savestate(skip)]
-    rom: BoxedByteSlice,
+    rom: Box<dyn Contents>,
     #[savestate(skip)]
     rom_mask: u32,
     #[savestate(skip)]
@@ -39,21 +40,25 @@ impl Normal {
     /// - [`CreationError::SizeNotPowerOfTwo`](CreationError::SizeNotPowerOfTwo): the ROM contents'
     ///   size is not a power of two.
     pub fn new(
-        rom: BoxedByteSlice,
+        rom: Box<dyn Contents>,
         arm7_bios: Option<&Bytes<{ arm7::BIOS_SIZE }>>,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Result<Self, CreationError> {
-        if !rom.len().is_power_of_two() {
+        let len = rom.len();
+        if !len.is_power_of_two() {
             return Err(CreationError::SizeNotPowerOfTwo);
         }
-        let rom_mask = (rom.len() - 1) as u32;
+        if len < 0x200 {
+            return Err(CreationError::SizeTooSmall);
+        }
+        let rom_mask = (len - 1) as u32;
         let chip_id = 0x0000_00C2
-            | match rom.len() as u32 {
+            | match len as u32 {
                 0..=0xF_FFFF => 0,
                 len @ 0x10_0000..=0xFFF_FFFF => (len >> 20) - 1,
                 len @ 0x1000_0000..=0xFFFF_FFFF => 0x100 - (len >> 28),
             };
-        let game_code = rom.read_le::<u32>(0xC);
+        let game_code = rom.game_code();
         Ok(Normal {
             #[cfg(feature = "log")]
             logger,
@@ -75,12 +80,27 @@ impl Normal {
 }
 
 impl super::RomDevice for Normal {
-    fn read(&self, mut addr: u32, mut output: ByteMutSlice) {
-        addr &= self.rom_mask & !3;
-        for i in (0..output.len()).step_by(4) {
-            output.write_ne::<u32>(i, self.rom.read_ne(addr as usize));
-            addr = addr.wrapping_add(4) & self.rom_mask;
+    fn read(&mut self, addr: u32, mut output: ByteMutSlice) {
+        let addr = (addr & self.rom_mask & !3) as usize;
+        let rom_len = self.rom_mask as usize + 1;
+        let first_read_max_len = rom_len - addr;
+        if output.len() <= first_read_max_len {
+            self.rom.read_slice(addr, output);
+        } else {
+            self.rom
+                .read_slice(addr, ByteMutSlice::new(&mut output[..first_read_max_len]));
+            let mut i = first_read_max_len;
+            while i < output.len() {
+                let end_i = (i + rom_len).min(output.len());
+                self.rom
+                    .read_slice(0, ByteMutSlice::new(&mut output[i..end_i]));
+                i += rom_len;
+            }
         }
+    }
+
+    fn read_header(&mut self, buf: &mut Bytes<0x170>) {
+        self.rom.read_header(buf);
     }
 
     fn chip_id(&self) -> u32 {
@@ -92,8 +112,10 @@ impl super::RomDevice for Normal {
             self.stage = Stage::Key2;
         } else {
             let key_buf = self.key_buf.as_ref().unwrap();
-            let arm9_code_start = self.rom.read_le::<u32>(0x020) as usize;
-            let mut secure_area = ByteMutSlice::new(&mut self.rom[arm9_code_start..]);
+            let mut secure_area = self
+                .rom
+                .secure_area_mut()
+                .expect("couldn't read DS slot ROM secure area");
             if secure_area.read_le::<u32>(0) == 0xE7FF_DEFF {
                 secure_area[..8].copy_from_slice(b"encryObj");
                 let level_3_key_buf = key_buf.level_3::<2>();
@@ -132,7 +154,10 @@ impl super::RomDevice for Normal {
                         if cmd.read_be::<u64>(0) & 0x00FF_FFFF_FFFF_FFFF == 0 {
                             for start_i in (0..output_len.get() as usize).step_by(0x1000) {
                                 let len = 0x1000.min(output_len.get() as usize - start_i);
-                                output[start_i..start_i + len].copy_from_slice(&self.rom[..len]);
+                                self.rom.read_slice(
+                                    0,
+                                    ByteMutSlice::new(&mut output[start_i..start_i + len]),
+                                );
                             }
                             return;
                         }
@@ -209,8 +234,10 @@ impl super::RomDevice for Normal {
                         let start_addr = 0x4000 | (cmd[2] as usize & 0x30) << 8;
                         for start_i in (0..output_len.get() as usize).step_by(0x1000) {
                             let len = (output_len.get() as usize - start_i).min(0x1000);
-                            output[start_i..start_i + len]
-                                .copy_from_slice(&self.rom[start_addr..start_addr + len]);
+                            self.rom.read_slice(
+                                start_addr,
+                                ByteMutSlice::new(&mut output[start_i..start_i + len]),
+                            );
                         }
                         return;
                     }
@@ -254,8 +281,10 @@ impl super::RomDevice for Normal {
                         let mut start_i = 0;
                         while start_i < output_len.get() as usize {
                             let len = (page_end - addr).min(output_len.get() as usize - start_i);
-                            output[start_i..start_i + len]
-                                .copy_from_slice(&self.rom[addr..addr + len]);
+                            self.rom.read_slice(
+                                addr,
+                                ByteMutSlice::new(&mut output[start_i..start_i + len]),
+                            );
                             addr = page_start;
                             start_i += len;
                         }

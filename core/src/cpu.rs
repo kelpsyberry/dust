@@ -36,7 +36,6 @@ pub trait Engine: Sized + LoadableInPlace + Storable {
 #[derive(Clone, Debug, Savestate)]
 pub struct Regs {
     pub gprs: [u32; 16],
-    pub cpsr: Cpsr,
     pub spsr: Spsr,
     pub r8_14_fiq: [u32; 7],
     pub r8_12_other: [u32; 5],
@@ -66,8 +65,9 @@ pub trait CoreData {
     fn jump(emu: &mut Emu<Self::Engine>, addr: u32);
     fn r15(&self) -> u32;
     fn cpsr(&self) -> Cpsr;
+    fn set_cpsr(emu: &mut Emu<Self::Engine>, value: Cpsr);
     fn regs(&self) -> Regs;
-    fn set_regs(&mut self, values: &Regs);
+    fn set_regs(emu: &mut Emu<Self::Engine>, values: &Regs);
 
     fn jump_and_link(emu: &mut Emu<Self::Engine>, addr: u32, lr: u32);
     fn return_from_hle_swi(emu: &mut Emu<Self::Engine>, r0_3: [u32; 4]);

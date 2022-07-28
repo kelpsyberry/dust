@@ -1,7 +1,7 @@
 use super::super::RomOutputLen;
 use crate::utils::{ByteMutSlice, Bytes, Savestate};
 
-#[derive(Clone, Savestate)]
+#[derive(Savestate)]
 pub struct Empty {
     #[cfg(feature = "log")]
     #[savestate(skip)]
@@ -25,8 +25,12 @@ impl Empty {
 }
 
 impl super::RomDevice for Empty {
-    fn read(&self, _addr: u32, mut output: ByteMutSlice) {
+    fn read(&mut self, _addr: u32, mut output: ByteMutSlice) {
         output.fill(0xFF);
+    }
+
+    fn read_header(&mut self, buf: &mut Bytes<0x170>) {
+        buf.fill(0xFF);
     }
 
     fn chip_id(&self) -> u32 {

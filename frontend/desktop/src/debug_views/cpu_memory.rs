@@ -1,4 +1,4 @@
-use super::{FrameDataSlot, InstanceableView, View};
+use super::{FrameDataSlot, InstanceableView, Messages, View};
 use crate::ui::window::Window;
 use dust_core::{
     cpu::{self, arm7, arm9, bus},
@@ -28,6 +28,7 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
 
     type FrameData = MemContents;
     type EmuState = EmuState;
+    type Message = (u32, u8);
 
     fn new(_window: &mut Window) -> Self {
         let mut editor = MemoryEditor::new();
@@ -81,6 +82,18 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
         frame_data.visible_addrs = emu_state.visible_addrs;
     }
 
+    fn handle_custom_message<E: cpu::Engine>(
+        (addr, value): Self::Message,
+        _emu_state: &Self::EmuState,
+        emu: &mut Emu<E>,
+    ) {
+        if ARM9 {
+            arm9::bus::write_8::<bus::DebugCpuAccess, E>(emu, addr, value);
+        } else {
+            arm7::bus::write_8::<bus::DebugCpuAccess, E>(emu, addr, value);
+        }
+    }
+
     fn clear_frame_data(&mut self) {
         self.mem_contents.data.clear();
     }
@@ -105,6 +118,7 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
         ui: &imgui::Ui,
         window: &mut Window,
         _emu_running: bool,
+        mut messages: impl Messages<Self>,
     ) -> Option<Self::EmuState> {
         let _mono_font = ui.push_font(window.mono_font);
 
@@ -125,7 +139,9 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
                     None
                 }
             },
-            |_, _, _| {},
+            |_, addr, value| {
+                messages.push_custom((addr as u32, value));
+            },
         );
 
         let mut visible_addrs = self.editor.visible_addrs(1);

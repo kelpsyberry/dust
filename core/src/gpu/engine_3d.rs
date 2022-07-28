@@ -19,7 +19,7 @@ use crate::{
 };
 use core::{
     mem::{replace, transmute},
-    simd::i32x4,
+    simd::{i32x4, SimdOrd},
 };
 use matrix::{Matrix, MatrixBuffer};
 use vertex::{ConversionScreenCoords, Vertex};
@@ -78,8 +78,8 @@ enum MatrixMode {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 struct Light {
-    direction: [i16; 3],
-    half_vec: [i16; 3],
+    direction: [i32; 3],
+    half_vec: [i32; 3],
     color: i32x4,
 }
 
@@ -397,7 +397,7 @@ impl Engine3d {
 
             vert_ram_level: 0,
             poly_ram_level: 0,
-            vert_ram: zeroed_box(),
+            vert_ram: Box::new([ScreenVertex::new(); 6144]),
             poly_ram: zeroed_box(),
 
             rendering_state: RenderingState {
@@ -712,7 +712,7 @@ impl Engine3d {
                 .iter()
                 .zip(normal.iter())
                 .fold(0_i32, |acc, (a, b)| {
-                    acc.wrapping_add((*a as i32).wrapping_mul(*b))
+                    acc.wrapping_add((*a as i64 * *b as i64) as i32)
                 }))
                 >> 9)
                 .max(0);
@@ -722,24 +722,26 @@ impl Engine3d {
                 .iter()
                 .zip(normal.iter())
                 .fold(0_i32, |acc, (a, b)| {
-                    acc.wrapping_add((*a as i32).wrapping_mul(*b))
+                    acc.wrapping_add((*a as i64 * *b as i64) as i32)
                 }))
                 >> 9)
                 .max(0);
-            shininess_level = (shininess_level * shininess_level) >> 9;
+            if shininess_level >= 0x200 {
+                shininess_level = 0x400 - shininess_level;
+            }
+            shininess_level = (((shininess_level * shininess_level) >> 9) - 0x100).max(0);
 
             if self.shininess_table_enabled {
-                shininess_level =
-                    self.shininess_table[(shininess_level >> 2).min(0x7F) as usize] as i32;
+                shininess_level = self.shininess_table[(shininess_level >> 1) as usize] as i32;
             }
 
             color += ((self.diffuse_color * light.color * i32x4::splat(diffuse_level))
                 >> i32x4::splat(14))
                 + ((self.specular_color * light.color * i32x4::splat(shininess_level))
-                    >> i32x4::splat(14))
+                    >> i32x4::splat(13))
                 + ((self.ambient_color * light.color) >> i32x4::splat(5));
         }
-        self.vert_color = rgb_5_to_6(color.min(i32x4::splat(0x1F)).cast());
+        self.vert_color = rgb_5_to_6(color.simd_min(i32x4::splat(0x1F)).cast());
     }
 
     fn add_vert(&mut self, coords: [i16; 3]) {
@@ -1663,7 +1665,7 @@ impl Engine3d {
                 0x32 => {
                     // LIGHT_VECTOR
                     let transformed = emu.gpu.engine_3d.cur_pos_vec_mtxs[1]
-                        .mul_left_vec3_zero::<i16, i16, 12>([
+                        .mul_left_vec3_zero::<i16, i32, 12>([
                             (first_param as i16) << 6 >> 6,
                             (first_param >> 4) as i16 >> 6,
                             (first_param >> 14) as i16 >> 6,

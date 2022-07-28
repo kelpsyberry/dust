@@ -1,4 +1,7 @@
-use super::{common::rgb_5_to_rgba_f32, FrameDataSlot, InstanceableView, View};
+use super::{
+    common::{rgb_5_to_rgb_f32, rgb_5_to_rgba_f32, rgb_f32_to_rgb_5},
+    FrameDataSlot, InstanceableView, Messages, View,
+};
 use crate::ui::window::Window;
 use dust_core::{
     cpu,
@@ -55,24 +58,29 @@ impl Default for PaletteData {
     }
 }
 
-pub struct Palettes2D {
+pub struct Palettes2d {
     cur_selection: Selection,
     data: PaletteData,
+    cur_color_index: u16,
+    cur_color: [f32; 3],
 }
 
-impl View for Palettes2D {
+impl View for Palettes2d {
     const NAME: &'static str = "2D engine palettes";
 
     type FrameData = PaletteData;
     type EmuState = Selection;
+    type Message = (Selection, u16, u16);
 
     fn new(_window: &mut Window) -> Self {
-        Palettes2D {
+        Palettes2d {
             cur_selection: Selection {
                 engine: Engine2d::A,
                 palette: Palette::Bg,
             },
             data: PaletteData::default(),
+            cur_color_index: 0,
+            cur_color: [0.0; 3],
         }
     }
 
@@ -139,6 +147,40 @@ impl View for Palettes2D {
         }
     }
 
+    fn handle_custom_message<E: cpu::Engine>(
+        (selection, index, value): Self::Message,
+        _emu_state: &Self::EmuState,
+        emu: &mut Emu<E>,
+    ) {
+        match selection.palette {
+            Palette::Bg => {
+                let base = ((selection.engine == Engine2d::B) as usize) << 10;
+                emu.gpu
+                    .vram
+                    .palette
+                    .write_le(base | ((index as usize) << 1), value);
+            }
+
+            Palette::Obj => {
+                let base = ((selection.engine == Engine2d::B) as usize) << 10 | 0x200;
+                emu.gpu
+                    .vram
+                    .palette
+                    .write_le(base | ((index as usize) << 1), value);
+            }
+
+            Palette::ExtBg => match selection.engine {
+                Engine2d::A => emu.gpu.vram.write_a_bg_ext_pal((index as u32) << 1, value),
+                Engine2d::B => emu.gpu.vram.write_b_bg_ext_pal((index as u32) << 1, value),
+            },
+
+            Palette::ExtObj => match selection.engine {
+                Engine2d::A => emu.gpu.vram.write_a_obj_ext_pal((index as u32) << 1, value),
+                Engine2d::B => emu.gpu.vram.write_b_obj_ext_pal((index as u32) << 1, value),
+            },
+        }
+    }
+
     fn clear_frame_data(&mut self) {
         self.data.selection = None;
     }
@@ -162,6 +204,7 @@ impl View for Palettes2D {
         ui: &Ui,
         _window: &mut Window,
         _emu_running: bool,
+        mut messages: impl Messages<Self>,
     ) -> Option<Self::EmuState> {
         static POSSIBLE_SELECTIONS: [Selection; 8] = [
             Selection::new(Engine2d::A, Palette::Bg),
@@ -212,29 +255,77 @@ impl View for Palettes2D {
             16,
             TableFlags::NO_CLIP | TableFlags::SIZING_FIXED_FIT,
         ) {
-            fn color_table(ui: &Ui, colors: ByteSlice) {
+            fn color_table(
+                ui: &Ui,
+                colors: ByteSlice,
+                cur_color_index: &mut u16,
+                cur_color: &mut [f32; 3],
+            ) {
                 for i in 0..colors.len() >> 1 {
                     ui.table_next_column();
-                    let color = colors.read_le::<u16>(i << 1);
-                    ui.color_button_config(&format!("Color {:#05X}", i), rgb_5_to_rgba_f32(color))
+                    let raw_color = colors.read_le::<u16>(i << 1);
+                    if ui
+                        .color_button_config(
+                            &format!("Color {:#05X}", i),
+                            rgb_5_to_rgba_f32(raw_color),
+                        )
                         .border(false)
                         .alpha(false)
                         .size([16.0, 16.0])
-                        .build();
+                        .build()
+                    {
+                        ui.open_popup("##color_picker");
+                        *cur_color_index = i as u16;
+                        *cur_color = rgb_5_to_rgb_f32(raw_color);
+                    }
                 }
             }
 
             match self.cur_selection.palette {
-                Palette::ExtBg => color_table(ui, self.data.data.as_byte_slice()),
-                Palette::ExtObj => color_table(ui, ByteSlice::new(&self.data.data[..0x2000])),
-                _ => color_table(ui, ByteSlice::new(&self.data.data[..0x200])),
+                Palette::ExtBg => color_table(
+                    ui,
+                    self.data.data.as_byte_slice(),
+                    &mut self.cur_color_index,
+                    &mut self.cur_color,
+                ),
+
+                Palette::ExtObj => color_table(
+                    ui,
+                    ByteSlice::new(&self.data.data[..0x2000]),
+                    &mut self.cur_color_index,
+                    &mut self.cur_color,
+                ),
+
+                _ => color_table(
+                    ui,
+                    ByteSlice::new(&self.data.data[..0x200]),
+                    &mut self.cur_color_index,
+                    &mut self.cur_color,
+                ),
             }
+
+            ui.popup("##color_picker", || {
+                if ui
+                    .color_picker3_config(
+                        &format!("Color {:#05X}", self.cur_color_index),
+                        &mut self.cur_color,
+                    )
+                    .alpha(false)
+                    .build()
+                {
+                    messages.push_custom((
+                        self.cur_selection,
+                        self.cur_color_index,
+                        rgb_f32_to_rgb_5(self.cur_color),
+                    ))
+                }
+            });
         }
 
         new_state
     }
 }
 
-impl InstanceableView for Palettes2D {
+impl InstanceableView for Palettes2d {
     fn finish_preparing_frame_data<E: cpu::Engine>(_emu: &mut Emu<E>) {}
 }

@@ -101,6 +101,30 @@ macro_rules! handle_mirroring {
     };
 }
 
+macro_rules! handle_non_writeback_write {
+    (
+        $self: ident,
+        $usage: ident, $region_shift: expr,
+        $addr: ident, $value: ident, $T: ty,
+        ($($bit: literal => $bank: ident,)*)
+    ) => {
+        let addr = $addr as usize & (($self.$usage.len() - 1) & !(mem::size_of::<$T>() - 1));
+        unsafe {
+            $self.a_bg_ext_pal.write_le_aligned_unchecked(addr, $value);
+            let region = addr >> $region_shift;
+            let mapped = $self.map.$usage.get_unchecked(region).get();
+            $(
+                if mapped & 1 << $bit != 0 {
+                    $self.banks.$bank.write_le_aligned_unchecked(
+                        addr & ($self.banks.$bank.len() - 1),
+                        $value,
+                    );
+                }
+            )*
+        }
+    };
+}
+
 // TODO: For performance reasons, all code here assumes that the size of reads/writes is lower than
 // or equal to usize::BITS, which is safe for this emulator's code, but may not be for external code
 // that implements `MemValue` for arbitrary types. How to solve this?
@@ -443,6 +467,23 @@ impl Vram {
     }
 
     #[inline]
+    pub fn write_a_bg_ext_pal<T: MemValue>(&mut self, addr: u32, value: T)
+    where
+        [(); mem::size_of::<T>()]: Sized,
+    {
+        handle_non_writeback_write!(
+            self,
+            a_bg_ext_pal, 14,
+            addr, value, T,
+            (
+                0 => e,
+                1 => f,
+                2 => g,
+            )
+        );
+    }
+
+    #[inline]
     pub fn read_a_obj_ext_pal<T: MemValue>(&self, addr: u32) -> T {
         unsafe {
             self.a_bg_ext_pal
@@ -469,14 +510,30 @@ impl Vram {
     }
 
     #[inline]
+    pub fn write_a_obj_ext_pal<T: MemValue>(&mut self, addr: u32, value: T)
+    where
+        [(); mem::size_of::<T>()]: Sized,
+    {
+        handle_non_writeback_write!(
+            self,
+            a_obj_ext_pal, 13,
+            addr, value, T,
+            (
+                0 => f,
+                1 => g,
+            )
+        );
+    }
+
+    #[inline]
     pub fn read_b_bg_ext_pal<T: MemValue>(&self, addr: u32) -> T {
         // NOTE: As for LCDC, the pointer will never be null
         unsafe {
-            (self
-                .b_bg_ext_pal_ptr
-                .add(addr as usize & (0x7FFF & !(mem::size_of::<T>() - 1)))
-                as *const T)
-                .read()
+            T::read_le_aligned(
+                self.b_bg_ext_pal_ptr
+                    .add(addr as usize & (0x7FFF & !(mem::size_of::<T>() - 1)))
+                    as *const T,
+            )
         }
     }
 
@@ -500,14 +557,30 @@ impl Vram {
     }
 
     #[inline]
+    pub fn write_b_bg_ext_pal<T: MemValue>(&mut self, addr: u32, value: T)
+    where
+        [(); mem::size_of::<T>()]: Sized,
+    {
+        if self.b_bg_ext_pal_ptr != self.zero_buffer.as_ptr() {
+            unsafe {
+                value.write_le_aligned(
+                    self.b_bg_ext_pal_ptr
+                        .add(addr as usize & (0x7FFF & !(mem::size_of::<T>() - 1)))
+                        as *mut T,
+                );
+            }
+        }
+    }
+
+    #[inline]
     pub fn read_b_obj_ext_pal<T: MemValue>(&self, addr: u32) -> T {
         // NOTE: As for LCDC, the pointer will never be null
         unsafe {
-            (self
-                .b_obj_ext_pal_ptr
-                .add(addr as usize & (0x1FFF & !(mem::size_of::<T>() - 1)))
-                as *const T)
-                .read()
+            T::read_le_aligned(
+                self.b_obj_ext_pal_ptr
+                    .add(addr as usize & (0x1FFF & !(mem::size_of::<T>() - 1)))
+                    as *const T,
+            )
         }
     }
 
@@ -528,6 +601,22 @@ impl Vram {
             result,
             len / mem::size_of::<T>(),
         );
+    }
+
+    #[inline]
+    pub fn write_b_obj_ext_pal<T: MemValue>(&mut self, addr: u32, value: T)
+    where
+        [(); mem::size_of::<T>()]: Sized,
+    {
+        if self.b_obj_ext_pal_ptr != self.zero_buffer.as_ptr() {
+            unsafe {
+                value.write_le_aligned(
+                    self.b_obj_ext_pal_ptr
+                        .add(addr as usize & (0x1FFF & !(mem::size_of::<T>() - 1)))
+                        as *mut T,
+                );
+            }
+        }
     }
 
     /// # Safety

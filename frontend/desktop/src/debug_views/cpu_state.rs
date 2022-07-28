@@ -4,22 +4,27 @@ use super::{
         regs::{bitfield, regs_32, regs_32_default_label, BitfieldCommand},
         separator_with_width,
     },
-    FrameDataSlot, View,
+    FrameDataSlot, Messages, View,
 };
 use crate::ui::window::Window;
 use dust_core::{
-    cpu::{psr::Mode, Engine, Regs},
+    cpu::{
+        arm7::Arm7,
+        arm9::Arm9,
+        psr::{Cpsr, Mode},
+        Engine, Regs,
+    },
     emu::Emu,
 };
 use imgui::{StyleColor, StyleVar, TableFlags};
 
 pub struct CpuState<const ARM9: bool> {
-    reg_values: Option<Regs>,
+    reg_values: Option<(Regs, Cpsr)>,
     reg_bank: Option<RegBank>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RegBank {
+pub enum RegBank {
     User,
     Fiq,
     Irq,
@@ -28,11 +33,18 @@ enum RegBank {
     Undefined,
 }
 
+mod bounded {
+    use dust_core::utils::bounded_int_lit;
+    bounded_int_lit!(pub struct RegIndex(u8), max 15);
+}
+pub use bounded::*;
+
 impl<const ARM9: bool> View for CpuState<ARM9> {
     const NAME: &'static str = if ARM9 { "ARM9 state" } else { "ARM7 state" };
 
-    type FrameData = Regs;
+    type FrameData = (Regs, Cpsr);
     type EmuState = ();
+    type Message = (RegBank, RegIndex, u32);
 
     fn new(_window: &mut Window) -> Self {
         CpuState {
@@ -58,10 +70,65 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
         frame_data: S,
     ) {
         frame_data.insert(if ARM9 {
-            emu.arm9.regs()
+            (emu.arm9.regs(), emu.arm9.cpsr())
         } else {
-            emu.arm7.regs()
+            (emu.arm7.regs(), emu.arm7.cpsr())
         });
+    }
+
+    fn handle_custom_message<E: dust_core::cpu::Engine>(
+        (bank, i, value): Self::Message,
+        _emu_state: &Self::EmuState,
+        emu: &mut Emu<E>,
+    ) {
+        let (mut regs, cpsr) = if ARM9 {
+            (emu.arm9.regs(), emu.arm9.cpsr())
+        } else {
+            (emu.arm7.regs(), emu.arm7.cpsr())
+        };
+
+        let mode = cpsr.mode();
+
+        let i = i.get() as usize;
+        match i {
+            0..=7 | 15 => regs.gprs[i] = value,
+
+            8..=12 => {
+                if (mode == Mode::Fiq) == (bank == RegBank::Fiq) {
+                    regs.gprs[i] = value;
+                } else {
+                    regs.r8_14_fiq[i] = value;
+                }
+            }
+
+            _ => {
+                if match bank {
+                    RegBank::User => matches!(mode, Mode::User | Mode::System),
+                    RegBank::Fiq => mode == Mode::Fiq,
+                    RegBank::Irq => mode == Mode::Irq,
+                    RegBank::Supervisor => mode == Mode::Supervisor,
+                    RegBank::Abort => mode == Mode::Abort,
+                    RegBank::Undefined => mode == Mode::Undefined,
+                } {
+                    regs.gprs[i] = value;
+                } else {
+                    match bank {
+                        RegBank::User => regs.r13_14_user[i] = value,
+                        RegBank::Fiq => regs.r8_14_fiq[5 + i] = value,
+                        RegBank::Irq => regs.r13_14_irq[i] = value,
+                        RegBank::Supervisor => regs.r13_14_svc[i] = value,
+                        RegBank::Abort => regs.r13_14_abt[i] = value,
+                        RegBank::Undefined => regs.r13_14_und[i] = value,
+                    }
+                }
+            }
+        }
+
+        if ARM9 {
+            Arm9::set_regs(emu, &regs);
+        } else {
+            Arm7::set_regs(emu, &regs);
+        }
     }
 
     fn clear_frame_data(&mut self) {
@@ -85,8 +152,9 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
         ui: &imgui::Ui,
         window: &mut Window,
         _emu_running: bool,
+        mut messages: impl Messages<Self>,
     ) -> Option<Self::EmuState> {
-        if let Some(reg_values) = self.reg_values.as_mut() {
+        if let Some((reg_values, cpsr)) = self.reg_values.as_mut() {
             let _mono_font_token = ui.push_font(window.mono_font);
             let _item_spacing = ui.push_style_var(StyleVar::ItemSpacing([0.0, unsafe {
                 ui.style().item_spacing[1]
@@ -96,18 +164,35 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                 ui.style_color(StyleColor::Border),
             );
 
-            let mode = reg_values.cpsr.mode();
+            let mode = cpsr.mode();
+            let cpu_reg_bank = match mode {
+                Mode::User | Mode::System => RegBank::User,
+                Mode::Fiq => RegBank::Fiq,
+                Mode::Irq => RegBank::Irq,
+                Mode::Supervisor => RegBank::Supervisor,
+                Mode::Abort => RegBank::Abort,
+                Mode::Undefined => RegBank::Undefined,
+            };
 
             if let Some(_table_token) = ui.begin_table_with_flags(
                 "regs",
                 4,
                 TableFlags::BORDERS_INNER_V | TableFlags::SIZING_FIXED_FIT | TableFlags::NO_CLIP,
             ) {
-                regs_32(ui, 0, &reg_values.gprs, regs_32_default_label, |i| {
-                    if i & 3 == 0 {
-                        ui.table_next_column();
-                    }
-                });
+                regs_32(
+                    ui,
+                    0,
+                    &reg_values.gprs,
+                    |i, value| {
+                        messages.push_custom((cpu_reg_bank, RegIndex::new(i as u8), value));
+                    },
+                    regs_32_default_label,
+                    |i| {
+                        if i & 3 == 0 {
+                            ui.table_next_column();
+                        }
+                    },
+                );
             }
 
             ui.separator();
@@ -142,13 +227,10 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
             ui.text("CPSR:");
             {
                 let _frame_rounding = ui.push_style_var(StyleVar::FrameRounding(0.0));
-                bitfield(ui, 2.0, false, true, reg_values.cpsr.raw(), psr_fields);
+                bitfield(ui, 2.0, false, true, cpsr.raw(), psr_fields);
             }
 
-            ui.text(&format!(
-                "Mode: {}",
-                psr_mode_to_str(reg_values.cpsr.mode()),
-            ));
+            ui.text(&format!("Mode: {}", psr_mode_to_str(mode),));
 
             ui.separator();
 
@@ -172,15 +254,6 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
             }
 
             ui.separator();
-
-            let cpu_reg_bank = match mode {
-                Mode::User | Mode::System => RegBank::User,
-                Mode::Fiq => RegBank::Fiq,
-                Mode::Irq => RegBank::Irq,
-                Mode::Supervisor => RegBank::Supervisor,
-                Mode::Abort => RegBank::Abort,
-                Mode::Undefined => RegBank::Undefined,
-            };
 
             static REG_BANKS: [Option<RegBank>; 7] = [
                 None,
@@ -295,7 +368,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                                 len = (max_digits - i.log10()) as usize
                             )
                         };
-                        if reg_bank != RegBank::Fiq && cpu_reg_bank != RegBank::Fiq
+                        if (reg_bank != RegBank::Fiq && cpu_reg_bank != RegBank::Fiq)
                             || reg_bank == cpu_reg_bank
                         {
                             for i in 0..5 {
@@ -313,11 +386,20 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                                 ui.text("<cur>");
                             }
                         } else {
-                            regs_32(ui, 8, r8_r12, regs_32_label, |i| {
-                                if (i - 8) % 3 == 0 {
-                                    ui.table_next_column();
-                                }
-                            });
+                            regs_32(
+                                ui,
+                                8,
+                                r8_r12,
+                                |i, value| {
+                                    messages.push_custom((reg_bank, RegIndex::new(i as u8), value));
+                                },
+                                regs_32_label,
+                                |i| {
+                                    if (i - 8) % 3 == 0 {
+                                        ui.table_next_column();
+                                    }
+                                },
+                            );
                         }
                         ui.table_next_column();
                         if reg_bank == cpu_reg_bank {
@@ -330,12 +412,21 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                                 ui.dummy([window_padding_x, 0.0]);
                             }
                         } else {
-                            regs_32(ui, 13, r13_14, regs_32_label, |i| {
-                                if i == 14 {
-                                    ui.same_line();
-                                    ui.dummy([window_padding_x, 0.0]);
-                                }
-                            });
+                            regs_32(
+                                ui,
+                                13,
+                                r13_14,
+                                |i, value| {
+                                    messages.push_custom((reg_bank, RegIndex::new(i as u8), value));
+                                },
+                                regs_32_label,
+                                |i| {
+                                    if i == 14 {
+                                        ui.same_line();
+                                        ui.dummy([window_padding_x, 0.0]);
+                                    }
+                                },
+                            );
                             ui.same_line();
                             ui.dummy([window_padding_x, 0.0]);
                         }

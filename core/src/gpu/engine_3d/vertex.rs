@@ -1,4 +1,4 @@
-use crate::utils::{Savestate, Zero};
+use crate::utils::Savestate;
 use core::simd::{
     i16x2, i32x4, i64x2, i64x4, mask64x4, simd_swizzle, u16x2, u16x4, u8x4, SimdInt, SimdPartialEq,
 };
@@ -16,8 +16,6 @@ pub struct Vertex {
     pub uv: TexCoords,
     pub color: Color,
 }
-
-unsafe impl Zero for Vertex {}
 
 impl Vertex {
     pub fn new() -> Self {
@@ -48,6 +46,12 @@ impl Vertex {
     }
 }
 
+impl Default for Vertex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn cross_w_as_z(a: i64x4, b: i64x4) -> i64x4 {
     let a_ywxz: i64x4 = simd_swizzle!(a, [1, 3, 0, 2]);
     let b_wxyz: i64x4 = simd_swizzle!(b, [3, 0, 1, 2]);
@@ -75,11 +79,24 @@ pub fn front_facing(v0: &Vertex, v1: &Vertex, v2: &Vertex) -> bool {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
-#[repr(C)]
 pub struct ScreenVertex {
     pub coords: ScreenCoords,
     pub uv: TexCoords,
     pub color: InterpColor,
 }
 
-unsafe impl Zero for ScreenVertex {}
+impl ScreenVertex {
+    pub fn new() -> Self {
+        ScreenVertex {
+            coords: ScreenCoords::splat(0),
+            uv: TexCoords::splat(0),
+            color: InterpColor::splat(0),
+        }
+    }
+}
+
+impl Default for ScreenVertex {
+    fn default() -> Self {
+        Self::new()
+    }
+}

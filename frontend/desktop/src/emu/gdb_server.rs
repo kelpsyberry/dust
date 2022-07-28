@@ -571,16 +571,16 @@ impl GdbServer {
             b'g' => {
                 check_not_multiple_threads!("g");
                 let mut reply = Vec::with_capacity(17 * 8);
-                let mut regs = if self.g_thread.mask == ThreadMask::ARM9 {
-                    emu.arm9.regs()
+                let (mut regs, cpsr) = if self.g_thread.mask == ThreadMask::ARM9 {
+                    (emu.arm9.regs(), emu.arm9.cpsr())
                 } else {
-                    emu.arm7.regs()
+                    (emu.arm7.regs(), emu.arm7.cpsr())
                 };
-                regs.gprs[15] = regs.gprs[15].wrapping_sub(8 >> regs.cpsr.thumb_state() as u8);
+                regs.gprs[15] = regs.gprs[15].wrapping_sub(8 >> cpsr.thumb_state() as u8);
                 for reg in regs.gprs {
                     let _ = write!(reply, "{:08X}", reg.swap_bytes());
                 }
-                let _ = write!(reply, "{:08X}", regs.cpsr.raw().swap_bytes());
+                let _ = write!(reply, "{:08X}", cpsr.raw().swap_bytes());
                 reply!(reply);
             }
 
@@ -666,17 +666,24 @@ impl GdbServer {
                 let reg_index = parse_reg_index!(data, "p");
                 check_not_multiple_threads!("p");
 
-                let mut regs = if self.g_thread.mask == ThreadMask::ARM9 {
-                    emu.arm9.regs()
+                let cpsr = if self.g_thread.mask == ThreadMask::ARM9 {
+                    emu.arm9.cpsr()
                 } else {
-                    emu.arm7.regs()
+                    emu.arm7.cpsr()
                 };
-                regs.gprs[15] = regs.gprs[15].wrapping_sub(8 >> regs.cpsr.thumb_state() as u8);
-
                 let value = if reg_index < 16 {
-                    regs.gprs[reg_index as usize]
+                    let regs = if self.g_thread.mask == ThreadMask::ARM9 {
+                        emu.arm9.regs()
+                    } else {
+                        emu.arm7.regs()
+                    };
+                    if reg_index == 15 {
+                        regs.gprs[15].wrapping_sub(8 >> cpsr.thumb_state() as u8)
+                    } else {
+                        regs.gprs[reg_index as usize]
+                    }
                 } else {
-                    regs.cpsr.raw()
+                    cpsr.raw()
                 };
 
                 let mut reply = Vec::with_capacity(8);

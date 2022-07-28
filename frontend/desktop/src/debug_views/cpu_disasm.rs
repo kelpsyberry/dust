@@ -3,7 +3,7 @@ use super::{
         disasm::{Addr, DisassemblyView},
         RangeInclusive,
     },
-    FrameDataSlot, InstanceableView, View,
+    FrameDataSlot, InstanceableView, Messages, View,
 };
 use crate::ui::window::Window;
 use dust_core::{
@@ -146,6 +146,7 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
         ui: &imgui::Ui,
         window: &mut Window,
         _emu_running: bool,
+        _messages: impl Messages<Self>,
     ) -> Option<Self::EmuState> {
         let mut emu_state_changed = false;
 

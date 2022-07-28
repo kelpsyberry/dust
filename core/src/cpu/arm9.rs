@@ -165,13 +165,18 @@ impl<E: Engine> Arm9<E> {
     }
 
     #[inline]
+    pub fn set_cpsr(emu: &mut Emu<E>, value: Cpsr) {
+        E::Arm9Data::set_cpsr(emu, value);
+    }
+
+    #[inline]
     pub fn regs(&self) -> Regs {
         self.engine_data.regs()
     }
 
     #[inline]
-    pub fn set_regs(&mut self, values: &Regs) {
-        self.engine_data.set_regs(values);
+    pub fn set_regs(emu: &mut Emu<E>, regs: &Regs) {
+        E::Arm9Data::set_regs(emu, regs);
     }
 
     cfg_if::cfg_if! {

@@ -1,6 +1,6 @@
 use super::{
     common::regs::{bitfield, BitfieldCommand},
-    FrameDataSlot, InstanceableView, View,
+    FrameDataSlot, InstanceableView, Messages, View,
 };
 use crate::ui::window::Window;
 use dust_core::{
@@ -161,6 +161,7 @@ impl View for AudioChannels {
         ui: &Ui,
         window: &mut Window,
         _emu_running: bool,
+        _messages: impl Messages<Self>,
     ) -> Option<Self::EmuState> {
         let item_spacing = unsafe { ui.style().item_spacing };
 

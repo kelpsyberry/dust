@@ -1,4 +1,4 @@
-use super::{common::rgb_5_to_rgba8, FrameDataSlot, InstanceableView, View};
+use super::{common::rgb_5_to_rgba_8, FrameDataSlot, InstanceableView, Messages, View};
 use crate::{
     ui::{imgui_wgpu, window::Window},
     utils::scale_to_fit,
@@ -469,6 +469,7 @@ impl View for BgMaps2d {
         ui: &Ui,
         window: &mut Window,
         _emu_running: bool,
+        _messages: impl Messages<Self>,
     ) -> Option<Self::EmuState> {
         let mut selection_updated = false;
         let style = unsafe { ui.style() };
@@ -712,7 +713,7 @@ impl View for BgMaps2d {
             .enumerate()
         {
             let orig_color = self.data.palette.read_le::<u16>(i << 1);
-            *color = rgb_5_to_rgba8(orig_color);
+            *color = rgb_5_to_rgba_8(orig_color);
         }
 
         let pixels_len = self.data.cur_bg.size[0] as usize * self.data.cur_bg.size[1] as usize;
@@ -869,7 +870,7 @@ impl View for BgMaps2d {
                                 if color & 0x8000 == 0 {
                                     (transparency_colors >> ((x ^ y) << 3 & 32)) as u32
                                 } else {
-                                    rgb_5_to_rgba8(color)
+                                    rgb_5_to_rgba_8(color)
                                 };
                         }
                     }

@@ -6,12 +6,13 @@ mod rtc;
 #[cfg(feature = "debug-views")]
 use super::debug_views;
 use super::{
-    audio, config::CommonLaunchConfig, game_db::SaveType, input, triple_buffer, FrameData,
+    audio, config::CommonLaunchConfig, game_db::SaveType, input, triple_buffer, DsSlotRom,
+    FrameData,
 };
 use dust_core::{
     audio::DummyBackend as DummyAudioBackend,
     cpu::{arm7, interpreter::Interpreter},
-    ds_slot::{self, rom::Rom as DsSlotRom, spi::Spi as DsSlotSpi},
+    ds_slot::{self, spi::Spi as DsSlotSpi},
     emu::RunOutput,
     flash::Flash,
     spi::firmware,
@@ -63,7 +64,7 @@ pub enum Message {
 }
 
 pub struct DsSlot {
-    pub rom: BoxedByteSlice,
+    pub rom: DsSlotRom,
     pub save_type: Option<SaveType>,
     pub has_ir: bool,
 }
@@ -76,7 +77,7 @@ fn setup_ds_slot(
 ) -> (ds_slot::rom::Rom, ds_slot::spi::Spi) {
     if let Some(ds_slot) = ds_slot {
         let rom = ds_slot::rom::normal::Normal::new(
-            ds_slot.rom,
+            Box::new(ds_slot.rom),
             arm7_bios.as_deref(),
             #[cfg(feature = "log")]
             logger.new(slog::o!("ds_rom" => "normal")),
@@ -450,8 +451,8 @@ pub(super) fn main(
             let mut emu_builder = dust_core::emu::Builder::new(
                 emu.spi.firmware.reset(),
                 match emu.ds_slot.rom {
-                    DsSlotRom::Empty(device) => DsSlotRom::Empty(device.reset()),
-                    DsSlotRom::Normal(device) => DsSlotRom::Normal(device.reset()),
+                    ds_slot::rom::Rom::Empty(device) => ds_slot::rom::Rom::Empty(device.reset()),
+                    ds_slot::rom::Rom::Normal(device) => ds_slot::rom::Rom::Normal(device.reset()),
                 },
                 match emu.ds_slot.spi {
                     DsSlotSpi::Empty(device) => DsSlotSpi::Empty(device.reset()),

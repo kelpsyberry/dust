@@ -345,8 +345,9 @@ impl<E: cpu::Engine> Emu<E> {
         // TODO: More accurate direct boot
 
         let mut header_bytes = Bytes::new([0; 0x170]);
-        self.ds_slot.rom.read(0, header_bytes.as_byte_mut_slice());
-        let header = ds_slot::rom::header::Header::new(header_bytes.as_byte_slice()).unwrap();
+        self.ds_slot.rom.read_header(&mut header_bytes);
+        let header = ds_slot::rom::header::Header::new(header_bytes.as_byte_slice())
+            .expect("invalid ROM header");
         let chip_id = self.ds_slot.rom.chip_id();
 
         macro_rules! write_main_mem {

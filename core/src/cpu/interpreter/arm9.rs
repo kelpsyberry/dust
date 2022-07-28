@@ -935,14 +935,21 @@ impl CoreData for EngineData {
     }
 
     #[inline]
+    fn set_cpsr(emu: &mut Emu<Interpreter>, value: Cpsr) {
+        set_cpsr_update_control(emu, value);
+    }
+
+    #[inline]
     fn regs(&self) -> EngineRegs {
         self.regs.to_engine_regs()
     }
 
     #[inline]
-    fn set_regs(&mut self, regs: &EngineRegs) {
-        self.regs.set_from_engine_regs(regs);
-        todo!("Update registers externally");
+    fn set_regs(emu: &mut Emu<Interpreter>, regs: &EngineRegs) {
+        emu.arm9.engine_data.regs.set_from_engine_regs(regs);
+        reg!(emu.arm9, 15) = reg!(emu.arm9, 15)
+            .wrapping_sub(8 >> emu.arm9.engine_data.regs.cpsr.thumb_state() as u8);
+        reload_pipeline::<{ StateSource::Cpsr }>(emu);
     }
 
     #[inline]

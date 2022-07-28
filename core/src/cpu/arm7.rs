@@ -145,13 +145,18 @@ impl<E: Engine> Arm7<E> {
     }
 
     #[inline]
+    pub fn set_cpsr(emu: &mut Emu<E>, value: Cpsr) {
+        E::Arm7Data::set_cpsr(emu, value);
+    }
+
+    #[inline]
     pub fn regs(&self) -> Regs {
         self.engine_data.regs()
     }
 
     #[inline]
-    pub fn set_regs(&mut self, regs: &Regs) {
-        self.engine_data.set_regs(regs);
+    pub fn set_regs(emu: &mut Emu<E>, regs: &Regs) {
+        E::Arm7Data::set_regs(emu, regs);
     }
 
     cfg_if::cfg_if! {

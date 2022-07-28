@@ -11,14 +11,14 @@ use super::{
     config::{self, CommonLaunchConfig, Config},
     emu, game_db, input, triple_buffer,
     utils::{config_base, scale_to_fit_rotated},
-    FrameData,
+    DsSlotRom, FrameData,
 };
 #[cfg(feature = "xq-audio")]
 use dust_core::audio::ChannelInterpMethod as AudioChannelInterpMethod;
 use dust_core::{
-    ds_slot,
+    ds_slot::rom::Contents,
     gpu::{SCREEN_HEIGHT, SCREEN_WIDTH},
-    utils::{zeroed_box, BoxedByteSlice},
+    utils::zeroed_box,
 };
 #[cfg(feature = "log")]
 use log::ImguiLogData;
@@ -30,8 +30,7 @@ use std::time::SystemTime;
 use std::{
     env,
     fmt::Write,
-    fs::{self, File},
-    io::{self, Read},
+    fs, io,
     path::{Path, PathBuf},
     slice,
     sync::{
@@ -363,24 +362,13 @@ impl UiState {
             return;
         }
 
-        let ds_slot_rom = {
-            let mut rom_file = File::open(path).expect("Couldn't load the specified ROM file");
-            let rom_len = rom_file
-                .metadata()
-                .expect("Couldn't get ROM file metadata")
-                .len() as usize;
-            let mut rom = BoxedByteSlice::new_zeroed(rom_len.next_power_of_two());
-            rom_file
-                .read_exact(&mut rom[..rom_len])
-                .expect("Couldn't read ROM file");
-            rom
-        };
+        let ds_slot_rom = DsSlotRom::new(path).expect("couldn't load the specified ROM file");
 
         let game_title = path
             .file_stem()
             .unwrap()
             .to_str()
-            .expect("Non-UTF-8 ROM filename provided");
+            .expect("non-UTF-8 ROM filename provided");
 
         let game_config = Config::<config::Game>::read_from_file_or_show_dialog(
             &config_base().join("games").join(&game_title),
@@ -394,7 +382,7 @@ impl UiState {
         ) {
             Ok((launch_config, warnings)) => {
                 if !warnings.is_empty() {
-                    warning!("Firmware verification failed", "{}", format_list!(warnings));
+                    warning!("firmware verification failed", "{}", format_list!(warnings));
                 }
                 self.start(
                     launch_config.common,
@@ -436,7 +424,7 @@ impl UiState {
         cur_save_path: Option<PathBuf>,
         game_title: String,
         game_config: Option<Config<config::Game>>,
-        ds_slot_rom: Option<BoxedByteSlice>,
+        ds_slot_rom: Option<DsSlotRom>,
     ) {
         self.stop();
 
@@ -457,16 +445,20 @@ impl UiState {
         #[cfg(feature = "log")]
         let logger = self.logger.clone();
 
-        let ds_slot = ds_slot_rom.and_then(|rom| {
-            let header = ds_slot::rom::header::Header::new(rom.as_byte_slice())?;
-            let game_code = header.game_code().0;
-
+        #[allow(unused_mut, clippy::bind_instead_of_map)]
+        let ds_slot = ds_slot_rom.and_then(|mut rom| {
             #[cfg(target_os = "windows")]
             {
+                use dust_core::{ds_slot, utils::Bytes};
+                let mut header_bytes = Bytes::new([0; 0x170]);
+                rom.read_header(&mut header_bytes);
+                let header = ds_slot::rom::header::Header::new(header_bytes.as_byte_slice())?;
                 let icon_title_offset = header.icon_title_offset();
-                self.icon = ds_slot::rom::icon::decode(icon_title_offset, rom.as_byte_slice());
+                self.icon = ds_slot::rom::icon::decode(icon_title_offset, &mut rom);
                 self.icon_updated = true;
             }
+
+            let game_code = rom.game_code();
 
             let save_type = self
                 .game_db
@@ -533,7 +525,7 @@ impl UiState {
                     logger,
                 )
             })
-            .expect("Couldn't spawn emulation thread");
+            .expect("couldn't spawn emulation thread");
 
         #[cfg(feature = "debug-views")]
         self.debug_views.reload_emu_state();
@@ -551,7 +543,7 @@ impl UiState {
     fn stop(&mut self) {
         if let Some(emu) = self.emu_state.take() {
             emu.send_message(emu::Message::Stop);
-            self.frame_tx = Some(emu.thread.join().expect("Couldn't join emulation thread"));
+            self.frame_tx = Some(emu.thread.join().expect("couldn't join emulation thread"));
 
             if let Some(mut game_config) = emu.game_config {
                 if let Some(dir_path) = game_config.path.as_ref().and_then(|p| p.parent()) {

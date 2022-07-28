@@ -13,6 +13,7 @@ pub fn regs_32(
     ui: &Ui,
     start_i: usize,
     values: &[u32],
+    mut change: impl FnMut(usize, u32),
     mut label: impl FnMut(usize, u32) -> String,
     mut f: impl FnMut(usize),
 ) {
@@ -20,15 +21,24 @@ pub fn regs_32(
         unsafe { ui.style().frame_padding[0] } * 2.0 + ui.calc_text_size("00000000")[0];
     let max_digits = (start_i + values.len()).log10();
     let mut i = start_i;
-    for &value in values {
+    for value in values {
         f(i);
         ui.align_text_to_frame_padding();
         ui.text(label(i, max_digits));
         ui.same_line();
         ui.set_next_item_width(reg_32_bit_width);
-        ui.input_text(&format!("##r{}", i), &mut format!("{:08X}", value))
-            .read_only(true)
-            .build();
+        let mut buffer = format!("{:08X}", value);
+        if ui
+            .input_text(&format!("##r{}", i), &mut buffer)
+            .enter_returns_true(true)
+            .auto_select_all(true)
+            .chars_hexadecimal(true)
+            .build()
+        {
+            if let Ok(new_value) = u32::from_str_radix(buffer.as_str(), 16) {
+                change(i, new_value);
+            }
+        }
         i += 1;
     }
 }

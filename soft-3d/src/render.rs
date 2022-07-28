@@ -2,7 +2,7 @@ mod utils;
 use utils::{dec_poly_vert_index, inc_poly_vert_index, Edge, InterpLineData};
 
 use super::RenderingData;
-use core::simd::SimdPartialEq;
+use core::simd::{SimdOrd, SimdPartialEq};
 use dust_core::{
     gpu::{
         engine_3d::{
@@ -313,7 +313,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
 
     if MODE == 3 {
         let toon_color = rgb_5_to_6(rendering_data.toon_colors[vert_color[0] as usize >> 1].cast());
-        (blended_color + toon_color).min(InterpColor::from_array([0x3F, 0x3F, 0x3F, 0x1F]))
+        (blended_color + toon_color).simd_min(InterpColor::from_array([0x3F, 0x3F, 0x3F, 0x1F]))
     } else {
         blended_color
     }

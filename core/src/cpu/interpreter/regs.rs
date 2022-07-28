@@ -58,7 +58,6 @@ impl Regs {
     pub(super) fn to_engine_regs(&self) -> EngineRegs {
         EngineRegs {
             gprs: self.cur,
-            cpsr: self.cpsr,
             spsr: self.spsr,
             r8_14_fiq: self.r8_14_fiq,
             r8_12_other: self.r8_12_other,
@@ -77,10 +76,6 @@ impl Regs {
 
     pub(super) fn set_from_engine_regs(&mut self, regs: &EngineRegs) {
         self.cur = regs.gprs;
-        self.cpsr = regs.cpsr;
-        let mode = self.cpsr.mode();
-        self.is_in_priv_mode = mode.is_privileged();
-        self.is_in_exc_mode = mode.is_exception();
         self.spsr = regs.spsr;
         self.r8_14_fiq = regs.r8_14_fiq;
         self.r8_12_other = regs.r8_12_other;

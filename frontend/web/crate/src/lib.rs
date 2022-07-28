@@ -8,7 +8,7 @@ pub mod renderer_3d;
 
 use dust_core::{
     cpu::{arm7, arm9, interpreter::Interpreter},
-    ds_slot::{self, rom::Rom as DsSlotRom, spi::Spi as DsSlotSpi},
+    ds_slot::{self, spi::Spi as DsSlotSpi},
     emu::input::Keys,
     emu::Emu,
     flash::Flash,
@@ -109,8 +109,8 @@ impl EmuState {
         let mut emu_builder = dust_core::emu::Builder::new(
             emu.spi.firmware.reset(),
             match emu.ds_slot.rom {
-                DsSlotRom::Empty(device) => DsSlotRom::Empty(device.reset()),
-                DsSlotRom::Normal(device) => DsSlotRom::Normal(device.reset()),
+                ds_slot::rom::Rom::Empty(device) => ds_slot::rom::Rom::Empty(device.reset()),
+                ds_slot::rom::Rom::Normal(device) => ds_slot::rom::Rom::Normal(device.reset()),
             },
             match emu.ds_slot.spi {
                 DsSlotSpi::Empty(device) => DsSlotSpi::Empty(device.reset()),
@@ -222,7 +222,7 @@ pub fn create_emu_state(
 
     let (ds_slot_rom, ds_slot_spi) = {
         let rom = ds_slot::rom::normal::Normal::new(
-            rom,
+            Box::new(rom),
             arm7_bios.as_deref(),
             #[cfg(feature = "log")]
             logger.new(slog::o!("ds_rom" => "normal")),

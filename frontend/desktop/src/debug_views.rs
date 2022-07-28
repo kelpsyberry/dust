@@ -9,7 +9,7 @@ use cpu_memory::CpuMemory;
 mod cpu_disasm;
 use cpu_disasm::CpuDisasm;
 mod palettes_2d;
-use palettes_2d::Palettes2D;
+use palettes_2d::Palettes2d;
 mod bg_maps_2d;
 use bg_maps_2d::BgMaps2d;
 mod audio_channels;
@@ -52,11 +52,16 @@ impl<'a, T> FrameDataSlot<'a, T> for &'a mut Option<T> {
     }
 }
 
-pub trait View {
+pub trait Messages<T: View> {
+    fn push_custom(&mut self, message: T::Message);
+}
+
+pub trait View: Sized {
     const NAME: &'static str;
 
-    type FrameData;
-    type EmuState: Clone;
+    type FrameData: Send;
+    type EmuState: Clone + Send;
+    type Message: Send = ();
 
     fn new(window: &mut Window) -> Self;
     fn destroy(self, window: &mut Window);
@@ -72,6 +77,12 @@ pub trait View {
         emu: &mut Emu<E>,
         frame_data: S,
     );
+    fn handle_custom_message<E: cpu::Engine>(
+        _message: Self::Message,
+        _emu_state: &Self::EmuState,
+        _emu: &mut Emu<E>,
+    ) {
+    }
 
     fn clear_frame_data(&mut self);
     fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, window: &mut Window);
@@ -85,10 +96,11 @@ pub trait View {
         ui: &imgui::Ui,
         window: &mut Window,
         emu_running: bool,
+        messages: impl Messages<Self>,
     ) -> Option<Self::EmuState>;
 }
 
-pub trait InstanceableView {
+pub trait InstanceableView: View {
     fn finish_preparing_frame_data<E: cpu::Engine>(emu: &mut Emu<E>);
 }
 
@@ -100,6 +112,7 @@ macro_rules! declare_structs {
             $s_view_ty: ty,
             $s_toggle_updates_message_ident: ident,
             $s_update_emu_state_message_ident: ident
+            $(, $s_custom_message_ident: ident)?
         );*$(;)?
         $(
             instanceable
@@ -107,12 +120,14 @@ macro_rules! declare_structs {
             $i_view_ty: ty,
             $i_toggle_updates_message_ident: ident,
             $i_update_emu_state_message_ident: ident
+            $(, $i_custom_message_ident: ident)?
         );*$(;)?
     ) => {
         pub enum Message {
             $(
                 $s_toggle_updates_message_ident(bool),
                 $s_update_emu_state_message_ident(Option<(<$s_view_ty as View>::EmuState, bool)>),
+                $($s_custom_message_ident(<$s_view_ty as View>::Message),)*
             )*
             $(
                 $i_toggle_updates_message_ident(ViewKey, bool),
@@ -120,6 +135,7 @@ macro_rules! declare_structs {
                     ViewKey,
                     Option<(<$i_view_ty as View>::EmuState, bool)>,
                 ),
+                $($i_custom_message_ident(ViewKey, <$i_view_ty as View>::Message),)*
             )*
         }
 
@@ -186,6 +202,11 @@ macro_rules! declare_structs {
                             }
                             self.$s_view_ident = new_state;
                         }
+                        $(Message::$s_custom_message_ident(message) => {
+                            if let Some((state, _)) = &mut self.$s_view_ident {
+                                <$s_view_ty as View>::handle_custom_message(message, state, emu);
+                            }
+                        })*
                     )*
                     $(
                         Message::$i_toggle_updates_message_ident(key, enabled) => {
@@ -256,6 +277,11 @@ macro_rules! declare_structs {
                                 );
                             }
                         }
+                        $(Message::$i_custom_message_ident(key, message) => {
+                            if let Some((state, _)) = self.$i_view_ident.get_mut(&key) {
+                                <$i_view_ty as View>::handle_custom_message(message, state, emu);
+                            }
+                        })*
                     )*
                 }
             }
@@ -290,7 +316,7 @@ macro_rules! declare_structs {
                             frame_data.$i_view_ident.entry(*key),
                         );
                     }
-                    <$i_view_ty>::finish_preparing_frame_data(emu);
+                    <$i_view_ty as InstanceableView>::finish_preparing_frame_data(emu);
                 )*
             }
         }
@@ -461,7 +487,12 @@ macro_rules! declare_structs {
                             ui.window(<$s_view_ty>::NAME).opened(&mut opened)
                         ).build(|| {
                             *visible = true;
-                            new_emu_state = view.render(ui, window, emu_running);
+                            new_emu_state = view.render(
+                                ui,
+                                window,
+                                emu_running,
+                                &mut self.messages,
+                            );
                         });
                         if let Some(new_emu_state) = new_emu_state {
                             self.messages.push(Message::$s_update_emu_state_message_ident(
@@ -492,7 +523,12 @@ macro_rules! declare_structs {
                                     .opened(&mut opened),
                             ).build(|| {
                                 *visible = true;
-                                new_emu_state = view.render(ui, window, emu_running);
+                                new_emu_state = view.render(
+                                    ui,
+                                    window,
+                                    emu_running,
+                                    (&mut self.messages, *key),
+                                );
                             });
                             if let Some(new_emu_state) = new_emu_state {
                                 self.messages.push(Message::$i_update_emu_state_message_ident(
@@ -521,17 +557,33 @@ macro_rules! declare_structs {
                 self.messages.drain(..)
             }
         }
+
+        $(
+            impl Messages<$s_view_ty> for &mut Vec<Message> {
+                fn push_custom(&mut self, _message: <$s_view_ty as View>::Message) {
+                    $(self.push(Message::$s_custom_message_ident(_message)))*
+                }
+            }
+        )*
+
+        $(
+            impl Messages<$i_view_ty> for (&mut Vec<Message>, ViewKey) {
+                fn push_custom(&mut self, _message: <$i_view_ty as View>::Message) {
+                    $(self.0.push(Message::$i_custom_message_ident(self.1, _message)))*
+                }
+            }
+        )*
     };
 }
 
 declare_structs!(
-    singleton arm7_state, CpuState<false>, ToggleArm7State, UpdateArm7State;
-    singleton arm9_state, CpuState<true>, ToggleArm9State, UpdateArm9State;
-    instanceable arm7_memory, CpuMemory<false>, ToggleArm7Memory, UpdateArm7Memory;
-    instanceable arm9_memory, CpuMemory<true>, ToggleArm9Memory, UpdateArm9Memory;
+    singleton arm7_state, CpuState<false>, ToggleArm7State, UpdateArm7State, Arm7StateCustom;
+    singleton arm9_state, CpuState<true>, ToggleArm9State, UpdateArm9State, Arm9StateCustom;
+    instanceable arm7_memory, CpuMemory<false>, ToggleArm7Memory, UpdateArm7Memory, Arm7MemoryCustom;
+    instanceable arm9_memory, CpuMemory<true>, ToggleArm9Memory, UpdateArm9Memory, Arm9MemoryCustom;
     instanceable arm7_disasm, CpuDisasm<false>, ToggleArm7Disasm, UpdateArm7Disasm;
     instanceable arm9_disasm, CpuDisasm<true>, ToggleArm9Disasm, UpdateArm9Disasm;
-    instanceable palettes_2d, Palettes2D, TogglePalettes2D, UpdatePalettes2D;
+    instanceable palettes_2d, Palettes2d, TogglePalettes2d, UpdatePalettes2d, Palettes2dCustom;
     instanceable bg_maps_2d, BgMaps2d, ToggleBgMaps2d, UpdateBgMaps2d;
     instanceable audio_channels, AudioChannels, ToggleAudioChannels, UpdateAudioChannels;
 );

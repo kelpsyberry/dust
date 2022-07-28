@@ -9,7 +9,8 @@
     slice_ptr_len,
     array_chunks,
     label_break_value,
-    portable_simd
+    portable_simd,
+    associated_type_defaults
 )]
 
 #[cfg(target_os = "macos")]
@@ -26,6 +27,8 @@ mod debug_views;
 mod game_db;
 pub mod input;
 mod triple_buffer;
+mod ds_slot_rom;
+use ds_slot_rom::DsSlotRom;
 
 mod emu;
 mod ui;
