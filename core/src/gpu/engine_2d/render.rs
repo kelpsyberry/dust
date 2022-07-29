@@ -260,7 +260,15 @@ impl<R: Role> Engine2d<R> {
                 return;
             }
 
-            1 => {}
+            1 => {
+                for (dst, src) in scanline_buffer
+                    .0
+                    .iter_mut()
+                    .zip(self.bg_obj_scanline.0.iter())
+                {
+                    *dst = *src as u32;
+                }
+            }
 
             2 => {
                 // The bank must be mapped as LCDC VRAM to be used
@@ -430,47 +438,33 @@ impl<R: Role> Engine2d<R> {
 
         match self.master_brightness_control.mode() {
             1 if self.master_brightness_factor != 0 => {
-                for (dst, src) in scanline_buffer
-                    .0
-                    .iter_mut()
-                    .zip(self.bg_obj_scanline.0.iter())
-                {
-                    let src = *src as u32;
+                for pixel in &mut scanline_buffer.0 {
                     let increment = {
-                        let complement = 0x3_FFFF ^ src;
+                        let complement = 0x3_FFFF ^ *pixel;
                         ((((complement & 0x3_F03F) * self.master_brightness_factor) & 0x3F_03F0)
                             | (((complement & 0xFC0) * self.master_brightness_factor) & 0xFC00))
                             >> 4
                     };
-                    *dst = rgb_18_to_rgba_32(src + increment);
+                    *pixel = rgb_18_to_rgba_32(*pixel + increment);
                 }
             }
 
             2 if self.master_brightness_factor != 0 => {
-                for (dst, src) in scanline_buffer
-                    .0
-                    .iter_mut()
-                    .zip(self.bg_obj_scanline.0.iter())
-                {
-                    let src = *src as u32;
+                for pixel in &mut scanline_buffer.0 {
                     let decrement = {
-                        ((((src & 0x3_F03F) * self.master_brightness_factor) & 0x3F_03F0)
-                            | (((src & 0xFC0) * self.master_brightness_factor) & 0xFC00))
+                        ((((*pixel & 0x3_F03F) * self.master_brightness_factor) & 0x3F_03F0)
+                            | (((*pixel & 0xFC0) * self.master_brightness_factor) & 0xFC00))
                             >> 4
                     };
-                    *dst = rgb_18_to_rgba_32(src - decrement);
+                    *pixel = rgb_18_to_rgba_32(*pixel - decrement);
                 }
             }
 
             3 => unimplemented!("Unknown 2D engine brightness mode 3"),
 
             _ => {
-                for (dst, src) in scanline_buffer
-                    .0
-                    .iter_mut()
-                    .zip(self.bg_obj_scanline.0.iter())
-                {
-                    *dst = rgb_18_to_rgba_32(*src as u32);
+                for pixel in &mut scanline_buffer.0 {
+                    *pixel = rgb_18_to_rgba_32(*pixel);
                 }
             }
         }
