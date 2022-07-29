@@ -77,7 +77,7 @@ fn setup_ds_slot(
 ) -> (ds_slot::rom::Rom, ds_slot::spi::Spi) {
     if let Some(ds_slot) = ds_slot {
         let rom = ds_slot::rom::normal::Normal::new(
-            Box::new(ds_slot.rom),
+            ds_slot.rom.into(),
             arm7_bios.as_deref(),
             #[cfg(feature = "log")]
             logger.new(slog::o!("ds_rom" => "normal")),

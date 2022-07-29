@@ -1,39 +1,11 @@
 use crate::{
     gpu,
-    utils::{
-        schedule::{self, RawTimestamp},
-        Savestate,
-    },
+    utils::{def_event_slot_index, def_event_slots, def_timestamp, schedule, Savestate},
 };
-use core::ops::Add;
 
 pub const DEFAULT_BATCH_DURATION: u32 = 64;
 
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Savestate)]
-pub struct Timestamp(pub RawTimestamp);
-
-impl Add for Timestamp {
-    type Output = Self;
-    #[inline]
-    fn add(self, rhs: Self) -> Self {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl From<RawTimestamp> for Timestamp {
-    #[inline]
-    fn from(v: RawTimestamp) -> Self {
-        Self(v)
-    }
-}
-
-impl From<Timestamp> for RawTimestamp {
-    #[inline]
-    fn from(v: Timestamp) -> Self {
-        v.0
-    }
-}
+def_timestamp!(#[derive(Savestate)] pub struct Timestamp);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 pub enum Event {
@@ -49,37 +21,17 @@ impl Default for Event {
     }
 }
 
-pub mod event_slots {
-    use crate::utils::def_event_slots;
-    def_event_slots! {
-        super::EventSlotIndex,
-        GPU,
-        SHUTDOWN,
-        ENGINE_3D,
-    }
+def_event_slots! {
+    pub mod event_slots,
+    EventSlotIndex,
+    GPU,
+    SHUTDOWN,
+    ENGINE_3D,
 }
 
-mod bounded {
-    use crate::utils::{bounded_int, bounded_int_savestate};
-    bounded_int!(pub struct EventSlotIndex(u8), max (super::event_slots::LEN - 1) as u8);
-    bounded_int_savestate!(EventSlotIndex(u8));
-}
-pub use bounded::*;
+def_event_slot_index!(bounded_esi, event_slots, pub struct EventSlotIndex(u8));
 
-impl From<usize> for EventSlotIndex {
-    #[inline]
-    fn from(v: usize) -> Self {
-        assert!(v < event_slots::LEN);
-        unsafe { Self::new_unchecked(v as u8) }
-    }
-}
-
-impl From<EventSlotIndex> for usize {
-    #[inline]
-    fn from(v: EventSlotIndex) -> Self {
-        v.get() as usize
-    }
-}
+pub type RawSchedule = schedule::Schedule<Timestamp, Event, EventSlotIndex, { event_slots::LEN }>;
 
 #[derive(Clone, Savestate)]
 #[load(in_place_only)]
@@ -88,7 +40,7 @@ pub struct Schedule {
     cur_time: Timestamp,
     #[savestate(skip)]
     pub batch_cycles: Timestamp,
-    schedule: schedule::Schedule<Timestamp, Event, EventSlotIndex, { event_slots::LEN }>,
+    schedule: RawSchedule,
 }
 
 impl Schedule {
@@ -111,9 +63,7 @@ impl Schedule {
     }
 
     #[inline]
-    pub fn schedule(
-        &self,
-    ) -> &schedule::Schedule<Timestamp, Event, EventSlotIndex, { event_slots::LEN }> {
+    pub fn schedule(&self) -> &RawSchedule {
         &self.schedule
     }
 

@@ -1,4 +1,4 @@
-macro_rules! handle_variants {
+macro_rules! forward_to_variants {
     ($ty: ident; $($variant: ident),*; $expr: expr, $f: ident $args: tt) => {
         match $expr {
             $(

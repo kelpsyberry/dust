@@ -26,7 +26,7 @@ pub enum Spi {
 
 impl Spi {
     pub fn contents(&self) -> ByteSlice {
-        handle_variants!(
+        forward_to_variants!(
             Spi;
             Eeprom4k, EepromFram, Flash, Empty;
             self, contents()
@@ -34,7 +34,7 @@ impl Spi {
     }
 
     pub fn contents_mut(&mut self) -> ByteMutSlice {
-        handle_variants!(
+        forward_to_variants!(
             Spi;
             Eeprom4k, EepromFram, Flash, Empty;
             self, contents_mut()
@@ -42,7 +42,7 @@ impl Spi {
     }
 
     pub fn contents_dirty(&self) -> bool {
-        handle_variants!(
+        forward_to_variants!(
             Spi;
             Eeprom4k, EepromFram, Flash, Empty;
             self, contents_dirty()
@@ -50,7 +50,7 @@ impl Spi {
     }
 
     pub fn mark_contents_dirty(&mut self) {
-        handle_variants!(
+        forward_to_variants!(
             Spi;
             Eeprom4k, EepromFram, Flash, Empty;
             self, mark_contents_dirty()
@@ -58,7 +58,7 @@ impl Spi {
     }
 
     pub fn mark_contents_flushed(&mut self) {
-        handle_variants!(
+        forward_to_variants!(
             Spi;
             Eeprom4k, EepromFram, Flash, Empty;
             self, mark_contents_flushed()
@@ -66,7 +66,7 @@ impl Spi {
     }
 
     pub fn write_data(&mut self, data: u8, first: bool, last: bool) -> u8 {
-        handle_variants!(
+        forward_to_variants!(
             Spi;
             Eeprom4k, EepromFram, Flash, Empty;
             self, write_data(data, first, last)

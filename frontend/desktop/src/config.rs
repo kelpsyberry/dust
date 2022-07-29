@@ -80,6 +80,7 @@ pub struct Global {
     pub imgui_config_path: Option<PathBuf>,
     pub hide_macos_title_bar: bool,
     pub gdb_server_addr: SocketAddr,
+    pub ds_slot_rom_in_memory_max_size: u32,
 }
 
 impl Default for Global {
@@ -115,6 +116,7 @@ impl Default for Global {
             imgui_config_path: Some(config_base.join("imgui.ini")),
             hide_macos_title_bar: true,
             gdb_server_addr: ([127_u8, 0, 0, 1], 12345_u16).into(),
+            ds_slot_rom_in_memory_max_size: 32 * 1024 * 1024,
         }
     }
 }

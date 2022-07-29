@@ -67,19 +67,19 @@ pub enum Rom {
 
 impl Rom {
     pub fn read(&mut self, addr: u32, output: ByteMutSlice) {
-        handle_variants!(Rom; Normal, Empty; self, read(addr, output));
+        forward_to_variants!(Rom; Normal, Empty; self, read(addr, output));
     }
 
     pub fn read_header(&mut self, buf: &mut Bytes<0x170>) {
-        handle_variants!(Rom; Normal, Empty; self, read_header(buf));
+        forward_to_variants!(Rom; Normal, Empty; self, read_header(buf));
     }
 
     pub fn chip_id(&self) -> u32 {
-        handle_variants!(Rom; Normal, Empty; self, chip_id())
+        forward_to_variants!(Rom; Normal, Empty; self, chip_id())
     }
 
     pub(crate) fn setup(&mut self, direct_boot: bool) {
-        handle_variants!(Rom; Normal, Empty; self, setup(direct_boot));
+        forward_to_variants!(Rom; Normal, Empty; self, setup(direct_boot));
     }
 
     pub fn handle_rom_command(
@@ -88,7 +88,7 @@ impl Rom {
         output: &mut Bytes<0x4000>,
         output_len: RomOutputLen,
     ) {
-        handle_variants!(Rom; Normal, Empty; self, handle_rom_command(cmd, output, output_len));
+        forward_to_variants!(Rom; Normal, Empty; self, handle_rom_command(cmd, output, output_len));
     }
 }
 

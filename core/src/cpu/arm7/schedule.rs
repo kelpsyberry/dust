@@ -3,38 +3,10 @@ use crate::{
     cpu::{self, timers, Engine},
     ds_slot::DsSlot,
     emu::{self, Emu},
-    utils::{
-        schedule::{self, RawTimestamp},
-        Savestate,
-    },
+    utils::{def_event_slot_index, def_event_slots, def_timestamp, schedule, Savestate},
 };
-use core::ops::Add;
 
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Savestate)]
-pub struct Timestamp(pub RawTimestamp);
-
-impl Add for Timestamp {
-    type Output = Self;
-    #[inline]
-    fn add(self, rhs: Self) -> Self {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl From<RawTimestamp> for Timestamp {
-    #[inline]
-    fn from(v: RawTimestamp) -> Self {
-        Self(v)
-    }
-}
-
-impl From<Timestamp> for RawTimestamp {
-    #[inline]
-    fn from(v: Timestamp) -> Self {
-        v.0
-    }
-}
+def_timestamp!(#[derive(Savestate)] pub struct Timestamp);
 
 impl From<emu::Timestamp> for Timestamp {
     #[inline]
@@ -82,49 +54,29 @@ impl Default for Event {
     }
 }
 
-pub mod event_slots {
-    use crate::utils::def_event_slots;
-    def_event_slots! {
-        super::EventSlotIndex,
-        SHUTDOWN,
-        DS_SLOT_ROM,
-        DS_SLOT_SPI,
-        SPI,
-        AUDIO,
-        #[cfg(feature = "xq-audio")]
-        XQ_AUDIO,
-        TIMERS_START..TIMERS_END 4,
-    }
+def_event_slots! {
+    pub mod event_slots,
+    EventSlotIndex,
+    SHUTDOWN,
+    DS_SLOT_ROM,
+    DS_SLOT_SPI,
+    SPI,
+    AUDIO,
+    #[cfg(feature = "xq-audio")]
+    XQ_AUDIO,
+    TIMERS_START..TIMERS_END 4,
 }
 
-mod bounded {
-    use crate::utils::{bounded_int, bounded_int_savestate};
-    bounded_int!(pub struct EventSlotIndex(u8), max (super::event_slots::LEN - 1) as u8);
-    bounded_int_savestate!(EventSlotIndex(u8));
-}
-pub use bounded::*;
+def_event_slot_index!(bounded_esi, event_slots, pub struct EventSlotIndex(u8));
 
-impl From<usize> for EventSlotIndex {
-    #[inline]
-    fn from(v: usize) -> Self {
-        assert!(v < event_slots::LEN as usize);
-        unsafe { Self::new_unchecked(v as u8) }
-    }
-}
-
-impl From<EventSlotIndex> for usize {
-    #[inline]
-    fn from(v: EventSlotIndex) -> Self {
-        v.get() as usize
-    }
-}
+pub type RawSchedule = schedule::Schedule<Timestamp, Event, EventSlotIndex, { event_slots::LEN }>;
 
 #[derive(Clone, Savestate)]
 #[repr(C)]
 pub struct Schedule {
     cur_time: Timestamp,
     target_time: Timestamp,
-    schedule: schedule::Schedule<Timestamp, Event, EventSlotIndex, { event_slots::LEN }>,
+    schedule: RawSchedule,
 }
 
 impl Schedule {
@@ -137,9 +89,7 @@ impl Schedule {
     }
 
     #[inline]
-    pub fn schedule(
-        &self,
-    ) -> &schedule::Schedule<Timestamp, Event, EventSlotIndex, { event_slots::LEN }> {
+    pub fn schedule(&self) -> &RawSchedule {
         &self.schedule
     }
 

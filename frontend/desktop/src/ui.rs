@@ -362,7 +362,11 @@ impl UiState {
             return;
         }
 
-        let ds_slot_rom = DsSlotRom::new(path).expect("couldn't load the specified ROM file");
+        let ds_slot_rom = DsSlotRom::new(
+            path,
+            self.global_config.contents.ds_slot_rom_in_memory_max_size,
+        )
+        .expect("couldn't load the specified ROM file");
 
         let game_title = path
             .file_stem()
