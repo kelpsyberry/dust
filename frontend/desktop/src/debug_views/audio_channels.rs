@@ -9,6 +9,7 @@ use dust_core::{
     emu::Emu,
 };
 use imgui::{PlotLines, SliderFlags, StyleVar, TableFlags, Ui};
+use realfft::{num_complex::Complex, RealFftPlanner as FftPlanner};
 use std::cmp::Ordering;
 
 #[derive(Clone)]
@@ -84,6 +85,10 @@ pub struct AudioChannels {
     samples_to_show: u32,
     samples: RingBuffer<f32>,
     data: ChannelData,
+    fft_planner: FftPlanner<f32>,
+    fft_input_buf: Vec<f32>,
+    fft_output_buf: Vec<Complex<f32>>,
+    fft_output_f32_buf: Vec<f32>,
 }
 
 impl View for AudioChannels {
@@ -99,6 +104,10 @@ impl View for AudioChannels {
             samples_to_show: DEFAULT_SAMPLES,
             samples: RingBuffer::new(DEFAULT_SAMPLES as usize, 0.0),
             data: ChannelData::default(),
+            fft_planner: FftPlanner::new(),
+            fft_input_buf: Vec::new(),
+            fft_output_buf: Vec::new(),
+            fft_output_f32_buf: Vec::new(),
         }
     }
 
@@ -176,7 +185,9 @@ impl View for AudioChannels {
 
         let new_state = if selection_updated {
             self.samples.fill(0.0);
-            self.cur_channel = ChannelIndex::new(raw_channel_index);
+            if let Some(channel_index) = ChannelIndex::new_checked(raw_channel_index) {
+                self.cur_channel = channel_index;
+            }
             Some(self.cur_channel)
         } else {
             None
@@ -190,6 +201,7 @@ impl View for AudioChannels {
             .display_format("Last %d samples")
             .build(&mut self.samples_to_show)
         {
+            self.samples_to_show &= !1;
             self.samples.resize(self.samples_to_show as usize, 0.0);
         }
 
@@ -202,6 +214,41 @@ impl View for AudioChannels {
             .scale_min(-1.0)
             .scale_max(1.0)
             .values_offset(self.samples.start)
+            .build();
+
+        let fft = self
+            .fft_planner
+            .plan_fft_forward(self.samples_to_show as usize);
+        self.fft_input_buf.clear();
+        self.fft_input_buf.reserve(self.samples_to_show as usize);
+        {
+            let mut i = self.samples.start;
+            for _ in 0..self.samples.buffer.len() {
+                if i >= self.samples.buffer.len() {
+                    i = 0;
+                }
+                self.fft_input_buf.push(self.samples.buffer[i]);
+                i += 1;
+            }
+        }
+        self.fft_output_buf.resize(
+            self.samples_to_show as usize / 2 + 1,
+            Complex { re: 0.0, im: 0.0 },
+        );
+        fft.process(&mut self.fft_input_buf, &mut self.fft_output_buf)
+            .expect("couldn't process FFT");
+        self.fft_output_f32_buf.clear();
+        self.fft_output_f32_buf.reserve(self.fft_output_buf.len());
+        let scale = 1.0 / (self.samples_to_show as f32).sqrt();
+        self.fft_output_f32_buf.extend(
+            self.fft_output_buf
+                .iter()
+                .map(|v| (v.norm() * scale + 1.0).ln()),
+        );
+
+        PlotLines::new(ui, "##frequency_graph", &self.fft_output_f32_buf)
+            .graph_size([ui.content_region_avail()[0], 128.0])
+            .scale_min(0.0)
             .build();
 
         let _mono_font_token = ui.push_font(window.mono_font);

@@ -12,7 +12,7 @@ use dust_core::{
     },
     utils::{zeroed_box, ByteMutSlice, Bytes},
 };
-use imgui::{Image, SliderFlags, StyleColor, TextureId, Ui};
+use imgui::{Image, MouseButton, SliderFlags, StyleColor, TextureId, Ui, WindowHoveredFlags};
 use std::slice;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -471,6 +471,12 @@ impl View for BgMaps2d {
         _emu_running: bool,
         _messages: impl Messages<Self>,
     ) -> Option<Self::EmuState> {
+        if ui.is_window_hovered_with_flags(WindowHoveredFlags::ROOT_AND_CHILD_WINDOWS)
+            && ui.is_mouse_clicked(MouseButton::Right)
+        {
+            ui.open_popup("options");
+        }
+
         let mut selection_updated = false;
         let style = unsafe { ui.style() };
 
@@ -595,29 +601,37 @@ impl View for BgMaps2d {
             selection_updated = true;
         }
 
-        ui.checkbox(
-            "Show transparency checkerboard",
-            &mut self.show_transparency_checkerboard,
-        );
-
-        ui.same_line();
-
-        ui.checkbox("Show grid lines", &mut self.show_grid_lines);
-
         let new_state = if selection_updated {
             Some(self.cur_selection)
         } else {
             None
         };
 
+        if self.data.selection == Some(self.cur_selection) {
+            ui.align_text_to_frame_padding();
+            ui.text(&format!(
+                "Size: {}x{}",
+                self.data.cur_bg.size[0], self.data.cur_bg.size[1]
+            ));
+            ui.same_line();
+        }
+
+        if ui.button("Options...") {
+            ui.open_popup("options");
+        }
+
+        ui.popup("options", || {
+            ui.checkbox(
+                "Show transparency checkerboard",
+                &mut self.show_transparency_checkerboard,
+            );
+
+            ui.checkbox("Show grid lines", &mut self.show_grid_lines);
+        });
+
         if self.data.selection != Some(self.cur_selection) {
             return new_state;
         }
-
-        ui.text(&format!(
-            "Size: {}x{}",
-            self.data.cur_bg.size[0], self.data.cur_bg.size[1]
-        ));
 
         let (mut image_pos, image_size) = scale_to_fit(
             self.data.cur_bg.size[0] as f32 / self.data.cur_bg.size[1] as f32,

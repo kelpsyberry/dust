@@ -6,4 +6,4 @@ publish = false
 
 [dependencies]
 dust-core = { path = "../core" }
-proc-bitfield = { version = "0.0.2", features = ["nightly"] }
+proc-bitfield = { version = "0.1.0", features = ["nightly"] }

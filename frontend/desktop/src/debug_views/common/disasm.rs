@@ -2,7 +2,7 @@ use super::{
     y_pos::{SignedYPos, YPos, YPosRaw},
     RangeInclusive, Scrollbar,
 };
-use imgui::{Key, MouseButton, StyleColor, StyleVar, Ui, WindowFocusedFlags};
+use imgui::{Key, MouseButton, StyleColor, StyleVar, Ui, WindowHoveredFlags};
 use std::{fmt::Write, num::NonZeroU8};
 
 bitflags::bitflags! {
@@ -295,7 +295,7 @@ impl DisassemblyView {
     #[inline]
     pub fn handle_options_right_click(&mut self, ui: &Ui) {
         if self.flags.contains(Flags::SHOW_VIEW_OPTIONS)
-            && ui.is_window_focused_with_flags(WindowFocusedFlags::ROOT_AND_CHILD_WINDOWS)
+            && ui.is_window_hovered_with_flags(WindowHoveredFlags::ROOT_AND_CHILD_WINDOWS)
             && ui.is_mouse_clicked(MouseButton::Right)
         {
             ui.open_popup("options");

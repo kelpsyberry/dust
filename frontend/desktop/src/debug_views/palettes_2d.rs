@@ -274,7 +274,7 @@ impl View for Palettes2d {
                         .size([16.0, 16.0])
                         .build()
                     {
-                        ui.open_popup("##color_picker");
+                        ui.open_popup("color_picker");
                         *cur_color_index = i as u16;
                         *cur_color = rgb_5_to_rgb_f32(raw_color);
                     }
@@ -304,7 +304,7 @@ impl View for Palettes2d {
                 ),
             }
 
-            ui.popup("##color_picker", || {
+            ui.popup("color_picker", || {
                 if ui
                     .color_picker3_config(
                         &format!("Color {:#05X}", self.cur_color_index),

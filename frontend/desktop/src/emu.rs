@@ -49,6 +49,12 @@ pub struct SharedState {
 
 pub enum Message {
     UpdateInput(input::Changes),
+    #[cfg(feature = "debug-views")]
+    DebugViews(debug_views::Message),
+    CreateSavestate,
+    Reset,
+    Stop,
+
     UpdateSavePath(Option<PathBuf>),
     UpdateAudioSampleChunkSize(u16),
     #[cfg(feature = "xq-audio")]
@@ -56,11 +62,6 @@ pub enum Message {
     #[cfg(feature = "xq-audio")]
     UpdateAudioChannelInterpMethod(dust_core::audio::ChannelInterpMethod),
     UpdateSyncToAudio(bool),
-    #[cfg(feature = "debug-views")]
-    DebugViews(debug_views::Message),
-    CreateSavestate,
-    Reset,
-    Stop,
 }
 
 pub struct DsSlot {
@@ -72,7 +73,7 @@ pub struct DsSlot {
 fn setup_ds_slot(
     ds_slot: Option<DsSlot>,
     arm7_bios: &Option<Box<Bytes<{ arm7::BIOS_SIZE }>>>,
-    cur_save_path: &Option<PathBuf>,
+    save_path: &Option<PathBuf>,
     #[cfg(feature = "log")] logger: &slog::Logger,
 ) -> (ds_slot::rom::Rom, ds_slot::spi::Spi) {
     if let Some(ds_slot) = ds_slot {
@@ -85,7 +86,7 @@ fn setup_ds_slot(
         .unwrap()
         .into();
 
-        let save_contents = cur_save_path
+        let save_contents = save_path
             .as_deref()
             .and_then(|path| match File::open(path) {
                 Ok(mut save_file) => {
@@ -253,7 +254,7 @@ fn setup_ds_slot(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn main(
     config: CommonLaunchConfig,
-    mut cur_save_path: Option<PathBuf>,
+    mut save_path: Option<PathBuf>,
     ds_slot: Option<DsSlot>,
     audio_tx_data: Option<audio::SenderData>,
     mut frame_tx: triple_buffer::Sender<FrameData>,
@@ -268,7 +269,7 @@ pub(super) fn main(
     let (ds_slot_rom, ds_slot_spi) = setup_ds_slot(
         ds_slot,
         &config.sys_files.arm7_bios,
-        &cur_save_path,
+        &save_path,
         #[cfg(feature = "log")]
         &logger,
     );
@@ -331,7 +332,7 @@ pub(super) fn main(
 
     macro_rules! save {
         () => {
-            if let Some(save_path) = &cur_save_path {
+            if let Some(save_path) = &save_path {
                 if emu.ds_slot.spi.contents_dirty()
                     && save_path
                         .parent()
@@ -363,14 +364,14 @@ pub(super) fn main(
                 }
 
                 Message::UpdateSavePath(new_path) => {
-                    if let Some(prev_path) = cur_save_path {
+                    if let Some(prev_path) = save_path {
                         let _ = if let Some(new_path) = &new_path {
                             fs::rename(prev_path, new_path)
                         } else {
                             fs::remove_file(prev_path)
                         };
                     }
-                    cur_save_path = new_path;
+                    save_path = new_path;
                 }
 
                 Message::UpdateAudioSampleChunkSize(chunk_size) => {

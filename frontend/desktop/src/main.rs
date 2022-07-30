@@ -24,10 +24,10 @@ mod audio;
 mod config;
 #[cfg(feature = "debug-views")]
 mod debug_views;
+mod ds_slot_rom;
 mod game_db;
 pub mod input;
 mod triple_buffer;
-mod ds_slot_rom;
 use ds_slot_rom::DsSlotRom;
 
 mod emu;
