@@ -1,6 +1,6 @@
 pub use super::super::engines_common::*;
 
-use crate::cpu::psr::Cpsr;
+use crate::cpu::psr::Psr;
 
 static COND_TABLE: [u16; 0x10] = [
     0xF0F0, // EQ    (z)
@@ -21,16 +21,14 @@ static COND_TABLE: [u16; 0x10] = [
     0x0000, // NV    (false)
 ];
 
-impl Cpsr {
+impl Psr {
     #[inline]
     pub(super) fn satisfies_condition(self, condition: u8) -> bool {
         COND_TABLE[condition as usize] & 1 << (self.raw() >> 28) != 0
     }
 
     pub(super) fn copy_nzcv(&mut self, value: u32) {
-        *self = unsafe {
-            Cpsr::from_raw_unchecked((self.raw() & !0xF000_0000) | (value & 0xF000_0000))
-        };
+        *self = Psr::from_raw((self.raw() & !0xF000_0000) | (value & 0xF000_0000));
     }
 }
 

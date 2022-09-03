@@ -308,6 +308,7 @@ fn decode_rgb_5(value: u16, alpha: u8) -> Color {
     ])
 }
 
+#[inline(always)]
 fn rgb_5_to_6(value: Color) -> Color {
     value << Color::splat(1) | (value + Color::splat(0x1F)) >> Color::splat(5)
 }

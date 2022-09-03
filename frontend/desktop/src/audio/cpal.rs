@@ -1,4 +1,6 @@
-use super::{Interp, Receiver, DEFAULT_INPUT_SAMPLE_RATE, SAMPLE_RATE_ADJUSTMENT_RATIO};
+use super::{
+    Interp, InterpMethod, Receiver, DEFAULT_INPUT_SAMPLE_RATE, SAMPLE_RATE_ADJUSTMENT_RATIO,
+};
 use cpal::{
     default_host,
     platform::Stream,
@@ -23,6 +25,7 @@ struct SharedData {
 
 pub struct OutputStream {
     _stream: Stream,
+    interp_method: InterpMethod,
     interp_tx: crossbeam_channel::Sender<Box<dyn Interp>>,
     #[cfg(feature = "xq-audio")]
     output_sample_rate: u32,
@@ -40,7 +43,7 @@ fn sample_rate_ratio(custom_sample_rate: Option<NonZeroU32>, output_sample_rate:
 impl OutputStream {
     pub(super) fn new(
         rx: Receiver,
-        interp: Box<dyn Interp>,
+        interp_method: InterpMethod,
         volume: f32,
         #[cfg(feature = "xq-audio")] custom_sample_rate: Option<NonZeroU32>,
     ) -> Option<Self> {
@@ -65,7 +68,7 @@ impl OutputStream {
         let mut output_data = OutputData {
             rx,
             interp_rx,
-            interp,
+            interp: interp_method.create_interp(),
             shared_data: Arc::clone(&shared_data),
             #[cfg(not(feature = "xq-audio"))]
             sample_rate_ratio: DEFAULT_INPUT_SAMPLE_RATE as f64 * SAMPLE_RATE_ADJUSTMENT_RATIO
@@ -73,7 +76,7 @@ impl OutputStream {
             fract: 0.0,
         };
 
-        let err_callback = |err| panic!("Error in default audio output device stream: {}", err);
+        let err_callback = |err| panic!("Error in default audio output device stream: {err}");
         let stream = match supported_output_config.sample_format() {
             SampleFormat::U16 => output_device.build_output_stream(
                 &supported_output_config.config(),
@@ -96,6 +99,7 @@ impl OutputStream {
 
         Some(OutputStream {
             _stream: stream,
+            interp_method,
             interp_tx,
             #[cfg(feature = "xq-audio")]
             output_sample_rate,
@@ -103,14 +107,17 @@ impl OutputStream {
         })
     }
 
-    pub fn set_interp(&mut self, interp: Box<dyn Interp>) {
+    pub fn set_interp_method(&mut self, value: InterpMethod) {
+        if value == self.interp_method {
+            return;
+        }
         self.interp_tx
-            .send(interp)
+            .send(value.create_interp())
             .expect("Couldn't send new interpolator to audio thread");
     }
 
     #[cfg(feature = "xq-audio")]
-    pub fn set_custom_sample_rate(&mut self, value: Option<NonZeroU32>) {
+    pub(super) fn set_custom_sample_rate(&mut self, value: Option<NonZeroU32>) {
         self.shared_data.sample_rate_ratio.store(
             sample_rate_ratio(value, self.output_sample_rate).to_bits(),
             Ordering::Relaxed,

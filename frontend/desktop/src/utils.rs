@@ -1,124 +1,19 @@
 use std::{
-    env,
+    borrow::Cow,
+    env, fmt,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    str,
+    sync::{LazyLock, OnceLock},
 };
 
-macro_rules! format_list {
-    ($list: expr) => {
-        $list.into_iter().fold(String::new(), |mut acc, v| {
-            use std::fmt::Write;
-            let _ = write!(acc, "\n- {}", v);
-            acc
-        })
+macro_rules! style {
+    ($ui: expr, $ident: ident) => {
+        unsafe { $ui.style() }.$ident
     };
 }
-
-macro_rules! warning {
-    (yes_no, $title: expr, $($desc: tt)*) => {
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Warning)
-            .set_title($title)
-            .set_description(&format!($($desc)*))
-            .set_buttons(rfd::MessageButtons::YesNo)
-            .show()
-    };
-    ($title: expr, $($desc: tt)*) => {
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Warning)
-            .set_title($title)
-            .set_description(&format!($($desc)*))
-            .set_buttons(rfd::MessageButtons::Ok)
-            .show()
-    };
-}
-
-macro_rules! error {
-    (yes_no, $title: expr, $($desc: tt)*) => {
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Error)
-            .set_title($title)
-            .set_description(&format!($($desc)*))
-            .set_buttons(rfd::MessageButtons::YesNo)
-            .show()
-    };
-    ($title: expr, $($desc: tt)*) => {
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Error)
-            .set_title($title)
-            .set_description(&format!($($desc)*))
-            .set_buttons(rfd::MessageButtons::Ok)
-            .show()
-    };
-}
-
-macro_rules! config_error {
-    (yes_no, $($desc: tt)*) => {
-        error!(yes_no, "Configuration error", $($desc)*)
-    };
-    ($($desc: tt)*) => {
-        error!("Configuration error", $($desc)*)
-    };
-}
-
-#[allow(dead_code)]
-pub fn scale_to_fit(aspect_ratio: f32, frame_size: [f32; 2]) -> ([f32; 2], [f32; 2]) {
-    let width = (frame_size[1] * aspect_ratio).min(frame_size[0]);
-    let height = width / aspect_ratio;
-    (
-        [
-            (frame_size[0] - width) * 0.5,
-            (frame_size[1] - height) * 0.5,
-        ],
-        [width, height],
-    )
-}
-
-pub fn scale_to_fit_rotated(
-    mut orig_size: [f32; 2],
-    integer_scale: bool,
-    rot: f32,
-    frame_size: [f32; 2],
-) -> ([f32; 2], [[f32; 2]; 4]) {
-    let half_size = frame_size.map(|v| v * 0.5);
-    let (sin, cos) = rot.sin_cos();
-    let mut scale = f32::INFINITY;
-    let rotate_and_get_scale = |[x, y]: [f32; 2]| {
-        let rot_x = x * cos - y * sin;
-        let rot_y = x * sin + y * cos;
-        scale = scale
-            .min(half_size[0] / rot_x.abs())
-            .min(half_size[1] / rot_y.abs());
-        [rot_x, rot_y]
-    };
-    orig_size[0] *= 0.5;
-    orig_size[1] *= 0.5;
-    let rotated_rel_points = [
-        [-orig_size[0], -orig_size[1]],
-        [orig_size[0], -orig_size[1]],
-        orig_size,
-        [-orig_size[0], orig_size[1]],
-    ]
-    .map(rotate_and_get_scale);
-    if integer_scale && scale > 1.0 {
-        scale = scale.floor();
-    }
-    (
-        half_size,
-        rotated_rel_points.map(|point| {
-            [
-                point[0] * scale + half_size[0],
-                point[1] * scale + half_size[1],
-            ]
-        }),
-    )
-}
-
-static CONFIG_BASE: OnceLock<PathBuf> = OnceLock::new();
-
-static DATA_BASE: OnceLock<PathBuf> = OnceLock::new();
 
 pub fn config_base<'a>() -> &'a Path {
+    static CONFIG_BASE: OnceLock<PathBuf> = OnceLock::new();
     CONFIG_BASE.get_or_init(|| match env::var_os("XDG_CONFIG_HOME") {
         Some(config_dir) => Path::new(&config_dir).join("dust"),
         None => home::home_dir()
@@ -128,10 +23,127 @@ pub fn config_base<'a>() -> &'a Path {
 }
 
 pub fn data_base<'a>() -> &'a Path {
+    static DATA_BASE: OnceLock<PathBuf> = OnceLock::new();
     DATA_BASE.get_or_init(|| match env::var_os("XDG_DATA_HOME") {
         Some(data_home) => Path::new(&data_home).join("dust"),
         None => home::home_dir()
             .map(|home| home.join(".local/share/dust"))
             .unwrap_or_else(|| PathBuf::from("/.local/share/dust")),
     })
+}
+
+pub struct Lazy<T> {
+    value: Option<T>,
+}
+
+impl<T> Lazy<T> {
+    pub fn new() -> Self {
+        Lazy { value: None }
+    }
+
+    pub fn get(&mut self, f: impl FnOnce() -> T) -> &T {
+        self.value.get_or_insert_with(f)
+    }
+
+    pub fn invalidate(&mut self) {
+        self.value = None;
+    }
+}
+
+static HOME: LazyLock<Option<PathBuf>> = LazyLock::new(home::home_dir);
+
+struct HomePathBufVisitor;
+
+impl<'de> serde::de::Visitor<'de> for HomePathBufVisitor {
+    type Value = HomePathBuf;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("path string")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(From::from(v))
+    }
+
+    fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(From::from(v))
+    }
+
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        str::from_utf8(v)
+            .map(From::from)
+            .map_err(|_| E::invalid_value(serde::de::Unexpected::Bytes(v), &self))
+    }
+
+    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        String::from_utf8(v)
+            .map(From::from)
+            .map_err(|e| E::invalid_value(serde::de::Unexpected::Bytes(&e.into_bytes()), &self))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for HomePathBuf {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_string(HomePathBufVisitor)
+    }
+}
+
+impl serde::Serialize for HomePathBuf {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self.to_string() {
+            Some(s) => s.serialize(serializer),
+            None => Err(serde::ser::Error::custom(
+                "path contains invalid UTF-8 characters",
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HomePathBuf(pub PathBuf);
+
+impl HomePathBuf {
+    pub fn to_string(&self) -> Option<Cow<str>> {
+        if let Some(path) = HOME
+            .as_ref()
+            .and_then(|home_path| self.0.strip_prefix(home_path).ok())
+        {
+            path.to_str().map(|path| format!("~/{path}").into())
+        } else {
+            self.0.to_str().map(Into::into)
+        }
+    }
+}
+
+impl From<&str> for HomePathBuf {
+    fn from(other: &str) -> Self {
+        if let Some((home_path, path)) = HOME.as_ref().zip(other.strip_prefix("~/")) {
+            return HomePathBuf(home_path.join(PathBuf::from(path)));
+        }
+        HomePathBuf(PathBuf::from(other))
+    }
+}
+
+impl From<String> for HomePathBuf {
+    fn from(other: String) -> Self {
+        other.as_str().into()
+    }
 }

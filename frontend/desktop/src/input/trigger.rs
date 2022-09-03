@@ -7,14 +7,14 @@ use std::{
 };
 use winit::event::{ScanCode, VirtualKeyCode};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Op {
     And,
     Or,
     Xor,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "&str", into = "String")]
 pub enum Trigger {
     KeyCode(VirtualKeyCode),
@@ -59,10 +59,10 @@ impl ToString for Trigger {
         fn write_trigger(result: &mut String, trigger: &Trigger, needs_parens_if_multiple: bool) {
             match trigger {
                 &Trigger::KeyCode(key_code) => {
-                    write!(result, "v{:?}", key_code).unwrap();
+                    write!(result, "v{key_code:?}").unwrap();
                 }
                 &Trigger::ScanCode(scan_code, key_code) => {
-                    write!(result, "s{}v{:?}", scan_code, key_code).unwrap();
+                    write!(result, "s{scan_code}v{key_code:?}").unwrap();
                 }
                 Trigger::Not(trigger) => {
                     result.push('!');

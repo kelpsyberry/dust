@@ -7,7 +7,6 @@
     doc_cfg,
     maybe_uninit_uninit_array,
     maybe_uninit_slice,
-    label_break_value,
     portable_simd,
     const_mut_refs,
     const_trait_impl,
@@ -33,6 +32,7 @@
     clippy::must_use_candidate,
     clippy::unused_self,
     clippy::missing_errors_doc,
+    clippy::inline_always,
     clippy::if_same_then_else, // False positives
 )]
 
@@ -49,26 +49,27 @@ pub mod rtc;
 pub mod spi;
 pub mod wifi;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Model {
     Ds,
+    #[default]
     Lite,
     Ique,
     IqueLite,
     Dsi,
 }
 
-impl Default for Model {
-    fn default() -> Self {
-        Model::Lite
-    }
-}
-
 #[derive(Clone)]
 pub enum SaveContents {
     Existing(utils::BoxedByteSlice),
     New(usize),
+}
+
+#[derive(Clone)]
+pub enum SaveReloadContents {
+    Existing(utils::BoxedByteSlice),
+    New,
 }
 
 impl From<utils::BoxedByteSlice> for SaveContents {

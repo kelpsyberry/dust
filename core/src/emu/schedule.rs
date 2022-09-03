@@ -7,18 +7,12 @@ pub const DEFAULT_BATCH_DURATION: u32 = 64;
 
 def_timestamp!(#[derive(Savestate)] pub struct Timestamp);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Savestate)]
 pub enum Event {
-    Gpu(gpu::Event),         // Max 1
-    Shutdown,                // Max 1
+    Gpu(gpu::Event), // Max 1
+    #[default]
+    Shutdown, // Max 1
     Engine3dCommandFinished, // Max 1
-}
-
-impl Default for Event {
-    #[inline]
-    fn default() -> Self {
-        Event::Gpu(gpu::Event::EndHDraw)
-    }
 }
 
 def_event_slots! {

@@ -1,4 +1,5 @@
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use core::any::Any;
 use dust_core::rtc::{self, Date, Time};
 
 pub struct Backend {
@@ -11,9 +12,25 @@ impl Backend {
             time_offset: Duration::seconds(time_offset_secondss),
         }
     }
+
+    pub fn time_offset_seconds(&self) -> i64 {
+        self.time_offset.num_seconds()
+    }
+
+    pub fn set_time_offset_seconds(&mut self, value: i64) {
+        self.time_offset = Duration::seconds(value);
+    }
 }
 
 impl rtc::Backend for Backend {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn get_time(&mut self) -> Time {
         let date_time = Local::now() + self.time_offset;
         Time {

@@ -1,7 +1,7 @@
 pub mod bus;
 pub mod psr;
-mod schedule;
-pub(crate) use schedule::Schedule;
+pub mod schedule;
+pub(crate) use schedule::{Schedule, ScheduleConst};
 mod irqs;
 pub(crate) use irqs::Irqs;
 #[cfg(any(feature = "debugger-hooks", doc))]
@@ -23,7 +23,7 @@ use crate::{
     emu::Emu,
     utils::{LoadableInPlace, Savestate, Storable},
 };
-use psr::{Cpsr, Spsr};
+use psr::Psr;
 
 pub trait Engine: Sized + LoadableInPlace + Storable {
     type GlobalData: LoadableInPlace + Storable;
@@ -36,19 +36,19 @@ pub trait Engine: Sized + LoadableInPlace + Storable {
 #[derive(Clone, Debug, Savestate)]
 pub struct Regs {
     pub gprs: [u32; 16],
-    pub spsr: Spsr,
+    pub spsr: Psr,
     pub r8_14_fiq: [u32; 7],
     pub r8_12_other: [u32; 5],
     pub r13_14_irq: [u32; 2],
     pub r13_14_svc: [u32; 2],
     pub r13_14_abt: [u32; 2],
     pub r13_14_und: [u32; 2],
-    pub r13_14_user: [u32; 2],
-    pub spsr_fiq: Spsr,
-    pub spsr_irq: Spsr,
-    pub spsr_svc: Spsr,
-    pub spsr_abt: Spsr,
-    pub spsr_und: Spsr,
+    pub r13_14_sys: [u32; 2],
+    pub spsr_fiq: Psr,
+    pub spsr_irq: Psr,
+    pub spsr_svc: Psr,
+    pub spsr_abt: Psr,
+    pub spsr_und: Psr,
 }
 
 pub trait CoreData {
@@ -64,8 +64,8 @@ pub trait CoreData {
 
     fn jump(emu: &mut Emu<Self::Engine>, addr: u32);
     fn r15(&self) -> u32;
-    fn cpsr(&self) -> Cpsr;
-    fn set_cpsr(emu: &mut Emu<Self::Engine>, value: Cpsr);
+    fn cpsr(&self) -> Psr;
+    fn set_cpsr(emu: &mut Emu<Self::Engine>, value: Psr);
     fn regs(&self) -> Regs;
     fn set_regs(emu: &mut Emu<Self::Engine>, values: &Regs);
 

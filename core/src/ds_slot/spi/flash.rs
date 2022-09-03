@@ -1,4 +1,4 @@
-use crate::{flash, utils::Savestate, SaveContents};
+use crate::{flash, utils::Savestate, SaveContents, SaveReloadContents};
 
 pub type Status = flash::Status;
 
@@ -101,6 +101,17 @@ impl super::SpiDevice for Flash {
 
     fn contents_mut(&mut self) -> emu_utils::ByteMutSlice {
         self.contents.contents_mut()
+    }
+
+    fn reload_contents(&mut self, contents: SaveReloadContents) {
+        match contents {
+            SaveReloadContents::Existing(contents) => {
+                let mut contents_ = self.contents.contents_mut();
+                contents_[..contents.len()].copy_from_slice(&contents[..]);
+                contents_[contents.len()..].fill(0);
+            }
+            SaveReloadContents::New => self.contents.contents_mut().fill(0xFF),
+        }
     }
 
     fn contents_dirty(&self) -> bool {

@@ -263,10 +263,8 @@ pub fn create_emu_state(
                     #[cfg(feature = "log")]
                     slog::error!(
                         logger,
-                        concat!(
-                            "Unrecognized save file size ({} B) and no database entry found, ",
-                            "defaulting to an empty save.",
-                        ),
+                        "Unrecognized save file size ({} B) and no database entry found, \
+                         defaulting to an empty save.",
                         save_contents.len()
                     );
                     SaveType::None
@@ -278,10 +276,8 @@ pub fn create_emu_state(
                 #[cfg(feature = "log")]
                 slog::error!(
                     logger,
-                    concat!(
-                        "No existing save file present and no database entry found, defaulting to ",
-                        "an empty save.",
-                    )
+                    "No existing save file present and no database entry found, defaulting to an \
+                     empty save.",
                 );
                 SaveType::None
             })

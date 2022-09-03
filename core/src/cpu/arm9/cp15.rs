@@ -839,10 +839,8 @@ impl Cp15 {
         );
         assert!(
             size >= Ptrs::PAGE_SIZE.max(Timings::PAGE_SIZE) as u64,
-            concat!(
-                "Specified a DTCM size that can't be handled by the emulator: {:#X} (the ",
-                "minimum TCM size is defined as {:#X})",
-            ),
+            "Specified a DTCM size that can't be handled by the emulator: {:#X} (the minimum TCM \
+             size is defined as {:#X})",
             size,
             Ptrs::PAGE_SIZE.max(Timings::PAGE_SIZE),
         );
@@ -936,10 +934,8 @@ impl Cp15 {
         let size = self.itcm_control.size();
         assert!(
             size >= Ptrs::PAGE_SIZE.max(Timings::PAGE_SIZE) as u64,
-            concat!(
-                "Specified an ITCM size that can't be handled by the emulator: {:#X} (the ",
-                "minimum TCM size is defined as {:#X})",
-            ),
+            "Specified an ITCM size that can't be handled by the emulator: {:#X} (the minimum TCM \
+             size is defined as {:#X})",
             size,
             Ptrs::PAGE_SIZE.max(Timings::PAGE_SIZE),
         );
@@ -1402,10 +1398,8 @@ impl Cp15 {
                     let size = new_setting.size();
                     assert!(
                         base_addr & (size - 1) as u32 == 0,
-                        concat!(
-                            "Unpredictable misaligned PU region {} base address specified: ",
-                            "{:#010X} (size is {:#X})"
-                        ),
+                        "Unpredictable misaligned PU region {} base address specified: {:#010X} \
+                         (size is {:#X})",
                         region_i,
                         base_addr,
                         size,
@@ -1413,10 +1407,8 @@ impl Cp15 {
                     #[cfg(feature = "pu-checks")]
                     assert!(
                         size >= PermMap::PAGE_SIZE.max(Timings::PAGE_SIZE) as u64,
-                        concat!(
-                            "Specified a PU region size that can't be handled by the emulator: ",
-                            "{:#X} (the minimum PU region size is defined as {:#X})",
-                        ),
+                        "Specified a PU region size that can't be handled by the emulator: {:#X} \
+                         (the minimum PU region size is defined as {:#X})",
                         size,
                         PermMap::PAGE_SIZE.max(Timings::PAGE_SIZE),
                     );

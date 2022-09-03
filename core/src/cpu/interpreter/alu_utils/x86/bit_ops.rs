@@ -1,13 +1,13 @@
 use super::super::super::Regs;
-use crate::cpu::psr::Cpsr;
+use crate::cpu::psr::Psr;
 
 pub fn set_nz(regs: &mut Regs, value: u32) {
     tst(regs, value, value);
 }
 
 pub fn set_nz_64(regs: &mut Regs, value: u64) {
+    let flags: u32;
     unsafe {
-        let flags: u32;
         core::arch::asm!(
             "test {value:r}, {value:r}",
             "lahf",
@@ -17,14 +17,14 @@ pub fn set_nz_64(regs: &mut Regs, value: u64) {
             lateout("eax") flags,
             options(pure, nomem, nostack),
         );
-        regs.cpsr = Cpsr::from_raw_unchecked((regs.cpsr.raw() & !0xC000_0000) | flags);
     }
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0xC000_0000) | flags);
 }
 
 pub fn and_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
+    let result: u32;
+    let flags: u32;
     unsafe {
-        let result: u32;
-        let flags: u32;
         core::arch::asm!(
             "and {a_res:e}, {b:e}",
             "lahf",
@@ -35,14 +35,14 @@ pub fn and_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
             lateout("eax") flags,
             options(pure, nomem, nostack),
         );
-        regs.cpsr = Cpsr::from_raw_unchecked((regs.cpsr.raw() & !0xC000_0000) | flags);
-        result
     }
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0xC000_0000) | flags);
+    result
 }
 
 pub fn tst(regs: &mut Regs, a: u32, b: u32) {
+    let flags: u32;
     unsafe {
-        let flags: u32;
         core::arch::asm!(
             "test {a:e}, {b:e}",
             "lahf",
@@ -53,14 +53,14 @@ pub fn tst(regs: &mut Regs, a: u32, b: u32) {
             lateout("eax") flags,
             options(pure, nomem, nostack),
         );
-        regs.cpsr = Cpsr::from_raw_unchecked((regs.cpsr.raw() & !0xC000_0000) | flags);
     }
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0xC000_0000) | flags);
 }
 
 pub fn eor_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
+    let result: u32;
+    let flags: u32;
     unsafe {
-        let result: u32;
-        let flags: u32;
         core::arch::asm!(
             "xor {a_res:e}, {b:e}",
             "lahf",
@@ -71,9 +71,9 @@ pub fn eor_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
             lateout("eax") flags,
             options(pure, nomem, nostack),
         );
-        regs.cpsr = Cpsr::from_raw_unchecked((regs.cpsr.raw() & !0xC000_0000) | flags);
-        result
     }
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0xC000_0000) | flags);
+    result
 }
 
 pub fn teq(regs: &mut Regs, a: u32, b: u32) {
@@ -81,9 +81,9 @@ pub fn teq(regs: &mut Regs, a: u32, b: u32) {
 }
 
 pub fn orr_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
+    let result: u32;
+    let flags: u32;
     unsafe {
-        let result: u32;
-        let flags: u32;
         core::arch::asm!(
             "or {a_res:e}, {b:e}",
             "lahf",
@@ -94,15 +94,15 @@ pub fn orr_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
             lateout("eax") flags,
             options(pure, nomem, nostack),
         );
-        regs.cpsr = Cpsr::from_raw_unchecked((regs.cpsr.raw() & !0xC000_0000) | flags);
-        result
     }
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0xC000_0000) | flags);
+    result
 }
 
 pub fn bic_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
+    let result: u32;
+    let flags: u32;
     unsafe {
-        let result: u32;
-        let flags: u32;
         #[cfg(target_feature = "bmi1")]
         core::arch::asm!(
             "andn {res:e}, {b:e}, {a:e}",
@@ -126,7 +126,7 @@ pub fn bic_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
             lateout("eax") flags,
             options(pure, nomem, nostack),
         );
-        regs.cpsr = Cpsr::from_raw_unchecked((regs.cpsr.raw() & !0xC000_0000) | flags);
-        result
     }
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0xC000_0000) | flags);
+    result
 }

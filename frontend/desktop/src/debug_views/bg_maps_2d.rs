@@ -1,7 +1,8 @@
 use super::{common::rgb_5_to_rgba_8, FrameDataSlot, InstanceableView, Messages, View};
-use crate::{
-    ui::{imgui_wgpu, window::Window},
-    utils::scale_to_fit,
+use crate::ui::{
+    imgui_wgpu,
+    utils::{combo_value, scale_to_fit},
+    window::Window,
 };
 use dust_core::{
     cpu,
@@ -15,13 +16,13 @@ use dust_core::{
 use imgui::{Image, MouseButton, SliderFlags, StyleColor, TextureId, Ui, WindowHoveredFlags};
 use std::slice;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Engine2d {
     A,
     B,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum BgDisplayMode {
     Text16,
     Text256,
@@ -32,7 +33,7 @@ enum BgDisplayMode {
     LargeBitmap,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Selection {
     engine: Engine2d,
     bg_index: BgIndex,
@@ -40,7 +41,7 @@ pub struct Selection {
     display_mode: Option<BgDisplayMode>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 struct BgData {
     display_mode: BgDisplayMode,
     uses_ext_palettes: bool,
@@ -464,7 +465,7 @@ impl View for BgMaps2d {
         window
     }
 
-    fn render(
+    fn draw(
         &mut self,
         ui: &Ui,
         window: &mut Window,
@@ -478,10 +479,9 @@ impl View for BgMaps2d {
         }
 
         let mut selection_updated = false;
-        let style = unsafe { ui.style() };
 
         let content_width = ui.content_region_avail()[0];
-        let two_widgets_total_width = content_width - style.item_spacing[0];
+        let two_widgets_total_width = content_width - style!(ui, item_spacing)[0];
 
         ui.set_next_item_width(two_widgets_total_width * (1.0 / 3.0));
         let mut cur_engine = self.cur_selection.engine as u8;
@@ -520,7 +520,8 @@ impl View for BgMaps2d {
         ui.text("Mode:");
         ui.same_line();
         ui.set_next_item_width(
-            ui.content_region_avail()[0] - (two_widgets_total_width * 0.5 + style.item_spacing[0]),
+            ui.content_region_avail()[0]
+                - (two_widgets_total_width * 0.5 + style!(ui, item_spacing)[0]),
         );
 
         static BG_DISPLAY_MODES: [Option<BgDisplayMode>; 8] = [
@@ -534,13 +535,10 @@ impl View for BgMaps2d {
             Some(BgDisplayMode::LargeBitmap),
         ];
 
-        let mut display_mode_index = BG_DISPLAY_MODES
-            .iter()
-            .position(|v| *v == self.cur_selection.display_mode)
-            .unwrap();
-        let display_mode_updated = ui.combo(
+        selection_updated |= combo_value(
+            ui,
             "##display_mode",
-            &mut display_mode_index,
+            &mut self.cur_selection.display_mode,
             &BG_DISPLAY_MODES,
             |display_mode: &Option<BgDisplayMode>| {
                 let label_display_mode = |display_mode| match display_mode {
@@ -562,10 +560,6 @@ impl View for BgMaps2d {
                 }
             },
         );
-        if display_mode_updated {
-            self.cur_selection.display_mode = BG_DISPLAY_MODES[display_mode_index];
-            selection_updated = true;
-        }
 
         ui.same_line();
         ui.text("Use ext palettes:");
@@ -574,13 +568,10 @@ impl View for BgMaps2d {
 
         static EXT_PALETTE_SETTINGS: [Option<bool>; 3] = [None, Some(true), Some(false)];
 
-        let mut use_ext_palettes_index = EXT_PALETTE_SETTINGS
-            .iter()
-            .position(|v| *v == self.cur_selection.use_ext_palettes)
-            .unwrap();
-        let use_ext_palettes_updated = ui.combo(
+        selection_updated |= combo_value(
+            ui,
             "##ext_palettes",
-            &mut use_ext_palettes_index,
+            &mut self.cur_selection.use_ext_palettes,
             &EXT_PALETTE_SETTINGS,
             |use_ext_palettes: &Option<bool>| match use_ext_palettes {
                 None => format!(
@@ -596,10 +587,6 @@ impl View for BgMaps2d {
                 Some(false) => "No".into(),
             },
         );
-        if use_ext_palettes_updated {
-            self.cur_selection.use_ext_palettes = EXT_PALETTE_SETTINGS[use_ext_palettes_index];
-            selection_updated = true;
-        }
 
         let new_state = if selection_updated {
             Some(self.cur_selection)
@@ -637,7 +624,7 @@ impl View for BgMaps2d {
             self.data.cur_bg.size[0] as f32 / self.data.cur_bg.size[1] as f32,
             ui.content_region_avail(),
         );
-        image_pos[0] += style.window_padding[0];
+        image_pos[0] += style!(ui, window_padding)[0];
         image_pos[1] += ui.cursor_pos()[1];
         ui.set_cursor_pos(image_pos);
         Image::new(self.tex_id, image_size)
@@ -703,13 +690,13 @@ impl View for BgMaps2d {
                         image.build(ui);
                     } else {
                         let tile = self.data.tiles.read_le::<u16>(map_entry_index << 1);
-                        ui.text(&format!("Tile {:#05X}", tile & 0x3FF,));
+                        ui.text(&format!("Tile {:#05X}", tile & 0x3FF));
                         image.build(ui);
                         ui.align_text_to_frame_padding();
                         ui.text("Flip: ");
                         ui.same_line();
                         ui.checkbox("X", &mut (tile & 0x400 != 0));
-                        ui.same_line_with_spacing(0.0, style.item_spacing[0] + 4.0);
+                        ui.same_line_with_spacing(0.0, style!(ui, item_spacing)[0] + 4.0);
                         ui.checkbox("Y", &mut (tile & 0x800 != 0));
                         if self.data.cur_bg.display_mode == BgDisplayMode::Text16
                             || self.data.cur_bg.uses_ext_palettes
@@ -897,7 +884,7 @@ impl View for BgMaps2d {
             unsafe {
                 slice::from_raw_parts(self.pixel_buffer.as_ptr() as *const u8, 1024 * 1024 * 4)
             },
-            imgui_wgpu::TextureRange {
+            imgui_wgpu::TextureSetRange {
                 width: Some(self.data.cur_bg.size[0] as u32),
                 height: Some(self.data.cur_bg.size[1] as u32),
                 ..Default::default()

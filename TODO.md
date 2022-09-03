@@ -4,7 +4,7 @@
     - Misc loads/stores with P == 0 && W == 1
     - Modifying reserved bits in the SPSRs
     - SPSR restores in non-exception modes
-    - CPSR invalid modes
+    - CPSR invalid modes on the ARM7
     - Bus conflict after user-mode LDMs/STMs
     - Interaction between user-mode LDMs/STMs (S bit set, when not loading r15) and writeback (W bit set)
     - MCRR/MRRC, both on the ARM9 and on the ARM7 (even though the latter's architecture doesn't support them)
@@ -53,7 +53,6 @@
     - Exact behavior of VCOUNT writes, and especially their interaction with the 3D engine
     - Behavior of the unused DISPCNT bits for engine B
     - Invalid VRAMCNT_x MST values behavior
-    - MASTER_BRIGHT mode 3 behavior
 - RTC:
     - Response when reading beyond the end of a register
     - Behavior when starting a transfer with a byte read

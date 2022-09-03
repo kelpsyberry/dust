@@ -2,10 +2,9 @@ use imgui::{StyleColor, Ui};
 
 pub fn regs_32_default_label(i: usize, max_digits: u32) -> String {
     format!(
-        "r{}: {:<len$}",
-        i,
+        "r{i}: {:<len$}",
         "",
-        len = (max_digits - i.log10()) as usize
+        len = (max_digits - i.ilog10()) as usize
     )
 }
 
@@ -17,9 +16,8 @@ pub fn regs_32(
     mut label: impl FnMut(usize, u32) -> String,
     mut f: impl FnMut(usize),
 ) {
-    let reg_32_bit_width =
-        unsafe { ui.style().frame_padding[0] } * 2.0 + ui.calc_text_size("00000000")[0];
-    let max_digits = (start_i + values.len()).log10();
+    let reg_32_bit_width = style!(ui, frame_padding)[0] * 2.0 + ui.calc_text_size("00000000")[0];
+    let max_digits = (start_i + values.len()).ilog10();
     let mut i = start_i;
     for value in values {
         f(i);
@@ -27,9 +25,9 @@ pub fn regs_32(
         ui.text(label(i, max_digits));
         ui.same_line();
         ui.set_next_item_width(reg_32_bit_width);
-        let mut buffer = format!("{:08X}", value);
+        let mut buffer = format!("{value:08X}");
         if ui
-            .input_text(&format!("##r{}", i), &mut buffer)
+            .input_text(&format!("##r{i}"), &mut buffer)
             .enter_returns_true(true)
             .auto_select_all(true)
             .chars_hexadecimal(true)
@@ -62,7 +60,7 @@ pub fn bitfield(
     let mut field_widths: Vec<f32> = vec![];
     let mut total_bits = 0;
     {
-        let frame_padding = 2.0 * unsafe { ui.style().frame_padding[0] };
+        let frame_padding = 2.0 * style!(ui, frame_padding)[0];
         for cmd in cmds.iter().rev() {
             match cmd {
                 BitfieldCommand::Field(name, bits) => {
@@ -98,10 +96,6 @@ pub fn bitfield(
     }
 
     let mut field_i = 0;
-    let (frame_rounding, frame_padding_y) = unsafe {
-        let style = ui.style();
-        (style.frame_rounding, style.frame_padding[1])
-    };
     let text_color = ui.style_color(StyleColor::Text);
     let text_disabled_color = ui.style_color(StyleColor::TextDisabled);
     let field_bg_color = ui.style_color(StyleColor::FrameBg);
@@ -132,7 +126,7 @@ pub fn bitfield(
                         $bg_color,
                     )
                     .filled(true)
-                    .rounding(frame_rounding)
+                    .rounding(style!(ui, frame_rounding))
                     .build();
                 cur_bit -= $bits;
                 if $show_value {
@@ -145,7 +139,7 @@ pub fn bitfield(
                     draw_list.add_text(
                         [
                             upper_left[0] + 0.5 * (field_width - text_width),
-                            upper_left[1] + frame_padding_y,
+                            upper_left[1] + style!(ui, frame_padding)[1],
                         ],
                         $text_color,
                         &text,

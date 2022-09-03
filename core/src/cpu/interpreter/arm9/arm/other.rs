@@ -9,7 +9,7 @@ use crate::{
         bus::CpuAccess,
         hle_bios,
         interpreter::Interpreter,
-        psr::Cpsr,
+        psr::Psr,
     },
     emu::Emu,
 };
@@ -47,17 +47,16 @@ pub fn msr<const IMM: bool, const SPSR: bool>(emu: &mut Emu<Interpreter>, instr:
     if emu.arm9.engine_data.regs.is_in_priv_mode() && instr & 1 << 16 != 0 {
         add_bus_cycles(emu, 1);
         add_cycles(emu, 2);
-        mask |= 0x0000_00FF;
+        mask |= 0x0000_00EF;
     }
     if SPSR {
-        update_spsr!(emu.arm9, true, mask, value);
+        update_spsr!(emu.arm9, mask, value);
     } else {
-        if mask & value & 0x20 != 0 {
-            unimplemented!("msr CPSR T bit change");
-        }
+        #[cfg(not(feature = "interp-pipeline-accurate-reloads"))]
+        assert!(mask & value & 0x20 == 0, "msr CPSR T bit change");
         set_cpsr_update_control(
             emu,
-            Cpsr::from_raw::<true>((emu.arm9.engine_data.regs.cpsr.raw() & !mask) | (value & mask)),
+            Psr::from_raw((emu.arm9.engine_data.regs.cpsr.raw() & !mask) | (value & mask)),
         );
     }
 }

@@ -1,10 +1,10 @@
 use super::super::super::Regs;
-use crate::cpu::psr::Cpsr;
+use crate::cpu::psr::Psr;
 
 pub fn add_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
+    let result: u32;
+    let flags: u32;
     unsafe {
-        let result: u32;
-        let flags: u32;
         core::arch::asm!(
             "add {a_res:e}, {b:e}",
             "lahf",
@@ -18,9 +18,9 @@ pub fn add_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
             lateout("eax") flags,
             options(pure, nomem, nostack),
         );
-        regs.cpsr = Cpsr::from_raw_unchecked((regs.cpsr.raw() & 0x0FFF_FFFF) | flags);
-        result
     }
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & 0x0FFF_FFFF) | flags);
+    result
 }
 
 pub fn cmn(regs: &mut Regs, a: u32, b: u32) {
@@ -28,8 +28,8 @@ pub fn cmn(regs: &mut Regs, a: u32, b: u32) {
 }
 
 pub fn adc(regs: &Regs, a: u32, b: u32) -> u32 {
+    let result;
     unsafe {
-        let result;
         core::arch::asm!(
             "bt {cpsr:e}, 29",
             "adc {a_res:e}, {b:e}",
@@ -38,15 +38,15 @@ pub fn adc(regs: &Regs, a: u32, b: u32) -> u32 {
             cpsr = in(reg) regs.cpsr.raw(),
             options(pure, nomem, nostack),
         );
-        result
     }
+    result
 }
 
 pub fn adc_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
+    let result: u32;
+    let flags: u32;
+    let cpsr = regs.cpsr.raw();
     unsafe {
-        let result: u32;
-        let flags: u32;
-        let cpsr = regs.cpsr.raw();
         core::arch::asm!(
             "bt {cpsr:e}, 29",
             "adc {a_res:e}, {b:e}",
@@ -62,15 +62,15 @@ pub fn adc_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
             lateout("eax") flags,
             options(pure, nomem, nostack),
         );
-        regs.cpsr = Cpsr::from_raw_unchecked((cpsr & 0x0FFF_FFFF) | flags);
-        result
     }
+    regs.cpsr = Psr::from_raw((cpsr & 0x0FFF_FFFF) | flags);
+    result
 }
 
 pub fn sub_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
+    let result: u32;
+    let flags: u32;
     unsafe {
-        let result: u32;
-        let flags: u32;
         core::arch::asm!(
             "sub {a_res:e}, {b:e}",
             "cmc",
@@ -85,14 +85,14 @@ pub fn sub_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
             lateout("eax") flags,
             options(pure, nomem, nostack),
         );
-        regs.cpsr = Cpsr::from_raw_unchecked((regs.cpsr.raw() & 0x0FFF_FFFF) | flags);
-        result
     }
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & 0x0FFF_FFFF) | flags);
+    result
 }
 
 pub fn cmp(regs: &mut Regs, a: u32, b: u32) {
+    let flags: u32;
     unsafe {
-        let flags: u32;
         core::arch::asm!(
             "cmp {a:e}, {b:e}",
             "cmc",
@@ -107,6 +107,6 @@ pub fn cmp(regs: &mut Regs, a: u32, b: u32) {
             lateout("eax") flags,
             options(pure, nomem, nostack),
         );
-        regs.cpsr = Cpsr::from_raw_unchecked((regs.cpsr.raw() & 0x0FFF_FFFF) | flags);
     }
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & 0x0FFF_FFFF) | flags);
 }

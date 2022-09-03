@@ -1,13 +1,13 @@
+use ahash::AHashMap as HashMap;
 use imgui::internal::RawWrapper;
 use std::{
-    collections::HashMap,
     mem::size_of,
     num::{NonZeroU32, NonZeroU64},
     slice,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct TextureRange {
+pub struct TextureSetRange {
     pub mip_level: u32,
     pub x: u32,
     pub y: u32,
@@ -236,7 +236,7 @@ impl Texture {
         &self.bind_group
     }
 
-    pub fn set_data(&mut self, queue: &wgpu::Queue, data: &[u8], range: TextureRange) {
+    pub fn set_data(&self, queue: &wgpu::Queue, data: &[u8], range: TextureSetRange) {
         queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &self.texture,
@@ -285,7 +285,7 @@ pub struct Renderer {
 
 impl Renderer {
     fn rebuild_fs(device: &wgpu::Device, srgb: bool) -> wgpu::ShaderModule {
-        device.create_shader_module(&if srgb {
+        device.create_shader_module(if srgb {
             wgpu::include_spirv!("../../shaders/out/imgui-srgb.frag.spv")
         } else {
             wgpu::include_spirv!("../../shaders/out/imgui-linear.frag.spv")
@@ -341,7 +341,7 @@ impl Renderer {
             fragment: Some(wgpu::FragmentState {
                 module: fs,
                 entry_point: "main",
-                targets: &[wgpu::ColorTargetState {
+                targets: &[Some(wgpu::ColorTargetState {
                     format: output_format,
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent {
@@ -356,7 +356,7 @@ impl Renderer {
                         },
                     }),
                     write_mask: wgpu::ColorWrites::all(),
-                }],
+                })],
             }),
             multiview: None,
         })
@@ -434,7 +434,7 @@ impl Renderer {
             push_constant_ranges: &[],
         });
         let vs =
-            device.create_shader_module(&wgpu::include_spirv!("../../shaders/out/imgui.vert.spv"));
+            device.create_shader_module(wgpu::include_spirv!("../../shaders/out/imgui.vert.spv"));
         let fs = Self::rebuild_fs(device, output_format.describe().srgb);
         let pipeline = Self::rebuild_pipeline(device, &pipeline_layout, &vs, &fs, output_format);
 
@@ -482,7 +482,7 @@ impl Renderer {
 
     #[inline]
     pub fn create_texture(
-        &mut self,
+        &self,
         device: &wgpu::Device,
         sampler_desc: &wgpu::SamplerDescriptor,
         texture_desc: TextureDescriptor,
@@ -531,7 +531,7 @@ impl Renderer {
         }
         let fonts = imgui.fonts();
         let font_atlas = fonts.build_rgba32_texture();
-        let mut font_texture = self.create_texture(
+        let font_texture = self.create_texture(
             device,
             &wgpu::SamplerDescriptor {
                 label: Some("imgui font atlas sampler"),
@@ -550,7 +550,7 @@ impl Renderer {
                 ..Default::default()
             },
         );
-        font_texture.set_data(queue, font_atlas.data, TextureRange::default());
+        font_texture.set_data(queue, font_atlas.data, TextureSetRange::default());
         fonts.clear_tex_data();
         self.textures.insert(font_tex_id, font_texture);
     }
@@ -565,14 +565,14 @@ impl Renderer {
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
-            color_attachments: &[wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: frame,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                     store: true,
                 },
-            }],
+            })],
             depth_stencil_attachment: None,
         });
 

@@ -140,7 +140,7 @@ impl Tsc {
             6 => {
                 if value.single_ended_mode() {
                     #[cfg(feature = "log")]
-                    slog::warn!(
+                    slog::debug!(
                         self.logger,
                         "Reading from unimplemented channel 6 (mic input)"
                     );

@@ -4,6 +4,7 @@ use super::common::{read_bg_text_tiles, TextTiles};
 use super::*;
 use core::arch::x86_64::*;
 
+#[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
 unsafe fn rgb_15_to_18_data() -> [__m256i; 3] {
     [
         _mm256_set1_epi64x(0x3E),
@@ -12,6 +13,7 @@ unsafe fn rgb_15_to_18_data() -> [__m256i; 3] {
     ]
 }
 
+#[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
 unsafe fn rgb_15_to_18(values: __m256i, data: [__m256i; 3]) -> __m256i {
     _mm256_or_si256(
         _mm256_or_si256(
@@ -22,7 +24,8 @@ unsafe fn rgb_15_to_18(values: __m256i, data: [__m256i; 3]) -> __m256i {
     )
 }
 
-pub fn render_scanline_bg_text<R: Role>(
+#[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
+pub unsafe fn render_scanline_bg_text<R: Role>(
     engine: &mut Engine2d<R>,
     bg_index: BgIndex,
     line: u8,

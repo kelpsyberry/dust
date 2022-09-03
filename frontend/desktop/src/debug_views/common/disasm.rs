@@ -165,11 +165,13 @@ impl DisassemblyView {
             return;
         }
 
-        let style = unsafe { ui.style() };
+        let item_spacing = style!(ui, item_spacing);
+        let frame_padding = style!(ui, frame_padding);
+        let scrollbar_size = style!(ui, scrollbar_size);
 
         let disasm_line_height = ui.text_line_height();
         let disasm_line_height_with_spacing_int: YPos =
-            (disasm_line_height + style.item_spacing[1]).into();
+            (disasm_line_height + item_spacing[1]).into();
         let disasm_line_height_with_spacing = disasm_line_height_with_spacing_int.into();
 
         let addr_digits = self.addr_digits.unwrap_or_else(|| {
@@ -182,25 +184,25 @@ impl DisassemblyView {
             addr_digits = addr_digits.get() as usize
         ))[0];
 
-        let v_spacer_width = style.item_spacing[0].max(ui.calc_text_size("0")[0]);
+        let v_spacer_width = item_spacing[0].max(ui.calc_text_size("0")[0]);
 
         let opcodes_start_win_x = addr_width + v_spacer_width;
         let win_width = ui.window_content_region_max()[0] - ui.window_content_region_min()[0];
-        let scrollbar_start_win_x = win_width - style.scrollbar_size;
+        let scrollbar_start_win_x = win_width - scrollbar_size;
 
         let mut x_remaining = win_width;
         let mut line_height = 0.0;
-        let mut footer_height = style.item_spacing[1] * 2.0;
+        let mut footer_height = item_spacing[1] * 2.0;
         if self.flags.contains(Flags::SHOW_VIEW_OPTIONS) {
             let options_size = {
                 let size = ui.calc_text_size("Options...");
                 [
-                    size[0] + style.frame_padding[0] * 2.0,
-                    size[1] + style.frame_padding[1] * 2.0,
+                    size[0] + frame_padding[0] * 2.0,
+                    size[1] + frame_padding[1] * 2.0,
                 ]
             };
             line_height = options_size[1];
-            x_remaining -= options_size[0] + style.item_spacing[0];
+            x_remaining -= options_size[0] + item_spacing[0];
         }
         let range_width = if self.flags.contains(Flags::SHOW_RANGE) {
             let range_size = ui.calc_text_size(str_buf!(
@@ -212,11 +214,11 @@ impl DisassemblyView {
             ));
             if x_remaining < range_size[0] {
                 x_remaining = win_width;
-                footer_height += line_height + style.item_spacing[1];
+                footer_height += line_height + item_spacing[1];
                 line_height = 0.0;
             }
             line_height = line_height.max(range_size[1]);
-            x_remaining -= range_size[0] + style.item_spacing[0];
+            x_remaining -= range_size[0] + item_spacing[0];
             range_size[0]
         } else {
             0.0
@@ -229,11 +231,11 @@ impl DisassemblyView {
                 addr_digits = addr_digits.get() as usize
             ));
             let addr_size = [
-                addr_text_size[0] + style.frame_padding[0] * 2.0,
-                addr_text_size[1] + style.frame_padding[1] * 2.0,
+                addr_text_size[0] + frame_padding[0] * 2.0,
+                addr_text_size[1] + frame_padding[1] * 2.0,
             ];
             if x_remaining < addr_size[0] {
-                footer_height += line_height + style.item_spacing[1];
+                footer_height += line_height + item_spacing[1];
             }
             line_height = line_height.max(addr_size[1]);
             addr_size[0]
@@ -257,7 +259,7 @@ impl DisassemblyView {
 
             range_width,
             addr_input_width,
-            scrollbar_size: style.scrollbar_size,
+            scrollbar_size,
 
             footer_height,
 

@@ -2,7 +2,7 @@ use super::{
     common::{rgb_5_to_rgb_f32, rgb_5_to_rgba_f32, rgb_f32_to_rgb_5},
     FrameDataSlot, InstanceableView, Messages, View,
 };
-use crate::ui::window::Window;
+use crate::ui::{utils::combo_value, window::Window};
 use dust_core::{
     cpu,
     emu::Emu,
@@ -10,13 +10,13 @@ use dust_core::{
 };
 use imgui::{StyleVar, TableFlags, Ui};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Engine2d {
     A,
     B,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Palette {
     Bg,
     Obj,
@@ -24,7 +24,7 @@ pub enum Palette {
     ExtObj,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Selection {
     engine: Engine2d,
     palette: Palette,
@@ -199,7 +199,7 @@ impl View for Palettes2d {
         window
     }
 
-    fn render(
+    fn draw(
         &mut self,
         ui: &Ui,
         _window: &mut Window,
@@ -216,28 +216,30 @@ impl View for Palettes2d {
             Selection::new(Engine2d::B, Palette::ExtBg),
             Selection::new(Engine2d::B, Palette::ExtObj),
         ];
-        let mut i = POSSIBLE_SELECTIONS
-            .iter()
-            .position(|s| *s == self.cur_selection)
-            .unwrap();
-        let selection_updated = ui.combo("##palette", &mut i, &POSSIBLE_SELECTIONS, |selection| {
-            format!(
-                "Engine {} {} palette",
-                match selection.engine {
-                    Engine2d::A => "A",
-                    Engine2d::B => "B",
-                },
-                match selection.palette {
-                    Palette::Bg => "BG",
-                    Palette::Obj => "OBJ",
-                    Palette::ExtBg => "ext BG",
-                    Palette::ExtObj => "ext OBJ",
-                }
-            )
-            .into()
-        });
+        let selection_updated = combo_value(
+            ui,
+            "##palette",
+            &mut self.cur_selection,
+            &POSSIBLE_SELECTIONS,
+            |selection| {
+                format!(
+                    "Engine {} {} palette",
+                    match selection.engine {
+                        Engine2d::A => "A",
+                        Engine2d::B => "B",
+                    },
+                    match selection.palette {
+                        Palette::Bg => "BG",
+                        Palette::Obj => "OBJ",
+                        Palette::ExtBg => "ext BG",
+                        Palette::ExtObj => "ext OBJ",
+                    }
+                )
+                .into()
+            },
+        );
+
         let new_state = if selection_updated {
-            self.cur_selection = POSSIBLE_SELECTIONS[i];
             Some(self.cur_selection)
         } else {
             None
@@ -266,7 +268,7 @@ impl View for Palettes2d {
                     let raw_color = colors.read_le::<u16>(i << 1);
                     if ui
                         .color_button_config(
-                            &format!("Color {:#05X}", i),
+                            &format!("Color {i:#05X}"),
                             rgb_5_to_rgba_f32(raw_color),
                         )
                         .border(false)
@@ -305,19 +307,13 @@ impl View for Palettes2d {
             }
 
             ui.popup("color_picker", || {
+                let i = self.cur_color_index;
                 if ui
-                    .color_picker3_config(
-                        &format!("Color {:#05X}", self.cur_color_index),
-                        &mut self.cur_color,
-                    )
+                    .color_picker3_config(&format!("Color {i:#05X}"), &mut self.cur_color)
                     .alpha(false)
                     .build()
                 {
-                    messages.push_custom((
-                        self.cur_selection,
-                        self.cur_color_index,
-                        rgb_f32_to_rgb_5(self.cur_color),
-                    ))
+                    messages.push_custom((self.cur_selection, i, rgb_f32_to_rgb_5(self.cur_color)))
                 }
             });
         }

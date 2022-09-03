@@ -4,7 +4,8 @@ use crate::{
     utils::{Loadable, LoadableInPlace, Storable},
 };
 
-pub trait Schedule {
+#[const_trait]
+pub trait ScheduleConst {
     type Timestamp: Copy
         + From<emu::Timestamp>
         + Into<emu::Timestamp>
@@ -20,6 +21,10 @@ pub trait Schedule {
     type Event: Copy + Loadable + LoadableInPlace + Storable;
     type EventSlotIndex: Copy + Loadable + LoadableInPlace + Storable;
 
+    fn timer_event_slot(i: timers::Index) -> Self::EventSlotIndex;
+}
+
+pub trait Schedule: ~const ScheduleConst {
     fn cur_time(&self) -> Self::Timestamp;
     fn set_cur_time(&mut self, value: Self::Timestamp);
     #[inline]
@@ -34,10 +39,8 @@ pub trait Schedule {
         self.set_target_time(self.target_time().min(target));
     }
 
-    fn timer_event_slot(i: timers::Index) -> Self::EventSlotIndex;
-
     fn set_event(&mut self, slot_index: Self::EventSlotIndex, event: Self::Event);
-    fn set_timer_event(&mut self, slot_index: Self::EventSlotIndex, i: timers::Index);
+    fn set_timer_event(&mut self, i: timers::Index);
 
     fn schedule_event(&mut self, slot_index: Self::EventSlotIndex, time: Self::Timestamp);
     fn cancel_event(&mut self, slot_index: Self::EventSlotIndex);

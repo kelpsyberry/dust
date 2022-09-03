@@ -1,6 +1,6 @@
 use crate::{
     utils::{BoxedByteSlice, ByteMutSlice, ByteSlice, Savestate},
-    SaveContents,
+    SaveContents, SaveReloadContents
 };
 
 proc_bitfield::bitfield! {
@@ -157,6 +157,16 @@ impl super::SpiDevice for EepromFram {
 
     fn contents_mut(&mut self) -> ByteMutSlice {
         self.contents.as_byte_mut_slice()
+    }
+
+    fn reload_contents(&mut self, contents: SaveReloadContents) {
+        match contents {
+            SaveReloadContents::Existing(contents) => {
+                self.contents[..contents.len()].copy_from_slice(&contents[..]);
+                self.contents[contents.len()..].fill(0);
+            }
+            SaveReloadContents::New => self.contents.fill(0xFF),
+        }
     }
 
     fn contents_dirty(&self) -> bool {

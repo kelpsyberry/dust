@@ -113,7 +113,7 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
         window.size_constraints([width, 0.0], [width, f32::INFINITY])
     }
 
-    fn render(
+    fn draw(
         &mut self,
         ui: &imgui::Ui,
         window: &mut Window,

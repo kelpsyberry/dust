@@ -11,6 +11,7 @@ impl TextTiles {
     }
 }
 
+#[inline(always)]
 pub fn read_bg_text_tiles<'a, R: Role>(
     engine: &Engine2d<R>,
     tiles: &'a mut TextTiles,

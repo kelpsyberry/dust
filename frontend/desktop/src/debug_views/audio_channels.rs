@@ -165,14 +165,14 @@ impl View for AudioChannels {
         window
     }
 
-    fn render(
+    fn draw(
         &mut self,
         ui: &Ui,
         window: &mut Window,
         _emu_running: bool,
         _messages: impl Messages<Self>,
     ) -> Option<Self::EmuState> {
-        let item_spacing = unsafe { ui.style().item_spacing };
+        let item_spacing = style!(ui, item_spacing);
 
         let sliders_width = 0.5 * (ui.content_region_avail()[0] - item_spacing[0]);
 

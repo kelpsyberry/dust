@@ -13,7 +13,7 @@ use crate::{
 };
 
 pub struct FnPtrs<R: Role> {
-    render_scanline_bg_text: fn(&mut Engine2d<R>, bg_index: BgIndex, line: u8, vram: &Vram),
+    render_scanline_bg_text: unsafe fn(&mut Engine2d<R>, bg_index: BgIndex, line: u8, vram: &Vram),
 }
 
 impl<R: Role> FnPtrs<R> {
@@ -487,94 +487,104 @@ impl<R: Role> Engine2d<R> {
         ];
 
         for priority in (0..4).rev() {
-            if self.bgs[3].priority == priority {
-                match BG_MODE {
-                    0 => {
-                        (self.render_fns.render_scanline_bg_text)(
-                            self,
-                            BgIndex::new(3),
-                            line,
-                            vram,
-                        );
-                    }
-                    1..=2 => {
-                        render_affine[self.bgs[3].control.affine_display_area_overflow() as usize](
-                            self,
-                            AffineBgIndex::new(1),
-                            vram,
-                        );
-                    }
-                    3..=5 => {
-                        render_extended
-                            [self.bgs[3].control.affine_display_area_overflow() as usize](
-                            self,
-                            AffineBgIndex::new(1),
-                            vram,
-                        );
-                    }
-                    _ => {}
-                }
-            }
-
-            if self.bgs[2].priority == priority {
-                match BG_MODE {
-                    0..=1 | 3 => {
-                        (self.render_fns.render_scanline_bg_text)(
-                            self,
-                            BgIndex::new(2),
-                            line,
-                            vram,
-                        );
-                    }
-                    2 | 4 => {
-                        render_affine[self.bgs[2].control.affine_display_area_overflow() as usize](
-                            self,
-                            AffineBgIndex::new(0),
-                            vram,
-                        );
-                    }
-                    5 => {
-                        render_extended
-                            [self.bgs[2].control.affine_display_area_overflow() as usize](
-                            self,
-                            AffineBgIndex::new(0),
-                            vram,
-                        );
-                    }
-                    6 => {
-                        if self.bgs[2].control.affine_display_area_overflow() {
-                            self.render_scanline_bg_large::<true>(vram);
-                        } else {
-                            self.render_scanline_bg_large::<false>(vram);
+            unsafe {
+                if self.bgs[3].priority == priority {
+                    match BG_MODE {
+                        0 => {
+                            (self.render_fns.render_scanline_bg_text)(
+                                self,
+                                BgIndex::new(3),
+                                line,
+                                vram,
+                            );
                         }
+                        1..=2 => {
+                            render_affine
+                                [self.bgs[3].control.affine_display_area_overflow() as usize](
+                                self,
+                                AffineBgIndex::new(1),
+                                vram,
+                            );
+                        }
+                        3..=5 => {
+                            render_extended
+                                [self.bgs[3].control.affine_display_area_overflow() as usize](
+                                self,
+                                AffineBgIndex::new(1),
+                                vram,
+                            );
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
-            }
 
-            if self.bgs[1].priority == priority && BG_MODE != 6 {
-                (self.render_fns.render_scanline_bg_text)(self, BgIndex::new(1), line, vram);
-            }
-
-            if self.bgs[0].priority == priority {
-                if R::IS_A && self.control.bg0_3d() {
-                    if self.engine_3d_enabled_in_frame {
-                        let scanline_3d = unsafe { scanline_3d.unwrap_unchecked() };
-                        let pixel_attrs = BgObjPixel(0).with_color_effects_mask(1).with_is_3d(true);
-                        // TODO: 3D layer scrolling
-                        for i in 0..SCREEN_WIDTH {
-                            let pixel = scanline_3d.0[i];
-                            if pixel >> 19 != 0 {
-                                self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64)
-                                    << 32
-                                    | ((pixel & 0x3_FFFF)
-                                        | pixel_attrs.with_alpha((pixel >> 18) as u8 & 0x1F).0)
-                                        as u64;
+                if self.bgs[2].priority == priority {
+                    match BG_MODE {
+                        0..=1 | 3 => {
+                            (self.render_fns.render_scanline_bg_text)(
+                                self,
+                                BgIndex::new(2),
+                                line,
+                                vram,
+                            );
+                        }
+                        2 | 4 => {
+                            render_affine
+                                [self.bgs[2].control.affine_display_area_overflow() as usize](
+                                self,
+                                AffineBgIndex::new(0),
+                                vram,
+                            );
+                        }
+                        5 => {
+                            render_extended
+                                [self.bgs[2].control.affine_display_area_overflow() as usize](
+                                self,
+                                AffineBgIndex::new(0),
+                                vram,
+                            );
+                        }
+                        6 => {
+                            if self.bgs[2].control.affine_display_area_overflow() {
+                                self.render_scanline_bg_large::<true>(vram);
+                            } else {
+                                self.render_scanline_bg_large::<false>(vram);
                             }
                         }
+                        _ => {}
                     }
-                } else if BG_MODE != 6 {
-                    (self.render_fns.render_scanline_bg_text)(self, BgIndex::new(0), line, vram);
+                }
+
+                if self.bgs[1].priority == priority && BG_MODE != 6 {
+                    (self.render_fns.render_scanline_bg_text)(self, BgIndex::new(1), line, vram);
+                }
+
+                if self.bgs[0].priority == priority {
+                    if R::IS_A && self.control.bg0_3d() {
+                        if self.engine_3d_enabled_in_frame {
+                            let scanline_3d = scanline_3d.unwrap_unchecked();
+                            let pixel_attrs =
+                                BgObjPixel(0).with_color_effects_mask(1).with_is_3d(true);
+                            // TODO: 3D layer scrolling
+                            for i in 0..SCREEN_WIDTH {
+                                let pixel = scanline_3d.0[i];
+                                if pixel >> 19 != 0 {
+                                    self.bg_obj_scanline.0[i] = (self.bg_obj_scanline.0[i] as u64)
+                                        << 32
+                                        | ((pixel & 0x3_FFFF)
+                                            | pixel_attrs.with_alpha((pixel >> 18) as u8 & 0x1F).0)
+                                            as u64;
+                                }
+                            }
+                        }
+                    } else if BG_MODE != 6 {
+                        (self.render_fns.render_scanline_bg_text)(
+                            self,
+                            BgIndex::new(0),
+                            line,
+                            vram,
+                        );
+                    }
                 }
             }
 

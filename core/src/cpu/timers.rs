@@ -104,17 +104,15 @@ pub struct Timers<S: Schedule>(pub [Timer<S>; 4]);
 
 impl<S: Schedule> Timers<S> {
     pub(super) fn new(schedule: &mut S) -> Self {
-        fn alloc_timer_event_slot<S: Schedule>(schedule: &mut S, i: Index) -> S::EventSlotIndex {
-            let event_slot = S::timer_event_slot(i);
-            schedule.set_timer_event(event_slot, i);
-            event_slot
+        for i in 0..4 {
+            schedule.set_timer_event(Index::new(i));
         }
 
         Timers([
-            Timer::new(alloc_timer_event_slot(schedule, Index::new(0))),
-            Timer::new(alloc_timer_event_slot(schedule, Index::new(1))),
-            Timer::new(alloc_timer_event_slot(schedule, Index::new(2))),
-            Timer::new(alloc_timer_event_slot(schedule, Index::new(3))),
+            Timer::new(S::timer_event_slot(Index::new(0))),
+            Timer::new(S::timer_event_slot(Index::new(1))),
+            Timer::new(S::timer_event_slot(Index::new(2))),
+            Timer::new(S::timer_event_slot(Index::new(3))),
         ])
     }
 
@@ -142,7 +140,6 @@ impl<S: Schedule> Timers<S> {
         &mut self,
         i: Index,
         increments: RawTimestamp,
-        time: Timestamp,
         schedule: &mut I::Schedule,
         irqs: &mut I,
     ) {
@@ -163,7 +160,7 @@ impl<S: Schedule> Timers<S> {
                 let next_i = Index::new(i.get() + 1);
                 if self.0[next_i.get() as usize].count_up {
                     let overflows = 1 + remaining / overflow_incs;
-                    self.inc_timer(next_i, overflows, time, schedule, irqs);
+                    self.inc_timer(next_i, overflows, schedule, irqs);
                 }
             }
         } else {
@@ -184,7 +181,7 @@ impl<S: Schedule> Timers<S> {
         timer.cycle_counter = new_cycle_counter as u16 & ((1 << timer.cycle_shift) - 1);
         timer.last_update_time = time;
         let increments = new_cycle_counter >> timer.cycle_shift;
-        self.inc_timer(i, increments, time, schedule, irqs);
+        self.inc_timer(i, increments, schedule, irqs);
     }
 
     // NOTE: This is theoretically safe to call in memory handlers even for debug accesses, as it

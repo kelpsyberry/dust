@@ -37,8 +37,8 @@ static ACTION_IDENTS: &[(Action, &str)] = &[
     (Action::ToggleFramerateLimit, "toggle-framerate-limit"),
 ];
 
-#[derive(Clone, Debug)]
-pub struct Keymap {
+#[derive(Clone)]
+pub struct Map {
     pub keypad: HashMap<Keys, Option<Trigger>>,
     pub hotkeys: HashMap<Action, Option<Trigger>>,
 }
@@ -85,16 +85,16 @@ fn default_hotkey_map() -> HashMap<Action, Option<Trigger>> {
     .collect()
 }
 
-impl Default for Keymap {
+impl Default for Map {
     fn default() -> Self {
-        Keymap {
+        Map {
             keypad: default_keypad_map(),
             hotkeys: default_hotkey_map(),
         }
     }
 }
 
-impl Serialize for Keymap {
+impl Serialize for Map {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
 
@@ -114,14 +114,14 @@ impl Serialize for Keymap {
             }
         }
 
-        let mut keymap = serializer.serialize_struct("Keymap", 2)?;
-        keymap.serialize_field("keypad", &TriggerMap(&self.keypad, KEY_IDENTS))?;
-        keymap.serialize_field("hotkeys", &TriggerMap(&self.hotkeys, ACTION_IDENTS))?;
-        keymap.end()
+        let mut map = serializer.serialize_struct("Map", 2)?;
+        map.serialize_field("keypad", &TriggerMap(&self.keypad, KEY_IDENTS))?;
+        map.serialize_field("hotkeys", &TriggerMap(&self.hotkeys, ACTION_IDENTS))?;
+        map.end()
     }
 }
 
-impl<'de> Deserialize<'de> for Keymap {
+impl<'de> Deserialize<'de> for Map {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct TriggerMapVisitor<T: 'static + Eq + Hash>(
             &'static [(T, &'static str)],
@@ -183,13 +183,13 @@ impl<'de> Deserialize<'de> for Keymap {
             }
         }
 
-        struct KeymapVisitor;
+        struct MapVisitor;
 
-        impl<'de> Visitor<'de> for KeymapVisitor {
-            type Value = Keymap;
+        impl<'de> Visitor<'de> for MapVisitor {
+            type Value = Map;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a keymap")
+                formatter.write_str("an input map")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -214,7 +214,7 @@ impl<'de> Deserialize<'de> for Keymap {
                         }
                     }
                 }
-                Ok(Keymap {
+                Ok(Map {
                     keypad: match keypad {
                         Some(keypad) => keypad.0,
                         None => default_keypad_map(),
@@ -227,6 +227,6 @@ impl<'de> Deserialize<'de> for Keymap {
             }
         }
 
-        deserializer.deserialize_map(KeymapVisitor)
+        deserializer.deserialize_map(MapVisitor)
     }
 }

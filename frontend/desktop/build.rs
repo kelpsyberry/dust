@@ -35,10 +35,8 @@ mod shaders {
             Ok(output) => output,
             Err(shaderc::Error::CompilationError(error_count, description)) => {
                 eprintln!(
-                    "Shader compilation failed, {} error{} emitted:\n{}",
-                    error_count,
+                    "Shader compilation failed, {error_count} error{} emitted:\n{description}",
                     if error_count != 1 { "s" } else { "" },
-                    description,
                 );
                 return Err("Couldn't compile shaders".into());
             }
@@ -67,7 +65,7 @@ mod shaders {
             let complete_path_str = complete_path.to_str().ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidInput, "Invalid non-UTF-8 shader path")
             })?;
-            println!("cargo:rerun-if-changed={}", complete_path_str);
+            println!("cargo:rerun-if-changed={complete_path_str}");
 
             let metadata = fs::metadata(&complete_path)?;
             if metadata.is_dir() {
@@ -99,8 +97,8 @@ mod shaders {
                         .and_then(|stem_str| stem_str.strip_suffix("-srgb-aware"))
                         .map(|file_stem| {
                             (
-                                format!("{}-linear.frag", file_stem),
-                                format!("{}-srgb.frag", file_stem),
+                                format!("{file_stem}-linear.frag"),
+                                format!("{file_stem}-srgb.frag"),
                             )
                         })
                 } else {
@@ -148,7 +146,7 @@ mod shaders {
     }
 
     pub fn compile() -> Result<(), Box<dyn Error>> {
-        println!("cargo:rerun-if-changed={}", SRC);
+        println!("cargo:rerun-if-changed={SRC}");
 
         fs::create_dir_all(OUT)?;
 
@@ -167,7 +165,7 @@ mod shaders {
                     resolved_name: path.into_os_string().into_string().unwrap(),
                     content,
                 }),
-                Err(error) => Err(format!("{:?}", error)),
+                Err(error) => Err(format!("{error:?}")),
             }
         });
 

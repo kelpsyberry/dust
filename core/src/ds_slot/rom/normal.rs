@@ -81,7 +81,7 @@ impl Normal {
 
 impl super::RomDevice for Normal {
     fn read(&mut self, addr: u32, mut output: ByteMutSlice) {
-        let addr = (addr & self.rom_mask & !3) as usize;
+        let addr = (addr & self.rom_mask) as usize;
         let rom_len = self.rom_mask as usize + 1;
         let first_read_max_len = rom_len - addr;
         if output.len() <= first_read_max_len {

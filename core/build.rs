@@ -871,10 +871,8 @@ mod disasm {
                         match offset {
                             WbOff::Reg(shift_ty) => write!(
                                 file,
-                                concat!(
-                                    "load_store_wb::",
-                                    "<{}, {}, {{WbOffTy::Reg({})}}, {}, {{WbAddressing::{}}}>",
-                                ),
+                                "load_store_wb::<{}, {}, {{WbOffTy::Reg({})}}, {}, \
+                                 {{WbAddressing::{}}}>",
                                 load,
                                 byte,
                                 arm_shift_ty_to_str(shift_ty),
@@ -883,10 +881,8 @@ mod disasm {
                             ),
                             WbOff::Imm => write!(
                                 file,
-                                concat!(
-                                    "load_store_wb::",
-                                    "<{}, {}, {{WbOffTy::Imm}}, {}, {{WbAddressing::{}}}>",
-                                ),
+                                "load_store_wb::<{}, {}, {{WbOffTy::Imm}}, {}, \
+                                 {{WbAddressing::{}}}>",
                                 load, byte, offset_upwards, addressing
                             ),
                         }

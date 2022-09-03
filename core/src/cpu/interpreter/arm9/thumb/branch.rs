@@ -56,7 +56,7 @@ pub fn bl_suffix<const EXCHANGE: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     reg!(emu.arm9, 15) = branch_addr;
     if EXCHANGE {
         emu.arm9.engine_data.regs.cpsr.set_thumb_state(false);
-        #[cfg(feature = "accurate-pipeline")]
+        #[cfg(feature = "interp-pipeline-accurate-reloads")]
         {
             emu.arm9.engine_data.r15_increment = 4;
         }

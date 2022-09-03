@@ -267,7 +267,7 @@ pub fn channel(
                 buffer_ptr,
                 buffer,
             },
-            interp_method.create_interp(),
+            interp_method,
             volume,
             #[cfg(feature = "xq-audio")]
             custom_sample_rate,

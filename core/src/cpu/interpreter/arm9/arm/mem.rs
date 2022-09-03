@@ -423,11 +423,7 @@ pub fn ldrd<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddr
             if $is_r15 {
                 $data_cycles = 1;
                 add_cycles(emu, cycles as RawTimestamp + 1);
-                if emu.arm9.cp15.control().t_bit_load_disabled() {
-                    reload_pipeline::<{ StateSource::Arm }>(emu);
-                } else {
-                    reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
-                }
+                reload_pipeline::<{ StateSource::Arm }>(emu);
             } else {
                 $data_cycles = cycles;
             }
@@ -751,7 +747,7 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
         emu.arm9
             .engine_data
             .regs
-            .update_mode::<true>(emu.arm9.engine_data.regs.cpsr.mode(), Mode::User);
+            .update_mode::<true>(emu.arm9.engine_data.regs.cpsr.mode(), Mode::USER);
     }
     if PREINC {
         cur_addr = cur_addr.wrapping_add(4);
@@ -779,7 +775,7 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
                     emu.arm9
                         .engine_data
                         .regs
-                        .update_mode::<true>(Mode::User, emu.arm9.engine_data.regs.cpsr.mode());
+                        .update_mode::<true>(Mode::USER, emu.arm9.engine_data.regs.cpsr.mode());
                 }
                 add_cycles(
                     emu,
@@ -809,7 +805,7 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
             emu.arm9
                 .engine_data
                 .regs
-                .update_mode::<true>(Mode::User, emu.arm9.engine_data.regs.cpsr.mode());
+                .update_mode::<true>(Mode::USER, emu.arm9.engine_data.regs.cpsr.mode());
         }
         emu.arm9.engine_data.data_cycles = data_cycles;
         if instr as u16 & (instr as u16 - 1) == 0 {
@@ -903,7 +899,7 @@ pub fn stm<
         emu.arm9
             .engine_data
             .regs
-            .update_mode::<true>(emu.arm9.engine_data.regs.cpsr.mode(), Mode::User);
+            .update_mode::<true>(emu.arm9.engine_data.regs.cpsr.mode(), Mode::USER);
     }
     if PREINC {
         cur_addr = cur_addr.wrapping_add(4);
@@ -933,7 +929,7 @@ pub fn stm<
                     emu.arm9
                         .engine_data
                         .regs
-                        .update_mode::<true>(Mode::User, emu.arm9.engine_data.regs.cpsr.mode());
+                        .update_mode::<true>(Mode::USER, emu.arm9.engine_data.regs.cpsr.mode());
                 }
                 add_bus_cycles(emu, 2);
                 #[cfg(feature = "interp-timing-details")]
@@ -964,7 +960,7 @@ pub fn stm<
         emu.arm9
             .engine_data
             .regs
-            .update_mode::<true>(Mode::User, emu.arm9.engine_data.regs.cpsr.mode());
+            .update_mode::<true>(Mode::USER, emu.arm9.engine_data.regs.cpsr.mode());
     }
     add_bus_cycles(emu, 2);
     emu.arm9.engine_data.data_cycles = data_cycles;

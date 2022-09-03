@@ -6,12 +6,12 @@ use super::{
     },
     FrameDataSlot, Messages, View,
 };
-use crate::ui::window::Window;
+use crate::ui::{utils::combo_value, window::Window};
 use dust_core::{
     cpu::{
         arm7::Arm7,
         arm9::Arm9,
-        psr::{Cpsr, Mode},
+        psr::{Bank, Psr},
         Engine, Regs,
     },
     emu::Emu,
@@ -19,18 +19,8 @@ use dust_core::{
 use imgui::{StyleColor, StyleVar, TableFlags};
 
 pub struct CpuState<const ARM9: bool> {
-    reg_values: Option<(Regs, Cpsr)>,
-    reg_bank: Option<RegBank>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RegBank {
-    User,
-    Fiq,
-    Irq,
-    Supervisor,
-    Abort,
-    Undefined,
+    reg_values: Option<(Regs, Psr)>,
+    reg_bank: Option<Bank>,
 }
 
 mod bounded {
@@ -42,9 +32,9 @@ pub use bounded::*;
 impl<const ARM9: bool> View for CpuState<ARM9> {
     const NAME: &'static str = if ARM9 { "ARM9 state" } else { "ARM7 state" };
 
-    type FrameData = (Regs, Cpsr);
+    type FrameData = (Regs, Psr);
     type EmuState = ();
-    type Message = (RegBank, RegIndex, u32);
+    type Message = (Bank, RegIndex, u32);
 
     fn new(_window: &mut Window) -> Self {
         CpuState {
@@ -77,7 +67,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
     }
 
     fn handle_custom_message<E: dust_core::cpu::Engine>(
-        (bank, i, value): Self::Message,
+        (selected_bank, i, value): Self::Message,
         _emu_state: &Self::EmuState,
         emu: &mut Emu<E>,
     ) {
@@ -87,14 +77,14 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
             (emu.arm7.regs(), emu.arm7.cpsr())
         };
 
-        let mode = cpsr.mode();
+        let cpu_reg_bank = cpsr.mode().reg_bank();
 
         let i = i.get() as usize;
         match i {
             0..=7 | 15 => regs.gprs[i] = value,
 
             8..=12 => {
-                if (mode == Mode::Fiq) == (bank == RegBank::Fiq) {
+                if (cpu_reg_bank == Bank::Fiq) == (selected_bank == Bank::Fiq) {
                     regs.gprs[i] = value;
                 } else {
                     regs.r8_14_fiq[i] = value;
@@ -102,23 +92,16 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
             }
 
             _ => {
-                if match bank {
-                    RegBank::User => matches!(mode, Mode::User | Mode::System),
-                    RegBank::Fiq => mode == Mode::Fiq,
-                    RegBank::Irq => mode == Mode::Irq,
-                    RegBank::Supervisor => mode == Mode::Supervisor,
-                    RegBank::Abort => mode == Mode::Abort,
-                    RegBank::Undefined => mode == Mode::Undefined,
-                } {
+                if cpu_reg_bank == selected_bank {
                     regs.gprs[i] = value;
                 } else {
-                    match bank {
-                        RegBank::User => regs.r13_14_user[i] = value,
-                        RegBank::Fiq => regs.r8_14_fiq[5 + i] = value,
-                        RegBank::Irq => regs.r13_14_irq[i] = value,
-                        RegBank::Supervisor => regs.r13_14_svc[i] = value,
-                        RegBank::Abort => regs.r13_14_abt[i] = value,
-                        RegBank::Undefined => regs.r13_14_und[i] = value,
+                    match selected_bank {
+                        Bank::System => regs.r13_14_sys[i] = value,
+                        Bank::Fiq => regs.r8_14_fiq[5 + i] = value,
+                        Bank::Irq => regs.r13_14_irq[i] = value,
+                        Bank::Supervisor => regs.r13_14_svc[i] = value,
+                        Bank::Abort => regs.r13_14_abt[i] = value,
+                        Bank::Undefined => regs.r13_14_und[i] = value,
                     }
                 }
             }
@@ -147,7 +130,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
         window.always_auto_resize(true)
     }
 
-    fn render(
+    fn draw(
         &mut self,
         ui: &imgui::Ui,
         window: &mut Window,
@@ -156,23 +139,16 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
     ) -> Option<Self::EmuState> {
         if let Some((reg_values, cpsr)) = self.reg_values.as_mut() {
             let _mono_font_token = ui.push_font(window.mono_font);
-            let _item_spacing = ui.push_style_var(StyleVar::ItemSpacing([0.0, unsafe {
-                ui.style().item_spacing[1]
-            }]));
+            let _item_spacing =
+                ui.push_style_var(StyleVar::ItemSpacing([0.0, style!(ui, item_spacing)[1]]));
             let _table_border = ui.push_style_color(
                 StyleColor::TableBorderLight,
                 ui.style_color(StyleColor::Border),
             );
 
             let mode = cpsr.mode();
-            let cpu_reg_bank = match mode {
-                Mode::User | Mode::System => RegBank::User,
-                Mode::Fiq => RegBank::Fiq,
-                Mode::Irq => RegBank::Irq,
-                Mode::Supervisor => RegBank::Supervisor,
-                Mode::Abort => RegBank::Abort,
-                Mode::Undefined => RegBank::Undefined,
-            };
+            let cpu_reg_bank = mode.reg_bank();
+            let cpu_spsr_bank = mode.spsr_bank();
 
             if let Some(_table_token) = ui.begin_table_with_flags(
                 "regs",
@@ -230,12 +206,12 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                 bitfield(ui, 2.0, false, true, cpsr.raw(), psr_fields);
             }
 
-            ui.text(&format!("Mode: {}", psr_mode_to_str(mode),));
+            ui.text(&format!("Mode: {}", psr_mode_to_str(mode)));
 
             ui.separator();
 
             ui.text("SPSR: ");
-            if mode.is_exception() {
+            if mode.has_spsr() {
                 {
                     let _frame_rounding = ui.push_style_var(StyleVar::FrameRounding(0.0));
                     bitfield(ui, 2.0, false, true, reg_values.spsr.raw(), psr_fields);
@@ -243,10 +219,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
 
                 ui.text(&format!(
                     "Mode: {}",
-                    match reg_values.spsr.mode() {
-                        Ok(mode) => psr_mode_to_str(mode),
-                        Err(_) => "Invalid",
-                    },
+                    psr_mode_to_str(reg_values.spsr.mode()),
                 ));
             } else {
                 ui.same_line();
@@ -255,41 +228,49 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
 
             ui.separator();
 
-            static REG_BANKS: [Option<RegBank>; 7] = [
+            static REG_BANKS: [Option<Bank>; 7] = [
                 None,
-                Some(RegBank::User),
-                Some(RegBank::Fiq),
-                Some(RegBank::Irq),
-                Some(RegBank::Supervisor),
-                Some(RegBank::Abort),
-                Some(RegBank::Undefined),
+                Some(Bank::System),
+                Some(Bank::Fiq),
+                Some(Bank::Irq),
+                Some(Bank::Supervisor),
+                Some(Bank::Abort),
+                Some(Bank::Undefined),
             ];
 
             ui.align_text_to_frame_padding();
             ui.text("Banked registers: ");
             ui.same_line();
-            let mut reg_bank_index = REG_BANKS.iter().position(|b| *b == self.reg_bank).unwrap();
-            if ui.combo("##reg_bank", &mut reg_bank_index, &REG_BANKS, |reg_bank| {
-                if let Some(reg_bank) = reg_bank {
-                    let mut label = match reg_bank {
-                        RegBank::User => "User",
-                        RegBank::Fiq => "Fiq",
-                        RegBank::Irq => "Irq",
-                        RegBank::Supervisor => "Supervisor",
-                        RegBank::Abort => "Abort",
-                        RegBank::Undefined => "Undefined",
+            combo_value(
+                ui,
+                "##reg_bank",
+                &mut self.reg_bank,
+                &REG_BANKS,
+                |reg_bank| {
+                    if let Some(reg_bank) = reg_bank {
+                        let mut label = match reg_bank {
+                            Bank::System => "System",
+                            Bank::Fiq => "Fiq",
+                            Bank::Irq => "Irq",
+                            Bank::Supervisor => "Supervisor",
+                            Bank::Abort => "Abort",
+                            Bank::Undefined => "Undefined",
+                        }
+                        .to_string();
+                        let same_reg = *reg_bank == cpu_reg_bank;
+                        let same_spsr = *reg_bank == cpu_spsr_bank;
+                        label.push_str(match (same_reg, same_spsr) {
+                            (false, false) => "",
+                            (true, false) => " (current regs)",
+                            (false, true) => " (current SPSR)",
+                            (true, true) => " (current)",
+                        });
+                        label.into()
+                    } else {
+                        "None".into()
                     }
-                    .to_string();
-                    if *reg_bank == cpu_reg_bank {
-                        label.push_str(" (current)");
-                    }
-                    label.into()
-                } else {
-                    "None".into()
-                }
-            }) {
-                self.reg_bank = REG_BANKS[reg_bank_index];
-            }
+                },
+            );
 
             if let Some(reg_bank) = self.reg_bank {
                 let mut child_bg_color = ui.style_color(StyleColor::WindowBg);
@@ -298,53 +279,51 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                 }
                 child_bg_color[3] *= 0.33;
 
-                let (cell_padding, item_spacing) = unsafe {
-                    let style = ui.style();
-                    (style.cell_padding[1], style.item_spacing[1])
-                };
+                let cell_padding_y = style!(ui, cell_padding)[1];
+                let item_spacing_y = style!(ui, item_spacing)[1];
 
-                let mut child_height = 3.0 * ui.frame_height_with_spacing() + 2.0 * cell_padding;
-                if reg_bank != RegBank::User {
-                    child_height += 2.0 * item_spacing + ui.text_line_height();
-                    if reg_bank != cpu_reg_bank {
+                let mut child_height = 3.0 * ui.frame_height_with_spacing() + 2.0 * cell_padding_y;
+                if reg_bank != Bank::System {
+                    child_height += 2.0 * item_spacing_y + ui.text_line_height();
+                    if reg_bank != cpu_spsr_bank {
                         child_height +=
-                            ui.frame_height() + 2.0 * ui.text_line_height() + 3.0 * item_spacing;
+                            ui.frame_height() + 2.0 * ui.text_line_height() + 3.0 * item_spacing_y;
                     }
                 }
 
                 layout_group(ui, child_height, Some(child_bg_color), |window_padding_x| {
                     let (bank_str, r8_r12, r13_14, spsr) = match reg_bank {
-                        RegBank::User => (
-                            "usr",
+                        Bank::System => (
+                            "sys",
                             &reg_values.r8_12_other[..],
-                            &reg_values.r13_14_user[..],
+                            &reg_values.r13_14_sys[..],
                             None,
                         ),
-                        RegBank::Fiq => (
+                        Bank::Fiq => (
                             "fiq",
                             &reg_values.r8_14_fiq[..5],
                             &reg_values.r8_14_fiq[5..],
                             Some(reg_values.spsr_fiq),
                         ),
-                        RegBank::Irq => (
+                        Bank::Irq => (
                             "irq",
                             &reg_values.r8_12_other[..],
                             &reg_values.r13_14_irq[..],
                             Some(reg_values.spsr_irq),
                         ),
-                        RegBank::Supervisor => (
+                        Bank::Supervisor => (
                             "svc",
                             &reg_values.r8_12_other[..],
                             &reg_values.r13_14_svc[..],
                             Some(reg_values.spsr_svc),
                         ),
-                        RegBank::Abort => (
+                        Bank::Abort => (
                             "abt",
                             &reg_values.r8_12_other[..],
                             &reg_values.r13_14_abt[..],
                             Some(reg_values.spsr_abt),
                         ),
-                        RegBank::Undefined => (
+                        Bank::Undefined => (
                             "und",
                             &reg_values.r8_12_other[..],
                             &reg_values.r13_14_und[..],
@@ -361,25 +340,22 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                     ) {
                         let regs_32_label = |i: usize, max_digits| {
                             format!(
-                                "r{}_{}: {:<len$}",
-                                i,
-                                bank_str,
+                                "r{i}_{bank_str}: {:<len$}",
                                 "",
-                                len = (max_digits - i.log10()) as usize
+                                len = (max_digits - i.ilog10()) as usize
                             )
                         };
-                        if (reg_bank != RegBank::Fiq && cpu_reg_bank != RegBank::Fiq)
+                        if (reg_bank != Bank::Fiq && cpu_reg_bank != Bank::Fiq)
                             || reg_bank == cpu_reg_bank
                         {
-                            for i in 0..5 {
-                                if i % 3 == 0 {
+                            ui.table_next_column();
+                            for i in 8..13 {
+                                if i == 11 {
                                     ui.table_next_column();
                                 }
                                 ui.align_text_to_frame_padding();
                                 ui.text(&format!(
-                                    "r{}_{}: {}",
-                                    i,
-                                    bank_str,
+                                    "r{i}_{bank_str}: {}",
                                     if i < 10 { " " } else { "" }
                                 ));
                                 ui.same_line();
@@ -405,7 +381,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                         if reg_bank == cpu_reg_bank {
                             for i in 13..15 {
                                 ui.align_text_to_frame_padding();
-                                ui.text(&format!("r{}_{}: {:<1}", i, bank_str, ""));
+                                ui.text(&format!("r{i}_{bank_str}: {:<1}", ""));
                                 ui.same_line();
                                 ui.text("<cur>");
                                 ui.same_line();
@@ -435,8 +411,8 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                     if let Some(spsr) = spsr {
                         separator_with_width(ui, -window_padding_x);
 
-                        ui.text(&format!("SPSR_{}:", bank_str));
-                        if reg_bank == cpu_reg_bank {
+                        ui.text(&format!("SPSR_{bank_str}:"));
+                        if reg_bank == cpu_spsr_bank {
                             ui.same_line();
                             ui.text("<current>");
                         } else {
@@ -446,13 +422,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                                 bitfield(ui, 2.0, false, true, spsr.raw(), psr_fields);
                             }
 
-                            ui.text(&format!(
-                                "Mode: {}",
-                                match spsr.mode() {
-                                    Ok(mode) => psr_mode_to_str(mode),
-                                    Err(_) => "Invalid",
-                                },
-                            ));
+                            ui.text(&format!("Mode: {}", psr_mode_to_str(spsr.mode())));
                         }
                     }
                 });

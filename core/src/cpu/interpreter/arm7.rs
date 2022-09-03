@@ -11,7 +11,7 @@ use crate::{
         arm7::{bus, Arm7, Schedule, Timestamp},
         bus::CpuAccess,
         hle_bios,
-        psr::{Cpsr, Mode, Spsr},
+        psr::{Mode, Psr},
         Arm7Data, CoreData, Schedule as _,
     },
     emu::Emu,
@@ -155,7 +155,7 @@ fn reload_pipeline<const STATE_SOURCE: StateSource>(emu: &mut Emu<Interpreter>) 
     }
 }
 
-fn set_cpsr_update_control(emu: &mut Emu<Interpreter>, value: Cpsr) {
+fn set_cpsr_update_control(emu: &mut Emu<Interpreter>, value: Psr) {
     let prev_value = emu.arm7.engine_data.regs.cpsr;
     emu.arm7.engine_data.regs.cpsr = value;
     emu.arm7
@@ -168,10 +168,10 @@ fn set_cpsr_update_control(emu: &mut Emu<Interpreter>, value: Cpsr) {
 }
 
 fn restore_spsr(emu: &mut Emu<Interpreter>) {
-    if !emu.arm7.engine_data.regs.is_in_exc_mode() {
+    if !emu.arm7.engine_data.regs.has_spsr() {
         unimplemented!("Unpredictable SPSR restore in non-exception mode");
     }
-    set_cpsr_update_control(emu, Cpsr::from_spsr(emu.arm7.engine_data.regs.spsr));
+    set_cpsr_update_control(emu, emu.arm7.engine_data.regs.spsr);
     #[cfg(feature = "interp-pipeline-accurate-reloads")]
     {
         emu.arm7.engine_data.r15_increment =
@@ -202,7 +202,7 @@ fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
         .engine_data
         .regs
         .cpsr
-        .with_mode(Mode::Undefined)
+        .with_mode(Mode::UNDEFINED)
         .with_thumb_state(false)
         .with_irqs_disabled(true);
     emu.arm7.irqs.set_enabled_in_cpsr(false, ());
@@ -213,8 +213,8 @@ fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
     emu.arm7
         .engine_data
         .regs
-        .update_mode::<false>(prev_cpsr.mode(), Mode::Undefined);
-    emu.arm7.engine_data.regs.spsr = prev_cpsr.into();
+        .update_mode::<false>(prev_cpsr.mode(), Mode::UNDEFINED);
+    emu.arm7.engine_data.regs.spsr = prev_cpsr;
     reg!(emu.arm7, 14) = reg!(emu.arm7, 15).wrapping_sub(4 >> THUMB as u8);
     reg!(emu.arm7, 15) = 0x0000_0004;
     reload_pipeline::<{ StateSource::Arm }>(emu);
@@ -242,7 +242,7 @@ fn handle_swi<const THUMB: bool>(emu: &mut Emu<Interpreter>, number: u8) {
 
     let prev_cpsr = emu.arm7.engine_data.regs.cpsr;
     emu.arm7.engine_data.regs.cpsr = prev_cpsr
-        .with_mode(Mode::Supervisor)
+        .with_mode(Mode::SUPERVISOR)
         .with_thumb_state(false)
         .with_irqs_disabled(true);
     emu.arm7.irqs.set_enabled_in_cpsr(false, ());
@@ -253,8 +253,8 @@ fn handle_swi<const THUMB: bool>(emu: &mut Emu<Interpreter>, number: u8) {
     emu.arm7
         .engine_data
         .regs
-        .update_mode::<false>(prev_cpsr.mode(), Mode::Supervisor);
-    emu.arm7.engine_data.regs.spsr = prev_cpsr.into();
+        .update_mode::<false>(prev_cpsr.mode(), Mode::SUPERVISOR);
+    emu.arm7.engine_data.regs.spsr = prev_cpsr;
     reg!(emu.arm7, 14) = reg!(emu.arm7, 15).wrapping_sub(4 >> THUMB as u8);
     reg!(emu.arm7, 15) = 0x0000_0008;
     reload_pipeline::<{ StateSource::Arm }>(emu);
@@ -266,18 +266,18 @@ fn enter_hle_swi<const FROM_USER_CODE: bool>(
     return_addr: u32,
 ) {
     let spsr = if FROM_USER_CODE {
-        emu.arm7.engine_data.regs.cpsr.into()
+        emu.arm7.engine_data.regs.cpsr
     } else {
         spsr!(emu.arm7)
     };
 
     if FROM_USER_CODE {
         let prev_mode = emu.arm7.engine_data.regs.cpsr.mode();
-        emu.arm7.engine_data.regs.cpsr.set_mode(Mode::Supervisor);
+        emu.arm7.engine_data.regs.cpsr.set_mode(Mode::SUPERVISOR);
         emu.arm7
             .engine_data
             .regs
-            .update_mode::<false>(prev_mode, Mode::Supervisor);
+            .update_mode::<false>(prev_mode, Mode::SUPERVISOR);
         reg!(emu.arm7, 14) = return_addr;
         emu.arm7.engine_data.regs.spsr = spsr;
     }
@@ -296,7 +296,7 @@ fn enter_hle_swi<const FROM_USER_CODE: bool>(
         bus::write_32::<CpuAccess, _>(emu, base_addr.wrapping_add((i << 2) as u32), value);
     }
 
-    let new_cpsr = Cpsr::from_raw::<false>((spsr.raw() & 0x80) | 0x1F);
+    let new_cpsr = Psr::from_raw((spsr.raw() & 0x80) | 0x1F);
     reg!(emu.arm7, 11) = new_cpsr.raw();
     set_cpsr_update_control(emu, new_cpsr);
 
@@ -322,16 +322,16 @@ fn return_from_hle_swi(emu: &mut Emu<Interpreter>) {
     }
 
     let prev_cpsr = emu.arm7.engine_data.regs.cpsr;
-    emu.arm7.engine_data.regs.cpsr = prev_cpsr.with_mode(Mode::Supervisor);
+    emu.arm7.engine_data.regs.cpsr = prev_cpsr.with_mode(Mode::SUPERVISOR);
     emu.arm7
         .engine_data
         .regs
-        .update_mode::<false>(prev_cpsr.mode(), Mode::Supervisor);
+        .update_mode::<false>(prev_cpsr.mode(), Mode::SUPERVISOR);
 
     let base_addr = reg!(emu.arm7, 13);
     reg!(emu.arm7, 13) = base_addr.wrapping_add(0x10);
     emu.arm7.engine_data.regs.spsr =
-        Spsr::from_raw::<false>(bus::read_32::<CpuAccess, _>(emu, base_addr));
+        Psr::from_raw_masked::<false>(bus::read_32::<CpuAccess, _>(emu, base_addr));
     for (i, reg) in [11_u8, 12, 14].into_iter().enumerate() {
         reg!(emu.arm7, reg) =
             bus::read_32::<CpuAccess, _>(emu, base_addr.wrapping_add(((i + 1) << 2) as u32));
@@ -345,13 +345,13 @@ fn return_from_hle_swi(emu: &mut Emu<Interpreter>) {
 fn enter_hle_irq<const FROM_USER_CODE: bool>(emu: &mut Emu<Interpreter>, return_addr: u32) {
     if FROM_USER_CODE {
         let prev_cpsr = emu.arm7.engine_data.regs.cpsr;
-        emu.arm7.engine_data.regs.cpsr = prev_cpsr.with_mode(Mode::Irq).with_irqs_disabled(true);
+        emu.arm7.engine_data.regs.cpsr = prev_cpsr.with_mode(Mode::IRQ).with_irqs_disabled(true);
         emu.arm7.irqs.set_enabled_in_cpsr(false, ());
         emu.arm7
             .engine_data
             .regs
-            .update_mode::<false>(prev_cpsr.mode(), Mode::Irq);
-        emu.arm7.engine_data.regs.spsr = prev_cpsr.into();
+            .update_mode::<false>(prev_cpsr.mode(), Mode::IRQ);
+        emu.arm7.engine_data.regs.spsr = prev_cpsr;
     }
 
     let base_addr = reg!(emu.arm7, 13).wrapping_sub(0x18);
@@ -390,11 +390,11 @@ impl CoreData for EngineData {
 
     fn setup_direct_boot(emu: &mut Emu<Interpreter>, entry_addr: u32) {
         let prev_mode = emu.arm7.engine_data.regs.cpsr.mode();
-        emu.arm7.engine_data.regs.cpsr.set_mode(Mode::System);
+        emu.arm7.engine_data.regs.cpsr.set_mode(Mode::SYSTEM);
         emu.arm7
             .engine_data
             .regs
-            .update_mode::<false>(prev_mode, Mode::System);
+            .update_mode::<false>(prev_mode, Mode::SYSTEM);
         for reg in 0..12 {
             reg!(emu.arm7, reg) = 0;
         }
@@ -435,12 +435,12 @@ impl CoreData for EngineData {
     }
 
     #[inline]
-    fn cpsr(&self) -> Cpsr {
+    fn cpsr(&self) -> Psr {
         self.regs.cpsr
     }
 
     #[inline]
-    fn set_cpsr(emu: &mut Emu<Interpreter>, value: Cpsr) {
+    fn set_cpsr(emu: &mut Emu<Interpreter>, value: Psr) {
         set_cpsr_update_control(emu, value);
     }
 
@@ -583,7 +583,7 @@ impl Arm7Data for EngineData {
                         );
                     }
                     emu.arm7.engine_data.regs.cpsr = prev_cpsr
-                        .with_mode(Mode::Irq)
+                        .with_mode(Mode::IRQ)
                         .with_thumb_state(false)
                         .with_irqs_disabled(true);
                     emu.arm7.irqs.set_enabled_in_cpsr(false, ());
@@ -594,8 +594,8 @@ impl Arm7Data for EngineData {
                     emu.arm7
                         .engine_data
                         .regs
-                        .update_mode::<false>(prev_cpsr.mode(), Mode::Irq);
-                    emu.arm7.engine_data.regs.spsr = prev_cpsr.into();
+                        .update_mode::<false>(prev_cpsr.mode(), Mode::IRQ);
+                    emu.arm7.engine_data.regs.spsr = prev_cpsr;
                     reg!(emu.arm7, 14) = return_addr;
                     reg!(emu.arm7, 15) = 0x0000_0018;
                     reload_pipeline::<{ StateSource::Arm }>(emu);

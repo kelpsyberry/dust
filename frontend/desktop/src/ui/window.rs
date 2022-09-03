@@ -6,7 +6,7 @@ use cocoa::{
     foundation::NSRect,
 };
 use copypasta::{ClipboardContext, ClipboardProvider};
-use std::{iter, mem::ManuallyDrop, path::PathBuf, time::Instant};
+use std::{iter, mem::ManuallyDrop, time::Instant};
 #[cfg(target_os = "macos")]
 use winit::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 use winit::{
@@ -52,8 +52,9 @@ impl GfxDeviceState {
         let size = window.inner_size();
         let surf_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface
-                .get_preferred_format(&adapter)
+            format: *surface
+                .get_supported_formats(&adapter)
+                .get(0)
                 .expect("Couldn't get surface preferred format"),
             width: size.width,
             height: size.height,
@@ -85,9 +86,10 @@ impl GfxDeviceState {
     }
 
     pub fn update_format_and_rebuild_swapchain(&mut self, size: PhysicalSize<u32>) {
-        self.surf_config.format = self
+        self.surf_config.format = *self
             .surface
-            .get_preferred_format(&self.adapter)
+            .get_supported_formats(&self.adapter)
+            .get(0)
             .expect("Couldn't get surface preferred format");
         self.rebuild_swapchain(size);
     }
@@ -177,20 +179,20 @@ pub struct Window {
     pub normal_font: imgui::FontId,
     pub mono_font: imgui::FontId,
     #[cfg(target_os = "macos")]
+    macos_title_bar_hidden: bool,
+    #[cfg(target_os = "macos")]
     pub macos_title_bar_height: f32,
 }
 
 impl Window {
     #[cfg(target_os = "macos")]
-    fn macos_title_bar_height(&self) -> f32 {
-        let content_layout_rect: NSRect =
-            unsafe { msg_send![self.window.ns_window() as id, contentLayoutRect] };
-        (self.window.outer_size().height as f64 / self.scale_factor
-            - content_layout_rect.size.height) as f32
+    pub fn macos_title_bar_hidden(&self) -> bool {
+        self.macos_title_bar_hidden
     }
 
     #[cfg(target_os = "macos")]
-    pub fn set_macos_titlebar_hidden(&mut self, hidden: bool) {
+    pub fn set_macos_title_bar_hidden(&mut self, hidden: bool) {
+        self.macos_title_bar_hidden = hidden;
         self.macos_title_bar_height = if hidden {
             self.macos_title_bar_height()
         } else {
@@ -207,9 +209,44 @@ impl Window {
             });
         }
     }
+
+    #[cfg(target_os = "macos")]
+    fn macos_title_bar_height(&self) -> f32 {
+        let content_layout_rect: NSRect =
+            unsafe { msg_send![self.window.ns_window() as id, contentLayoutRect] };
+        (self.window.outer_size().height as f64 / self.scale_factor
+            - content_layout_rect.size.height) as f32
+    }
+
+    pub fn main_menu_bar(&mut self, ui: &imgui::Ui, f: impl FnOnce(&mut Self)) {
+        #[cfg(target_os = "macos")]
+        let frame_padding = if self.macos_title_bar_hidden {
+            Some(ui.push_style_var(imgui::StyleVar::FramePadding([
+                0.0,
+                0.5 * (self.macos_title_bar_height - ui.text_line_height()),
+            ])))
+        } else {
+            None
+        };
+
+        ui.main_menu_bar(|| {
+            #[cfg(target_os = "macos")]
+            {
+                drop(frame_padding);
+                if self.macos_title_bar_hidden {
+                    // TODO: There has to be some way to compute this width instead of
+                    //       hardcoding it.
+                    ui.dummy([68.0, 0.0]);
+                    ui.same_line_with_spacing(0.0, 0.0);
+                }
+            }
+
+            f(self);
+        })
+    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ControlFlow {
     Continue,
     Exit,
@@ -231,7 +268,6 @@ impl Builder {
     pub async fn new(
         title: impl Into<String>,
         default_logical_size: (u32, u32),
-        imgui_config_path: Option<PathBuf>,
         #[cfg(target_os = "macos")] macos_title_bar_hidden: bool,
     ) -> Self {
         let event_loop = EventLoop::new();
@@ -258,16 +294,15 @@ impl Builder {
         let scale_factor = window.scale_factor();
 
         let mut imgui = imgui::Context::create();
-
-        imgui.set_ini_filename(imgui_config_path);
+        imgui.set_ini_filename(None);
         if let Ok(ctx) = ClipboardContext::new() {
             imgui.set_clipboard_backend(ClipboardBackend(ctx));
         }
         let imgui_io = imgui.io_mut();
-        imgui_io.config_windows_move_from_title_bar_only = true;
         imgui_io.config_flags |= imgui::ConfigFlags::IS_SRGB | imgui::ConfigFlags::DOCKING_ENABLE;
-
+        imgui_io.config_windows_move_from_title_bar_only = true;
         imgui_io.font_global_scale = (1.0 / scale_factor) as f32;
+
         let normal_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
             data: include_bytes!("../../fonts/OpenSans-Regular.ttf"),
             size_pixels: (16.0 * scale_factor) as f32,
@@ -278,18 +313,6 @@ impl Builder {
             size_pixels: (13.0 * scale_factor) as f32,
             config: None,
         }]);
-
-        let style = imgui.style_mut();
-        style.window_border_size = 0.0;
-        style.child_border_size = 0.0;
-        style.popup_border_size = 0.0;
-        style.window_rounding = 6.0;
-        style.child_rounding = 4.0;
-        style.frame_rounding = 4.0;
-        style.popup_rounding = 4.0;
-        style.scrollbar_rounding = 4.0;
-        style.grab_rounding = 3.0;
-        style.tab_rounding = 4.0;
 
         let mut imgui_winit_platform = imgui_winit_support::WinitPlatform::init(&mut imgui);
         imgui_winit_platform.attach_window(
@@ -311,6 +334,8 @@ impl Builder {
             normal_font,
             mono_font,
             #[cfg(target_os = "macos")]
+            macos_title_bar_hidden,
+            #[cfg(target_os = "macos")]
             macos_title_bar_height: 0.0,
         };
 
@@ -326,25 +351,41 @@ impl Builder {
         }
     }
 
+    pub fn apply_default_imgui_style(&mut self) {
+        let style = self.imgui.style_mut();
+        style.window_border_size = 0.0;
+        style.child_border_size = 0.0;
+        style.popup_border_size = 0.0;
+        style.window_rounding = 6.0;
+        style.child_rounding = 4.0;
+        style.frame_rounding = 4.0;
+        style.popup_rounding = 4.0;
+        style.scrollbar_rounding = 4.0;
+        style.grab_rounding = 3.0;
+        style.tab_rounding = 4.0;
+    }
+
     pub fn run<S: 'static>(
-        mut self,
+        self,
         state: S,
         mut process_event: impl FnMut(&mut Window, &mut S, &Event<()>) + 'static,
-        mut run_frame: impl FnMut(&mut Window, &imgui::Ui, &mut S) -> ControlFlow + 'static,
-        on_exit: impl FnOnce(Window, S) + 'static,
+        mut run_frame: impl FnMut(&mut Window, &mut S, &imgui::Ui) -> ControlFlow + 'static,
+        on_exit: impl FnOnce(Window, imgui::Context, S) + 'static,
     ) -> ! {
         // Since Rust can't prove that after Event::LoopDestroyed the program will exit and prevent
         // these from being used again, they have to be wrapped in ManuallyDrop to be able to pass
         // everything by value to the on_exit callback
         let mut window_ = ManuallyDrop::new(self.window);
+        let mut imgui_ = ManuallyDrop::new(self.imgui);
         let mut state = ManuallyDrop::new(state);
         let mut on_exit = ManuallyDrop::new(on_exit);
 
         self.event_loop.run(move |event, _, control_flow| {
             let window = &mut *window_;
+            let imgui = &mut *imgui_;
             window
                 .imgui_winit_platform
-                .handle_event(self.imgui.io_mut(), &window.window, &event);
+                .handle_event(imgui.io_mut(), &window.window, &event);
             process_event(window, &mut state, &event);
             match event {
                 Event::NewEvents(StartCause::Init) => {
@@ -367,7 +408,7 @@ impl Builder {
 
                 Event::RedrawRequested(_) => {
                     let now = Instant::now();
-                    let io = self.imgui.io_mut();
+                    let io = imgui.io_mut();
                     io.update_delta_time(now - window.last_frame);
                     window.last_frame = now;
                     window
@@ -375,17 +416,18 @@ impl Builder {
                         .prepare_frame(io, &window.window)
                         .expect("Couldn't prepare imgui frame");
 
-                    let ui = self.imgui.frame();
-                    if run_frame(window, ui, &mut state) == ControlFlow::Exit {
+                    let ui = imgui.frame();
+                    if run_frame(window, &mut state, ui) == ControlFlow::Exit {
                         *control_flow = WinitControlFlow::Exit;
                     }
 
                     window
                         .imgui_winit_platform
                         .prepare_render(ui, &window.window);
+
                     window
                         .gfx
-                        .redraw(self.imgui.render(), window.window.inner_size());
+                        .redraw(imgui.render(), window.window.inner_size());
                     window.gfx.device_state.device.poll(wgpu::Maintain::Poll);
                 }
 
@@ -412,6 +454,7 @@ impl Builder {
                     unsafe {
                         ManuallyDrop::take(&mut on_exit)(
                             ManuallyDrop::take(&mut window_),
+                            ManuallyDrop::take(&mut imgui_),
                             ManuallyDrop::take(&mut state),
                         )
                     };

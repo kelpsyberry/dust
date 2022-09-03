@@ -5,10 +5,11 @@ mod rtc;
 
 #[cfg(feature = "debug-views")]
 use super::debug_views;
-use super::{
-    audio, config::CommonLaunchConfig, game_db::SaveType, input, triple_buffer, DsSlotRom,
-    FrameData,
+use crate::{
+    audio, config::SysFiles, game_db::SaveType, input, triple_buffer, DsSlotRom, FrameData,
 };
+#[cfg(feature = "xq-audio")]
+use dust_core::audio::{Audio, ChannelInterpMethod as AudioChannelInterpMethod};
 use dust_core::{
     audio::DummyBackend as DummyAudioBackend,
     cpu::{arm7, interpreter::Interpreter},
@@ -17,7 +18,7 @@ use dust_core::{
     flash::Flash,
     spi::firmware,
     utils::{BoxedByteSlice, Bytes},
-    SaveContents,
+    Model, SaveContents, SaveReloadContents,
 };
 #[cfg(feature = "gdb-server")]
 use std::net::SocketAddr;
@@ -29,7 +30,7 @@ use std::{
     io::{self, Read},
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
     time::{Duration, Instant},
@@ -39,12 +40,17 @@ pub struct SharedState {
     // UI to emu
     pub playing: AtomicBool,
     pub limit_framerate: AtomicBool,
-    pub autosave_interval_ns: AtomicU64,
 
     // Emu to UI
-    pub stopped: AtomicBool,
     #[cfg(feature = "gdb-server")]
     pub gdb_server_active: AtomicBool,
+}
+
+pub struct SavePathUpdate {
+    pub new: Option<PathBuf>,
+    pub new_prev: Option<Option<PathBuf>>,
+    pub reload: bool,
+    pub reset: bool,
 }
 
 pub enum Message {
@@ -55,13 +61,28 @@ pub enum Message {
     Reset,
     Stop,
 
-    UpdateSavePath(Option<PathBuf>),
+    UpdateSavePath(SavePathUpdate),
+    UpdateSaveIntervalMs(f32),
+
+    UpdateRtcTimeOffsetSeconds(i64),
+
+    UpdateSyncToAudio(bool),
     UpdateAudioSampleChunkSize(u16),
     #[cfg(feature = "xq-audio")]
     UpdateAudioCustomSampleRate(Option<NonZeroU32>),
     #[cfg(feature = "xq-audio")]
-    UpdateAudioChannelInterpMethod(dust_core::audio::ChannelInterpMethod),
-    UpdateSyncToAudio(bool),
+    UpdateAudioChannelInterpMethod(AudioChannelInterpMethod),
+
+    #[cfg(feature = "log")]
+    UpdateLogger(slog::Logger),
+
+    #[cfg(feature = "gdb-server")]
+    ToggleGdbServer(Option<SocketAddr>),
+}
+
+pub enum Notification {
+    Stopped,
+    RtcTimeOffsetSecondsUpdated(i64),
 }
 
 pub struct DsSlot {
@@ -92,12 +113,11 @@ fn setup_ds_slot(
                 Ok(mut save_file) => {
                     let save_len = save_file
                         .metadata()
-                        .expect("Couldn't get save RAM file metadata")
-                        .len()
-                        .next_power_of_two() as usize;
-                    let mut save = BoxedByteSlice::new_zeroed(save_len);
+                        .expect("Couldn't get save file metadata")
+                        .len() as usize;
+                    let mut save = BoxedByteSlice::new_zeroed(save_len.next_power_of_two());
                     save_file
-                        .read_exact(&mut save[..])
+                        .read_exact(&mut save[..save_len])
                         .expect("Couldn't read save file");
                     Some(save)
                 }
@@ -105,7 +125,7 @@ fn setup_ds_slot(
                     io::ErrorKind::NotFound => None,
                     _err => {
                         #[cfg(feature = "log")]
-                        slog::error!(logger, "Couldn't read save file: {:?}.", _err);
+                        slog::error!(logger, "Couldn't read save file: {_err:?}.");
                         None
                     }
                 },
@@ -115,7 +135,7 @@ fn setup_ds_slot(
             if let Some(save_type) = ds_slot.save_type {
                 let expected_len = save_type.expected_len();
                 if expected_len != Some(save_contents.len()) {
-                    let (chosen_save_type, _message) = if let Some(detected_save_type) =
+                    let (chosen_save_type, _chosen) = if let Some(detected_save_type) =
                         SaveType::from_save_len(save_contents.len())
                     {
                         (detected_save_type, "existing save file")
@@ -125,14 +145,13 @@ fn setup_ds_slot(
                     #[cfg(feature = "log")]
                     slog::error!(
                         logger,
-                        "Unexpected save file size: expected {}, got {} B; respecting {}.",
+                        "Unexpected save file size: expected {}, got {} B; respecting {_chosen}.",
                         if let Some(expected_len) = expected_len {
-                            format!("{} B", expected_len)
+                            format!("{expected_len} B")
                         } else {
                             "no file".to_string()
                         },
                         save_contents.len(),
-                        _message,
                     );
                     chosen_save_type
                 } else {
@@ -144,10 +163,8 @@ fn setup_ds_slot(
                     #[cfg(feature = "log")]
                     slog::error!(
                         logger,
-                        concat!(
-                            "Unrecognized save file size ({} B) and no database entry found, ",
-                            "defaulting to an empty save.",
-                        ),
+                        "Unrecognized save file size ({} B) and no database entry found, \
+                         defaulting to an empty save.",
                         save_contents.len()
                     );
                     SaveType::None
@@ -159,10 +176,8 @@ fn setup_ds_slot(
                 #[cfg(feature = "log")]
                 slog::error!(
                     logger,
-                    concat!(
-                        "No existing save file present and no database entry found, defaulting to ",
-                        "an empty save.",
-                    )
+                    "No existing save file present and no database entry found, defaulting to an \
+                     empty save.",
                 );
                 SaveType::None
             })
@@ -251,24 +266,79 @@ fn setup_ds_slot(
     }
 }
 
+pub struct LaunchData {
+    pub sys_files: SysFiles,
+    pub ds_slot: Option<DsSlot>,
+
+    pub model: Model,
+    pub skip_firmware: bool,
+
+    pub save_path: Option<PathBuf>,
+    pub save_interval_ms: f32,
+
+    pub shared_state: Arc<SharedState>,
+    pub from_ui: crossbeam_channel::Receiver<Message>,
+    pub to_ui: crossbeam_channel::Sender<Notification>,
+
+    pub audio_tx_data: Option<audio::SenderData>,
+    pub frame_tx: triple_buffer::Sender<FrameData>,
+
+    pub sync_to_audio: bool,
+    pub audio_sample_chunk_size: u16,
+    #[cfg(feature = "xq-audio")]
+    pub audio_custom_sample_rate: Option<NonZeroU32>,
+    #[cfg(feature = "xq-audio")]
+    pub audio_channel_interp_method: AudioChannelInterpMethod,
+
+    pub rtc_time_offset_seconds: i64,
+
+    #[cfg(feature = "log")]
+    pub logger: slog::Logger,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn main(
-    config: CommonLaunchConfig,
-    mut save_path: Option<PathBuf>,
-    ds_slot: Option<DsSlot>,
-    audio_tx_data: Option<audio::SenderData>,
-    mut frame_tx: triple_buffer::Sender<FrameData>,
-    message_rx: crossbeam_channel::Receiver<Message>,
-    shared_state: Arc<SharedState>,
-    #[cfg(feature = "gdb-server")] gdb_server_addr: SocketAddr,
-    #[cfg(feature = "log")] logger: slog::Logger,
+    LaunchData {
+        sys_files,
+        ds_slot,
+
+        model,
+        skip_firmware,
+
+        mut save_path,
+        save_interval_ms,
+
+        shared_state,
+        from_ui,
+        to_ui,
+
+        audio_tx_data,
+        mut frame_tx,
+
+        mut sync_to_audio,
+        audio_sample_chunk_size,
+        #[cfg(feature = "xq-audio")]
+        audio_custom_sample_rate,
+        #[cfg(feature = "xq-audio")]
+        audio_channel_interp_method,
+
+        mut rtc_time_offset_seconds,
+
+        #[cfg(feature = "log")]
+        logger,
+    }: LaunchData,
 ) -> triple_buffer::Sender<FrameData> {
-    let skip_firmware = config.skip_firmware;
-    let mut sync_to_audio = config.sync_to_audio.value;
+    macro_rules! notif {
+        ($value: expr) => {
+            to_ui
+                .send($value)
+                .expect("couldn't send notification to UI thread");
+        };
+    }
 
     let (ds_slot_rom, ds_slot_spi) = setup_ds_slot(
         ds_slot,
-        &config.sys_files.arm7_bios,
+        &sys_files.arm7_bios,
         &save_path,
         #[cfg(feature = "log")]
         &logger,
@@ -277,12 +347,11 @@ pub(super) fn main(
     let mut emu_builder = dust_core::emu::Builder::new(
         Flash::new(
             SaveContents::Existing(
-                config
-                    .sys_files
+                sys_files
                     .firmware
-                    .unwrap_or_else(|| firmware::default(config.model)),
+                    .unwrap_or_else(|| firmware::default(model)),
             ),
-            firmware::id_for_model(config.model),
+            firmware::id_for_model(model),
             #[cfg(feature = "log")]
             logger.new(slog::o!("fw" => "")),
         )
@@ -293,23 +362,23 @@ pub(super) fn main(
             Some(data) => Box::new(audio::Sender::new(data, sync_to_audio)),
             None => Box::new(DummyAudioBackend),
         },
-        Box::new(rtc::Backend::new(config.rtc_time_offset_seconds.value)),
+        Box::new(rtc::Backend::new(rtc_time_offset_seconds)),
         Box::new(renderer_3d::Renderer::new()),
         #[cfg(feature = "log")]
         logger.clone(),
     );
 
-    emu_builder.arm7_bios = config.sys_files.arm7_bios.clone();
-    emu_builder.arm9_bios = config.sys_files.arm9_bios.clone();
+    emu_builder.arm7_bios = sys_files.arm7_bios.clone();
+    emu_builder.arm9_bios = sys_files.arm9_bios.clone();
 
-    emu_builder.model = config.model;
+    emu_builder.model = model;
     emu_builder.direct_boot = skip_firmware;
     // TODO: Set batch_duration and first_launch?
-    emu_builder.audio_sample_chunk_size = config.audio_sample_chunk_size.value;
+    emu_builder.audio_sample_chunk_size = audio_sample_chunk_size;
     #[cfg(feature = "xq-audio")]
     {
-        emu_builder.audio_custom_sample_rate = config.audio_custom_sample_rate.value;
-        emu_builder.audio_channel_interp_method = config.audio_channel_interp_method.value;
+        emu_builder.audio_custom_sample_rate = audio_custom_sample_rate;
+        emu_builder.audio_channel_interp_method = audio_channel_interp_method;
     }
 
     let mut emu = emu_builder.build(Interpreter).unwrap();
@@ -322,6 +391,7 @@ pub(super) fn main(
     let mut last_fps_calc_time = last_frame_time;
     let mut fps = 0.0;
 
+    let mut save_interval = Duration::from_secs_f32(save_interval_ms);
     let mut last_save_flush_time = last_frame_time;
 
     #[cfg(feature = "debug-views")]
@@ -349,7 +419,7 @@ pub(super) fn main(
     'run_loop: loop {
         let mut reset_triggered = false;
 
-        for message in message_rx.try_iter() {
+        for message in from_ui.try_iter() {
             match message {
                 Message::UpdateInput(changes) => {
                     emu.press_keys(changes.pressed);
@@ -360,38 +430,6 @@ pub(super) fn main(
                         } else {
                             emu.end_touch();
                         }
-                    }
-                }
-
-                Message::UpdateSavePath(new_path) => {
-                    if let Some(prev_path) = save_path {
-                        let _ = if let Some(new_path) = &new_path {
-                            fs::rename(prev_path, new_path)
-                        } else {
-                            fs::remove_file(prev_path)
-                        };
-                    }
-                    save_path = new_path;
-                }
-
-                Message::UpdateAudioSampleChunkSize(chunk_size) => {
-                    emu.audio.sample_chunk_size = chunk_size;
-                }
-
-                #[cfg(feature = "xq-audio")]
-                Message::UpdateAudioCustomSampleRate(sample_rate) => {
-                    dust_core::audio::Audio::set_custom_sample_rate(&mut emu, sample_rate);
-                }
-
-                #[cfg(feature = "xq-audio")]
-                Message::UpdateAudioChannelInterpMethod(interp_method) => {
-                    emu.audio.set_channel_interp_method(interp_method);
-                }
-
-                Message::UpdateSyncToAudio(new_sync_to_audio) => {
-                    sync_to_audio = new_sync_to_audio;
-                    if let Some(data) = &audio_tx_data {
-                        emu.audio.backend = Box::new(audio::Sender::new(data, sync_to_audio));
                     }
                 }
 
@@ -411,27 +449,115 @@ pub(super) fn main(
                 Message::Stop => {
                     break 'run_loop;
                 }
-            }
-        }
 
-        #[cfg(feature = "gdb-server")]
-        if shared_state.gdb_server_active.load(Ordering::Relaxed) != gdb_server.is_some() {
-            if gdb_server.is_some() {
-                gdb_server = None;
-            } else {
-                match gdb_server::GdbServer::new(gdb_server_addr) {
-                    Ok(mut server) => {
-                        server.attach(&mut emu);
-                        gdb_server = Some(server);
+                Message::UpdateSavePath(SavePathUpdate {
+                    new,
+                    new_prev,
+                    reload,
+                    reset,
+                }) => {
+                    save!();
+                    last_save_flush_time = Instant::now();
+
+                    if let Some((prev, new_prev)) = save_path.as_ref().zip(new_prev) {
+                        if let Some(new_prev) = new_prev {
+                            if new_prev != *prev {
+                                let _ = fs::rename(prev, new_prev);
+                            }
+                        } else {
+                            let _ = fs::remove_file(prev);
+                        }
                     }
-                    Err(_err) => {
-                        #[cfg(feature = "log")]
-                        slog::error!(logger, "Couldn't start GDB server: {}", _err);
+                    save_path = new;
+
+                    if reload {
+                        if let Some(save_path) = save_path.as_ref() {
+                            let save_contents = if let Ok(mut save_file) = File::open(save_path) {
+                                let save_len = save_file
+                                    .metadata()
+                                    .expect("Couldn't get save file metadata")
+                                    .len() as usize;
+                                let mut contents = BoxedByteSlice::new_zeroed(save_len);
+                                save_file
+                                    .read_exact(&mut contents[..])
+                                    .expect("Couldn't read save file");
+                                SaveReloadContents::Existing(contents)
+                            } else {
+                                SaveReloadContents::New
+                            };
+                            emu.ds_slot.spi.reload_contents(save_contents);
+                        }
+                    }
+
+                    if reset {
+                        reset_triggered = true;
+                    }
+                }
+
+                Message::UpdateSaveIntervalMs(value) => {
+                    save_interval = Duration::from_secs_f32(value);
+                }
+
+                Message::UpdateRtcTimeOffsetSeconds(value) => {
+                    rtc_time_offset_seconds = value;
+                    emu.rtc
+                        .backend
+                        .as_any_mut()
+                        .downcast_mut::<rtc::Backend>()
+                        .unwrap()
+                        .set_time_offset_seconds(value);
+                }
+
+                Message::UpdateSyncToAudio(new_sync_to_audio) => {
+                    sync_to_audio = new_sync_to_audio;
+                    if let Some(data) = &audio_tx_data {
+                        emu.audio.backend = Box::new(audio::Sender::new(data, sync_to_audio));
+                    }
+                }
+
+                Message::UpdateAudioSampleChunkSize(chunk_size) => {
+                    emu.audio.sample_chunk_size = chunk_size;
+                }
+
+                #[cfg(feature = "xq-audio")]
+                Message::UpdateAudioCustomSampleRate(sample_rate) => {
+                    Audio::set_custom_sample_rate(&mut emu, sample_rate);
+                }
+
+                #[cfg(feature = "xq-audio")]
+                Message::UpdateAudioChannelInterpMethod(interp_method) => {
+                    emu.audio.set_channel_interp_method(interp_method);
+                }
+
+                #[cfg(feature = "log")]
+                Message::UpdateLogger(_logger) => {
+                    // TODO
+                }
+
+                #[cfg(feature = "gdb-server")]
+                Message::ToggleGdbServer(addr) => {
+                    let mut enabled = addr.is_some();
+                    if gdb_server.is_some() != enabled {
+                        if let Some(addr) = addr {
+                            match gdb_server::GdbServer::new(addr) {
+                                Ok(mut server) => {
+                                    server.attach(&mut emu);
+                                    gdb_server = Some(server);
+                                }
+                                Err(_err) => {
+                                    #[cfg(feature = "log")]
+                                    slog::error!(logger, "Couldn't start GDB server: {_err}");
+                                    enabled = false;
+                                }
+                            }
+                        } else {
+                            gdb_server = None;
+                        }
                         shared_state
                             .gdb_server_active
-                            .store(false, Ordering::Relaxed);
+                            .store(enabled, Ordering::Relaxed);
                     }
-                };
+                }
             }
         }
 
@@ -468,10 +594,10 @@ pub(super) fn main(
                 logger.clone(),
             );
 
-            emu_builder.arm7_bios = config.sys_files.arm7_bios.clone();
-            emu_builder.arm9_bios = config.sys_files.arm9_bios.clone();
+            emu_builder.arm7_bios = sys_files.arm7_bios.clone();
+            emu_builder.arm9_bios = sys_files.arm9_bios.clone();
 
-            emu_builder.model = config.model;
+            emu_builder.model = model;
             emu_builder.direct_boot = skip_firmware;
             // TODO: Set batch_duration and first_launch?
             emu_builder.audio_sample_chunk_size = emu.audio.sample_chunk_size;
@@ -507,7 +633,8 @@ pub(super) fn main(
             ) {
                 RunOutput::FrameFinished => {}
                 RunOutput::Shutdown => {
-                    shared_state.stopped.store(true, Ordering::Relaxed);
+                    notif!(Notification::Stopped);
+                    playing = false;
                     #[cfg(feature = "gdb-server")]
                     if let Some(gdb_server) = &mut gdb_server {
                         gdb_server.emu_shutdown(&mut emu);
@@ -539,11 +666,23 @@ pub(super) fn main(
         frame_tx.finish();
 
         let now = Instant::now();
-        if now - last_save_flush_time
-            >= Duration::from_nanos(shared_state.autosave_interval_ns.load(Ordering::Relaxed))
-        {
+        if now - last_save_flush_time >= save_interval {
             last_save_flush_time = now;
             save!();
+        }
+
+        let new_rtc_time_offset_seconds = emu
+            .rtc
+            .backend
+            .as_any()
+            .downcast_ref::<rtc::Backend>()
+            .unwrap()
+            .time_offset_seconds();
+        if new_rtc_time_offset_seconds != rtc_time_offset_seconds {
+            rtc_time_offset_seconds = new_rtc_time_offset_seconds;
+            notif!(Notification::RtcTimeOffsetSecondsUpdated(
+                new_rtc_time_offset_seconds,
+            ));
         }
 
         if !playing || shared_state.limit_framerate.load(Ordering::Relaxed) {

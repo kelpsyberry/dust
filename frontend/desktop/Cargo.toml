@@ -5,8 +5,17 @@ edition = "2021"
 publish = false
 
 [features]
-debug-views = ["bitflags", "realfft", "dust-core/disasm", "dust-core/channel-audio-capture"]
 log = ["slog", "slog-term", "slog-async", "slog-imgui", "dust-core/log"]
+debug-views = [
+    "bitflags",
+    "imgui-memory-editor",
+    "realfft",
+    "dust-core/disasm",
+    "dust-core/channel-audio-capture",
+]
+gdb-server = ["bitflags", "gdb-protocol", "dust-core/debugger-hooks"]
+
+discord-presence = ["discord-rpc"]
 
 jit = ["dust-core/jit"]
 
@@ -20,40 +29,51 @@ interp-r15-write-checks = ["dust-core/interp-r15-write-checks"]
 
 xq-audio = ["dust-core/xq-audio"]
 
-discord-presence = ["discord-rpc"]
-gdb-server = ["gdb-protocol", "dust-core/debugger-hooks"]
-
 compile-shaders = ["shaderc"]
 
 [dependencies]
 dust-core = { path = "../../core" }
 dust-soft-3d = { path = "../../soft-3d" }
-bitflags = { version = "1.3", optional = true }
-ahash = "0.7"
-winit = { version = "0.26", features = ["serde"] }
-wgpu = { version = "0.12", features = ["spirv"] }
-futures-executor = "0.3"
+
+# UI
+winit = { version = "0.26", features = ["serde"] } # TODO: Update when imgui-winit-support supports winit 0.27
+wgpu = { version = "0.13", features = ["spirv"] }
 # TODO: Switch to imgui 0.9 when it's released with the docking API
 imgui = { git = "https://github.com/imgui-rs/imgui-rs", features = ["docking", "tables-api"] }
 imgui-winit-support = { git = "https://github.com/imgui-rs/imgui-rs" }
+
+# System resources
+rfd = "0.10"
+home = "0.5"
+copypasta = "0.8"
+cpal = "0.14"
+chrono = { version = "0.4", features = ["serde"] }
+libc = "0.2"
+
+# Utils
+ahash = "0.8"
+futures-executor = "0.3"
 crossbeam-channel = "0.5"
-slog = { version = "2.7", optional = true }
-serde_json = "1.0"
+parking_lot = "0.12"
+
+# Config
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Discord RPC
+discord-rpc = { git = "https://github.com/Kelpsy/discord-rpc", optional = true }
+
+# Logging
+slog = { version = "2.7", optional = true }
 slog-term = { version = "2.8", optional = true }
 slog-async = { version = "2.6", optional = true }
 slog-imgui = { git = "https://github.com/Kelpsy/slog-imgui", features = ["async"], optional = true }
-rfd = "0.8"
-home = "0.5"
-parking_lot = "0.12"
-cpal = "0.13"
-chrono = { version = "0.4", features = ["serde"] }
-discord-rpc = { git = "https://github.com/Kelpsy/discord-rpc", optional = true }
-imgui-memory-editor = { git = "https://github.com/Kelpsy/imgui-memory-editor" }
-gdb-protocol = { version = "0.1", optional = true }
-libc = "0.2"
-copypasta = "0.8"
+
+# Debugging
+bitflags = { version = "1.3", optional = true }
+imgui-memory-editor = { git = "https://github.com/Kelpsy/imgui-memory-editor", optional = true }
 realfft = { version = "3.0", optional = true }
+gdb-protocol = { version = "0.1", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.24"

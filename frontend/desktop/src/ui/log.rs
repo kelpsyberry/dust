@@ -1,56 +1,98 @@
-use crate::config::LoggingKind;
+use crate::config::{Config, LoggingKind, Setting};
 use slog::Drain;
 
-pub struct ImguiLogData {
-    pub console: slog_imgui::console::Console,
-    pub rx: slog_imgui::async_drain::Receiver,
-    pub drain_data: slog_imgui::async_drain::DrainData,
-    pub console_opened: bool,
+pub enum Log {
+    Imgui {
+        console: Box<slog_imgui::console::Console>,
+        rx: slog_imgui::async_drain::Receiver,
+        console_opened: bool,
+        logger: slog::Logger,
+    },
+    Term(slog::Logger),
 }
 
-pub fn init(
-    imgui_log_data: &mut Option<ImguiLogData>,
-    kind: LoggingKind,
-    imgui_log_history_capacity: u32,
-) -> slog::Logger {
-    match kind {
-        LoggingKind::Imgui => {
-            let drain_data = if let Some(log_data) = imgui_log_data {
-                log_data.drain_data.clone()
-            } else {
+impl Log {
+    pub fn new(config: &Config) -> Self {
+        match config.logging_kind.get() {
+            LoggingKind::Imgui => {
                 let (drain_data, rx) = slog_imgui::async_drain::init();
                 let mut builder = slog_imgui::console::Builder::new();
-                builder.history_capacity = imgui_log_history_capacity as usize;
+                builder.history_capacity = *config.imgui_log_history_capacity.get() as usize;
                 let console = builder.build();
-                *imgui_log_data = Some(ImguiLogData {
-                    console,
+                let logger = slog::Logger::root(
+                    slog_imgui::async_drain::Drain::new(drain_data).fuse(),
+                    slog::o!(),
+                );
+                Log::Imgui {
+                    console: Box::new(console),
                     rx,
-                    drain_data: drain_data.clone(),
                     console_opened: false,
-                });
-                drain_data
-            };
-            slog::Logger::root(
-                slog_imgui::async_drain::Drain::new(drain_data).fuse(),
-                slog::o!(),
-            )
-        }
+                    logger,
+                }
+            }
 
-        LoggingKind::Term => {
-            *imgui_log_data = None;
-            let decorator = slog_term::TermDecorator::new().stdout().build();
-            let drain = slog_term::CompactFormat::new(decorator)
-                .use_custom_timestamp(|_: &mut dyn std::io::Write| Ok(()))
-                .build()
-                .fuse();
-            slog::Logger::root(
-                slog_async::Async::new(drain)
-                    .overflow_strategy(slog_async::OverflowStrategy::Block)
-                    .thread_name("async logger".to_string())
+            LoggingKind::Term => {
+                let decorator = slog_term::TermDecorator::new().stdout().build();
+                let drain = slog_term::CompactFormat::new(decorator)
+                    .use_custom_timestamp(|_: &mut dyn std::io::Write| Ok(()))
                     .build()
-                    .fuse(),
-                slog::o!(),
-            )
+                    .fuse();
+                Log::Term(slog::Logger::root(
+                    slog_async::Async::new(drain)
+                        .overflow_strategy(slog_async::OverflowStrategy::Block)
+                        .thread_name("async logger".to_string())
+                        .build()
+                        .fuse(),
+                    slog::o!(),
+                ))
+            }
+        }
+    }
+
+    pub fn is_imgui(&self) -> bool {
+        matches!(self, Log::Imgui { .. })
+    }
+
+    pub fn logger(&self) -> &slog::Logger {
+        let (Log::Imgui { logger, .. } | Log::Term(logger)) = self;
+        logger
+    }
+
+    #[must_use]
+    pub fn update(&mut self, config: &Config) -> bool {
+        match self {
+            Log::Imgui { console, .. } => {
+                if *config.logging_kind.get() == LoggingKind::Imgui {
+                    if config_changed!(config, imgui_log_history_capacity) {
+                        console.history_capacity =
+                            *config.imgui_log_history_capacity.get() as usize;
+                    }
+                    return false;
+                }
+            }
+            Log::Term(..) => {
+                if *config.logging_kind.get() == LoggingKind::Term {
+                    return false;
+                }
+            }
+        }
+        *self = Self::new(config);
+        true
+    }
+
+    pub fn draw(&mut self, ui: &imgui::Ui, font: imgui::FontId) {
+        if let Log::Imgui {
+            console,
+            rx,
+            console_opened,
+            ..
+        } = self
+        {
+            let _ = console.process_async(rx.try_iter());
+            if *console_opened {
+                let _window_padding = ui.push_style_var(imgui::StyleVar::WindowPadding([6.0; 2]));
+                console.draw_window(ui, Some(font), 0.0, 2.0, console_opened);
+            }
         }
     }
 }

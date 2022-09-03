@@ -91,7 +91,7 @@ pub trait View: Sized {
         ui: &imgui::Ui,
         window: imgui::Window<'ui, 'a, T>,
     ) -> imgui::Window<'ui, 'a, T>;
-    fn render(
+    fn draw(
         &mut self,
         ui: &imgui::Ui,
         window: &mut Window,
@@ -432,7 +432,7 @@ macro_rules! declare_structs {
                 )*
             }
 
-            pub fn render_menu(&mut self, ui: &imgui::Ui, window: &mut Window) {
+            pub fn draw_menu(&mut self, ui: &imgui::Ui, window: &mut Window) {
                 $(
                     if ui.menu_item_config(<$s_view_ty>::NAME)
                         .selected(self.$s_view_ident.is_some())
@@ -470,7 +470,7 @@ macro_rules! declare_structs {
                 )*
             }
 
-            pub fn render<'a>(
+            pub fn draw<'a>(
                 &'a mut self,
                 ui: &imgui::Ui,
                 window: &mut Window,
@@ -487,7 +487,7 @@ macro_rules! declare_structs {
                             ui.window(<$s_view_ty>::NAME).opened(&mut opened)
                         ).build(|| {
                             *visible = true;
-                            new_emu_state = view.render(
+                            new_emu_state = view.draw(
                                 ui,
                                 window,
                                 emu_running,
@@ -519,11 +519,11 @@ macro_rules! declare_structs {
                             *visible = false;
                             view.customize_window(
                                 ui,
-                                ui.window(&format!("{} {}", <$i_view_ty>::NAME, *key))
+                                ui.window(&format!("{} {key}", <$i_view_ty>::NAME))
                                     .opened(&mut opened),
                             ).build(|| {
                                 *visible = true;
-                                new_emu_state = view.render(
+                                new_emu_state = view.draw(
                                     ui,
                                     window,
                                     emu_running,

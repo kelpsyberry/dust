@@ -14,11 +14,11 @@ macro_rules! reg {
 
 macro_rules! inc_r15 {
     ($cpu: expr, $incr: literal) => {{
-        #[cfg(feature = "accurate-pipeline")]
+        #[cfg(feature = "interp-pipeline-accurate-reloads")]
         {
-            reg!($cpu, 15) = reg!($cpu, 15).wrapping_add($cpu.engine_data.r15_incrementement);
+            reg!($cpu, 15) = reg!($cpu, 15).wrapping_add($cpu.engine_data.r15_increment);
         }
-        #[cfg(not(feature = "accurate-pipeline"))]
+        #[cfg(not(feature = "interp-pipeline-accurate-reloads"))]
         {
             reg!($cpu, 15) = reg!($cpu, 15).wrapping_add($incr);
         }
@@ -27,7 +27,7 @@ macro_rules! inc_r15 {
 
 macro_rules! spsr {
     ($cpu: expr) => {
-        if $cpu.engine_data.regs.is_in_exc_mode() {
+        if $cpu.engine_data.regs.has_spsr() {
             $cpu.engine_data.regs.spsr
         } else {
             #[cfg(feature = "log")]
@@ -35,15 +35,15 @@ macro_rules! spsr {
                 $cpu.logger,
                 "Unpredictable SPSR read in non-exception mode, reading CPSR"
             );
-            $cpu.engine_data.regs.cpsr.into()
+            $cpu.engine_data.regs.cpsr
         }
     };
 }
 
 macro_rules! update_spsr {
-    ($cpu: expr, $arm9: expr, $mask: expr, $value: expr) => {
-        if $cpu.engine_data.regs.is_in_exc_mode() {
-            $cpu.engine_data.regs.spsr = crate::cpu::psr::Spsr::from_raw::<$arm9>(
+    ($cpu: expr, $mask: expr, $value: expr) => {
+        if $cpu.engine_data.regs.has_spsr() {
+            $cpu.engine_data.regs.spsr = crate::cpu::psr::Psr::from_raw(
                 ($cpu.engine_data.regs.spsr.raw() & !$mask) | ($value & $mask),
             );
         } else {

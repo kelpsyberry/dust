@@ -7,7 +7,7 @@ pub mod dma;
 
 #[cfg(any(feature = "debugger-hooks", doc))]
 use super::debug;
-use super::{psr::Cpsr, timers::Timers, CoreData, Engine, Regs};
+use super::{psr::Psr, timers::Timers, CoreData, Engine, Regs};
 use crate::{
     cpu::{self, hle_bios},
     emu::{swram::Swram, Emu, LocalExMemControl},
@@ -140,12 +140,12 @@ impl<E: Engine> Arm7<E> {
     }
 
     #[inline]
-    pub fn cpsr(&self) -> Cpsr {
+    pub fn cpsr(&self) -> Psr {
         self.engine_data.cpsr()
     }
 
     #[inline]
-    pub fn set_cpsr(emu: &mut Emu<E>, value: Cpsr) {
+    pub fn set_cpsr(emu: &mut Emu<E>, value: Psr) {
         E::Arm7Data::set_cpsr(emu, value);
     }
 

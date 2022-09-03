@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, io, path::Path};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SaveType {
     None,
@@ -61,7 +61,7 @@ impl SaveType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Entry {
     pub code: u32,
@@ -72,7 +72,6 @@ pub struct Entry {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Database(Vec<Entry>);
 
-#[derive(Debug)]
 pub enum Error {
     Io(io::Error),
     Json(serde_json::Error),
@@ -80,7 +79,7 @@ pub enum Error {
 
 impl Database {
     pub fn read_from_file(path: &Path) -> Result<Self, Error> {
-        let content = fs::read_to_string(&path).map_err(Error::Io)?;
+        let content = fs::read_to_string(path).map_err(Error::Io)?;
         serde_json::from_str(&content).map_err(Error::Json)
     }
 

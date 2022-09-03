@@ -39,7 +39,7 @@ pub fn blx_imm(emu: &mut Emu<Interpreter>, instr: u32) {
     add_bus_cycles(emu, 2);
     prefetch_arm::<true, false>(emu);
     emu.arm9.engine_data.regs.cpsr.set_thumb_state(true);
-    #[cfg(feature = "accurate-pipeline")]
+    #[cfg(feature = "interp-pipeline-accurate-reloads")]
     {
         emu.arm9.engine_data.r15_increment = 2;
     }

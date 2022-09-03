@@ -4,11 +4,15 @@ pub mod eeprom_4k;
 pub mod eeprom_fram;
 pub mod flash;
 
-use crate::utils::{ByteMutSlice, ByteSlice, Savestate};
+use crate::{
+    utils::{ByteMutSlice, ByteSlice, Savestate},
+    SaveReloadContents,
+};
 
 trait SpiDevice {
     fn contents(&self) -> ByteSlice;
     fn contents_mut(&mut self) -> ByteMutSlice;
+    fn reload_contents(&mut self, contents: SaveReloadContents);
     fn contents_dirty(&self) -> bool;
     fn mark_contents_dirty(&mut self);
     fn mark_contents_flushed(&mut self);
@@ -39,6 +43,14 @@ impl Spi {
             Eeprom4k, EepromFram, Flash, Empty;
             self, contents_mut()
         )
+    }
+
+    pub fn reload_contents(&mut self, contents: SaveReloadContents) {
+        forward_to_variants!(
+            Spi;
+            Eeprom4k, EepromFram, Flash, Empty;
+            self, reload_contents(contents)
+        );
     }
 
     pub fn contents_dirty(&self) -> bool {

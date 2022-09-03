@@ -34,21 +34,16 @@ impl From<Timestamp> for timers::Timestamp {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Savestate)]
 pub enum Event {
-    DsSlotRomDataReady,      // Max 1
+    #[default]
+    DsSlotRomDataReady, // Max 1
     DsSlotSpiDataReady,      // Max 1
     DivResultReady,          // Max 1
     SqrtResultReady,         // Max 1
     Timer(timers::Index),    // Max 4
     GxFifoStall,             // Max 1
     Engine3dCommandFinished, // Max 1
-}
-
-impl Default for Event {
-    fn default() -> Self {
-        Event::DsSlotRomDataReady
-    }
 }
 
 def_event_slots! {
@@ -95,11 +90,18 @@ impl Schedule {
     }
 }
 
-impl cpu::Schedule for Schedule {
+impl const cpu::ScheduleConst for Schedule {
     type Timestamp = Timestamp;
     type Event = Event;
     type EventSlotIndex = EventSlotIndex;
 
+    #[inline]
+    fn timer_event_slot(i: timers::Index) -> EventSlotIndex {
+        EventSlotIndex::new(event_slots::TIMERS_START.get() + i.get())
+    }
+}
+
+impl cpu::Schedule for Schedule {
     #[inline]
     fn cur_time(&self) -> Timestamp {
         self.cur_time
@@ -121,18 +123,16 @@ impl cpu::Schedule for Schedule {
     }
 
     #[inline]
-    fn timer_event_slot(i: timers::Index) -> EventSlotIndex {
-        EventSlotIndex::new(event_slots::TIMERS_START.get() + i.get())
-    }
-
-    #[inline]
     fn set_event(&mut self, slot_index: EventSlotIndex, event: Event) {
         self.schedule.set_event(slot_index, event);
     }
 
     #[inline]
-    fn set_timer_event(&mut self, slot_index: EventSlotIndex, i: timers::Index) {
-        self.schedule.set_event(slot_index, Event::Timer(i));
+    fn set_timer_event(&mut self, i: timers::Index) {
+        self.schedule.set_event(
+            <Self as cpu::ScheduleConst>::timer_event_slot(i),
+            Event::Timer(i),
+        );
     }
 
     #[inline]

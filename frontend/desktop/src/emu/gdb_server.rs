@@ -10,7 +10,6 @@ mod server;
 use server::Server;
 
 use ahash::AHashMap as HashMap;
-use bitflags::bitflags;
 use dust_core::{
     cpu::{
         self, arm7, arm9,
@@ -26,7 +25,7 @@ use dust_core::{
 use gdb_protocol::packet::{CheckedPacket, Kind as PacketKind};
 use std::{cell::RefCell, io::Write, net::ToSocketAddrs, rc::Rc, str};
 
-bitflags! {
+bitflags::bitflags! {
     struct ThreadMask: u8 {
         const ARM9 = 1 << 0;
         const ARM7 = 1 << 1;
@@ -39,7 +38,7 @@ impl ThreadMask {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 struct ThreadId {
     id: i8,
     mask: ThreadMask,
@@ -60,19 +59,19 @@ impl ThreadId {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 struct Breakpoint {}
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 struct Watchpoint {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Core {
     Arm9,
     Arm7,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 enum StopCause {
     Break,                                        // Signal 0x00 (None)
     Syscall(u8, u8),                              // Signal 0x05 (SIGTRAP), syscall_entry
@@ -267,8 +266,7 @@ impl GdbServer {
             StopCause::Syscall(number, core) => {
                 let _ = write!(
                     buf,
-                    "T05syscall_entry:{:X};thread:{};core:{};",
-                    number,
+                    "T05syscall_entry:{number:X};thread:{};core:{};",
                     core as u8 + 1,
                     core as u8
                 );
@@ -290,13 +288,12 @@ impl GdbServer {
             StopCause::MemWatchpoint(core, addr, cause) => {
                 let _ = write!(
                     buf,
-                    "T05{}:{:08X};thread:{};core:{};",
+                    "T05{}:{addr:08X};thread:{};core:{};",
                     if cause == MemWatchpointCause::Read {
                         "rwatch"
                     } else {
                         "watch"
                     },
-                    addr,
                     core as u8 + 1,
                     core as u8
                 );
@@ -1096,7 +1093,7 @@ impl GdbServer {
                     !received
                 }
                 Err(err) => {
-                    eprintln!("[GDB] Couldn't receive data: {}", err);
+                    eprintln!("[GDB] Couldn't receive data: {err}");
                     self.detach(emu);
                     false
                 }
@@ -1120,7 +1117,7 @@ impl GdbServer {
                 Ok(None) => break,
 
                 Err(err) => {
-                    eprintln!("[GDB] Couldn't receive data: {}", err);
+                    eprintln!("[GDB] Couldn't receive data: {err}");
                     self.detach(emu);
                     break;
                 }

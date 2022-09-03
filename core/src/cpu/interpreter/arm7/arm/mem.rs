@@ -395,7 +395,7 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
         emu.arm7
             .engine_data
             .regs
-            .update_mode::<true>(emu.arm7.engine_data.regs.cpsr.mode(), Mode::User);
+            .update_mode::<true>(emu.arm7.engine_data.regs.cpsr.mode(), Mode::USER);
     }
     if PREINC {
         cur_addr = cur_addr.wrapping_add(4);
@@ -427,7 +427,7 @@ pub fn ldm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
             emu.arm7
                 .engine_data
                 .regs
-                .update_mode::<true>(Mode::User, emu.arm7.engine_data.regs.cpsr.mode());
+                .update_mode::<true>(Mode::USER, emu.arm7.engine_data.regs.cpsr.mode());
         }
         add_cycles(emu, 1);
         emu.arm7.engine_data.prefetch_nseq = true;
@@ -496,7 +496,7 @@ pub fn stm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
         emu.arm7
             .engine_data
             .regs
-            .update_mode::<true>(emu.arm7.engine_data.regs.cpsr.mode(), Mode::User);
+            .update_mode::<true>(emu.arm7.engine_data.regs.cpsr.mode(), Mode::USER);
     }
     if PREINC {
         cur_addr = cur_addr.wrapping_add(4);
@@ -529,6 +529,6 @@ pub fn stm<const UPWARDS: bool, const PREINC: bool, const WRITEBACK: bool, const
         emu.arm7
             .engine_data
             .regs
-            .update_mode::<true>(Mode::User, emu.arm7.engine_data.regs.cpsr.mode());
+            .update_mode::<true>(Mode::USER, emu.arm7.engine_data.regs.cpsr.mode());
     }
 }

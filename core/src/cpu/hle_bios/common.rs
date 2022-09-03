@@ -12,7 +12,6 @@ pub fn div(numer: u32, denom: u32) -> (u32, u32, u32) {
 }
 
 pub fn sqrt(mut input: u32) -> u32 {
-    let inputt = input;
     let mut bit = 1 << 30;
     let mut result = 0;
     while bit > input {
@@ -27,7 +26,6 @@ pub fn sqrt(mut input: u32) -> u32 {
         }
         bit >>= 2;
     }
-    println!("SQRT {} = {}", inputt, result);
     result
 }
 

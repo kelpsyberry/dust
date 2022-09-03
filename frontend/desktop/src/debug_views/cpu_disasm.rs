@@ -141,7 +141,7 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
         window
     }
 
-    fn render(
+    fn draw(
         &mut self,
         ui: &imgui::Ui,
         window: &mut Window,

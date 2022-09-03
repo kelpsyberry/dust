@@ -1,12 +1,12 @@
 pub use super::super::shifts_common::*;
 
 use super::super::super::Regs;
-use crate::cpu::psr::Cpsr;
+use crate::cpu::psr::Psr;
 
 pub fn lsl_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
+    let mut cpsr = regs.cpsr.raw();
+    let result: u32;
     unsafe {
-        let mut cpsr = regs.cpsr.raw();
-        let result: u32;
         core::arch::asm!(
             "btr {cpsr:e}, 29",
             "shl {value_res:e}, cl",
@@ -19,14 +19,14 @@ pub fn lsl_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
             in("cl") shift,
             options(pure, nomem, nostack),
         );
-        regs.cpsr = Cpsr::from_raw_unchecked(cpsr);
-        result
     }
+    regs.cpsr = Psr::from_raw(cpsr);
+    result
 }
 
 pub fn lsl_reg(value: u32, shift: u8) -> u32 {
+    let result: u32;
     unsafe {
-        let result: u32;
         core::arch::asm!(
             "shl {value_res:e}, cl",
             "xor {scratch:e}, {scratch:e}",
@@ -37,17 +37,17 @@ pub fn lsl_reg(value: u32, shift: u8) -> u32 {
             in("cl") shift,
             options(pure, nomem, nostack),
         );
-        result
     }
+    result
 }
 
 pub fn lsl_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     if shift == 0 {
         value
     } else if shift < 33 {
+        let result: u32;
+        let carry_flag: u8;
         unsafe {
-            let result: u32;
-            let carry_flag: u8;
             core::arch::asm!(
                 "shl {value_res:e}, cl",
                 "shl {value_res:e}, 1",
@@ -57,11 +57,9 @@ pub fn lsl_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
                 in("cl") shift - 1,
                 options(pure, nomem, nostack),
             );
-            regs.cpsr = Cpsr::from_raw_unchecked(
-                (regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29,
-            );
-            result
         }
+        regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
+        result
     } else {
         regs.cpsr.set_carry(false);
         0
@@ -69,9 +67,9 @@ pub fn lsl_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
 }
 
 fn lsr_1_32_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
+    let result: u32;
+    let carry_flag: u8;
     unsafe {
-        let result: u32;
-        let carry_flag: u8;
         // NOTE: This code relies on `shift.wrapping_sub(1)` wrapping to 255 when `shift` is 0, so
         // that, when used as a shift amount with a 32-bit register, it wraps back to 31 + the
         // later shr by 1, doing a 32-bit shift and exhibiting the correct behavior without
@@ -85,10 +83,9 @@ fn lsr_1_32_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
             in("cl") shift.wrapping_sub(1),
             options(pure, nomem, nostack),
         );
-        regs.cpsr =
-            Cpsr::from_raw_unchecked((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
-        result
     }
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
+    result
 }
 
 pub fn lsr_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
@@ -96,8 +93,8 @@ pub fn lsr_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
 }
 
 pub fn lsr_reg(value: u32, shift: u8) -> u32 {
+    let result: u32;
     unsafe {
-        let result: u32;
         core::arch::asm!(
             "shr {value_res:e}, cl",
             "xor {scratch:e}, {scratch:e}",
@@ -108,8 +105,8 @@ pub fn lsr_reg(value: u32, shift: u8) -> u32 {
             in("cl") shift,
             options(pure, nomem, nostack),
         );
-        result
     }
+    result
 }
 
 pub fn lsr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
@@ -121,9 +118,9 @@ pub fn lsr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
             lsr_1_32_s(regs, value, shift)
         }
         #[cfg(target_arch = "x86_64")]
+        let result: u32;
+        let carry_flag: u8;
         unsafe {
-            let result: u32;
-            let carry_flag: u8;
             core::arch::asm!(
                 "shr {value_res:r}, cl",
                 "setc {carry_flag}",
@@ -132,11 +129,9 @@ pub fn lsr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
                 in("cl") shift,
                 options(pure, nomem, nostack),
             );
-            regs.cpsr = Cpsr::from_raw_unchecked(
-                (regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29,
-            );
-            result
         }
+        regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
+        result
     } else {
         regs.cpsr.set_carry(false);
         0
@@ -144,9 +139,9 @@ pub fn lsr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
 }
 
 pub fn asr_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
+    let result: u32;
+    let carry_flag: u8;
     unsafe {
-        let result: u32;
-        let carry_flag: u8;
         core::arch::asm!(
             "sar {value_res:e}, cl",
             "sar {value_res:e}, 1",
@@ -156,15 +151,14 @@ pub fn asr_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
             in("cl") shift.wrapping_sub(1),
             options(pure, nomem, nostack),
         );
-        regs.cpsr =
-            Cpsr::from_raw_unchecked((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
-        result
     }
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
+    result
 }
 
 pub fn asr_reg(value: u32, shift: u8) -> u32 {
+    let result: u32;
     unsafe {
-        let result: u32;
         core::arch::asm!(
             "mov {scratch:e}, {value_res:e}",
             "sar {value_res:e}, cl",
@@ -176,17 +170,17 @@ pub fn asr_reg(value: u32, shift: u8) -> u32 {
             in("cl") shift,
             options(pure, nomem, nostack),
         );
-        result
     }
+    result
 }
 
 pub fn asr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     if shift == 0 {
         value
     } else {
+        let result: u32;
+        let carry_flag: u8;
         unsafe {
-            let result: u32;
-            let carry_flag: u8;
             if shift < 32 {
                 core::arch::asm!(
                     "sar {value_res:e}, cl",
@@ -206,17 +200,15 @@ pub fn asr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
                     options(pure, nomem, nostack),
                 );
             }
-            regs.cpsr = Cpsr::from_raw_unchecked(
-                (regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29,
-            );
-            result
         }
+        regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
+        result
     }
 }
 
 fn rrx(regs: &Regs, value: u32) -> u32 {
+    let result: u32;
     unsafe {
-        let result: u32;
         core::arch::asm!(
             "bt {cpsr:e}, 29",
             "rcr {value_res:e}, 1",
@@ -224,15 +216,15 @@ fn rrx(regs: &Regs, value: u32) -> u32 {
             cpsr = in(reg) regs.cpsr.raw(),
             options(pure, nomem, nostack),
         );
-        result
     }
+    result
 }
 
 fn rrx_s(regs: &mut Regs, value: u32) -> u32 {
+    let mut cpsr = regs.cpsr.raw();
+    let result: u32;
+    let carry_flag: u8;
     unsafe {
-        let mut cpsr = regs.cpsr.raw();
-        let result: u32;
-        let carry_flag: u8;
         core::arch::asm!(
             "btr {cpsr:e}, 29",
             "rcr {value_res:e}, 1",
@@ -242,9 +234,9 @@ fn rrx_s(regs: &mut Regs, value: u32) -> u32 {
             carry_flag = lateout(reg_byte) carry_flag,
             options(pure, nomem, nostack),
         );
-        regs.cpsr = Cpsr::from_raw_unchecked(cpsr | (carry_flag as u32) << 29);
-        result
     }
+    regs.cpsr = Psr::from_raw(cpsr | (carry_flag as u32) << 29);
+    result
 }
 
 pub fn ror_imm(regs: &Regs, value: u32, shift: u8) -> u32 {
@@ -259,9 +251,9 @@ pub fn ror_imm_s_no_rrx(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     if shift == 0 {
         value
     } else {
+        let result: u32;
+        let carry_flag: u8;
         unsafe {
-            let result: u32;
-            let carry_flag: u8;
             core::arch::asm!(
                 "ror {value_res:e}, cl",
                 "setc {carry_flag}",
@@ -270,11 +262,9 @@ pub fn ror_imm_s_no_rrx(regs: &mut Regs, value: u32, shift: u8) -> u32 {
                 in("cl") shift,
                 options(pure, nomem, nostack),
             );
-            regs.cpsr = Cpsr::from_raw_unchecked(
-                (regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29,
-            );
-            result
         }
+        regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
+        result
     }
 }
 
@@ -282,9 +272,9 @@ pub fn ror_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     if shift == 0 {
         rrx_s(regs, value)
     } else {
+        let result: u32;
+        let carry_flag: u8;
         unsafe {
-            let result: u32;
-            let carry_flag: u8;
             core::arch::asm!(
                 "ror {value_res:e}, cl",
                 "setc {carry_flag}",
@@ -293,11 +283,9 @@ pub fn ror_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
                 in("cl") shift,
                 options(pure, nomem, nostack),
             );
-            regs.cpsr = Cpsr::from_raw_unchecked(
-                (regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29,
-            );
-            result
         }
+        regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
+        result
     }
 }
 
@@ -305,9 +293,9 @@ pub fn ror_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     if shift == 0 {
         value
     } else {
+        let result: u32;
+        let carry_flag: u8;
         unsafe {
-            let result: u32;
-            let carry_flag: u8;
             core::arch::asm!(
                 "bt {value_res:e}, 31",
                 "ror {value_res:e}, cl",
@@ -317,10 +305,8 @@ pub fn ror_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
                 in("cl") shift,
                 options(pure, nomem, nostack),
             );
-            regs.cpsr = Cpsr::from_raw_unchecked(
-                (regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29,
-            );
-            result
         }
+        regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
+        result
     }
 }

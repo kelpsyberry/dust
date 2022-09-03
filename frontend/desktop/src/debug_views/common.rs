@@ -40,13 +40,14 @@ pub fn rgb_f32_to_rgb_5(value: [f32; 3]) -> u16 {
 
 pub fn psr_mode_to_str(mode: Mode) -> &'static str {
     match mode {
-        Mode::User => "User",
-        Mode::Fiq => "Fiq",
-        Mode::Irq => "Irq",
-        Mode::Supervisor => "Supervisor",
-        Mode::Abort => "Abort",
-        Mode::Undefined => "Undefined",
-        Mode::System => "System",
+        Mode::USER => "User",
+        Mode::FIQ => "Fiq",
+        Mode::IRQ => "Irq",
+        Mode::SUPERVISOR => "Supervisor",
+        Mode::ABORT => "Abort",
+        Mode::UNDEFINED => "Undefined",
+        Mode::SYSTEM => "System",
+        _ => "Invalid",
     }
 }
 
@@ -74,10 +75,7 @@ pub fn separator_with_width(ui: &Ui, width: f32) {
 }
 
 pub fn layout_group(ui: &Ui, height: f32, bg_color: Option<[f32; 4]>, f: impl FnOnce(f32)) {
-    let (child_rounding, window_padding) = unsafe {
-        let style = ui.style();
-        (style.child_rounding, style.window_padding)
-    };
+    let window_padding = style!(ui, window_padding);
 
     let prev_cursor_pos = ui.cursor_pos();
     ui.set_cursor_pos([
@@ -98,7 +96,7 @@ pub fn layout_group(ui: &Ui, height: f32, bg_color: Option<[f32; 4]>, f: impl Fn
         ui.get_window_draw_list()
             .add_rect(upper_left, lower_right, bg_color)
             .filled(true)
-            .rounding(child_rounding)
+            .rounding(style!(ui, child_rounding))
             .build();
     }
 
@@ -114,7 +112,7 @@ macro_rules! selectable_value {
         $ui.text(concat!($name, ": "));
         $ui.same_line();
         $ui.set_next_item_width(
-            unsafe { $ui.style().frame_padding[0] } * 2.0 + $ui.calc_text_size($width_str)[0],
+            style!($ui, frame_padding)[0] * 2.0 + $ui.calc_text_size($width_str)[0],
         );
         $ui.input_text(
             concat!("##", $name),

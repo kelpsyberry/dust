@@ -1,4 +1,5 @@
 use crate::utils::Savestate;
+use core::any::Any;
 
 // TODO: Implement INT1 and INT2 (and also expose them)
 
@@ -69,6 +70,9 @@ pub struct Date {
 }
 
 pub trait Backend {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+
     fn get_time(&mut self) -> Time;
     fn get_date_time(&mut self) -> (Date, Time);
     fn set_date_time(&mut self, value: (Date, Time));
@@ -77,6 +81,14 @@ pub trait Backend {
 pub struct DummyBackend;
 
 impl Backend for DummyBackend {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn get_time(&mut self) -> Time {
         Time {
             hour: 9,

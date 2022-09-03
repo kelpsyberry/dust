@@ -3,7 +3,7 @@ use super::super::{
     return_from_hle_irq, set_cpsr_update_control,
 };
 use crate::{
-    cpu::{arm7::bus, bus::CpuAccess, hle_bios, psr::Cpsr},
+    cpu::{arm7::bus, bus::CpuAccess, hle_bios, psr::Psr},
     emu::Emu,
 };
 use core::intrinsics::unlikely;
@@ -39,19 +39,17 @@ pub fn msr<const IMM: bool, const SPSR: bool>(emu: &mut Emu<Interpreter>, instr:
         mask |= 0xF000_0000;
     }
     if emu.arm7.engine_data.regs.is_in_priv_mode() && instr & 1 << 16 != 0 {
-        mask |= 0x0000_00FF;
+        mask |= 0x0000_00EF;
     }
     if SPSR {
-        update_spsr!(emu.arm7, false, mask, value);
+        update_spsr!(emu.arm7, mask, value);
     } else {
         if mask & value & 0x20 != 0 {
             unimplemented!("msr CPSR T bit change");
         }
         set_cpsr_update_control(
             emu,
-            Cpsr::from_raw::<false>(
-                (emu.arm7.engine_data.regs.cpsr.raw() & !mask) | (value & mask),
-            ),
+            Psr::from_raw((emu.arm7.engine_data.regs.cpsr.raw() & !mask) | (value & mask)),
         );
     }
     inc_r15!(emu.arm7, 4);

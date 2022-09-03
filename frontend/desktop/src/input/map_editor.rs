@@ -1,18 +1,20 @@
 use super::{
     trigger::{self, Trigger},
-    Action, PressedKey, State as InputState,
+    Action, Map, PressedKey,
 };
+use crate::{config, ui::utils::heading};
+use ahash::AHashSet as HashSet;
 use dust_core::emu::input::Keys;
 use imgui::{MouseButton, StyleColor, TableFlags, Ui};
 use winit::event::{ElementState, Event, WindowEvent};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Selection {
     Keypad(Keys),
     Hotkey(Action),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum State {
     None,
     Capturing {
@@ -62,9 +64,9 @@ impl State {
     }
 }
 
-pub struct Editor {
+pub struct MapEditor {
     state: State,
-    pressed_keys: Vec<PressedKey>,
+    pressed_keys: HashSet<PressedKey>,
     manual_change_buffer: String,
     current_trigger: Option<Trigger>,
 }
@@ -89,58 +91,25 @@ static ACTIONS: &[(Action, &str)] = &[
     (Action::PlayPause, "Play/pause"),
     (Action::Reset, "Reset"),
     (Action::Stop, "Stop"),
+    (Action::ToggleFramerateLimit, "Toggle framerate limit"),
+    (Action::ToggleSyncToAudio, "Toggle sync to audio"),
     (
         Action::ToggleFullscreenRender,
         "Toggle fullscreen rendering",
     ),
-    (Action::ToggleSyncToAudio, "Toggle sync to audio"),
-    (Action::ToggleFramerateLimit, "Toggle framerate limit"),
 ];
 
-fn heading(ui: &Ui, text: &str, indent: f32, margin: f32) {
-    let window_pos = ui.window_pos();
-    let window_x_bounds = [
-        window_pos[0] + ui.window_content_region_min()[0],
-        window_pos[0] + ui.window_content_region_max()[0],
-    ];
-    let separator_color = ui.style_color(StyleColor::Separator);
-
-    let mut text_start_pos = ui.cursor_screen_pos();
-    text_start_pos[0] += indent;
-    ui.set_cursor_screen_pos(text_start_pos);
-    ui.text(text);
-
-    text_start_pos[1] += ui.text_line_height() * 0.5;
-    let text_end_x = text_start_pos[0] + ui.calc_text_size(text)[0];
-
-    let draw_list = ui.get_window_draw_list();
-    draw_list
-        .add_line(
-            [window_x_bounds[0], text_start_pos[1]],
-            [text_start_pos[0] - margin, text_start_pos[1]],
-            separator_color,
-        )
-        .build();
-    draw_list
-        .add_line(
-            [window_x_bounds[1], text_start_pos[1]],
-            [text_end_x + margin, text_start_pos[1]],
-            separator_color,
-        )
-        .build();
-}
-
-impl Editor {
+impl MapEditor {
     pub fn new() -> Self {
-        Editor {
+        MapEditor {
             state: State::None,
-            pressed_keys: Vec::new(),
+            pressed_keys: HashSet::new(),
             manual_change_buffer: String::new(),
             current_trigger: None,
         }
     }
 
-    fn finalize(&mut self, input_state: &mut InputState) {
+    fn finalize(&mut self, map: &mut Map) {
         if let Some((trigger, selection)) = match self.state {
             State::None => None,
             State::Capturing { selection, .. } => self
@@ -155,37 +124,29 @@ impl Editor {
         } {
             match selection {
                 Selection::Keypad(key) => {
-                    input_state.keymap.contents.keypad.insert(key, trigger);
+                    map.keypad.insert(key, trigger);
                 }
                 Selection::Hotkey(action) => {
-                    input_state.keymap.contents.hotkeys.insert(action, trigger);
+                    map.hotkeys.insert(action, trigger);
                 }
             }
         }
         self.state = State::None;
     }
 
-    fn draw_input_button(
-        &mut self,
-        ui: &Ui,
-        input_state: &mut InputState,
-        selection: Selection,
-        name: &str,
-    ) {
-        ui.text(&format!("{}:", name));
+    fn draw_input_button(&mut self, ui: &Ui, map: &mut Map, selection: Selection, name: &str) {
+        ui.text(&format!("{name}:"));
         ui.same_line();
 
         let trigger = match selection {
-            Selection::Keypad(key) => input_state.keymap.contents.keypad[&key].as_ref(),
-            Selection::Hotkey(action) => input_state.keymap.contents.hotkeys[&action].as_ref(),
+            Selection::Keypad(key) => map.keypad[&key].as_ref(),
+            Selection::Hotkey(action) => map.hotkeys[&action].as_ref(),
         };
 
         {
             let _button_color = if !self.state.is_manually_changing()
-                && match trigger {
-                    Some(trigger) => trigger.activated(&self.pressed_keys),
-                    None => false,
-                } {
+                && trigger.map_or(false, |trigger| trigger.activated(&self.pressed_keys))
+            {
                 Some(ui.push_style_color(
                     StyleColor::Button,
                     ui.style_color(StyleColor::ButtonHovered),
@@ -200,7 +161,7 @@ impl Editor {
             };
 
             if self.state.selection() == Some(selection) {
-                let _id = ui.push_id(&name);
+                let _id = ui.push_id(name);
 
                 if self.state.drain_needs_focus() {
                     ui.set_keyboard_focus_here();
@@ -216,16 +177,16 @@ impl Editor {
                 };
 
                 if finished {
-                    self.finalize(input_state);
+                    self.finalize(map);
                 }
             } else if ui.button(&label) {
-                self.finalize(input_state);
+                self.finalize(map);
                 self.state = State::Capturing {
                     selection,
                     need_focus: true,
                 };
             } else if ui.is_item_clicked_with_button(MouseButton::Right) {
-                self.finalize(input_state);
+                self.finalize(map);
                 self.state = State::ManuallyChanging {
                     selection,
                     need_focus: true,
@@ -235,10 +196,22 @@ impl Editor {
         }
     }
 
-    pub fn draw(&mut self, ui: &Ui, input_state: &mut InputState, opened: &mut bool) {
+    pub fn draw(&mut self, ui: &Ui, map: &mut config::File<Map>, opened: &mut bool) {
         ui.window("Input configuration").opened(opened).build(|| {
             if !ui.is_window_focused() {
                 self.pressed_keys.clear();
+            }
+
+            if ui.button("Restore defaults") {
+                map.contents = Map::default();
+            }
+            ui.same_line();
+            if ui.button("Reload") {
+                let _ = map.reload();
+            }
+            ui.same_line();
+            if ui.button("Save") {
+                let _ = map.write();
             }
 
             heading(ui, "Keypad", 16.0, 5.0);
@@ -250,21 +223,20 @@ impl Editor {
             ) {
                 for &(key, name) in KEYS {
                     ui.table_next_column();
-                    self.draw_input_button(ui, input_state, Selection::Keypad(key), name);
+                    self.draw_input_button(ui, &mut map.contents, Selection::Keypad(key), name);
                 }
             }
 
             ui.dummy([0.0, 8.0]);
-            ui.same_line();
             heading(ui, "Hotkeys", 16.0, 5.0);
 
             for &(action, name) in ACTIONS {
-                self.draw_input_button(ui, input_state, Selection::Hotkey(action), name);
+                self.draw_input_button(ui, &mut map.contents, Selection::Hotkey(action), name);
             }
         });
     }
 
-    pub fn process_event<T: 'static>(&mut self, event: &Event<T>, input_state: &mut InputState) {
+    pub fn process_event<T: 'static>(&mut self, event: &Event<T>, map: &mut Map) {
         if let Event::WindowEvent {
             event:
                 WindowEvent::KeyboardInput {
@@ -277,17 +249,13 @@ impl Editor {
         {
             let key = (input.virtual_keycode, input.scancode);
             if input.state == ElementState::Released {
-                if let Some(i) = self.pressed_keys.iter().position(|k| *k == key) {
-                    self.pressed_keys.remove(i);
-                }
+                self.pressed_keys.remove(&key);
 
                 if self.state.is_capturing() {
-                    self.finalize(input_state);
+                    self.finalize(map);
                 }
             } else {
-                if !self.pressed_keys.contains(&key) {
-                    self.pressed_keys.push(key);
-                }
+                self.pressed_keys.insert(key);
 
                 if self.state.is_capturing() {
                     let new_trigger = if let Some(key_code) = input.virtual_keycode {
@@ -323,7 +291,7 @@ impl Editor {
     }
 }
 
-impl Default for Editor {
+impl Default for MapEditor {
     fn default() -> Self {
         Self::new()
     }
