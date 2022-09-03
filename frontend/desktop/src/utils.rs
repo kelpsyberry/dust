@@ -16,7 +16,8 @@ pub fn config_base<'a>() -> &'a Path {
     static CONFIG_BASE: OnceLock<PathBuf> = OnceLock::new();
     CONFIG_BASE.get_or_init(|| match env::var_os("XDG_CONFIG_HOME") {
         Some(config_dir) => Path::new(&config_dir).join("dust"),
-        None => home::home_dir()
+        None => HOME
+            .as_ref()
             .map(|home| home.join(".config/dust"))
             .unwrap_or_else(|| PathBuf::from("/.config/dust")),
     })
@@ -26,7 +27,8 @@ pub fn data_base<'a>() -> &'a Path {
     static DATA_BASE: OnceLock<PathBuf> = OnceLock::new();
     DATA_BASE.get_or_init(|| match env::var_os("XDG_DATA_HOME") {
         Some(data_home) => Path::new(&data_home).join("dust"),
-        None => home::home_dir()
+        None => HOME
+            .as_ref()
             .map(|home| home.join(".local/share/dust"))
             .unwrap_or_else(|| PathBuf::from("/.local/share/dust")),
     })

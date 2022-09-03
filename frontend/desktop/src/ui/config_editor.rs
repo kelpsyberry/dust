@@ -27,16 +27,21 @@ macro_rules! modify_configs {
 mod setting;
 
 use super::{utils::heading, Config, EmuState};
+#[cfg(feature = "log")]
+use crate::config::LoggingKind;
 use crate::{
     audio,
-    config::{self, saves, LoggingKind, ModelConfig, Setting as _},
+    config::{self, saves, ModelConfig, Setting as _},
     ui::utils::combo_value,
     utils::HomePathBuf,
 };
+#[cfg(feature = "xq-audio")]
 use dust_core::audio::ChannelInterpMethod as AudioChannelInterpMethod;
 use imgui::{TableColumnFlags, TableColumnSetup, TableFlags, Ui};
 use setting::Setting;
-use std::{borrow::Cow, num::NonZeroU32};
+use std::borrow::Cow;
+#[cfg(feature = "xq-audio")]
+use std::num::NonZeroU32;
 
 struct SettingsData {
     game_loaded: bool,
@@ -94,6 +99,7 @@ macro_rules! scalar {
     };
 }
 
+#[cfg(feature = "xq-audio")]
 macro_rules! opt_nonzero_u32_slider {
     (overridable $id: ident, $default: expr, $min: expr, $max: expr, $display_format: literal) => {
         (
@@ -357,7 +363,9 @@ impl UiSettings {
 struct AudioSettings {
     volume: setting::Overridable<setting::Slider<f32>>,
     sample_chunk_size: setting::Overridable<setting::Scalar<u16>>,
+    #[cfg(feature = "xq-audio")]
     custom_sample_rate: setting::Overridable<setting::OptNonZeroU32Slider>,
+    #[cfg(feature = "xq-audio")]
     channel_interp_method: setting::Overridable<setting::Combo<AudioChannelInterpMethod>>,
     interp_method: setting::Overridable<setting::Combo<audio::InterpMethod>>,
 }
@@ -372,6 +380,7 @@ impl AudioSettings {
                 scalar,
                 Some(128)
             ),
+            #[cfg(feature = "xq-audio")]
             custom_sample_rate: overridable!(
                 "Custom sample rate",
                 audio_custom_sample_rate,
@@ -385,6 +394,7 @@ impl AudioSettings {
                 1 << 18,
                 "%d Hz"
             ),
+            #[cfg(feature = "xq-audio")]
             channel_interp_method: overridable!(
                 "Channel interpolation method",
                 audio_channel_interp_method,
@@ -500,6 +510,7 @@ impl EmulationSettings {
     }
 }
 
+#[cfg(any(feature = "log", feature = "gdb-server"))]
 struct DebugSettings {
     #[cfg(feature = "log")]
     logging_kind: setting::NonOverridable<setting::Combo<LoggingKind>>,
@@ -509,6 +520,7 @@ struct DebugSettings {
     gdb_server_addr: setting::NonOverridable<setting::SocketAddr>,
 }
 
+#[cfg(any(feature = "log", feature = "gdb-server"))]
 impl DebugSettings {
     fn new() -> Self {
         DebugSettings {
@@ -596,7 +608,7 @@ impl Editor {
         };
 
         macro_rules! draw {
-            ($id: literal, $tab: ident, [$($field: ident),*]) => {
+            ($id: literal, $tab: ident, [$($(#[$attr: meta])* $field: ident),*]) => {
                 if let Some(_table) = ui.begin_table_with_flags(
                     $id,
                     4,
@@ -619,10 +631,13 @@ impl Editor {
                         flags: TableColumnFlags::WIDTH_FIXED,
                         ..TableColumnSetup::new("")
                     });
-                    $({
-                        let _id = ui.push_id(stringify!($field));
-                        self.settings.$tab.$field.draw(ui, &mut config.config, &data);
-                    })*
+                    $(
+                        $(#[$attr])*
+                        {
+                            let _id = ui.push_id(stringify!($field));
+                            self.settings.$tab.$field.draw(ui, &mut config.config, &data);
+                        }
+                    )*
                 }
             }
         }
@@ -654,6 +669,7 @@ impl Editor {
                 "general",
                 ui,
                 [
+                    #[cfg(target_os = "macos")]
                     hide_macos_title_bar,
                     fullscreen_render,
                     screen_integer_scale,
@@ -846,44 +862,6 @@ impl Editor {
                         );
                     }
                 }
-
-                // let mut location_kind = prev_location_kind;
-                // ui.set_next_item_width(combo_width);
-                // if combo_value(
-                //     ui,
-                //     "##location",
-                //     &mut location_kind,
-                //     &[
-                //         saves::LocationKind::Global,
-                //         saves::LocationKind::Custom,
-                //     ],
-                //     |location_kind| {
-                //         match location_kind {
-                //             LocationKind::Global => "Global",
-                //             LocationKind::Custom => "Custom",
-                //         }
-                //         .into()
-                //     },
-                // ) {
-                //     if let Some(save_path_kind) = save_path_kind {
-                //         let new_default = Some(saves::default_config(
-                //             save_path_kind,
-                //             &config!(config.config, &save_dir_path).0,
-                //             title.unwrap(),
-                //         ));
-                //         match prev_save_path_kind {
-                //             None | SavePathKind::GlobalSingle => set_config!(
-                //                 config.config,
-                //                 save_path_config,
-                //                 Some(new_default),
-                //             ),
-                //             SavePathKind::GlobalMultiSlot => if save_path_kind == SavePathKind::
-                //         }
-                //     } else {
-
-                //     }
-
-                // }
             } else {
                 ui.text_disabled("Load a game to configure its save path");
             }

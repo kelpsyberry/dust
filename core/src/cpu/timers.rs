@@ -38,11 +38,9 @@ pub use bounded::Index;
 // emulator, this means that the cycle counter doesn't have to be reset but just masked based on the
 // new prescaler value, and is equivalent to the (masked) current timestamp when starting a timer.
 
-#[derive(Savestate)]
+#[derive(Clone, Copy, Savestate)]
 #[load(in_place_only)]
-pub struct Timer<S: Schedule> {
-    #[savestate(skip)]
-    event_slot: S::EventSlotIndex,
+pub struct Timer {
     control: Control,
     cycle_shift: u8,
     count_up: bool,
@@ -53,10 +51,9 @@ pub struct Timer<S: Schedule> {
     last_update_time: Timestamp,
 }
 
-impl<S: Schedule> Timer<S> {
-    fn new(event_slot: S::EventSlotIndex) -> Self {
+impl Timer {
+    const fn new() -> Self {
         Timer {
-            event_slot,
             control: Control(0),
             cycle_shift: 0,
             count_up: false,
@@ -100,23 +97,18 @@ impl<S: Schedule> Timer<S> {
 
 #[derive(Savestate)]
 #[load(in_place_only)]
-pub struct Timers<S: Schedule>(pub [Timer<S>; 4]);
+pub struct Timers(pub [Timer; 4]);
 
-impl<S: Schedule> Timers<S> {
-    pub(super) fn new(schedule: &mut S) -> Self {
+impl Timers {
+    pub(super) fn new(schedule: &mut impl Schedule) -> Self {
         for i in 0..4 {
             schedule.set_timer_event(Index::new(i));
         }
 
-        Timers([
-            Timer::new(S::timer_event_slot(Index::new(0))),
-            Timer::new(S::timer_event_slot(Index::new(1))),
-            Timer::new(S::timer_event_slot(Index::new(2))),
-            Timer::new(S::timer_event_slot(Index::new(3))),
-        ])
+        Timers([Timer::new(); 4])
     }
 
-    pub(crate) fn handle_scheduled_overflow(
+    pub(crate) fn handle_scheduled_overflow<S: Schedule>(
         &mut self,
         i: Index,
         event_time: S::Timestamp,
@@ -133,7 +125,7 @@ impl<S: Schedule> Timers<S> {
         let timer = &self.0[i.get() as usize];
         let target =
             timer.last_update_time + Timestamp(timer.cycles_until_overflow() as RawTimestamp);
-        schedule.schedule_event(timer.event_slot, target.into());
+        schedule.schedule_event(S::timer_event_slot(i), target.into());
     }
 
     fn inc_timer<I: Irqs>(
@@ -224,7 +216,7 @@ impl<S: Schedule> Timers<S> {
         self.0[i.get() as usize].reload = value;
     }
 
-    fn update_control(&mut self, i: Index, value: Control, schedule: &mut S) {
+    fn update_control<S: Schedule>(&mut self, i: Index, value: Control, schedule: &mut S) {
         let timer = &mut self.0[i.get() as usize];
         let prev_value = timer.control;
         timer.control = value;
@@ -241,7 +233,8 @@ impl<S: Schedule> Timers<S> {
         if value.0 & 0xC4 != prev_value.0 & 0xC4 {
             let mut flows_into_irq = false;
             for i in (0..4).rev() {
-                let timer = &mut self.0[i as usize];
+                let i = Index::new(i);
+                let timer = &mut self.0[i.get() as usize];
                 let scheduled_overflows = timer.schedule_overflows;
                 timer.schedule_overflows = false;
                 if timer.control.running() {
@@ -254,11 +247,11 @@ impl<S: Schedule> Timers<S> {
                     flows_into_irq = false;
                 }
                 if !timer.schedule_overflows && scheduled_overflows {
-                    schedule.cancel_event(timer.event_slot);
+                    schedule.cancel_event(S::timer_event_slot(i));
                 } else if timer.schedule_overflows && !scheduled_overflows {
                     let target = timer.last_update_time
                         + Timestamp(timer.cycles_until_overflow() as RawTimestamp);
-                    schedule.schedule_event(timer.event_slot, target.into());
+                    schedule.schedule_event(S::timer_event_slot(i), target.into());
                 }
             }
         }
@@ -267,19 +260,20 @@ impl<S: Schedule> Timers<S> {
             && scheduled_overflows
             && value.prescaler() != prev_value.prescaler()
         {
-            schedule.cancel_event(timer.event_slot);
+            let event_slot = S::timer_event_slot(i);
+            schedule.cancel_event(event_slot);
             let target =
                 timer.last_update_time + Timestamp(timer.cycles_until_overflow() as RawTimestamp);
-            schedule.schedule_event(timer.event_slot, target.into());
+            schedule.schedule_event(event_slot, target.into());
         }
     }
 
-    pub fn write_control(
+    pub fn write_control<I: Irqs>(
         &mut self,
         i: Index,
         mut value: Control,
-        schedule: &mut S,
-        irqs: &mut impl Irqs<Schedule = S>,
+        schedule: &mut I::Schedule,
+        irqs: &mut I,
     ) {
         value.0 &= 0xC7;
         let count_up = value.count_up_timing() && value.running() && i.get() != 0;
@@ -322,13 +316,13 @@ impl<S: Schedule> Timers<S> {
         self.update_control(i, value, schedule);
     }
 
-    pub fn write_control_reload(
+    pub fn write_control_reload<I: Irqs>(
         &mut self,
         i: Index,
         reload: u16,
         mut control: Control,
-        schedule: &mut S,
-        irqs: &mut impl Irqs<Schedule = S>,
+        schedule: &mut I::Schedule,
+        irqs: &mut I,
     ) {
         control.0 &= 0xC7;
         let count_up = control.count_up_timing() && control.running() && i.get() != 0;

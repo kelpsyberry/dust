@@ -53,7 +53,7 @@ pub struct Arm9<E: Engine> {
     bus_timings: Box<bus::timings::Timings>,
     pub cp15: Cp15,
     pub irqs: Irqs,
-    pub timers: Timers<Schedule>,
+    pub timers: Timers,
     local_ex_mem_control: LocalExMemControl,
     post_boot_flag: PostBootFlag,
     pub dma: cpu::dma::Controller<dma::Timing, u32>,

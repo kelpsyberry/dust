@@ -36,7 +36,7 @@ pub struct Arm7<E: Engine> {
     #[savestate(skip)]
     pub(super) bus_timings: Box<bus::timings::Timings>,
     pub irqs: Irqs,
-    pub timers: Timers<Schedule>,
+    pub timers: Timers,
     local_ex_mem_control: LocalExMemControl,
     post_boot_flag: bool,
     bios_prot: u16,
