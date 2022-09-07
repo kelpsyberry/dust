@@ -186,6 +186,8 @@ pub struct Channel {
     #[savestate(skip)]
     hist: [InterpSample; 4],
     #[cfg(feature = "xq-audio")]
+    #[load(value = "None")]
+    #[store(skip)]
     last_sample_time: Option<arm7::Timestamp>,
     #[cfg(feature = "xq-audio")]
     sample_interval: arm7::Timestamp,

@@ -1,6 +1,6 @@
 use super::SettingsData;
 use crate::{config::Config, ui::utils::combo_value, utils::HomePathBuf};
-use imgui::{internal::DataTypeKind, ItemHoveredFlags, Ui};
+use imgui::{internal::DataTypeKind, ItemHoveredFlags, SliderFlags, Ui};
 use std::{
     borrow::Cow, net::SocketAddr as StdSocketAddr, num::NonZeroU32, string::String as StdString,
 };
@@ -337,6 +337,7 @@ impl<T: DataTypeKind> RawSetting for Slider<T> {
         if ui
             .slider_config("", self.min, self.max)
             .display_format(self.display_format)
+            .flags(SliderFlags::ALWAYS_CLAMP)
             .build(&mut value)
         {
             (self.set)(config, value);

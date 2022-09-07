@@ -6,6 +6,10 @@ use dust_core::{
     utils::{zeroed_box, ByteSlice, MemValue},
 };
 use imgui::{Image, StyleColor, TableFlags, TextureId, Ui, WindowHoveredFlags};
+use miniz_oxide::{
+    deflate::{compress_to_vec, CompressionLevel},
+    inflate::decompress_to_vec,
+};
 use std::{
     fs, io, mem,
     path::{Path, PathBuf},
@@ -69,7 +73,11 @@ impl Savestate {
     }
 
     fn load(path: &Path, window: &mut Window) -> io::Result<Self> {
-        let mut contents = fs::read(path)?;
+        let compressed_contents = fs::read(path)?;
+        let mut contents = decompress_to_vec(&compressed_contents).map_err(|_err| {
+            io::Error::new(io::ErrorKind::InvalidData, "couldn't decompress savestate")
+        })?;
+
         let framebuffer = {
             let mut buffer: Box<Framebuffer> = zeroed_box();
             let src_start_i = contents
@@ -148,7 +156,10 @@ impl Savestate {
                 }
             }
 
-            fs::write(&savestate_dir.join(&format!("{name}.state")), contents)?;
+            fs::write(
+                &savestate_dir.join(&format!("{name}.state")),
+                compress_to_vec(&contents, CompressionLevel::BestSpeed as u8),
+            )?;
         }
 
         let texture_id = unsafe { Self::create_texture(window, &framebuffer) };

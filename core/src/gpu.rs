@@ -60,7 +60,7 @@ const HDRAW_DURATION: Timestamp = Timestamp(SCREEN_WIDTH as RawTimestamp * DOT_C
 const HBLANK_DURATION: Timestamp = Timestamp(99 * DOT_CYCLES - 48);
 
 #[repr(C, align(64))]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Savestate)]
 pub struct Scanline<T, const LEN: usize = SCREEN_WIDTH>(pub [T; LEN]);
 
 unsafe impl<T, const LEN: usize> Zero for Scanline<T, LEN> where T: Zero {}

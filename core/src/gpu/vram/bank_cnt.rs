@@ -424,17 +424,19 @@ impl Vram {
             );
         }
 
-        if self.bank_control[7].enabled() && self.bank_control[7].mst() == 2 {
-            self.b_bg_ext_pal_ptr = self.banks.h.as_ptr();
+        self.b_bg_ext_pal_ptr = if self.bank_control[7].enabled() && self.bank_control[7].mst() == 2
+        {
+            self.banks.h.as_ptr()
         } else {
-            self.b_bg_ext_pal_ptr = self.zero_buffer.as_ptr();
-        }
+            self.zero_buffer.as_ptr()
+        };
 
-        if self.bank_control[8].enabled() && self.bank_control[8].mst() == 3 {
-            self.b_obj_ext_pal_ptr = self.banks.i.as_ptr();
-        } else {
-            self.b_obj_ext_pal_ptr = self.zero_buffer.as_ptr();
-        }
+        self.b_obj_ext_pal_ptr =
+            if self.bank_control[8].enabled() && self.bank_control[8].mst() == 3 {
+                self.banks.i.as_ptr()
+            } else {
+                self.zero_buffer.as_ptr()
+            };
 
         macro_rules! restore_region {
             (

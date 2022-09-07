@@ -1105,8 +1105,13 @@ pub fn main() {
                             },
                             || {
                                 let mut volume = audio_volume * 100.0;
+                                ui.set_next_item_width(
+                                    ui.calc_text_size("000.00%")[0] * 5.0
+                                        + style!(ui, frame_padding)[0] * 2.0,
+                                );
                                 if ui
                                     .slider_config("##audio_volume", 0.0, 100.0)
+                                    .flags(imgui::SliderFlags::ALWAYS_CLAMP)
                                     .display_format("%.02f%%")
                                     .build(&mut volume)
                                 {
@@ -1116,27 +1121,47 @@ pub fn main() {
                         );
 
                         ui.menu("\u{f2f1} Screen rotation", || {
-                            let mut screen_rot = config!(config.config, screen_rot);
-                            if ui
-                                .input_scalar("##screen_rot", &mut screen_rot)
-                                .step(1)
-                                .build()
+                            let frame_padding_x = style!(ui, frame_padding)[0];
+                            let buttons_and_widths =
+                                [("0°", 0), ("90°", 90), ("180°", 180), ("270°", 270)].map(
+                                    |(text, degrees)| {
+                                        (
+                                            text,
+                                            degrees,
+                                            ui.calc_text_size(text)[0] + frame_padding_x * 2.0,
+                                        )
+                                    },
+                                );
+                            let buttons_width = buttons_and_widths
+                                .into_iter()
+                                .map(|(_, _, width)| width)
+                                .sum::<f32>();
+                            let buttons_spacing = style!(ui, item_spacing)[0] * 3.0;
+                            let input_width =
+                                ui.calc_text_size("000")[0] * 8.0 + frame_padding_x * 2.0;
+                            let width = input_width.max(buttons_width + buttons_spacing);
+
                             {
-                                screen_rot = screen_rot.min(359);
+                                let mut screen_rot = config!(config.config, screen_rot);
+                                ui.set_next_item_width(width);
+                                if ui
+                                    .slider_config("##screen_rot", 0, 359)
+                                    .flags(imgui::SliderFlags::ALWAYS_CLAMP)
+                                    .display_format("%d°")
+                                    .build(&mut screen_rot)
+                                {
+                                    set_config!(config.config, screen_rot, screen_rot.min(359));
+                                }
                             }
-                            macro_rules! buttons {
-                                ($($value: expr),*) => {
-                                    $(
-                                        if ui.button(stringify!($value)) {
-                                            screen_rot = $value;
-                                        }
-                                        ui.same_line();
-                                    )*
-                                    ui.new_line();
-                                };
+
+                            let button_width_scale = (width - buttons_spacing) / buttons_width;
+                            for (text, degrees, base_width) in buttons_and_widths {
+                                if ui.button_with_size(text, [base_width * button_width_scale, 0.0])
+                                {
+                                    set_config!(config.config, screen_rot, degrees);
+                                }
+                                ui.same_line();
                             }
-                            buttons!(0, 90, 180, 270);
-                            set_config!(config.config, screen_rot, screen_rot);
                         });
 
                         macro_rules! draw_config_toggle {

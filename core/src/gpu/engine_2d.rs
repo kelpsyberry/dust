@@ -268,7 +268,7 @@ pub struct WindowRanges {
 }
 
 proc_bitfield::bitfield! {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     const struct ObjPixel(u32): Debug {
         pub pal_color: u16 @ 0..=11,
         pub raw_color: u16 @ 0..=15,
@@ -345,7 +345,6 @@ pub struct Engine2d<R: Role> {
     obj_window: [u8; SCREEN_WIDTH / 8],
     #[savestate(skip)]
     bg_obj_scanline: Scanline<u64>,
-    #[savestate(skip)]
     obj_scanline: Scanline<ObjPixel>,
     // Allow for slightly out-of-bounds SIMD accesses
     #[savestate(skip)]

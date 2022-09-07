@@ -72,7 +72,7 @@ pub struct ChannelAudioCaptureData {
 }
 
 #[derive(Savestate)]
-#[load(in_place_only)]
+#[load(in_place_only, post = "self.post_load()")]
 pub struct Audio {
     #[cfg(feature = "log")]
     #[savestate(skip)]
@@ -171,6 +171,10 @@ impl Audio {
                 }
             },
         }
+    }
+
+    fn post_load(&mut self) {
+        self.sample_chunk.clear();
     }
 
     cfg_if::cfg_if! {
