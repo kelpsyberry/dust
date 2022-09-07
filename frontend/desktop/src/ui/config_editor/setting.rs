@@ -1,6 +1,7 @@
 use super::SettingsData;
 use crate::{config::Config, ui::utils::combo_value, utils::HomePathBuf};
 use imgui::{internal::DataTypeKind, ItemHoveredFlags, SliderFlags, Ui};
+use rfd::FileDialog;
 use std::{
     borrow::Cow, net::SocketAddr as StdSocketAddr, num::NonZeroU32, string::String as StdString,
 };
@@ -64,23 +65,57 @@ impl HomePath {
 
 impl RawSetting for HomePath {
     fn draw(&mut self, ui: &Ui, config: &mut Config, tooltip: &str, width: f32) {
-        let path = (self.get)(config);
-        self.buffer.clear();
-        self.buffer.push_str(
-            path.to_string()
-                .unwrap_or_else(|| "<invalid UTF-8>".into())
-                .as_ref(),
-        );
+        ui.group(|| {
+            let path = (self.get)(config);
+            self.buffer.clear();
+            self.buffer.push_str(
+                path.to_string()
+                    .unwrap_or_else(|| "<invalid UTF-8>".into())
+                    .as_ref(),
+            );
 
-        ui.set_next_item_width(width);
-        if ui
-            .input_text("", &mut self.buffer)
-            .auto_select_all(true)
-            .enter_returns_true(true)
-            .build()
-        {
-            (self.set)(config, HomePathBuf::from(self.buffer.as_str()));
-        }
+            let mut new_value = None;
+
+            ui.set_next_item_width(
+                width
+                    - (ui.calc_text_size("\u{f08e}")[0]
+                        + ui.calc_text_size("\u{f07c}")[0]
+                        + style!(ui, frame_padding)[0] * 4.0
+                        + style!(ui, item_spacing)[0] * 2.0),
+            );
+            if ui
+                .input_text("", &mut self.buffer)
+                .auto_select_all(true)
+                .enter_returns_true(true)
+                .build()
+            {
+                new_value = Some(HomePathBuf::from(self.buffer.as_str()));
+            }
+
+            ui.same_line();
+
+            if ui.button("\u{f08e}") {
+                let _ = opener::open(&path.0);
+            }
+            if ui.is_item_hovered() {
+                ui.tooltip_text("Open");
+            }
+
+            ui.same_line();
+
+            if ui.button("\u{f07c}") {
+                if let Some(path) = FileDialog::new().pick_folder() {
+                    new_value = Some(HomePathBuf(path));
+                }
+            }
+            if ui.is_item_hovered() {
+                ui.tooltip_text("Browse...");
+            }
+
+            if let Some(new_value) = new_value {
+                (self.set)(config, new_value);
+            }
+        });
 
         if !tooltip.is_empty() && ui.is_item_hovered() {
             ui.tooltip_text(tooltip);
@@ -109,27 +144,63 @@ impl OptHomePath {
 
 impl RawSetting for OptHomePath {
     fn draw(&mut self, ui: &Ui, config: &mut Config, tooltip: &str, width: f32) {
-        self.buffer.clear();
-        if let Some(path) = (self.get)(config) {
-            self.buffer.push_str(
-                path.to_string()
-                    .unwrap_or_else(|| "<invalid UTF-8>".into())
-                    .as_ref(),
-            );
-        }
+        ui.group(|| {
+            self.buffer.clear();
+            let path = (self.get)(config);
+            if let Some(path) = path {
+                self.buffer.push_str(
+                    path.to_string()
+                        .unwrap_or_else(|| "<invalid UTF-8>".into())
+                        .as_ref(),
+                );
+            }
 
-        ui.set_next_item_width(width);
-        if ui
-            .input_text("", &mut self.buffer)
-            .auto_select_all(true)
-            .enter_returns_true(true)
-            .build()
-        {
-            (self.set)(
-                config,
-                (!self.buffer.is_empty()).then(|| HomePathBuf::from(self.buffer.as_str())),
+            let mut new_value = None;
+
+            ui.set_next_item_width(
+                width
+                    - (ui.calc_text_size("\u{f08e}")[0]
+                        + ui.calc_text_size("\u{f07c}")[0]
+                        + style!(ui, frame_padding)[0] * 4.0
+                        + style!(ui, item_spacing)[0] * 2.0),
             );
-        }
+            if ui
+                .input_text("", &mut self.buffer)
+                .auto_select_all(true)
+                .enter_returns_true(true)
+                .build()
+            {
+                new_value = Some(
+                    (!self.buffer.is_empty()).then(|| HomePathBuf::from(self.buffer.as_str())),
+                );
+            }
+
+            ui.same_line();
+
+            ui.enabled(path.is_some(), || {
+                if ui.button("\u{f08e}") {
+                    let _ = opener::open(&path.unwrap().0);
+                }
+                if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
+                    ui.tooltip_text("Open");
+                }
+            });
+
+            ui.same_line();
+
+            if ui.button("\u{f07c}") {
+                if let Some(path) = FileDialog::new().pick_folder() {
+                    new_value = Some(Some(HomePathBuf(path)));
+                }
+            }
+            if ui.is_item_hovered() {
+                ui.tooltip_text("Browse...");
+            }
+
+            if let Some(new_value) = new_value {
+                (self.set)(config, new_value);
+            }
+        });
 
         if !tooltip.is_empty() && ui.is_item_hovered() {
             ui.tooltip_text(tooltip);

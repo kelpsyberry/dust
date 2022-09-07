@@ -40,6 +40,7 @@ wgpu = { version = "0.13", features = ["spirv"] }
 # TODO: Switch to imgui 0.9 when it's released with the docking API
 imgui = { git = "https://github.com/imgui-rs/imgui-rs", features = ["docking", "tables-api"] }
 imgui-winit-support = { git = "https://github.com/imgui-rs/imgui-rs" }
+opener = "0.5"
 
 # System resources
 rfd = "0.10"
