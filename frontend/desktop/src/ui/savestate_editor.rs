@@ -3,7 +3,7 @@ use crate::{config::Config, emu};
 use chrono::DateTime;
 use dust_core::{
     gpu::{Framebuffer, SCREEN_HEIGHT, SCREEN_WIDTH},
-    utils::{zeroed_box, MemValue},
+    utils::{zeroed_box, ByteSlice, MemValue},
 };
 use imgui::{Image, StyleColor, TableFlags, TextureId, Ui, WindowHoveredFlags};
 use std::{
@@ -15,6 +15,7 @@ use std::{
 
 struct Savestate {
     contents: Vec<u8>,
+    save: Option<Box<[u8]>>,
     framebuffer: Box<Framebuffer>,
     texture_id: TextureId,
 }
@@ -90,10 +91,30 @@ impl Savestate {
             buffer
         };
 
+        let save_info: u32 = ByteSlice::new(&contents[contents.len() - 4..]).read_le(0);
+        let save = if save_info & 0x8000_0000 != 0 {
+            let len = (save_info & 0x7FFF_FFFF) as usize;
+            let mut buffer = Vec::with_capacity(len);
+            let src_start_i = contents.len().checked_sub(len + 4).unwrap();
+            unsafe {
+                buffer.set_len(len);
+                contents
+                    .as_ptr()
+                    .add(src_start_i)
+                    .copy_to(buffer.as_mut_ptr(), len);
+            }
+            contents.truncate(src_start_i);
+            Some(buffer.into_boxed_slice())
+        } else {
+            contents.truncate(contents.len() - 4);
+            None
+        };
+
         let texture_id = unsafe { Self::create_texture(window, &framebuffer) };
 
         Ok(Savestate {
             contents,
+            save,
             framebuffer,
             texture_id,
         })
@@ -102,6 +123,7 @@ impl Savestate {
     fn create(
         name: &str,
         contents: Vec<u8>,
+        save: Option<Box<[u8]>>,
         framebuffer: Box<Framebuffer>,
         savestate_dir: &Path,
         window: &mut Window,
@@ -110,6 +132,13 @@ impl Savestate {
             let mut contents = contents.clone();
 
             unsafe {
+                if let Some(save) = &save {
+                    contents.extend_from_slice(save);
+                    contents.extend_from_slice(&(0x8000_0000 | save.len() as u32).to_le_bytes());
+                } else {
+                    contents.extend_from_slice(&0_u32.to_le_bytes());
+                }
+
                 contents.reserve(2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT);
                 let mut ptr = contents.as_mut_ptr().add(contents.len()) as *mut u32;
                 contents.set_len(contents.len() + 2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT);
@@ -126,6 +155,7 @@ impl Savestate {
 
         Ok(Savestate {
             contents,
+            save,
             framebuffer,
             texture_id,
         })
@@ -153,6 +183,7 @@ impl Savestate {
     fn emu_savestate(&self) -> emu::Savestate {
         emu::Savestate {
             contents: self.contents.clone(),
+            save: self.save.clone(),
             framebuffer: self.framebuffer.clone(),
         }
     }
@@ -217,6 +248,7 @@ impl Editor {
             if let Ok(savestate) = Savestate::create(
                 &name,
                 savestate.contents,
+                savestate.save,
                 savestate.framebuffer,
                 dir_path,
                 window,
@@ -246,7 +278,13 @@ impl Editor {
         }
     }
 
-    pub fn draw(&mut self, ui: &Ui, window: &mut Window, emu_state: &mut Option<EmuState>) {
+    pub fn draw(
+        &mut self,
+        ui: &Ui,
+        window: &mut Window,
+        config: &Config,
+        emu_state: &mut Option<EmuState>,
+    ) {
         let mut shown = false;
         ui.menu_with_enabled("\u{f02e} Savestates", self.dir_path.is_some(), || {
             shown = true;
@@ -517,7 +555,7 @@ impl Editor {
                                     upper_left,
                                     cell_height,
                                     match entry.kind {
-                                        EntryKind::InProgress => "\u{e1d4}",
+                                        EntryKind::InProgress => "\u{f141}",
                                         EntryKind::Failed =>
                                             if hovered {
                                                 "\u{f1f8}"
@@ -563,10 +601,12 @@ impl Editor {
                                 let name = DateTime::<chrono::Local>::from(SystemTime::now())
                                     .format("%Y-%m-%d %H:%M:%S%.3f")
                                     .to_string();
-                                emu_state
-                                    .as_ref()
-                                    .unwrap()
-                                    .send_message(emu::Message::CreateSavestate(name.clone()));
+                                emu_state.as_ref().unwrap().send_message(
+                                    emu::Message::CreateSavestate {
+                                        name: name.clone(),
+                                        include_save: config!(config, include_save_in_savestates),
+                                    },
+                                );
                                 self.entries.push(Entry {
                                     name,
                                     kind: EntryKind::InProgress,

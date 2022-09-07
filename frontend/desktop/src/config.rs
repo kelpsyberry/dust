@@ -409,6 +409,8 @@ def_config! {
             input_map: input::Map, input::Map, input::Map, ()
                 = Default::default(), input::Map::empty(),
                 resolve input::Map::resolve, set set_unreachable,
+            include_save_in_savestates: bool = true, None,
+                resolve resolve_option, set set_option,
         }
         game {}
     }

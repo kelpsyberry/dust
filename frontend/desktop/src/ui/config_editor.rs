@@ -541,6 +541,7 @@ impl AudioSettings {
 struct SavesSettings {
     save_interval_ms: setting::Overridable<setting::Scalar<f32>>,
     reset_on_save_slot_switch: setting::NonOverridable<setting::Bool>,
+    include_save_in_savestates: setting::Overridable<setting::Bool>,
     save_dir_path: setting::NonOverridable<setting::HomePath>,
     savestate_dir_path: setting::NonOverridable<setting::HomePath>,
 }
@@ -557,6 +558,11 @@ impl SavesSettings {
             reset_on_save_slot_switch: nonoverridable!(
                 "Restart on save slot switch",
                 reset_on_save_slot_switch,
+                bool
+            ),
+            include_save_in_savestates: overridable!(
+                "Include save in states",
+                include_save_in_savestates,
                 bool
             ),
             save_dir_path: nonoverridable!("Save directory path", save_dir_path, home_path),
@@ -1225,6 +1231,7 @@ impl Editor {
                             Section::Saves => {
                                 // save_interval_ms
                                 // reset_on_save_slot_switch
+                                // include_save_in_savestates
                                 // save_dir_path
                                 // save_path_config
 
@@ -1234,6 +1241,7 @@ impl Editor {
                                     [
                                         save_interval_ms,
                                         reset_on_save_slot_switch,
+                                        include_save_in_savestates,
                                         save_dir_path,
                                         savestate_dir_path
                                     ]

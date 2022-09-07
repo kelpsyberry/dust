@@ -345,7 +345,6 @@ impl Builder {
                     0x002B, 0x002B, 0xE000, 0xF8FF, 0,
                 ]),
                 glyph_min_advance_x: (40.0 * scale_factor) as f32,
-                glyph_offset: [0.0, 4.0],
                 ..Default::default()
             }),
         }]);

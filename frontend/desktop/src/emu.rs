@@ -59,6 +59,7 @@ pub struct SavePathUpdate {
 
 pub struct Savestate {
     pub contents: Vec<u8>,
+    pub save: Option<Box<[u8]>>,
     pub framebuffer: Box<Framebuffer>,
 }
 
@@ -69,7 +70,10 @@ pub enum Message {
     Reset,
     Stop,
 
-    CreateSavestate(String),
+    CreateSavestate {
+        name: String,
+        include_save: bool,
+    },
     ApplySavestate(Savestate),
 
     UpdateSavePath(SavePathUpdate),
@@ -459,7 +463,7 @@ pub(super) fn main(
                     break 'run_loop;
                 }
 
-                Message::CreateSavestate(name) => {
+                Message::CreateSavestate { name, include_save } => {
                     let mut contents = Vec::new();
                     if PersistentWriteSavestate::new(&mut contents)
                         .store(&mut emu)
@@ -469,6 +473,11 @@ pub(super) fn main(
                             name,
                             Savestate {
                                 contents,
+                                save: if include_save {
+                                    Some((&*emu.ds_slot.spi.contents()).into())
+                                } else {
+                                    None
+                                },
                                 framebuffer: emu.gpu.framebuffer.clone(),
                             }
                         ));
@@ -483,6 +492,14 @@ pub(super) fn main(
                         .is_ok()
                     {
                         emu.gpu.framebuffer = savestate.framebuffer;
+                        if let Some(save) = savestate.save {
+                            // TODO: Avoid this copy
+                            let mut contents = BoxedByteSlice::new_zeroed(save.len());
+                            contents.copy_from_slice(&save[..]);
+                            emu.ds_slot
+                                .spi
+                                .reload_contents(SaveReloadContents::Existing(contents));
+                        }
                     }
                 }
 

@@ -964,7 +964,9 @@ pub fn main() {
                             }
 
                             emu::Notification::SavestateCreated(name, savestate) => {
-                                state.savestate_editor.savestate_created(name, savestate, window);
+                                state
+                                    .savestate_editor
+                                    .savestate_created(name, savestate, window);
                             }
 
                             emu::Notification::SavestateFailed(name) => {
@@ -1069,7 +1071,9 @@ pub fn main() {
                             .save_slot_editor
                             .draw(ui, &mut config.config, &mut state.emu);
 
-                        state.savestate_editor.draw(ui, window, &mut state.emu);
+                        state
+                            .savestate_editor
+                            .draw(ui, window, &config.config, &mut state.emu);
                     });
 
                     ui.menu("Config", || {
