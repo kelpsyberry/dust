@@ -44,13 +44,13 @@ impl<T: Clone> Resolvable for NonOverridable<T> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum SettingOrigin {
+pub enum Origin {
     Global,
     Game,
 }
 
-type ResolveFn<T, Gl, Ga> = fn(&Gl, &Ga) -> (T, SettingOrigin);
-type SetFn<Gl, Ga, S> = fn(&mut Gl, &mut Ga, S, SettingOrigin);
+type ResolveFn<T, Gl, Ga> = fn(&Gl, &Ga) -> (T, Origin);
+type SetFn<Gl, Ga, S> = fn(&mut Gl, &mut Ga, S, Origin);
 
 pub struct Overridable<T, Gl: Clone = T, Ga: Clone + Default = Option<Gl>, S = T> {
     global: Gl,
@@ -58,7 +58,7 @@ pub struct Overridable<T, Gl: Clone = T, Ga: Clone + Default = Option<Gl>, S = T
     game: Ga,
     default_game: Ga,
     resolved: T,
-    origin: SettingOrigin,
+    origin: Origin,
 
     resolve: ResolveFn<T, Gl, Ga>,
     set: SetFn<Gl, Ga, S>,
@@ -245,20 +245,20 @@ impl<T: Resolvable> Setting for Tracked<T> {
     }
 }
 
-pub fn resolve_option<T: Clone>(global: &T, game: &Option<T>) -> (T, SettingOrigin) {
+pub fn resolve_option<T: Clone>(global: &T, game: &Option<T>) -> (T, Origin) {
     match game {
-        Some(game) => (game.clone(), SettingOrigin::Game),
-        _ => (global.clone(), SettingOrigin::Global),
+        Some(game) => (game.clone(), Origin::Game),
+        _ => (global.clone(), Origin::Global),
     }
 }
 
-pub fn set_option<T: Clone>(global: &mut T, game: &mut Option<T>, value: T, origin: SettingOrigin) {
-    if origin == SettingOrigin::Game {
+pub fn set_option<T: Clone>(global: &mut T, game: &mut Option<T>, value: T, origin: Origin) {
+    if origin == Origin::Game {
         *game = Some(value.clone());
     }
     *global = value;
 }
 
-pub fn set_unreachable<Gl: Clone, Ga: Clone, S>(_: &mut Gl, _: &mut Ga, _: S, _: SettingOrigin) {
+pub fn set_unreachable<Gl: Clone, Ga: Clone, S>(_: &mut Gl, _: &mut Ga, _: S, _: Origin) {
     unreachable!();
 }

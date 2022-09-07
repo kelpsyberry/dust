@@ -4,6 +4,8 @@ mod config_editor;
 use config_editor::Editor as ConfigEditor;
 mod save_slot_editor;
 use save_slot_editor::Editor as SaveSlotEditor;
+mod savestate_editor;
+use savestate_editor::Editor as SavestateEditor;
 
 #[allow(dead_code)]
 pub mod imgui_wgpu;
@@ -15,7 +17,7 @@ pub mod window;
 use crate::debug_views;
 use crate::{
     audio,
-    config::{self, Launch},
+    config::{self, Launch, TitleBarMode},
     emu, game_db, input, triple_buffer,
     utils::{config_base, Lazy},
     DsSlotRom, FrameData,
@@ -84,7 +86,6 @@ struct Config {
     config: config::Config,
     global_path: Option<PathBuf>,
     game_path: Option<PathBuf>,
-    input_map: config::File<input::Map>,
 }
 
 impl Config {
@@ -110,19 +111,11 @@ impl Config {
             })
             .unwrap_or_default();
 
-        let input_map = base_path
-            .as_ref()
-            .map(|base_path| {
-                config::File::<input::Map>::read_or_show_dialog(base_path, "input_map.json")
-            })
-            .unwrap_or_default();
-
         Config {
             games_base_path,
             config: config::Config::from_global(&global.contents),
             global_path: global.path,
             game_path: None,
-            input_map,
         }
     }
 }
@@ -196,11 +189,11 @@ pub struct UiState {
     screen_focused: bool,
 
     input: input::State,
-    input_map_editor: Option<input::MapEditor>,
 
     config_editor: Option<ConfigEditor>,
 
     save_slot_editor: SaveSlotEditor,
+    savestate_editor: SavestateEditor,
 
     audio_channel: Option<audio::Channel>,
 
@@ -236,8 +229,21 @@ impl UiState {
     }
 }
 
+bitflags::bitflags! {
+    struct TitleComponents: u8 {
+        const EMU_NAME = 1 << 0;
+        const GAME_TITLE = 1 << 1;
+        const FPS = 1 << 2;
+    }
+}
+
 impl UiState {
-    fn load_from_rom_path(&mut self, path: &Path, config: &mut Config, window: &window::Window) {
+    fn load_from_rom_path(
+        &mut self,
+        path: &Path,
+        config: &mut Config,
+        window: &mut window::Window,
+    ) {
         if let Some(extension) = path.extension().and_then(|s| s.to_str()) {
             if !ALLOWED_ROM_EXTENSIONS.contains(&extension) {
                 return;
@@ -279,6 +285,7 @@ impl UiState {
                     config.config.save_path(game_title),
                     game_title.to_string(),
                     Some(ds_slot_rom),
+                    window,
                 );
                 config.game_path = game_config.path;
             }
@@ -293,14 +300,21 @@ impl UiState {
         }
     }
 
-    fn load_firmware(&mut self, config: &mut Config, window: &window::Window) {
+    fn load_firmware(&mut self, config: &mut Config, window: &mut window::Window) {
         self.stop(config, window);
         match config::Launch::new(&config.config, true) {
             Ok((launch_config, warnings)) => {
                 if !warnings.is_empty() {
                     config_warning!("{}", format_list!(warnings));
                 }
-                self.start(config, launch_config, None, "Firmware".to_string(), None);
+                self.start(
+                    config,
+                    launch_config,
+                    None,
+                    "Firmware".to_string(),
+                    None,
+                    window,
+                );
             }
 
             Err(errors) => {
@@ -319,7 +333,10 @@ impl UiState {
         save_path: Option<PathBuf>,
         title: String,
         ds_slot_rom: Option<DsSlotRom>,
+        window: &mut window::Window,
     ) {
+        self.show_menu_bar = !config!(config.config, full_window_screen);
+
         #[cfg(feature = "discord-presence")]
         if let Some(presence) = &mut self.discord_presence {
             presence.start(&title);
@@ -327,6 +344,12 @@ impl UiState {
 
         let playing = !config!(config.config, pause_on_launch);
         let game_loaded = ds_slot_rom.is_some();
+
+        self.savestate_editor.update_game(
+            window,
+            &config.config,
+            game_loaded.then_some(title.as_str()),
+        );
 
         #[cfg(feature = "log")]
         let logger = self.log.logger().clone();
@@ -487,8 +510,16 @@ impl UiState {
         }
     }
 
-    fn stop(&mut self, config: &mut Config, window: &window::Window) {
+    fn stop(&mut self, config: &mut Config, window: &mut window::Window) {
         self.stop_emu(config);
+
+        self.savestate_editor
+            .update_game(window, &config.config, None);
+
+        if let Some(config_editor) = &mut self.config_editor {
+            config_editor.emu_stopped();
+        }
+
         config.config.unset_game();
 
         #[cfg(feature = "debug-views")]
@@ -526,35 +557,50 @@ impl UiState {
     }
 
     fn update_menu_bar(&mut self, config: &config::Config, window: &mut window::Window) {
-        if config_changed!(config, fullscreen_render) {
-            self.show_menu_bar = !config!(config, fullscreen_render);
+        if config_changed!(config, full_window_screen) {
+            self.show_menu_bar |= !config!(config, full_window_screen);
         }
 
         #[cfg(target_os = "macos")]
         {
-            if config_changed!(config, hide_macos_title_bar) {
-                window.set_macos_title_bar_hidden(config!(config, hide_macos_title_bar));
+            if let Some(mode) = config_changed_value!(config, title_bar_mode) {
+                window.set_macos_title_bar_hidden(mode.system_title_bar_hidden());
             }
         }
     }
 
-    fn update_title(&self, window: &window::Window) {
-        #[cfg(target_os = "macos")]
-        if window.macos_title_bar_hidden() && !self.show_menu_bar {
-            window.window.set_title("");
-            return;
-        }
-
-        let mut buffer = "Dust - ".to_string();
-        if let Some(emu) = &self.emu {
-            buffer.push_str(&emu.title);
-            if let Some(fps_fixed) = self.fps_fixed {
-                let _ = write!(buffer, " - {:.01} FPS", fps_fixed as f32 / 10.0);
-            }
+    fn title(&self, components: TitleComponents) -> String {
+        let mut buffer = if components.contains(TitleComponents::EMU_NAME) {
+            "Dust - ".to_string()
         } else {
+            String::new()
+        };
+        if let Some(emu) = &self.emu {
+            if components.contains(TitleComponents::GAME_TITLE) {
+                buffer.push_str(&emu.title);
+            }
+            if components.contains(TitleComponents::FPS) {
+                if let Some(fps_fixed) = self.fps_fixed {
+                    let _ = write!(buffer, " - {:.01} FPS", fps_fixed as f32 / 10.0);
+                }
+            }
+        } else if components.contains(TitleComponents::GAME_TITLE) {
             buffer.push_str("No game loaded");
         }
-        window.window.set_title(&buffer);
+        buffer
+    }
+
+    fn update_title(&self, config: &config::Config, window: &window::Window) {
+        #[cfg(target_os = "macos")]
+        if match config!(config, title_bar_mode) {
+            TitleBarMode::System => false,
+            TitleBarMode::Mixed => !self.show_menu_bar,
+            TitleBarMode::Imgui => true,
+        } {
+            window.window.set_title("");
+        } else {
+            window.window.set_title(&self.title(TitleComponents::all()));
+        }
     }
 }
 
@@ -610,15 +656,14 @@ impl FbTexture {
     }
 
     fn set_data(&self, window: &window::Window, data: &Framebuffer) {
-        let data = unsafe {
-            slice::from_raw_parts(
-                data.0.as_ptr() as *const u8,
-                SCREEN_WIDTH * SCREEN_HEIGHT * 8,
-            )
-        };
         window.gfx.imgui.texture(self.id).set_data(
             &window.gfx.device_state.queue,
-            data,
+            unsafe {
+                slice::from_raw_parts(
+                    data.0.as_ptr() as *const u8,
+                    2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT,
+                )
+            },
             imgui_wgpu::TextureSetRange::default(),
         );
     }
@@ -643,7 +688,7 @@ pub fn main() {
         "Dust",
         config.config.window_size,
         #[cfg(target_os = "macos")]
-        config!(config.config, hide_macos_title_bar),
+        config!(config.config, title_bar_mode).system_title_bar_hidden(),
     ));
     // TODO: Allow custom styles
     window_builder.apply_default_imgui_style();
@@ -685,11 +730,11 @@ pub fn main() {
         screen_focused: true,
 
         input: input::State::new(),
-        input_map_editor: None,
 
         config_editor: None,
 
         save_slot_editor: SaveSlotEditor::new(),
+        savestate_editor: SavestateEditor::new(),
 
         audio_channel,
 
@@ -716,7 +761,11 @@ pub fn main() {
     }
 
     if let Some(rom_path) = env::args_os().nth(1) {
-        state.load_from_rom_path(Path::new(&rom_path), &mut config, &window_builder.window);
+        state.load_from_rom_path(
+            Path::new(&rom_path),
+            &mut config,
+            &mut window_builder.window,
+        );
     }
 
     window_builder.run(
@@ -733,14 +782,15 @@ pub fn main() {
             }
 
             state.input.process_event(event, state.screen_focused);
-            if let Some(editor) = &mut state.input_map_editor {
-                editor.process_event(event, &mut config.input_map.contents);
+
+            if let Some(config_editor) = &mut state.config_editor {
+                config_editor.process_event(event, config);
             }
         },
         |window, (config, state), ui| {
             // Drain input updates
             let (input_actions, emu_input_changes) = state.input.drain_changes(
-                &config.input_map.contents,
+                config!(config.config, &input_map),
                 if let Some(emu) = &state.emu {
                     emu.playing
                 } else {
@@ -762,8 +812,8 @@ pub fn main() {
                     input::Action::ToggleSyncToAudio => {
                         toggle_config!(config.config, sync_to_audio)
                     }
-                    input::Action::ToggleFullscreenRender => {
-                        toggle_config!(config.config, fullscreen_render)
+                    input::Action::ToggleFullWindowScreen => {
+                        toggle_config!(config.config, full_window_screen)
                     }
                 }
             }
@@ -912,6 +962,14 @@ pub fn main() {
                                 set_config!(config.config, rtc_time_offset_seconds, value);
                                 config.config.rtc_time_offset_seconds.clear_updates();
                             }
+
+                            emu::Notification::SavestateCreated(name, savestate) => {
+                                state.savestate_editor.savestate_created(name, savestate, window);
+                            }
+
+                            emu::Notification::SavestateFailed(name) => {
+                                state.savestate_editor.savestate_failed(name);
+                            }
                         }
                     }
                 }
@@ -934,7 +992,7 @@ pub fn main() {
             }
 
             // Draw menu bar
-            if config!(config.config, fullscreen_render)
+            if config!(config.config, full_window_screen)
                 && ui.is_key_pressed(imgui::Key::Escape)
                 && !ui.is_any_item_focused()
             {
@@ -942,32 +1000,57 @@ pub fn main() {
             }
             if state.show_menu_bar {
                 window.main_menu_bar(ui, |window| {
+                    macro_rules! icon {
+                        ($tooltip: expr, $inner: expr) => {{
+                            {
+                                let _font = ui.push_font(window.large_icon_font);
+                                $inner;
+                            }
+                            if ui.is_item_hovered() {
+                                ui.tooltip_text($tooltip);
+                            }
+                        }};
+                    }
+
                     ui.menu("Emulation", || {
-                        if ui
-                            .menu_item_config(if state.playing() { "Pause" } else { "Play" })
-                            .enabled(state.emu.is_some())
-                            .build()
-                        {
-                            state.play_pause();
-                        }
+                        ui.enabled(state.emu.is_some(), || {
+                            let button_width = ((ui.content_region_avail()[0]
+                                - style!(ui, item_spacing)[0] * 2.0)
+                                / 3.0)
+                                .max(40.0 + style!(ui, frame_padding)[0] * 2.0);
 
-                        if ui
-                            .menu_item_config("Reset")
-                            .enabled(state.emu.is_some())
-                            .build()
-                        {
-                            state.reset();
-                        }
+                            icon!(
+                                "Stop",
+                                if ui.button_with_size("\u{f04d}", [button_width, 0.0]) {
+                                    state.stop(config, window);
+                                }
+                            );
 
-                        if ui
-                            .menu_item_config("Stop")
-                            .enabled(state.emu.is_some())
-                            .build()
-                        {
-                            state.stop(config, window);
-                        }
+                            ui.same_line();
+                            icon!(
+                                "Reset",
+                                if ui.button_with_size("\u{f2ea}", [button_width, 0.0]) {
+                                    state.reset();
+                                }
+                            );
 
-                        if ui.menu_item("Load game...") {
+                            ui.same_line();
+                            let (play_pause_icon, play_pause_tooltip) = if state.playing() {
+                                ("\u{f04c}", "Pause")
+                            } else {
+                                ("\u{f04b}", "Play")
+                            };
+                            icon!(
+                                play_pause_tooltip,
+                                if ui.button_with_size(play_pause_icon, [button_width, 0.0]) {
+                                    state.play_pause();
+                                }
+                            );
+                        });
+
+                        ui.separator();
+
+                        if ui.menu_item("\u{f07c} Load game...") {
                             if let Some(path) = FileDialog::new()
                                 .add_filter("NDS ROM file", ALLOWED_ROM_EXTENSIONS)
                                 .pick_file()
@@ -976,28 +1059,59 @@ pub fn main() {
                             }
                         }
 
-                        if ui.menu_item("Load firmware") {
+                        if ui.menu_item("\u{f2db} Load firmware") {
                             state.load_firmware(config, window);
                         }
 
                         ui.separator();
 
-                        state.save_slot_editor.draw(ui, &mut config.config, &mut state.emu);
+                        state
+                            .save_slot_editor
+                            .draw(ui, &mut config.config, &mut state.emu);
+
+                        state.savestate_editor.draw(ui, window, &mut state.emu);
                     });
 
                     ui.menu("Config", || {
-                        ui.menu("Volume", || {
-                            let mut volume = config!(config.config, audio_volume) * 100.0;
-                            if ui
-                                .slider_config("##audio_volume", 0.0, 100.0)
-                                .display_format("%.02f%%")
-                                .build(&mut volume)
-                            {
-                                set_config!(config.config, audio_volume, volume / 100.0);
-                            }
-                        });
+                        {
+                            let button_width = ui.content_region_avail()[0]
+                                .max(40.0 + style!(ui, frame_padding)[0] * 2.0);
 
-                        ui.menu("Screen rotation", || {
+                            icon!(
+                                "Settings",
+                                if ui.button_with_size("\u{f013}", [button_width, 0.0])
+                                    && state.config_editor.is_none()
+                                {
+                                    state.config_editor = Some(ConfigEditor::new());
+                                }
+                            );
+                        }
+
+                        ui.separator();
+
+                        let audio_volume = config!(config.config, audio_volume);
+
+                        ui.menu(
+                            if audio_volume == 0.0 {
+                                "\u{f6a9} Volume###volume"
+                            } else if audio_volume < 0.5 {
+                                "\u{f027} Volume###volume"
+                            } else {
+                                "\u{f028} Volume###volume"
+                            },
+                            || {
+                                let mut volume = audio_volume * 100.0;
+                                if ui
+                                    .slider_config("##audio_volume", 0.0, 100.0)
+                                    .display_format("%.02f%%")
+                                    .build(&mut volume)
+                                {
+                                    set_config!(config.config, audio_volume, volume / 100.0);
+                                }
+                            },
+                        );
+
+                        ui.menu("\u{f2f1} Screen rotation", || {
                             let mut screen_rot = config!(config.config, screen_rot);
                             if ui
                                 .input_scalar("##screen_rot", &mut screen_rot)
@@ -1022,41 +1136,23 @@ pub fn main() {
                         });
 
                         macro_rules! draw_config_toggle {
-                            ($ident: ident, $desc: literal) => {{
+                            ($ident: ident, $desc: literal$(, $update: expr)?) => {{
                                 let mut value = config!(config.config, $ident);
                                 if ui.menu_item_config($desc).build_with_ref(&mut value) {
                                     set_config!(config.config, $ident, value);
+                                    $($update)*
                                 }
                             }};
                         }
 
-                        draw_config_toggle!(limit_framerate, "Limit framerate");
-                        draw_config_toggle!(sync_to_audio, "Sync to audio");
-                        draw_config_toggle!(fullscreen_render, "Fullscreen render");
+                        draw_config_toggle!(full_window_screen, "\u{f31e} Full-window screen", {
+                            state.show_menu_bar |= !config!(config.config, full_window_screen);
+                        });
 
                         ui.separator();
 
-                        {
-                            let mut show = state.input_map_editor.is_some();
-                            if ui.menu_item_config("Input").build_with_ref(&mut show) {
-                                state.input_map_editor = if show {
-                                    Some(input::MapEditor::new())
-                                } else {
-                                    None
-                                };
-                            }
-                        }
-
-                        {
-                            let mut show = state.config_editor.is_some();
-                            if ui.menu_item_config("Config").build_with_ref(&mut show) {
-                                state.config_editor = if show {
-                                    Some(ConfigEditor::new())
-                                } else {
-                                    None
-                                };
-                            }
-                        }
+                        draw_config_toggle!(limit_framerate, "\u{e163} Limit framerate");
+                        draw_config_toggle!(sync_to_audio, "\u{f026} Sync to audio");
                     });
 
                     #[cfg(feature = "log")]
@@ -1128,19 +1224,63 @@ pub fn main() {
                         });
                     }
 
+                    #[allow(unused)]
+                    let mut right_title_limit = ui.window_size()[0];
+
                     #[cfg(feature = "gdb-server")]
                     if let Some(emu) = &state.emu {
                         if emu.shared_state.gdb_server_active.load(Ordering::Relaxed) {
                             if let Some(server_addr) = emu.gdb_server_addr.as_ref() {
+                                let orig_cursor_pos = ui.cursor_pos();
                                 let text = format!("GDB: {server_addr}");
                                 let width =
                                     ui.calc_text_size(&text)[0] + style!(ui, item_spacing)[0];
-                                ui.set_cursor_pos([
-                                    ui.content_region_max()[0] - width,
-                                    ui.cursor_pos()[1],
-                                ]);
+                                right_title_limit = ui.content_region_max()[0] - width;
+                                ui.set_cursor_pos([right_title_limit, ui.cursor_pos()[1]]);
                                 ui.separator();
                                 ui.text(&text);
+                                ui.set_cursor_pos(orig_cursor_pos);
+                            }
+                        }
+                    }
+
+                    #[cfg(target_os = "macos")]
+                    if config!(config.config, title_bar_mode) == TitleBarMode::Imgui {
+                        // TODO: When imgui-rs provides RenderTextEllipsis, use it; for now, the
+                        //       title just gets replaced by the FPS and then hidden.
+                        let item_spacing = style!(ui, item_spacing)[0];
+
+                        let draw_title = move |text: &str| {
+                            let width = ui.calc_text_size(text)[0] + item_spacing;
+                            let orig_cursor_pos = ui.cursor_pos();
+
+                            let mut cursor_x = orig_cursor_pos[0] + item_spacing;
+                            if right_title_limit - cursor_x < width {
+                                return false;
+                            }
+
+                            let centered_start_x = ui.window_size()[0] * 0.5 - width * 0.5;
+                            cursor_x = cursor_x.max(centered_start_x);
+                            if cursor_x + width > right_title_limit {
+                                cursor_x = right_title_limit - width;
+                            }
+
+                            ui.set_cursor_pos(orig_cursor_pos);
+                            ui.separator();
+                            ui.set_cursor_pos([cursor_x, orig_cursor_pos[1]]);
+                            ui.text(text);
+
+                            true
+                        };
+
+                        for components in [
+                            TitleComponents::all(),
+                            TitleComponents::GAME_TITLE | TitleComponents::FPS,
+                            TitleComponents::FPS,
+                        ] {
+                            let title = state.title(components);
+                            if title.is_empty() || draw_title(&title) {
+                                break;
                             }
                         }
                     }
@@ -1159,24 +1299,10 @@ pub fn main() {
                 }
             }
 
-            // Draw input map editor
-            if let Some(editor) = &mut state.input_map_editor {
-                let mut opened = true;
-                editor.draw(ui, &mut config.input_map, &mut opened);
-                if !opened {
-                    state.input_map_editor = None;
-                }
-            }
-
             // Draw config editor
             if let Some(editor) = &mut state.config_editor {
                 let mut opened = true;
-                editor.draw(
-                    ui,
-                    config,
-                    state.emu.as_mut(),
-                    &mut opened,
-                );
+                editor.draw(ui, config, state.emu.as_mut(), &mut opened);
                 if !opened {
                     state.config_editor = None;
                 }
@@ -1186,7 +1312,7 @@ pub fn main() {
             let window_size = window.window.inner_size();
             let screen_integer_scale = config!(config.config, screen_integer_scale);
             let screen_rot = (config!(config.config, screen_rot) as f32).to_radians();
-            if config!(config.config, fullscreen_render) {
+            if config!(config.config, full_window_screen) {
                 let (center, points) = scale_to_fit_rotated(
                     [SCREEN_WIDTH as f32, (2 * SCREEN_HEIGHT) as f32],
                     screen_integer_scale,
@@ -1290,7 +1416,7 @@ pub fn main() {
                 }));
             }
 
-            state.update_title(window);
+            state.update_title(&config.config, window);
 
             window::ControlFlow::Continue
         },
@@ -1312,7 +1438,6 @@ pub fn main() {
                     .write()
                     .expect("couldn't save global configuration");
             }
-            config.input_map.write().expect("couldn't save input map");
 
             if let Some(path) = config!(config.config, &imgui_config_path) {
                 if let Some(init_path) = init_imgui_config_path {

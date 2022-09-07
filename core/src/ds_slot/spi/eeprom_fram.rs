@@ -1,6 +1,6 @@
 use crate::{
     utils::{BoxedByteSlice, ByteMutSlice, ByteSlice, Savestate},
-    SaveContents, SaveReloadContents
+    SaveContents, SaveReloadContents,
 };
 
 proc_bitfield::bitfield! {

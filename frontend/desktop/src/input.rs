@@ -1,5 +1,3 @@
-mod map_editor;
-pub use map_editor::MapEditor;
 mod map;
 pub use map::Map;
 mod state;
@@ -8,14 +6,14 @@ pub mod trigger;
 
 use winit::event::{ScanCode, VirtualKeyCode};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Action {
     PlayPause,
     Reset,
     Stop,
     ToggleFramerateLimit,
     ToggleSyncToAudio,
-    ToggleFullscreenRender,
+    ToggleFullWindowScreen,
 }
 
-type PressedKey = (Option<VirtualKeyCode>, ScanCode);
+pub type PressedKey = (Option<VirtualKeyCode>, ScanCode);

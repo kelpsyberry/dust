@@ -15,12 +15,12 @@ impl Editor {
     }
 
     pub fn draw(&mut self, ui: &Ui, config: &mut Config, emu_state: &mut Option<EmuState>) {
-        let mut save_slots_shown = false;
+        let mut shown = false;
         ui.menu_with_enabled(
-            "Save slot",
+            "\u{f0c7} Save slot",
             emu_state.as_ref().map_or(false, |emu| emu.game_loaded),
             || {
-                save_slots_shown = true;
+                shown = true;
 
                 let emu_state = emu_state.as_mut().unwrap();
 
@@ -145,7 +145,7 @@ impl Editor {
             },
         );
 
-        if !save_slots_shown {
+        if !shown {
             self.editing_i = None;
         }
     }

@@ -16,8 +16,12 @@ use dust_core::{
     ds_slot::{self, spi::Spi as DsSlotSpi},
     emu::RunOutput,
     flash::Flash,
+    gpu::Framebuffer,
     spi::firmware,
-    utils::{BoxedByteSlice, Bytes},
+    utils::{
+        BoxedByteSlice, Bytes, PersistentReadSavestate, PersistentWriteSavestate, ReadSavestate,
+        WriteSavestate,
+    },
     Model, SaveContents, SaveReloadContents,
 };
 #[cfg(feature = "gdb-server")]
@@ -53,13 +57,20 @@ pub struct SavePathUpdate {
     pub reset: bool,
 }
 
+pub struct Savestate {
+    pub contents: Vec<u8>,
+    pub framebuffer: Box<Framebuffer>,
+}
+
 pub enum Message {
     UpdateInput(input::Changes),
     #[cfg(feature = "debug-views")]
     DebugViews(debug_views::Message),
-    CreateSavestate,
     Reset,
     Stop,
+
+    CreateSavestate(String),
+    ApplySavestate(Savestate),
 
     UpdateSavePath(SavePathUpdate),
     UpdateSaveIntervalMs(f32),
@@ -83,6 +94,8 @@ pub enum Message {
 pub enum Notification {
     Stopped,
     RtcTimeOffsetSecondsUpdated(i64),
+    SavestateCreated(String, Savestate),
+    SavestateFailed(String),
 }
 
 pub struct DsSlot {
@@ -438,16 +451,39 @@ pub(super) fn main(
                     debug_views.handle_message(&mut emu, message);
                 }
 
-                Message::CreateSavestate => {
-                    todo!();
-                }
-
                 Message::Reset => {
                     reset_triggered = true;
                 }
 
                 Message::Stop => {
                     break 'run_loop;
+                }
+
+                Message::CreateSavestate(name) => {
+                    let mut contents = Vec::new();
+                    if PersistentWriteSavestate::new(&mut contents)
+                        .store(&mut emu)
+                        .is_ok()
+                    {
+                        notif!(Notification::SavestateCreated(
+                            name,
+                            Savestate {
+                                contents,
+                                framebuffer: emu.gpu.framebuffer.clone(),
+                            }
+                        ));
+                    } else {
+                        notif!(Notification::SavestateFailed(name));
+                    }
+                }
+
+                Message::ApplySavestate(savestate) => {
+                    if PersistentReadSavestate::new(&savestate.contents)
+                        .and_then(|mut savestate| savestate.load_into(&mut emu).map_err(drop))
+                        .is_ok()
+                    {
+                        emu.gpu.framebuffer = savestate.framebuffer;
+                    }
                 }
 
                 Message::UpdateSavePath(SavePathUpdate {

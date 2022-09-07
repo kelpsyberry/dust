@@ -53,10 +53,7 @@ pub struct HomePath {
 }
 
 impl HomePath {
-    pub const fn new(
-        get: fn(&Config) -> &HomePathBuf,
-        set: fn(&mut Config, HomePathBuf),
-    ) -> Self {
+    pub const fn new(get: fn(&Config) -> &HomePathBuf, set: fn(&mut Config, HomePathBuf)) -> Self {
         HomePath {
             get,
             set,
@@ -82,10 +79,7 @@ impl RawSetting for HomePath {
             .enter_returns_true(true)
             .build()
         {
-            (self.set)(
-                config,
-                HomePathBuf::from(self.buffer.as_str()),
-            );
+            (self.set)(config, HomePathBuf::from(self.buffer.as_str()));
         }
 
         if !tooltip.is_empty() && ui.is_item_hovered() {
@@ -451,8 +445,11 @@ impl<S: RawSetting> Setting for NonOverridable<S> {
         self.inner.draw(ui, config, "", width);
 
         ui.table_next_column();
-        if ui.button("Reset") {
+        if ui.button("\u{f1f8}") {
             (self.reset)(config);
+        }
+        if ui.is_item_hovered() {
+            ui.tooltip_text("Reset");
         }
     }
 }
@@ -529,10 +526,10 @@ impl<T: RawSetting> Setting for Overridable<T> {
         }
 
         ui.table_next_column();
-        modify_configs!(
+        modify_configs_mask!(
             ui,
+            icon_tooltip "\u{f1f8}", "Reset",
             "reset",
-            "Reset",
             true,
             data.game_loaded,
             |global, game| {

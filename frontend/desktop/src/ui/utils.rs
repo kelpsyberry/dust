@@ -171,11 +171,8 @@ pub fn scale_to_fit_rotated(
 }
 
 pub fn heading(ui: &Ui, text: &str, text_indent: f32, margin: f32) {
-    let window_pos = ui.window_pos();
-    let window_x_bounds = [
-        window_pos[0] + ui.window_content_region_min()[0],
-        window_pos[0] + ui.window_content_region_max()[0],
-    ];
+    let start_x = ui.cursor_screen_pos()[0];
+    let window_x_bounds = [start_x, start_x + ui.content_region_avail()[0]];
     let separator_color = ui.style_color(StyleColor::Separator);
 
     let mut text_start_pos = ui.cursor_screen_pos();

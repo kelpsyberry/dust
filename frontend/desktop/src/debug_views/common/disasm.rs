@@ -337,8 +337,7 @@ impl DisassemblyView {
 
         let layout = self.layout.as_ref().unwrap();
 
-        ui.child_window("##disasm")
-            .movable(false)
+        ui.child_window("disasm")
             .no_nav()
             .scroll_bar(false)
             .focused(self.selected_addr_changed)

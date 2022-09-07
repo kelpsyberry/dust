@@ -27,7 +27,7 @@ pub enum Trigger {
 }
 
 impl Trigger {
-    pub(super) fn activated<'a>(
+    pub fn activated<'a>(
         &self,
         pressed_keys: impl IntoIterator<Item = &'a PressedKey> + Copy,
     ) -> bool {

@@ -178,6 +178,7 @@ pub struct Window {
     pub gfx: GfxState,
     pub normal_font: imgui::FontId,
     pub mono_font: imgui::FontId,
+    pub large_icon_font: imgui::FontId,
     #[cfg(target_os = "macos")]
     macos_title_bar_hidden: bool,
     #[cfg(target_os = "macos")]
@@ -185,11 +186,6 @@ pub struct Window {
 }
 
 impl Window {
-    #[cfg(target_os = "macos")]
-    pub fn macos_title_bar_hidden(&self) -> bool {
-        self.macos_title_bar_hidden
-    }
-
     #[cfg(target_os = "macos")]
     pub fn set_macos_title_bar_hidden(&mut self, hidden: bool) {
         self.macos_title_bar_hidden = hidden;
@@ -303,15 +299,55 @@ impl Builder {
         imgui_io.config_windows_move_from_title_bar_only = true;
         imgui_io.font_global_scale = (1.0 / scale_factor) as f32;
 
-        let normal_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
-            data: include_bytes!("../../fonts/OpenSans-Regular.ttf"),
-            size_pixels: (16.0 * scale_factor) as f32,
-            config: None,
-        }]);
+        static OPEN_SANS_DATA: &[u8] = include_bytes!("../../fonts/OpenSans-Regular.ttf");
+        static FA_SOLID_DATA: &[u8] = include_bytes!("../../fonts/FontAwesome-Solid.ttf");
+        static FA_BRANDS_DATA: &[u8] = include_bytes!("../../fonts/FontAwesome-Brands.ttf");
+        let fa_solid_glyph_ranges = imgui::FontGlyphRanges::from_slice(&[0xE000, 0xF8FF, 0]);
+        let fa_brands_glyph_ranges = imgui::FontGlyphRanges::from_slice(&[0xF392, 0xF392, 0]);
+
+        let normal_font = imgui.fonts().add_font(&[
+            imgui::FontSource::TtfData {
+                data: OPEN_SANS_DATA,
+                size_pixels: (16.0 * scale_factor) as f32,
+                config: None,
+            },
+            imgui::FontSource::TtfData {
+                data: FA_SOLID_DATA,
+                size_pixels: (16.0 * scale_factor) as f32,
+                config: Some(imgui::FontConfig {
+                    glyph_ranges: fa_solid_glyph_ranges.clone(),
+                    glyph_min_advance_x: (20.0 * scale_factor) as f32,
+                    glyph_offset: [0.0, 2.0],
+                    ..Default::default()
+                }),
+            },
+            imgui::FontSource::TtfData {
+                data: FA_BRANDS_DATA,
+                size_pixels: (16.0 * scale_factor) as f32,
+                config: Some(imgui::FontConfig {
+                    glyph_ranges: fa_brands_glyph_ranges.clone(),
+                    glyph_min_advance_x: (20.0 * scale_factor) as f32,
+                    glyph_offset: [0.0, 2.0],
+                    ..Default::default()
+                }),
+            },
+        ]);
         let mono_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
             data: include_bytes!("../../fonts/FiraMono-Regular.ttf"),
             size_pixels: (13.0 * scale_factor) as f32,
             config: None,
+        }]);
+        let large_icon_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
+            data: FA_SOLID_DATA,
+            size_pixels: (32.0 * scale_factor) as f32,
+            config: Some(imgui::FontConfig {
+                glyph_ranges: imgui::FontGlyphRanges::from_slice(&[
+                    0x002B, 0x002B, 0xE000, 0xF8FF, 0,
+                ]),
+                glyph_min_advance_x: (40.0 * scale_factor) as f32,
+                glyph_offset: [0.0, 4.0],
+                ..Default::default()
+            }),
         }]);
 
         let mut imgui_winit_platform = imgui_winit_support::WinitPlatform::init(&mut imgui);
@@ -333,6 +369,7 @@ impl Builder {
             imgui_winit_platform,
             normal_font,
             mono_font,
+            large_icon_font,
             #[cfg(target_os = "macos")]
             macos_title_bar_hidden,
             #[cfg(target_os = "macos")]

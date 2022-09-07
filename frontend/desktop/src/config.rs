@@ -1,11 +1,11 @@
 pub mod saves;
 #[allow(dead_code)]
 mod setting;
-pub use setting::{Resolvable, Setting};
+pub use setting::{Origin as SettingOrigin, Resolvable, Setting};
 
 use crate::{
-    audio,
-    utils::{config_base, data_base, HomePathBuf},
+    audio, input,
+    utils::{config_base, data_base, double_option, HomePathBuf},
 };
 use dust_core::{
     audio::ChannelInterpMethod as AudioChannelInterpMethod,
@@ -17,7 +17,7 @@ use dust_core::{
 use serde::{Deserialize, Serialize};
 use setting::{
     resolve_option, set_option, set_unreachable, NonOverridable, Overridable, OverridableTypes,
-    SettingOrigin, Tracked, Untracked,
+    Tracked, Untracked,
 };
 use std::{
     fmt, fs,
@@ -123,32 +123,42 @@ macro_rules! def_config {
                         global.$ug_ident.clone(),
                         $ug_default,
                     )),)*
-                    $($uo_ident: Untracked::new(Overridable::new(
-                        global.$uo_ident.clone(),
-                        $uo_global_default,
-                        Default::default(),
-                        $uo_game_default,
-                        $uo_resolve,
-                        $uo_set,
-                    )),)*
-                    $($uga_ident: Untracked::new(NonOverridable::new(
-                        Default::default(),
-                        $uga_default,
-                    )),)*
+                    $($uo_ident: {
+                        let game_default = $uo_game_default;
+                        Untracked::new(Overridable::new(
+                            global.$uo_ident.clone(),
+                            $uo_global_default,
+                            game_default.clone(),
+                            game_default,
+                            $uo_resolve,
+                            $uo_set,
+                        ))
+                    },)*
+                    $($uga_ident: {
+                        let default = $uga_default;
+                        Untracked::new(NonOverridable::new(
+                            default.clone(),
+                            default,
+                        ))
+                    },)*
                     $($tg_ident: Tracked::new(
                         NonOverridable::new(global.$tg_ident.clone(), $tg_default),
                     ),)*
-                    $($to_ident: Tracked::new(Overridable::new(
-                        global.$to_ident.clone(),
-                        $to_global_default,
-                        Default::default(),
-                        $to_game_default,
-                        $to_resolve,
-                        $to_set,
-                    )),)*
-                    $($tga_ident: Tracked::new(
-                        NonOverridable::new(Default::default(), $tga_default),
-                    ),)*
+                    $($to_ident: {
+                        let game_default = $to_game_default;
+                        Tracked::new(Overridable::new(
+                            global.$to_ident.clone(),
+                            $to_global_default,
+                            game_default.clone(),
+                            game_default,
+                            $to_resolve,
+                            $to_set,
+                        ))
+                    },)*
+                    $($tga_ident: {
+                        let default = $tga_default;
+                        Tracked::new(NonOverridable::new(default.clone(), default))
+                    },)*
                     $($ui_ident: global.$ui_ident.clone(),)*
                 }
             }
@@ -214,11 +224,7 @@ macro_rules! config_changed_value {
     ($config: expr, $key: ident) => {{
         use $crate::config::Setting;
         let config = &$config;
-        if config.$key.changed() {
-            Some(*config.$key.get())
-        } else {
-            None
-        }
+        config.$key.changed().then(|| *config.$key.get())
     }};
 }
 
@@ -250,11 +256,24 @@ macro_rules! toggle_config {
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
-pub struct SysPaths<T = Option<HomePathBuf>> {
-    pub dir: T,
-    pub arm7_bios: T,
-    pub arm9_bios: T,
-    pub firmware: T,
+pub struct GlobalSysPaths {
+    pub dir: Option<HomePathBuf>,
+    pub arm7_bios: Option<HomePathBuf>,
+    pub arm9_bios: Option<HomePathBuf>,
+    pub firmware: Option<HomePathBuf>,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct GameSysPaths {
+    #[serde(skip_serializing_if = "Option::is_none", with = "double_option")]
+    pub dir: Option<Option<HomePathBuf>>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "double_option")]
+    pub arm7_bios: Option<Option<HomePathBuf>>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "double_option")]
+    pub arm9_bios: Option<Option<HomePathBuf>>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "double_option")]
+    pub firmware: Option<Option<HomePathBuf>>,
 }
 
 #[derive(Clone)]
@@ -265,16 +284,25 @@ pub struct ResolvedSysPaths {
 }
 
 impl ResolvedSysPaths {
-    fn resolve(global: &SysPaths, game: &SysPaths) -> (Self, SettingOrigin) {
+    fn resolve(global: &GlobalSysPaths, game: &GameSysPaths) -> (Self, SettingOrigin) {
+        macro_rules! override_paths {
+            ($($field: ident),*) => {
+                $(
+                    let mut $field = &global.$field;
+                    if let Some(path) = &game.$field {
+                        $field = path;
+                    }
+                )*
+            };
+        }
+
+        override_paths!(dir, arm7_bios, arm9_bios, firmware);
+
         macro_rules! path {
             ($field: ident, $path_in_sys_dir: expr) => {
-                [game, global].into_iter().find_map(|paths| {
-                    paths.$field.clone().or_else(|| {
-                        paths
-                            .dir
-                            .as_ref()
-                            .map(|dir_path| HomePathBuf(dir_path.0.join($path_in_sys_dir)))
-                    })
+                $field.clone().or_else(|| {
+                    dir.as_ref()
+                        .map(|dir_path| HomePathBuf(dir_path.0.join($path_in_sys_dir)))
                 })
             };
         }
@@ -283,7 +311,7 @@ impl ResolvedSysPaths {
             ResolvedSysPaths {
                 arm7_bios: path!(arm7_bios, "biosnds7.bin"),
                 arm9_bios: path!(arm9_bios, "biosnds9.bin"),
-                firmware: path!(arm7_bios, "firmware.bin"),
+                firmware: path!(firmware, "firmware.bin"),
             },
             SettingOrigin::Game,
         )
@@ -306,6 +334,20 @@ pub enum ModelConfig {
     Ique,
     IqueLite,
     Dsi,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TitleBarMode {
+    System,
+    Mixed,
+    Imgui,
+}
+
+impl TitleBarMode {
+    pub fn system_title_bar_hidden(&self) -> bool {
+        *self != TitleBarMode::System
+    }
 }
 
 fn resolve_opt_nonzero_u32(
@@ -353,8 +395,8 @@ def_config! {
                 resolve resolve_option, set set_option,
             screen_rot: u16 = 0, None,
                 resolve resolve_option, set set_option,
-            sys_paths: ResolvedSysPaths, SysPaths, SysPaths, SysPaths<Option<Option<HomePathBuf>>>
-                = Default::default(), Default::default(),
+            sys_paths: ResolvedSysPaths, GlobalSysPaths, GameSysPaths, ()
+                = Default::default(), GameSysPaths::default(),
                 resolve ResolvedSysPaths::resolve, set set_unreachable,
             skip_firmware: bool = true, None,
                 resolve resolve_option, set set_option,
@@ -364,18 +406,22 @@ def_config! {
                 resolve resolve_option, set set_option,
             prefer_hle_bios: bool = false, None,
                 resolve resolve_option, set set_option,
+            input_map: input::Map, input::Map, input::Map, ()
+                = Default::default(), input::Map::empty(),
+                resolve input::Map::resolve, set set_unreachable,
         }
         game {}
     }
     tracked {
         global {
-            hide_macos_title_bar: bool = true,
+            title_bar_mode: TitleBarMode = TitleBarMode::System,
             game_db_path: Option<HomePathBuf> = Some(HomePathBuf(data_base().join("game_db.json"))),
             logging_kind: LoggingKind = LoggingKind::Imgui,
             save_dir_path: HomePathBuf = HomePathBuf(data_base().join("saves")),
+            savestate_dir_path: HomePathBuf = HomePathBuf(data_base().join("states")),
         }
         overridable {
-            fullscreen_render: bool = true, None,
+            full_window_screen: bool = true, None,
                 resolve resolve_option, set set_option,
             imgui_log_history_capacity: u32 = 1024 * 1024, None,
                 resolve resolve_option, set set_option,
@@ -451,13 +497,6 @@ impl<T: Default + Serialize + for<'de> Deserialize<'de>> File<T> {
             }),
             Err(err) => Err(FileError::Json(err)),
         }
-    }
-
-    pub fn reload(&mut self) -> Result<(), FileError> {
-        if let Some(path) = &self.path {
-            self.contents = Self::read(path, false)?.contents;
-        }
-        Ok(())
     }
 
     pub fn write(&self) -> Result<(), FileError> {

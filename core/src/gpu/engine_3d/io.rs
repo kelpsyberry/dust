@@ -116,6 +116,8 @@ impl Engine3d {
         match addr & 0xFFC {
             0x320 => self.line_buffer_level() as u32,
 
+            0x4A4 => 0, // Spirit Tracks seems to spam reads from this register
+
             0x600 => self.gx_status().0,
             0x604 => self.poly_vert_ram_level().0,
 

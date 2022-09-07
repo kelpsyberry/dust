@@ -11,7 +11,8 @@
     portable_simd,
     associated_type_defaults,
     const_trait_impl,
-    const_mut_refs
+    const_mut_refs,
+    slice_as_chunks
 )]
 
 #[cfg(target_os = "macos")]

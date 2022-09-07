@@ -698,11 +698,21 @@ impl Renderer {
                         {
                             continue;
                         }
+
+                        let scissor_size = [
+                            (clip_rect[2] - clip_rect[0]).abs().ceil() as u32,
+                            (clip_rect[3] - clip_rect[1]).abs().ceil() as u32,
+                        ];
+
+                        if scissor_size[0] == 0 || scissor_size[1] == 0 {
+                            continue;
+                        }
+
                         render_pass.set_scissor_rect(
                             clip_rect[0].max(0.0).floor() as u32,
                             clip_rect[1].max(0.0).floor() as u32,
-                            (clip_rect[2] - clip_rect[0]).abs().ceil() as u32,
-                            (clip_rect[3] - clip_rect[1]).abs().ceil() as u32,
+                            scissor_size[0],
+                            scissor_size[1],
                         );
 
                         render_pass.set_bind_group(1, &texture.bind_group, &[]);

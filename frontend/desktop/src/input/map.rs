@@ -2,6 +2,7 @@ use super::{
     trigger::{self, Trigger},
     Action,
 };
+use crate::config::SettingOrigin;
 use ahash::AHashMap as HashMap;
 use dust_core::emu::input::Keys;
 use serde::{
@@ -32,7 +33,10 @@ static ACTION_IDENTS: &[(Action, &str)] = &[
     (Action::PlayPause, "play-pause"),
     (Action::Reset, "reset"),
     (Action::Stop, "stop"),
-    (Action::ToggleFullscreenRender, "toggle-fullscreen-render"),
+    (
+        Action::ToggleFullWindowScreen,
+        "toggle-whole-window-screen-drawing",
+    ),
     (Action::ToggleSyncToAudio, "toggle-sync-to-audio"),
     (Action::ToggleFramerateLimit, "toggle-framerate-limit"),
 ];
@@ -41,6 +45,15 @@ static ACTION_IDENTS: &[(Action, &str)] = &[
 pub struct Map {
     pub keypad: HashMap<Keys, Option<Trigger>>,
     pub hotkeys: HashMap<Action, Option<Trigger>>,
+}
+
+impl Map {
+    pub fn empty() -> Self {
+        Map {
+            keypad: HashMap::new(),
+            hotkeys: HashMap::new(),
+        }
+    }
 }
 
 fn default_keypad_map() -> HashMap<Keys, Option<Trigger>> {
@@ -77,7 +90,7 @@ fn default_hotkey_map() -> HashMap<Action, Option<Trigger>> {
         (Action::PlayPause, None),
         (Action::Reset, None),
         (Action::Stop, None),
-        (Action::ToggleFullscreenRender, None),
+        (Action::ToggleFullWindowScreen, None),
         (Action::ToggleSyncToAudio, None),
         (Action::ToggleFramerateLimit, None),
     ]
@@ -228,5 +241,22 @@ impl<'de> Deserialize<'de> for Map {
         }
 
         deserializer.deserialize_map(MapVisitor)
+    }
+}
+
+impl Map {
+    pub fn resolve(global: &Self, game: &Self) -> (Self, SettingOrigin) {
+        let mut result = global.clone();
+        for (key, trigger) in &mut result.keypad {
+            if let Some(new_trigger) = game.keypad.get(key) {
+                *trigger = new_trigger.clone();
+            }
+        }
+        for (action, trigger) in &mut result.hotkeys {
+            if let Some(new_trigger) = game.hotkeys.get(action) {
+                *trigger = new_trigger.clone();
+            }
+        }
+        (result, SettingOrigin::Game)
     }
 }

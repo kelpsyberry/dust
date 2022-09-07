@@ -1,28 +1,114 @@
-macro_rules! modify_configs {
+macro_rules! modify_configs_mask {
     (
-        $ui: expr,
-        $id: literal, $label: literal,
+        $ui: expr, $(width $width: expr,)?
+        $(icon_tooltip $icon: literal, $tooltip: literal,)?
+        $(label $label: literal,)?
+        $id: literal,
         $global_enabled: expr, $game_enabled: expr,
         |$global: ident, $game: ident| $process: expr
     ) => {
-        if $ui.button(concat!($label, "...")) {
-            $ui.open_popup($id);
+        let global_enabled = $global_enabled;
+        let game_enabled = $game_enabled;
+        let show_popup = game_enabled || !global_enabled;
+
+        let pressed = $ui.button_with_size(
+            $($icon,)*
+            $(if show_popup {
+                concat!($label, "...")
+            } else {
+                $label
+            },)*
+            [0.0 $(+ $width)*, 0.0],
+        );
+
+        let mut $global = false;
+        let mut $game = false;
+
+        if show_popup {
+            $(
+                if $ui.is_item_hovered() {
+                    $ui.tooltip_text(concat!($tooltip, "..."));
+                }
+            )*
+            if pressed {
+                $ui.open_popup($id);
+            }
+            $ui.popup($id, || {
+                $global = $ui
+                    .menu_item_config("Global")
+                    .enabled(global_enabled)
+                    .build();
+                $game = $ui.menu_item_config("Game").enabled(game_enabled).build();
+                let all = $ui.menu_item("All");
+                $global |= all;
+                $game |= (all && game_enabled);
+            });
+        } else {
+            $(
+                if $ui.is_item_hovered() {
+                    $ui.tooltip_text($tooltip);
+                }
+            )*
+            $global = pressed;
         }
 
-        $ui.popup($id, || {
-            let mut $global = $ui
-                .menu_item_config("Global")
-                .enabled($global_enabled)
-                .build();
-            let mut $game = $ui.menu_item_config("Game").enabled($game_enabled).build();
-            let all = $ui.menu_item("All");
-            $global |= all;
-            $game |= all;
-            $process
-        });
+        $process
     };
 }
 
+macro_rules! modify_configs {
+    (
+        $ui: expr, $(width $width: expr,)?
+        $(icon_tooltip $icon: literal, $tooltip: literal,)?
+        $(label $label: literal,)?
+        $id: literal,
+        $game_enabled: expr, $process_global: expr, $process_game: expr
+    ) => {
+        let game_enabled = $game_enabled;
+
+        let pressed = $ui.button_with_size(
+            $($icon,)*
+            $(if game_enabled {
+                concat!($label, "...")
+            } else {
+                $label
+            },)*
+            [0.0 $(+ $width)*, 0.0],
+        );
+
+        let mut global = false;
+
+        if game_enabled {
+            $(
+                if $ui.is_item_hovered() {
+                    $ui.tooltip_text(concat!($tooltip, "..."));
+                }
+            )*
+            if pressed {
+                $ui.open_popup($id);
+            }
+            $ui.popup($id, || {
+                global = $ui.menu_item("Global");
+                if $ui.menu_item("Game") {
+                    $process_game
+                }
+            })
+        } else {
+            $(
+                if $ui.is_item_hovered() {
+                    $ui.tooltip_text($tooltip);
+                }
+            )*
+            global = pressed;
+        }
+
+        if global {
+            $process_global
+        }
+    };
+}
+
+mod input_map;
 #[allow(dead_code)]
 mod setting;
 
@@ -31,13 +117,15 @@ use super::{utils::heading, Config, EmuState};
 use crate::config::LoggingKind;
 use crate::{
     audio,
-    config::{self, saves, ModelConfig, Setting as _},
+    config::{self, saves, ModelConfig, Setting as _, TitleBarMode},
     ui::utils::combo_value,
     utils::HomePathBuf,
 };
 #[cfg(feature = "xq-audio")]
 use dust_core::audio::ChannelInterpMethod as AudioChannelInterpMethod;
-use imgui::{TableColumnFlags, TableColumnSetup, TableFlags, Ui};
+use imgui::{StyleColor, TableColumnFlags, TableColumnSetup, TableFlags, Ui};
+use input_map::Editor as InputMapEditor;
+use rfd::FileDialog;
 use setting::Setting;
 use std::borrow::Cow;
 #[cfg(feature = "xq-audio")]
@@ -261,11 +349,20 @@ macro_rules! sys_path {
                     },
                 ),
                 setting::OptHomePath::new(
-                    |config| config.sys_paths.inner().game().$field.as_ref(),
+                    |config| {
+                        config
+                            .sys_paths
+                            .inner()
+                            .game()
+                            .$field
+                            .as_ref()
+                            .unwrap()
+                            .as_ref()
+                    },
                     |config, value| {
                         config.sys_paths.update(|inner| {
                             inner.update_game(|game| {
-                                game.$field = value;
+                                game.$field = Some(value);
                             })
                         });
                     },
@@ -274,7 +371,7 @@ macro_rules! sys_path {
             |config| config.sys_paths.inner().game().$field.is_some(),
             |config, enabled| {
                 let value = if enabled {
-                    Some(
+                    Some(Some(
                         config
                             .sys_paths
                             .inner()
@@ -282,9 +379,9 @@ macro_rules! sys_path {
                             .$field
                             .clone()
                             .unwrap_or_else(|| HomePathBuf::from("...")),
-                    )
+                    ))
                 } else {
-                    config.sys_paths.inner().default_game().$field.clone()
+                    None
                 };
                 config
                     .sys_paths
@@ -334,8 +431,8 @@ impl PathsSettings {
 
 struct UiSettings {
     #[cfg(target_os = "macos")]
-    hide_macos_title_bar: setting::NonOverridable<setting::Bool>,
-    fullscreen_render: setting::Overridable<setting::Bool>,
+    title_bar_mode: setting::NonOverridable<setting::Combo<TitleBarMode>>,
+    full_window_screen: setting::Overridable<setting::Bool>,
     screen_integer_scale: setting::NonOverridable<setting::Bool>,
     screen_rot: setting::Overridable<setting::Slider<u16>>,
 }
@@ -344,12 +441,25 @@ impl UiSettings {
     fn new() -> Self {
         UiSettings {
             #[cfg(target_os = "macos")]
-            hide_macos_title_bar: nonoverridable!(
-                "Hide macOS title bar",
-                hide_macos_title_bar,
-                bool
+            title_bar_mode: nonoverridable!(
+                "Title bar mode",
+                title_bar_mode,
+                combo,
+                &[
+                    TitleBarMode::System,
+                    TitleBarMode::Mixed,
+                    TitleBarMode::Imgui,
+                ],
+                |title_bar_mode| {
+                    match title_bar_mode {
+                        TitleBarMode::System => "System",
+                        TitleBarMode::Mixed => "Mixed",
+                        TitleBarMode::Imgui => "Imgui",
+                    }
+                    .into()
+                }
             ),
-            fullscreen_render: overridable!("Fullscreen render", fullscreen_render, bool),
+            full_window_screen: overridable!("Full-window screen", full_window_screen, bool),
             screen_integer_scale: nonoverridable!(
                 "Limit screen size to integer scales",
                 screen_integer_scale,
@@ -432,6 +542,7 @@ struct SavesSettings {
     save_interval_ms: setting::Overridable<setting::Scalar<f32>>,
     reset_on_save_slot_switch: setting::NonOverridable<setting::Bool>,
     save_dir_path: setting::NonOverridable<setting::HomePath>,
+    savestate_dir_path: setting::NonOverridable<setting::HomePath>,
 }
 
 impl SavesSettings {
@@ -449,6 +560,11 @@ impl SavesSettings {
                 bool
             ),
             save_dir_path: nonoverridable!("Save directory path", save_dir_path, home_path),
+            savestate_dir_path: nonoverridable!(
+                "Saved state directory path",
+                savestate_dir_path,
+                home_path
+            ),
         }
     }
 }
@@ -563,6 +679,20 @@ impl DiscordPresenceSettings {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Section {
+    Paths,
+    Ui,
+    Audio,
+    Saves,
+    Emulation,
+    Input,
+    #[cfg(any(feature = "log", feature = "gdb-server"))]
+    Debug,
+    #[cfg(feature = "discord-presence")]
+    DiscordPresence,
+}
+
 struct Settings {
     paths: PathsSettings,
     ui: UiSettings,
@@ -593,333 +723,169 @@ impl Settings {
 
 pub(super) struct Editor {
     settings: Settings,
+    cur_section: Section,
+    input_map_editor: Option<InputMapEditor>,
 }
 
 impl Editor {
     pub fn new() -> Self {
         Editor {
             settings: Settings::new(),
+            cur_section: Section::Paths,
+            input_map_editor: None,
         }
     }
 
-    fn draw_settings(&mut self, ui: &Ui, config: &mut Config, emu_state: Option<&mut EmuState>) {
-        let data = SettingsData {
-            game_loaded: emu_state.as_ref().map_or(false, |e| e.game_loaded),
-        };
-
-        macro_rules! draw {
-            ($id: literal, $tab: ident, [$($(#[$attr: meta])* $field: ident),*]) => {
-                if let Some(_table) = ui.begin_table_with_flags(
-                    $id,
-                    4,
-                    TableFlags::SIZING_STRETCH_SAME | TableFlags::NO_CLIP,
-                ) {
-                    ui.table_setup_column_with(TableColumnSetup {
-                        flags: TableColumnFlags::WIDTH_FIXED,
-                        ..TableColumnSetup::new("")
-                    });
-                    ui.table_setup_column("");
-                    ui.table_setup_column_with(TableColumnSetup {
-                        flags: if data.game_loaded {
-                            TableColumnFlags::empty()
-                        } else {
-                            TableColumnFlags::WIDTH_FIXED
-                        },
-                        ..TableColumnSetup::new("")
-                    });
-                    ui.table_setup_column_with(TableColumnSetup {
-                        flags: TableColumnFlags::WIDTH_FIXED,
-                        ..TableColumnSetup::new("")
-                    });
-                    $(
-                        $(#[$attr])*
-                        {
-                            let _id = ui.push_id(stringify!($field));
-                            self.settings.$tab.$field.draw(ui, &mut config.config, &data);
-                        }
-                    )*
-                }
-            }
+    pub fn process_event(&mut self, event: &winit::event::Event<()>, config: &mut Config) {
+        if let Some(input_map_editor) = &mut self.input_map_editor {
+            input_map_editor.process_event(event, &mut config.config);
         }
+    }
 
-        if let Some(_tab_item) = ui.tab_item("Paths") {
-            // imgui_config_path
-            // game_db_path
-            // sys_paths
-
-            draw!("general", paths, [imgui_config_path, game_db_path]);
-
-            ui.dummy([0.0, 4.0]);
-            heading(ui, "System files", 16.0, 5.0);
-
-            draw!(
-                "sys_files",
-                paths,
-                [sys_dir_path, arm7_bios_path, arm9_bios_path, firmware_path]
-            );
+    pub fn emu_stopped(&mut self) {
+        if let Some(input_map_editor) = &mut self.input_map_editor {
+            input_map_editor.emu_stopped();
         }
+    }
 
-        if let Some(_tab_item) = ui.tab_item("UI") {
-            // hide_macos_title_bar
-            // fullscreen_render
-            // screen_integer_scale
-            // screen_rot
+    fn draw_game_saves_config(&mut self, ui: &Ui, config: &mut Config, emu_state: &mut EmuState) {
+        ui.text("Save path: ");
 
-            draw!(
-                "general",
-                ui,
-                [
-                    #[cfg(target_os = "macos")]
-                    hide_macos_title_bar,
-                    fullscreen_render,
-                    screen_integer_scale,
-                    screen_rot
-                ]
-            );
-        }
+        ui.same_line();
 
-        if let Some(_tab_item) = ui.tab_item("Audio") {
-            // audio_volume
-            // audio_sample_chunk_size
-            // audio_custom_sample_rate
-            // audio_channel_interp_method
-            // audio_interp_method
-
-            draw!("general", audio, [volume, sample_chunk_size]);
-
-            #[cfg(feature = "xq-audio")]
-            {
-                ui.dummy([0.0, 4.0]);
-                heading(ui, "Backend interpolation", 16.0, 5.0);
-                draw!(
-                    "backend_interp",
-                    audio,
-                    [custom_sample_rate, channel_interp_method]
-                );
-            }
-
-            ui.dummy([0.0, 4.0]);
-            heading(ui, "Frontend interpolation", 16.0, 5.0);
-            draw!("frontend_interp", audio, [interp_method]);
-        }
-
-        if let Some(_tab_item) = ui.tab_item("Saves") {
-            // save_interval_ms
-            // reset_on_save_slot_switch
-            // save_dir_path
-            // save_path_config
-
-            draw!(
-                "general",
-                saves,
-                [save_interval_ms, reset_on_save_slot_switch, save_dir_path]
-            );
-
-            ui.dummy([0.0, 4.0]);
-            heading(ui, "Game", 16.0, 5.0);
-
-            if data.game_loaded {
-                let emu_state = emu_state.unwrap();
-
-                ui.text("Save path: ");
-
-                ui.same_line();
-
-                let mut enabled = config!(config.config, &save_path_config).is_some();
-                if ui.checkbox("##enabled", &mut enabled) {
-                    set_config!(
-                        config.config,
-                        save_path_config,
-                        if enabled {
-                            Some(Default::default())
-                        } else {
-                            None
-                        }
-                    );
-                }
-
+        let mut enabled = config!(config.config, &save_path_config).is_some();
+        if ui.checkbox("##enabled", &mut enabled) {
+            set_config!(
+                config.config,
+                save_path_config,
                 if enabled {
-                    ui.same_line();
+                    Some(Default::default())
+                } else {
+                    None
+                }
+            );
+        }
 
-                    let mut path_config =
-                        Cow::Borrowed(config!(config.config, &save_path_config).as_ref().unwrap());
-                    let mut updated = false;
+        if enabled {
+            ui.same_line();
 
-                    let combo_width =
-                        (ui.content_region_avail()[0] - style!(ui, item_spacing)[0]) * 0.5;
+            let mut path_config =
+                Cow::Borrowed(config!(config.config, &save_path_config).as_ref().unwrap());
+            let mut updated = false;
 
-                    let mut location_kind = path_config.location.kind();
-                    ui.set_next_item_width(combo_width);
-                    if combo_value(
-                        ui,
-                        "##location",
-                        &mut location_kind,
-                        &[saves::LocationKind::Global, saves::LocationKind::Custom],
-                        |location_kind| {
-                            match location_kind {
-                                saves::LocationKind::Global => "Global",
-                                saves::LocationKind::Custom => "Custom",
-                            }
-                            .into()
-                        },
-                    ) {
-                        path_config.to_mut().change_location(
-                            location_kind,
-                            &config!(config.config, &save_dir_path).0,
-                            &emu_state.title,
-                        );
-                        updated = true;
+            let combo_width = (ui.content_region_avail()[0] - style!(ui, item_spacing)[0]) * 0.5;
+
+            let mut location_kind = path_config.location.kind();
+            ui.set_next_item_width(combo_width);
+            if combo_value(
+                ui,
+                "##location",
+                &mut location_kind,
+                &[saves::LocationKind::Global, saves::LocationKind::Custom],
+                |location_kind| {
+                    match location_kind {
+                        saves::LocationKind::Global => "Global",
+                        saves::LocationKind::Custom => "Custom",
                     }
+                    .into()
+                },
+            ) {
+                path_config.to_mut().change_location(
+                    location_kind,
+                    &config!(config.config, &save_dir_path).0,
+                    &emu_state.title,
+                );
+                updated = true;
+            }
 
-                    let mut slots_kind = path_config.slots.kind();
-                    ui.same_line();
-                    ui.set_next_item_width(combo_width);
-                    if combo_value(
-                        ui,
-                        "##slots",
-                        &mut slots_kind,
-                        &[saves::SlotsKind::Single, saves::SlotsKind::Multiple],
-                        |slots_kind| {
-                            match slots_kind {
-                                saves::SlotsKind::Single => "Single-slot",
-                                saves::SlotsKind::Multiple => "Multi-slot",
-                            }
-                            .into()
-                        },
-                    ) {
-                        path_config.to_mut().change_slots(
-                            slots_kind,
-                            &config!(config.config, &save_dir_path).0,
-                            &emu_state.title,
-                        );
-                        updated = true;
+            let mut slots_kind = path_config.slots.kind();
+            ui.same_line();
+            ui.set_next_item_width(combo_width);
+            if combo_value(
+                ui,
+                "##slots",
+                &mut slots_kind,
+                &[saves::SlotsKind::Single, saves::SlotsKind::Multiple],
+                |slots_kind| {
+                    match slots_kind {
+                        saves::SlotsKind::Single => "Single-slot",
+                        saves::SlotsKind::Multiple => "Multi-slot",
                     }
+                    .into()
+                },
+            ) {
+                path_config.to_mut().change_slots(
+                    slots_kind,
+                    &config!(config.config, &save_dir_path).0,
+                    &emu_state.title,
+                );
+                updated = true;
+            }
 
-                    if let saves::Location::Custom(location) = &path_config.location {
-                        let mut location = Cow::Borrowed(location);
+            if let saves::Location::Custom(location) = &path_config.location {
+                let mut location = Cow::Borrowed(location);
 
-                        let mut location_updated = false;
+                let mut location_updated = false;
 
-                        let base_width = (ui.content_region_avail()[0]
-                            - style!(ui, item_spacing)[0] * 2.0)
-                            / 10.0;
+                let base_width =
+                    (ui.content_region_avail()[0] - style!(ui, item_spacing)[0] * 2.0) / 10.0;
 
-                        ui.set_next_item_width(base_width * 5.0);
-                        let mut base_dir_str = location
-                            .base_dir
-                            .to_string()
-                            .map_or_else(|| "<invalid UTF-8>".to_string(), |v| v.to_string());
+                ui.set_next_item_width(base_width * 5.0);
+                let mut base_dir_str = location
+                    .base_dir
+                    .to_string()
+                    .map_or_else(|| "<invalid UTF-8>".to_string(), |v| v.to_string());
+                if ui
+                    .input_text("##base_dir", &mut base_dir_str)
+                    .auto_select_all(true)
+                    .enter_returns_true(true)
+                    .build()
+                {
+                    location.to_mut().base_dir = HomePathBuf(base_dir_str.into());
+                    location_updated = true;
+                }
+
+                macro_rules! os_string {
+                    ($id: ident) => {{
+                        let mut str = location
+                            .$id
+                            .as_ref()
+                            .map(|v| v.to_str().unwrap_or("<invalid UTF-8>"))
+                            .unwrap_or("")
+                            .to_string();
                         if ui
-                            .input_text("##base_dir", &mut base_dir_str)
+                            .input_text(concat!("##", stringify!($id)), &mut str)
                             .auto_select_all(true)
                             .enter_returns_true(true)
                             .build()
                         {
-                            location.to_mut().base_dir = HomePathBuf(base_dir_str.into());
+                            location.to_mut().$id = (!str.is_empty()).then(|| str.into());
                             location_updated = true;
                         }
-
-                        macro_rules! os_string {
-                            ($id: ident) => {{
-                                let mut str = location
-                                    .$id
-                                    .as_ref()
-                                    .map(|v| v.to_str().unwrap_or("<invalid UTF-8>"))
-                                    .unwrap_or("")
-                                    .to_string();
-                                if ui
-                                    .input_text(concat!("##", stringify!($id)), &mut str)
-                                    .auto_select_all(true)
-                                    .enter_returns_true(true)
-                                    .build()
-                                {
-                                    location.to_mut().$id = (!str.is_empty()).then(|| str.into());
-                                    location_updated = true;
-                                }
-                            }};
-                        }
-
-                        ui.same_line();
-                        ui.set_next_item_width(base_width * 4.0);
-                        os_string!(base_name);
-
-                        ui.same_line();
-                        ui.set_next_item_width(base_width);
-                        os_string!(extension);
-
-                        if location_updated {
-                            path_config.to_mut().location =
-                                saves::Location::Custom(location.into_owned());
-                            updated = true;
-                        }
-                    }
-
-                    if updated {
-                        set_config!(
-                            config.config,
-                            save_path_config,
-                            Some(path_config.into_owned())
-                        );
-                    }
+                    }};
                 }
-            } else {
-                ui.text_disabled("Load a game to configure its save path");
-            }
-        }
 
-        if let Some(_tab_item) = ui.tab_item("Emulation") {
-            // limit_framerate
-            // sync_to_audio
-            // pause_on_launch
-            // skip_firmware
-            // prefer_hle_bios
-            // model
-            // ds_slot_rom_in_memory_max_size
-            // rtc_time_offset_seconds
+                ui.same_line();
+                ui.set_next_item_width(base_width * 4.0);
+                os_string!(base_name);
 
-            draw!(
-                "general",
-                emulation,
-                [
-                    limit_framerate,
-                    sync_to_audio,
-                    pause_on_launch,
-                    skip_firmware,
-                    prefer_hle_bios,
-                    model,
-                    ds_slot_rom_in_memory_max_size,
-                    rtc_time_offset_seconds
-                ]
-            );
-        }
+                ui.same_line();
+                ui.set_next_item_width(base_width);
+                os_string!(extension);
 
-        #[cfg(any(feature = "log", feature = "gdb-server"))]
-        if let Some(_tab_item) = ui.tab_item("Debug") {
-            // logging_kind
-            // imgui_log_history_capacity
-            // gdb_server_addr
-
-            #[cfg(feature = "log")]
-            {
-                heading(ui, "Logging", 16.0, 5.0);
-                draw!("logging", debug, [logging_kind, imgui_log_history_capacity]);
-
-                #[cfg(feature = "gdb-server")]
-                ui.dummy([0.0, 4.0]);
+                if location_updated {
+                    path_config.to_mut().location = saves::Location::Custom(location.into_owned());
+                    updated = true;
+                }
             }
 
-            #[cfg(feature = "gdb-server")]
-            {
-                heading(ui, "GDB server", 16.0, 5.0);
-                draw!("gdb_server", debug, [gdb_server_addr]);
+            if updated {
+                set_config!(
+                    config.config,
+                    save_path_config,
+                    Some(path_config.into_owned())
+                );
             }
-        }
-
-        #[cfg(feature = "discord-presence")]
-        if let Some(_tab_item) = ui.tab_item("Discord presence") {
-            // discord_presence_enabled
-
-            draw!("general", discord_presence, [enabled]);
         }
     }
 
@@ -933,74 +899,426 @@ impl Editor {
         let game_loaded = emu_state.as_ref().map_or(false, |e| e.game_loaded);
 
         ui.window("Configuration").opened(opened).build(|| {
-            modify_configs!(
-                ui,
-                "restore_defaults",
-                "Restore defaults",
-                true,
-                game_loaded,
-                |global, game| {
-                    if global {
-                        config.config.deserialize_global(&config::Global::default());
-                    }
-                    if game {
-                        config.config.deserialize_game(&config::Game::default());
-                    }
-                }
-            );
-            ui.same_line();
-            modify_configs!(
-                ui,
-                "reload",
-                "Reload",
-                config.global_path.is_some(),
-                game_loaded && config.game_path.is_some(),
-                |global, game| {
-                    if global {
-                        if let Ok(config::File { contents, .. }) =
-                            config::File::read(config.global_path.as_ref().unwrap(), false)
-                        {
-                            config.config.deserialize_global(&contents);
-                        }
-                    }
-                    if game {
-                        if let Ok(config::File { contents, .. }) =
-                            config::File::read(config.game_path.as_ref().unwrap(), false)
-                        {
-                            config.config.deserialize_game(&contents);
-                        }
-                    }
-                }
-            );
-            ui.same_line();
-            modify_configs!(
-                ui,
-                "save",
-                "Save",
-                config.global_path.is_some(),
-                game_loaded && config.game_path.is_some(),
-                |global, game| {
-                    if global {
-                        let _ = config::File {
-                            contents: config.config.serialize_global(),
-                            path: Some(config.global_path.as_ref().unwrap().clone()),
-                        }
-                        .write();
-                    }
-                    if game {
-                        let _ = config::File {
-                            contents: config.config.serialize_game(),
-                            path: Some(config.game_path.as_ref().unwrap().clone()),
-                        }
-                        .write();
-                    }
-                }
-            );
+            if let Some(_table) = ui.begin_table_with_flags("##all", 2, TableFlags::BORDERS_INNER_V)
+            {
+                ui.table_setup_column_with(TableColumnSetup {
+                    flags: TableColumnFlags::WIDTH_FIXED,
+                    ..TableColumnSetup::new("")
+                });
+                ui.table_setup_column("");
 
-            ui.separator();
+                ui.table_next_row();
+                ui.table_next_column();
 
-            if let Some(_tab_bar) = ui.tab_bar("config") {
-                self.draw_settings(ui, config, emu_state);
+                let button_width =
+                    ((ui.content_region_avail()[0] - style!(ui, item_spacing)[0] * 4.0) / 5.0)
+                        .max(20.0 + style!(ui, frame_padding)[0] * 2.0);
+
+                modify_configs_mask!(
+                    ui,
+                    width button_width,
+                    icon_tooltip "\u{f1f8}", "Restore defaults",
+                    "restore_defaults",
+                    true,
+                    game_loaded,
+                    |global, game| {
+                        if global {
+                            config.config.deserialize_global(&config::Global::default());
+                        }
+                        if game {
+                            config.config.deserialize_game(&config::Game::default());
+                        }
+                    }
+                );
+                ui.same_line();
+                modify_configs_mask!(
+                    ui,
+                    width button_width,
+                    icon_tooltip "\u{f2f9}", "Reload",
+                    "reload",
+                    config.global_path.is_some(),
+                    game_loaded && config.game_path.is_some(),
+                    |global, game| {
+                        if global {
+                            if let Ok(config::File { contents, .. }) =
+                                config::File::read(config.global_path.as_ref().unwrap(), false)
+                            {
+                                config.config.deserialize_global(&contents);
+                            }
+                        }
+                        if game {
+                            if let Ok(config::File { contents, .. }) =
+                                config::File::read(config.game_path.as_ref().unwrap(), false)
+                            {
+                                config.config.deserialize_game(&contents);
+                            }
+                        }
+                    }
+                );
+                ui.same_line();
+                modify_configs_mask!(
+                    ui,
+                    width button_width,
+                    icon_tooltip "\u{f0c7}", "Save",
+                    "save",
+                    config.global_path.is_some(),
+                    game_loaded && config.game_path.is_some(),
+                    |global, game| {
+                        if global {
+                            let _ = config::File {
+                                contents: config.config.serialize_global(),
+                                path: Some(config.global_path.as_ref().unwrap().clone()),
+                            }
+                            .write();
+                        }
+                        if game {
+                            let _ = config::File {
+                                contents: config.config.serialize_game(),
+                                path: Some(config.game_path.as_ref().unwrap().clone()),
+                            }
+                            .write();
+                        }
+                    }
+                );
+
+                macro_rules! import_config {
+                    ($deserialize: ident) => {
+                        if let Some(config_file) = FileDialog::new()
+                            .add_filter("JSON configuration file", &["json"])
+                            .pick_file()
+                            .and_then(|path| config::File::read(&path, false).ok())
+                        {
+                            config.config.$deserialize(&config_file.contents);
+                        }
+                    };
+                }
+
+                ui.same_line();
+                modify_configs!(
+                    ui,
+                    width button_width,
+                    icon_tooltip "\u{f56f}", "Import ",
+                    "import",
+                    game_loaded,
+                    import_config!(deserialize_global),
+                    import_config!(deserialize_game)
+                );
+
+                macro_rules! export_config {
+                    ($serialize: ident, $default_file_name: expr) => {
+                        if let Some(path) = FileDialog::new()
+                            .add_filter("JSON configuration file", &["json"])
+                            .set_file_name($default_file_name)
+                            .save_file()
+                        {
+                            let _ = config::File {
+                                contents: config.config.$serialize(),
+                                path: Some(path),
+                            }
+                            .write();
+                        }
+                    };
+                }
+
+                ui.same_line();
+                modify_configs!(
+                    ui,
+                    width button_width,
+                    icon_tooltip "\u{f56e}", "Export ",
+                    "export",
+                    game_loaded,
+                    export_config!(serialize_global, "global_config.json"),
+                    export_config!(
+                        serialize_game,
+                        &format!("{}.json", emu_state.as_ref().unwrap().title)
+                    )
+                );
+
+                {
+                    let item_spacing = style!(ui, item_spacing)[1];
+                    let cursor_pos = ui.cursor_screen_pos();
+                    let y = cursor_pos[1] + item_spacing;
+                    ui.get_window_draw_list()
+                        .add_line(
+                            [cursor_pos[0], y],
+                            [
+                                cursor_pos[0]
+                                    + ui.content_region_avail()[0]
+                                    + style!(ui, cell_padding)[0],
+                                y,
+                            ],
+                            ui.style_color(StyleColor::Separator),
+                        )
+                        .build();
+                    ui.set_cursor_screen_pos([cursor_pos[0], cursor_pos[1] + item_spacing * 2.0]);
+                }
+
+                ui.child_window("section_list")
+                    .size([
+                        0.0,
+                        ui.content_region_avail()[1] - style!(ui, cell_padding)[1],
+                    ])
+                    .build(|| {
+                        let frame_padding = style!(ui, frame_padding);
+                        let padding = [
+                            frame_padding[0],
+                            frame_padding[1] + style!(ui, item_spacing)[1] * 0.25,
+                        ];
+                        let double_padding_h = padding[0] * 2.0;
+                        let height = padding[1] * 2.0 + ui.text_line_height();
+
+                        for (label, section) in [
+                            ("\u{f07b} Paths", Section::Paths),
+                            ("\u{e163} UI", Section::Ui),
+                            ("\u{f026} Audio", Section::Audio),
+                            ("\u{f0c7} Saves", Section::Saves),
+                            ("\u{f2db} Emulation", Section::Emulation),
+                            ("\u{f11b} Input", Section::Input),
+                            #[cfg(any(feature = "log", feature = "gdb-server"))]
+                            ("\u{f7d9} Debug", Section::Debug),
+                            #[cfg(feature = "discord-presence")]
+                            ("\u{f392} Discord presence", Section::DiscordPresence),
+                        ] {
+                            let upper_left = ui.cursor_screen_pos();
+
+                            let width = ui.content_region_avail()[0]
+                                .max(ui.calc_text_size(label)[0] + double_padding_h);
+
+                            if self.cur_section == section {
+                                ui.get_window_draw_list()
+                                    .add_rect(
+                                        upper_left,
+                                        [upper_left[0] + width, upper_left[1] + height],
+                                        ui.style_color(StyleColor::ButtonActive),
+                                    )
+                                    .filled(true)
+                                    .build();
+                            }
+
+                            if ui.invisible_button(label, [width, height]) {
+                                self.cur_section = section;
+                            }
+
+                            ui.set_cursor_screen_pos([
+                                upper_left[0] + padding[0],
+                                upper_left[1] + padding[1],
+                            ]);
+                            ui.text(label);
+
+                            ui.set_cursor_screen_pos([upper_left[0], upper_left[1] + height]);
+                        }
+                    });
+
+                ui.table_next_column();
+
+                ui.child_window("section")
+                    .size([
+                        0.0,
+                        ui.content_region_avail()[1] - style!(ui, cell_padding)[1],
+                    ])
+                    .build(|| {
+                        let data = SettingsData {
+                            game_loaded: emu_state.as_ref().map_or(false, |e| e.game_loaded),
+                        };
+
+                        macro_rules! draw {
+                            ($id: literal, $tab: ident, [$($(#[$attr: meta])* $field: ident),*]) => {
+                                if let Some(_table) = ui.begin_table_with_flags(
+                                    $id,
+                                    4,
+                                    TableFlags::SIZING_STRETCH_SAME | TableFlags::NO_CLIP,
+                                ) {
+                                    ui.table_setup_column_with(TableColumnSetup {
+                                        flags: TableColumnFlags::WIDTH_FIXED,
+                                        ..TableColumnSetup::new("")
+                                    });
+                                    ui.table_setup_column("");
+                                    ui.table_setup_column_with(TableColumnSetup {
+                                        flags: if data.game_loaded {
+                                            TableColumnFlags::empty()
+                                        } else {
+                                            TableColumnFlags::WIDTH_FIXED
+                                        },
+                                        ..TableColumnSetup::new("")
+                                    });
+                                    ui.table_setup_column_with(TableColumnSetup {
+                                        flags: TableColumnFlags::WIDTH_FIXED,
+                                        ..TableColumnSetup::new("")
+                                    });
+                                    $(
+                                        $(#[$attr])*
+                                        {
+                                            let _id = ui.push_id(stringify!($field));
+                                            self.settings.$tab.$field.draw(
+                                                ui,
+                                                &mut config.config,
+                                                &data
+                                            );
+                                        }
+                                    )*
+                                }
+                            }
+                        }
+
+                        match self.cur_section {
+                            Section::Paths => {
+                                // imgui_config_path
+                                // game_db_path
+                                // sys_paths
+
+                                draw!("general", paths, [imgui_config_path, game_db_path]);
+
+                                ui.dummy([0.0, 4.0]);
+                                heading(ui, "System files", 16.0, 5.0);
+
+                                draw!(
+                                    "sys_files",
+                                    paths,
+                                    [sys_dir_path, arm7_bios_path, arm9_bios_path, firmware_path]
+                                );
+                            }
+
+                            Section::Ui => {
+                                // title_bar_mode
+                                // full_window_screen
+                                // screen_integer_scale
+                                // screen_rot
+
+                                draw!(
+                                    "general",
+                                    ui,
+                                    [
+                                        #[cfg(target_os = "macos")]
+                                        title_bar_mode,
+                                        full_window_screen,
+                                        screen_integer_scale,
+                                        screen_rot
+                                    ]
+                                );
+                            }
+
+                            Section::Audio => {
+                                // audio_volume
+                                // audio_sample_chunk_size
+                                // audio_custom_sample_rate
+                                // audio_channel_interp_method
+                                // audio_interp_method
+
+                                draw!("general", audio, [volume, sample_chunk_size]);
+
+                                #[cfg(feature = "xq-audio")]
+                                {
+                                    ui.dummy([0.0, 4.0]);
+                                    heading(ui, "Backend interpolation", 16.0, 5.0);
+                                    draw!(
+                                        "backend_interp",
+                                        audio,
+                                        [custom_sample_rate, channel_interp_method]
+                                    );
+                                }
+
+                                ui.dummy([0.0, 4.0]);
+                                heading(ui, "Frontend interpolation", 16.0, 5.0);
+                                draw!("frontend_interp", audio, [interp_method]);
+                            }
+
+                            Section::Saves => {
+                                // save_interval_ms
+                                // reset_on_save_slot_switch
+                                // save_dir_path
+                                // save_path_config
+
+                                draw!(
+                                    "general",
+                                    saves,
+                                    [
+                                        save_interval_ms,
+                                        reset_on_save_slot_switch,
+                                        save_dir_path,
+                                        savestate_dir_path
+                                    ]
+                                );
+
+                                ui.dummy([0.0, 4.0]);
+                                heading(ui, "Game", 16.0, 5.0);
+
+                                if data.game_loaded {
+                                    self.draw_game_saves_config(ui, config, emu_state.unwrap());
+                                } else {
+                                    ui.text_disabled("Load a game to configure its save path");
+                                }
+                            }
+
+                            Section::Emulation => {
+                                // limit_framerate
+                                // sync_to_audio
+                                // pause_on_launch
+                                // skip_firmware
+                                // prefer_hle_bios
+                                // model
+                                // ds_slot_rom_in_memory_max_size
+                                // rtc_time_offset_seconds
+
+                                draw!(
+                                    "general",
+                                    emulation,
+                                    [
+                                        limit_framerate,
+                                        sync_to_audio,
+                                        pause_on_launch,
+                                        skip_firmware,
+                                        prefer_hle_bios,
+                                        model,
+                                        ds_slot_rom_in_memory_max_size,
+                                        rtc_time_offset_seconds
+                                    ]
+                                );
+                            }
+
+                            Section::Input => {
+                                self.input_map_editor
+                                    .get_or_insert_with(InputMapEditor::new)
+                                    .draw(ui, &mut config.config, &data);
+                            }
+
+                            #[cfg(any(feature = "log", feature = "gdb-server"))]
+                            Section::Debug => {
+                                // logging_kind
+                                // imgui_log_history_capacity
+                                // gdb_server_addr
+
+                                #[cfg(feature = "log")]
+                                {
+                                    heading(ui, "Logging", 16.0, 5.0);
+                                    draw!(
+                                        "logging",
+                                        debug,
+                                        [logging_kind, imgui_log_history_capacity]
+                                    );
+
+                                    #[cfg(feature = "gdb-server")]
+                                    ui.dummy([0.0, 4.0]);
+                                }
+
+                                #[cfg(feature = "gdb-server")]
+                                {
+                                    heading(ui, "GDB server", 16.0, 5.0);
+                                    draw!("gdb_server", debug, [gdb_server_addr]);
+                                }
+                            }
+
+                            #[cfg(feature = "discord-presence")]
+                            Section::DiscordPresence => {
+                                // discord_presence_enabled
+
+                                draw!("general", discord_presence, [enabled]);
+                            }
+                        }
+
+                        if self.cur_section != Section::Input {
+                            self.input_map_editor = None;
+                        }
+                    });
             }
         });
     }
