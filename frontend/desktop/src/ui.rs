@@ -71,6 +71,8 @@ struct EmuState {
     shared_state: Arc<emu::SharedState>,
     from_emu: crossbeam_channel::Receiver<emu::Notification>,
     to_emu: crossbeam_channel::Sender<emu::Message>,
+
+    mic_input_stream: Option<audio::input::InputStream>,
 }
 
 impl EmuState {
@@ -195,7 +197,7 @@ pub struct UiState {
     save_slot_editor: SaveSlotEditor,
     savestate_editor: SavestateEditor,
 
-    audio_channel: Option<audio::Channel>,
+    audio_channel: Option<audio::output::Channel>,
 
     #[cfg(target_os = "windows")]
     icon_update: Option<Option<[u32; 32 * 32]>>,
@@ -428,6 +430,18 @@ impl UiState {
             .as_ref()
             .map(|audio_channel| audio_channel.tx_data.clone());
 
+        let (mic_input_stream, mic_rx) = if config!(config.config, audio_input_enabled) {
+            if let Some(channel) =
+                audio::input::Channel::new(config!(config.config, audio_input_interp_method))
+            {
+                (Some(channel.input_stream), Some(channel.rx))
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
         let (to_emu, from_ui) = crossbeam_channel::unbounded::<emu::Message>();
         let (to_ui, from_emu) = crossbeam_channel::unbounded::<emu::Notification>();
 
@@ -454,6 +468,7 @@ impl UiState {
             to_ui,
 
             audio_tx_data,
+            mic_rx,
             frame_tx,
 
             sync_to_audio: config!(config.config, sync_to_audio),
@@ -490,6 +505,8 @@ impl UiState {
             shared_state,
             from_emu,
             to_emu,
+
+            mic_input_stream,
         });
     }
 
@@ -700,8 +717,8 @@ pub fn main() {
         }
     }
 
-    let audio_channel = audio::channel(
-        config!(config.config, audio_interp_method),
+    let audio_channel = audio::output::Channel::new(
+        config!(config.config, audio_output_interp_method),
         config!(config.config, audio_volume),
         #[cfg(feature = "xq-audio")]
         adjust_custom_sample_rate(config!(config.config, audio_custom_sample_rate)),
@@ -910,6 +927,33 @@ pub fn main() {
                             emu.send_message(emu::Message::UpdateAudioChannelInterpMethod(value));
                         }
                     }
+
+                    if let Some(mic_input_stream) = &mut emu.mic_input_stream {
+                        if let Some(value) =
+                            config_changed_value!(config.config, audio_input_interp_method)
+                        {
+                            mic_input_stream.set_interp_method(value);
+                        }
+                    }
+
+                    if let Some(value) = config_changed_value!(config.config, audio_input_enabled) {
+                        'change: {
+                            let (mic_input_stream, mic_rx) = if value {
+                                if let Some(channel) = audio::input::Channel::new(config!(
+                                    config.config,
+                                    audio_input_interp_method
+                                )) {
+                                    (Some(channel.input_stream), Some(channel.rx))
+                                } else {
+                                    break 'change;
+                                }
+                            } else {
+                                (None, None)
+                            };
+                            emu.mic_input_stream = mic_input_stream;
+                            emu.send_message(emu::Message::ToggleAudioInput(mic_rx));
+                        }
+                    }
                 }
 
                 if let Some(channel) = state.audio_channel.as_mut() {
@@ -917,7 +961,9 @@ pub fn main() {
                         channel.output_stream.set_volume(value);
                     }
 
-                    if let Some(value) = config_changed_value!(config.config, audio_interp_method) {
+                    if let Some(value) =
+                        config_changed_value!(config.config, audio_output_interp_method)
+                    {
                         channel.output_stream.set_interp_method(value);
                     }
 

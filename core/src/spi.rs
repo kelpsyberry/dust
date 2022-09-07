@@ -44,8 +44,9 @@ pub struct Controller {
 
 impl Controller {
     pub(crate) fn new(
-        firmware: Flash,
         model: Model,
+        firmware: Flash,
+        mic_backend: Option<Box<dyn tsc::MicBackend>>,
         arm7_schedule: &mut arm7::Schedule,
         emu_schedule: &mut emu::Schedule,
         #[cfg(feature = "log")] logger: slog::Logger,
@@ -65,6 +66,7 @@ impl Controller {
             touchscreen_hold: false,
             tsc: Tsc::new(
                 model == Model::Lite,
+                mic_backend,
                 #[cfg(feature = "log")]
                 logger.new(slog::o!("tsc" => "")),
             ),
@@ -134,7 +136,13 @@ impl Controller {
             2 => {
                 let is_first = !self.touchscreen_hold;
                 self.touchscreen_hold = self.control.hold();
-                self.tsc.handle_byte(value, is_first, input_status)
+                self.tsc.handle_byte(
+                    value,
+                    is_first,
+                    arm7_schedule.cur_time().into(),
+                    &self.power,
+                    input_status,
+                )
             }
 
             _ => {

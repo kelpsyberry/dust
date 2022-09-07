@@ -119,6 +119,7 @@ impl EmuState {
                 DsSlotSpi::Flash(device) => DsSlotSpi::Flash(device.reset()),
             },
             emu.audio.backend,
+            None,
             emu.rtc.backend,
             emu.gpu.engine_3d.renderer,
             #[cfg(feature = "log")]
@@ -160,7 +161,7 @@ impl EmuState {
     pub fn run_frame(&mut self) -> Uint32Array {
         // TODO: Handle an eventual shutdown
         let emu = self.emu.as_mut().unwrap();
-        emu.run();
+        emu.run(true);
         Uint32Array::from(unsafe {
             core::slice::from_raw_parts(
                 emu.gpu.framebuffer.0.as_ptr() as *const u32,
@@ -361,6 +362,7 @@ pub fn create_emu_state(
         ds_slot_rom,
         ds_slot_spi,
         Box::new(audio::Backend::new(audio_callback)),
+        None,
         Box::new(dust_core::rtc::DummyBackend),
         Box::new(renderer_3d::EmuState::new()),
         #[cfg(feature = "log")]

@@ -17,6 +17,7 @@ use dust_core::{
     emu::RunOutput,
     flash::Flash,
     gpu::Framebuffer,
+    spi,
     spi::firmware,
     utils::{
         BoxedByteSlice, Bytes, PersistentReadSavestate, PersistentWriteSavestate, ReadSavestate,
@@ -87,6 +88,8 @@ pub enum Message {
     UpdateAudioCustomSampleRate(Option<NonZeroU32>),
     #[cfg(feature = "xq-audio")]
     UpdateAudioChannelInterpMethod(AudioChannelInterpMethod),
+
+    ToggleAudioInput(Option<audio::input::Receiver>),
 
     #[cfg(feature = "log")]
     UpdateLogger(slog::Logger),
@@ -297,7 +300,8 @@ pub struct LaunchData {
     pub from_ui: crossbeam_channel::Receiver<Message>,
     pub to_ui: crossbeam_channel::Sender<Notification>,
 
-    pub audio_tx_data: Option<audio::SenderData>,
+    pub audio_tx_data: Option<audio::output::SenderData>,
+    pub mic_rx: Option<audio::input::Receiver>,
     pub frame_tx: triple_buffer::Sender<FrameData>,
 
     pub sync_to_audio: bool,
@@ -330,6 +334,7 @@ pub(super) fn main(
         to_ui,
 
         audio_tx_data,
+        mic_rx,
         mut frame_tx,
 
         mut sync_to_audio,
@@ -376,9 +381,10 @@ pub(super) fn main(
         ds_slot_rom,
         ds_slot_spi,
         match &audio_tx_data {
-            Some(data) => Box::new(audio::Sender::new(data, sync_to_audio)),
+            Some(data) => Box::new(audio::output::Sender::new(data, sync_to_audio)),
             None => Box::new(DummyAudioBackend),
         },
+        mic_rx.map(|mic_rx| Box::new(mic_rx) as Box<dyn spi::tsc::MicBackend>),
         Box::new(rtc::Backend::new(rtc_time_offset_seconds)),
         Box::new(renderer_3d::Renderer::new()),
         #[cfg(feature = "log")]
@@ -416,6 +422,8 @@ pub(super) fn main(
 
     #[cfg(feature = "gdb-server")]
     let mut gdb_server = None;
+    #[cfg(feature = "gdb-server")]
+    let mut start_new_frame = true;
 
     macro_rules! save {
         () => {
@@ -564,7 +572,8 @@ pub(super) fn main(
                 Message::UpdateSyncToAudio(new_sync_to_audio) => {
                     sync_to_audio = new_sync_to_audio;
                     if let Some(data) = &audio_tx_data {
-                        emu.audio.backend = Box::new(audio::Sender::new(data, sync_to_audio));
+                        emu.audio.backend =
+                            Box::new(audio::output::Sender::new(data, sync_to_audio));
                     }
                 }
 
@@ -580,6 +589,11 @@ pub(super) fn main(
                 #[cfg(feature = "xq-audio")]
                 Message::UpdateAudioChannelInterpMethod(interp_method) => {
                     emu.audio.set_channel_interp_method(interp_method);
+                }
+
+                Message::ToggleAudioInput(mic_rx) => {
+                    emu.spi.tsc.mic_data =
+                        mic_rx.map(|mic_rx| spi::tsc::MicData::new(Box::new(mic_rx)));
                 }
 
                 #[cfg(feature = "log")]
@@ -641,6 +655,7 @@ pub(super) fn main(
                     DsSlotSpi::Flash(device) => DsSlotSpi::Flash(device.reset()),
                 },
                 emu.audio.backend,
+                emu.spi.tsc.mic_data.map(|mic_data| mic_data.backend),
                 emu.rtc.backend,
                 emu.gpu.engine_3d.renderer,
                 #[cfg(feature = "log")]
@@ -682,9 +697,18 @@ pub(super) fn main(
             };
             match emu.run(
                 #[cfg(feature = "gdb-server")]
+                start_new_frame,
+                #[cfg(not(feature = "gdb-server"))]
+                true,
+                #[cfg(feature = "gdb-server")]
                 cycles,
             ) {
-                RunOutput::FrameFinished => {}
+                RunOutput::FrameFinished => {
+                    #[cfg(feature = "gdb-server")]
+                    {
+                        start_new_frame = true;
+                    }
+                }
                 RunOutput::Shutdown => {
                     notif!(Notification::Stopped);
                     playing = false;
@@ -694,7 +718,9 @@ pub(super) fn main(
                     }
                 }
                 #[cfg(feature = "gdb-server")]
-                RunOutput::StoppedByDebugHook | RunOutput::CyclesOver => {
+                RunOutput::StoppedByDebugHook { frame_finished }
+                | RunOutput::CyclesOver { frame_finished } => {
+                    start_new_frame = frame_finished;
                     if let Some(gdb_server) = &mut gdb_server {
                         gdb_server.emu_stopped(&mut emu);
                     }

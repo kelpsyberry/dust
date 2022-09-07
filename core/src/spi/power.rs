@@ -77,7 +77,7 @@ pub struct Power {
     pub battery_low: bool,
     mic_amplifier_enabled: bool,
     mic_amplifier_gain_control: MicAmplifierGainControl,
-    mic_gain: u8,
+    mic_amplifier_gain: u8,
     ds_lite_backlight_control: DsLiteBacklightControl,
     ds_lite_backlight_level: DsLiteBacklightLevel,
 }
@@ -104,7 +104,7 @@ impl Power {
             battery_low: false,
             mic_amplifier_enabled: false,
             mic_amplifier_gain_control: MicAmplifierGainControl(0),
-            mic_gain: 0,
+            mic_amplifier_gain: 0,
             ds_lite_backlight_control: DsLiteBacklightControl(0x40),
             ds_lite_backlight_level: DsLiteBacklightLevel::Low,
         }
@@ -253,7 +253,7 @@ impl Power {
     #[inline]
     pub fn set_mic_amplifier_enabled(&mut self, value: bool) {
         self.mic_amplifier_enabled = value;
-        self.mic_gain = if value {
+        self.mic_amplifier_gain = if value {
             20 << self.mic_amplifier_gain_control.gain_shift()
         } else {
             0
@@ -269,17 +269,17 @@ impl Power {
     pub fn set_mic_amplifier_gain_control(&mut self, value: MicAmplifierGainControl) {
         self.mic_amplifier_gain_control.0 = value.0 & 3;
         if self.mic_amplifier_enabled {
-            self.mic_gain = 20 << value.gain_shift();
+            self.mic_amplifier_gain = 20 << value.gain_shift();
         }
     }
 
     #[inline]
-    pub fn mic_gain(&self) -> u8 {
-        self.mic_gain
+    pub fn mic_amplifier_gain(&self) -> u8 {
+        self.mic_amplifier_gain
     }
 
     #[inline]
-    pub fn set_mic_gain(&mut self, value: u8) -> bool {
+    pub fn set_mic_amplifier_gain(&mut self, value: u8) -> bool {
         if value == 0 {
             self.mic_amplifier_gain_control.0 = 0;
             self.mic_amplifier_enabled = false;

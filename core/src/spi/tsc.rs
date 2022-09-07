@@ -1,4 +1,8 @@
-use crate::{emu::input, utils::Savestate};
+use super::Power;
+use crate::{
+    emu::{input, Timestamp},
+    utils::{zeroed_box, Savestate},
+};
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
@@ -11,6 +15,29 @@ proc_bitfield::bitfield! {
     }
 }
 
+pub const MIC_SAMPLES_PER_FRAME: usize = (6 * 355 * 263 + 128) / 128;
+
+pub trait MicBackend {
+    fn start_frame(&mut self);
+    fn read_frame_samples(&mut self, offset: usize, samples: &mut [i16]);
+}
+
+pub struct MicData {
+    pub backend: Box<dyn MicBackend>,
+    read_in_current_frame: bool,
+    samples: Box<[i16; MIC_SAMPLES_PER_FRAME]>,
+}
+
+impl MicData {
+    pub fn new(backend: Box<dyn MicBackend>) -> Self {
+        MicData {
+            backend,
+            read_in_current_frame: false,
+            samples: zeroed_box(),
+        }
+    }
+}
+
 #[derive(Savestate)]
 #[load(in_place_only)]
 pub struct Tsc {
@@ -19,6 +46,9 @@ pub struct Tsc {
     logger: slog::Logger,
     #[savestate(skip)]
     is_ds_lite: bool,
+    #[savestate(skip)]
+    pub mic_data: Option<MicData>,
+    mic_frame_start_time: Timestamp,
     pen_down: bool,
     pos: u8,
     cur_control_byte: ControlByte,
@@ -28,11 +58,17 @@ pub struct Tsc {
 }
 
 impl Tsc {
-    pub(super) fn new(is_ds_lite: bool, #[cfg(feature = "log")] logger: slog::Logger) -> Self {
+    pub(super) fn new(
+        is_ds_lite: bool,
+        mic_backend: Option<Box<dyn MicBackend>>,
+        #[cfg(feature = "log")] logger: slog::Logger,
+    ) -> Self {
         Tsc {
             #[cfg(feature = "log")]
             logger,
             is_ds_lite,
+            mic_data: mic_backend.map(MicData::new),
+            mic_frame_start_time: Timestamp(0),
             pen_down: false,
             pos: 0,
             cur_control_byte: ControlByte(0),
@@ -85,7 +121,20 @@ impl Tsc {
         }
     }
 
-    fn handle_control_byte(&mut self, value: ControlByte, input_status: &mut input::Status) -> u16 {
+    pub(crate) fn start_frame(&mut self, time: Timestamp) {
+        self.mic_frame_start_time = time;
+        if let Some(mic_data) = &mut self.mic_data {
+            mic_data.backend.start_frame();
+        }
+    }
+
+    fn handle_control_byte(
+        &mut self,
+        value: ControlByte,
+        time: Timestamp,
+        _power: &Power,
+        input_status: &mut input::Status,
+    ) -> u16 {
         if value.power_down_mode() & 1 == 0 {
             input_status.set_pen_down(!self.pen_down);
         } else {
@@ -139,20 +188,38 @@ impl Tsc {
             5 => self.x_pos,
             6 => {
                 if value.single_ended_mode() {
-                    #[cfg(feature = "log")]
-                    slog::debug!(
-                        self.logger,
-                        "Reading from unimplemented channel 6 (mic input)"
-                    );
-                    0xFFF
-                } else if self.is_ds_lite {
-                    0xFFF
+                    let sample = if let Some(mic_data) = &mut self.mic_data {
+                        let offset = ((time.0 - self.mic_frame_start_time.0) / 128) as usize;
+                        if !mic_data.read_in_current_frame {
+                            mic_data
+                                .backend
+                                .read_frame_samples(offset, &mut mic_data.samples[offset..]);
+                        }
+                        mic_data.samples[offset]
+                    } else {
+                        0
+                    };
+                    // TODO: How to apply the gain value? It can be assumed to be a value in decibel
+                    //       (20 dB, 40 dB, 80 dB, 160 dB resulting in a 10x, 100x, 10^4x and
+                    //       10^8x increase in amplitude), but the baseline amplitude should be
+                    //       known.
+                    // if power.mic_amplifier_enabled() {
+                    //     sample = (sample as i32)
+                    //         .saturating_mul(
+                    //             [10, 100, 10_000, 100_000_000]
+                    //                 [power.mic_amplifier_gain_control().gain_shift() as usize],
+                    //         )
+                    //         .clamp(-0x8000, 0x7FFF) as i16;
+                    // }
+                    (sample as u16).wrapping_add(0x8000) >> 4
                 } else {
-                    #[cfg(feature = "log")]
-                    slog::warn!(
-                        self.logger,
-                        "Reading from channel 6 (mic input) in differential mode"
-                    );
+                    if !self.is_ds_lite {
+                        #[cfg(feature = "log")]
+                        slog::warn!(
+                            self.logger,
+                            "Reading from channel 6 (mic input) in differential mode"
+                        );
+                    }
                     0xFFF
                 }
             }
@@ -183,6 +250,8 @@ impl Tsc {
         &mut self,
         value: u8,
         is_first: bool,
+        time: Timestamp,
+        power: &Power,
         input_status: &mut input::Status,
     ) -> u8 {
         if is_first {
@@ -191,7 +260,8 @@ impl Tsc {
         if self.pos == 0 {
             if ControlByte(value).start() {
                 self.pos = 1;
-                self.data_out = self.handle_control_byte(ControlByte(value), input_status);
+                self.data_out =
+                    self.handle_control_byte(ControlByte(value), time, power, input_status);
             }
             0
         } else {
@@ -200,7 +270,8 @@ impl Tsc {
             if self.pos == 2 {
                 if ControlByte(value).start() {
                     self.pos = 1;
-                    self.data_out = self.handle_control_byte(ControlByte(value), input_status);
+                    self.data_out =
+                        self.handle_control_byte(ControlByte(value), time, power, input_status);
                 }
             } else {
                 self.pos = 2;

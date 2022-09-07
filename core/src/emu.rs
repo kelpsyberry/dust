@@ -161,6 +161,7 @@ pub struct Builder {
     pub ds_rom: ds_slot::rom::Rom,
     pub ds_spi: ds_slot::spi::Spi,
     pub audio_backend: Box<dyn audio::Backend>,
+    pub mic_backend: Option<Box<dyn spi::tsc::MicBackend>>,
     pub rtc_backend: Box<dyn rtc::Backend>,
     pub renderer_3d: Box<dyn gpu::engine_3d::Renderer>,
 
@@ -206,6 +207,7 @@ impl Builder {
         ds_rom: ds_slot::rom::Rom,
         ds_spi: ds_slot::spi::Spi,
         audio_backend: Box<dyn audio::Backend>,
+        mic_backend: Option<Box<dyn spi::tsc::MicBackend>>,
         rtc_backend: Box<dyn rtc::Backend>,
         renderer_3d: Box<dyn gpu::engine_3d::Renderer>,
         #[cfg(feature = "log")] logger: slog::Logger,
@@ -218,6 +220,7 @@ impl Builder {
             ds_rom,
             ds_spi,
             audio_backend,
+            mic_backend,
             rtc_backend,
             renderer_3d,
 
@@ -277,8 +280,9 @@ impl Builder {
                 &mut arm9.schedule,
             ),
             spi: spi::Controller::new(
-                self.firmware,
                 self.model,
+                self.firmware,
+                self.mic_backend,
                 &mut arm7.schedule,
                 &mut global_schedule,
                 #[cfg(feature = "log")]
@@ -335,9 +339,13 @@ pub enum RunOutput {
     FrameFinished,
     Shutdown,
     #[cfg(feature = "debugger-hooks")]
-    StoppedByDebugHook,
+    StoppedByDebugHook {
+        frame_finished: bool,
+    },
     #[cfg(feature = "debugger-hooks")]
-    CyclesOver,
+    CyclesOver {
+        frame_finished: bool,
+    },
 }
 
 impl<E: cpu::Engine> Emu<E> {
@@ -550,7 +558,7 @@ impl<E: cpu::Engine> Emu<E> {
 }
 
 macro_rules! run {
-    ($emu: expr, $engine: ty $(, $cycles: expr)?) => {
+    ($emu: expr, $engine: ty, $frame_finished: ident $(, $cycles: expr)?) => {
         let mut batch_end_time = $emu.schedule.batch_end_time();
         $(
             #[cfg(feature = "debugger-hooks")]
@@ -590,6 +598,8 @@ macro_rules! run {
             });
         }
         $emu.schedule.set_cur_time(batch_end_time);
+        #[cfg(feature = "debugger-hooks")]
+        let mut $frame_finished = false;
         while let Some((event, time)) = $emu.schedule.pop_pending_event() {
             match event {
                 Event::Gpu(event) => match event {
@@ -597,6 +607,11 @@ macro_rules! run {
                     gpu::Event::EndHBlank => Gpu::end_hblank($emu, time),
                     gpu::Event::FinishFrame => {
                         Gpu::end_hblank($emu, time);
+                        #[cfg(feature = "debugger-hooks")]
+                        {
+                            $frame_finished = true;
+                        }
+                        #[cfg(not(feature = "debugger-hooks"))]
                         return RunOutput::FrameFinished;
                     }
                 },
@@ -607,8 +622,13 @@ macro_rules! run {
             }
         }
         #[cfg(feature = "debugger-hooks")]
-        if $emu.arm7.stopped_by_debug_hook || $emu.arm9.stopped_by_debug_hook {
-            return RunOutput::StoppedByDebugHook;
+        {
+            if $emu.arm7.stopped_by_debug_hook || $emu.arm9.stopped_by_debug_hook {
+                return RunOutput::StoppedByDebugHook { frame_finished: $frame_finished };
+            }
+            if $frame_finished {
+                return RunOutput::FrameFinished;
+            }
         }
     };
 }
@@ -618,9 +638,9 @@ impl<E: cpu::Engine> Emu<E> {
     #[inline(never)]
     fn run_for_cycles(&mut self, cycles: &mut RawTimestamp) -> RunOutput {
         loop {
-            run!(self, E, cycles);
+            run!(self, E, frame_finished, cycles);
             if *cycles == 0 {
-                return RunOutput::CyclesOver;
+                return RunOutput::CyclesOver { frame_finished };
             }
         }
     }
@@ -628,8 +648,12 @@ impl<E: cpu::Engine> Emu<E> {
     #[inline(never)]
     pub fn run(
         &mut self,
+        frame_starting: bool,
         #[cfg(feature = "debugger-hooks")] cycles: &mut RawTimestamp,
     ) -> RunOutput {
+        if frame_starting {
+            self.spi.tsc.start_frame(self.schedule.cur_time());
+        }
         #[cfg(feature = "debugger-hooks")]
         {
             self.arm7.stopped_by_debug_hook = false;
@@ -639,7 +663,7 @@ impl<E: cpu::Engine> Emu<E> {
             }
         }
         loop {
-            run!(self, E);
+            run!(self, E, frame_finished);
         }
     }
 }

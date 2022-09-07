@@ -477,7 +477,9 @@ struct AudioSettings {
     custom_sample_rate: setting::Overridable<setting::OptNonZeroU32Slider>,
     #[cfg(feature = "xq-audio")]
     channel_interp_method: setting::Overridable<setting::Combo<AudioChannelInterpMethod>>,
-    interp_method: setting::Overridable<setting::Combo<audio::InterpMethod>>,
+    output_interp_method: setting::Overridable<setting::Combo<audio::InterpMethod>>,
+    input_enabled: setting::Overridable<setting::Bool>,
+    input_interp_method: setting::Overridable<setting::Combo<audio::InterpMethod>>,
 }
 
 impl AudioSettings {
@@ -496,7 +498,8 @@ impl AudioSettings {
                 audio_custom_sample_rate,
                 opt_nonzero_u32_slider,
                 NonZeroU32::new(
-                    (audio::DEFAULT_INPUT_SAMPLE_RATE as f64 * audio::SAMPLE_RATE_ADJUSTMENT_RATIO)
+                    (audio::output::DEFAULT_INPUT_SAMPLE_RATE as f64
+                        * audio::SAMPLE_RATE_ADJUSTMENT_RATIO)
                         .round() as u32
                 )
                 .unwrap(),
@@ -521,9 +524,23 @@ impl AudioSettings {
                     .into()
                 }
             ),
-            interp_method: overridable!(
+            output_interp_method: overridable!(
                 "Interpolation method",
-                audio_interp_method,
+                audio_output_interp_method,
+                combo,
+                &[audio::InterpMethod::Nearest, audio::InterpMethod::Cubic],
+                |interp_method| {
+                    match interp_method {
+                        audio::InterpMethod::Nearest => "Nearest",
+                        audio::InterpMethod::Cubic => "Cubic",
+                    }
+                    .into()
+                }
+            ),
+            input_enabled: overridable!("Enabled", audio_input_enabled, bool),
+            input_interp_method: overridable!(
+                "Interpolation method",
+                audio_input_interp_method,
                 combo,
                 &[audio::InterpMethod::Nearest, audio::InterpMethod::Cubic],
                 |interp_method| {
@@ -1128,7 +1145,11 @@ impl Editor {
                         };
 
                         macro_rules! draw {
-                            ($id: literal, $tab: ident, [$($(#[$attr: meta])* $field: ident),*]) => {
+                            (
+                                $id: literal,
+                                $tab: ident,
+                                [$($(#[$attr: meta])* $field: ident),*]
+                            ) => {
                                 if let Some(_table) = ui.begin_table_with_flags(
                                     $id,
                                     4,
@@ -1215,7 +1236,7 @@ impl Editor {
                                 #[cfg(feature = "xq-audio")]
                                 {
                                     ui.dummy([0.0, 4.0]);
-                                    heading(ui, "Backend interpolation", 16.0, 5.0);
+                                    heading(ui, "Backend output interpolation", 16.0, 5.0);
                                     draw!(
                                         "backend_interp",
                                         audio,
@@ -1224,8 +1245,16 @@ impl Editor {
                                 }
 
                                 ui.dummy([0.0, 4.0]);
-                                heading(ui, "Frontend interpolation", 16.0, 5.0);
-                                draw!("frontend_interp", audio, [interp_method]);
+                                heading(ui, "Frontend output interpolation", 16.0, 5.0);
+                                draw!("frontend_interp", audio, [output_interp_method]);
+
+                                ui.dummy([0.0, 4.0]);
+                                heading(ui, "Input", 16.0, 5.0);
+                                draw!(
+                                    "frontend_interp",
+                                    audio,
+                                    [input_enabled, input_interp_method]
+                                );
                             }
 
                             Section::Saves => {

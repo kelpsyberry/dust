@@ -9,52 +9,52 @@ pub enum InterpMethod {
 
 impl InterpMethod {
     #[inline]
-    pub fn create_interp(self) -> Box<dyn Interp> {
+    pub fn create_interp<const CHANNELS: usize>(self) -> Box<dyn Interp<CHANNELS>> {
         match self {
             InterpMethod::Nearest => Box::new(Nearest {
-                last_sample: [0.0; 2],
+                last_sample: [0.0; CHANNELS],
             }),
             InterpMethod::Cubic => Box::new(Cubic {
-                hist: [[0.0; 2]; 4],
+                hist: [[0.0; CHANNELS]; 4],
             }),
         }
     }
 }
 
-pub trait Interp: Send {
-    fn push_input_sample(&mut self, sample: [f64; 2]);
+pub trait Interp<const CHANNELS: usize>: Send {
+    fn push_input_sample(&mut self, sample: [f64; CHANNELS]);
     fn copy_last_input_sample(&mut self);
-    fn get_output_sample(&self, fract: f64) -> [f64; 2];
+    fn get_output_sample(&self, fract: f64) -> [f64; CHANNELS];
 }
 
-struct Nearest {
-    last_sample: [f64; 2],
+struct Nearest<const CHANNELS: usize> {
+    last_sample: [f64; CHANNELS],
 }
 
-impl Interp for Nearest {
-    fn push_input_sample(&mut self, sample: [f64; 2]) {
+impl<const CHANNELS: usize> Interp<CHANNELS> for Nearest<CHANNELS> {
+    fn push_input_sample(&mut self, sample: [f64; CHANNELS]) {
         self.last_sample = sample;
     }
     fn copy_last_input_sample(&mut self) {}
-    fn get_output_sample(&self, _fract: f64) -> [f64; 2] {
+    fn get_output_sample(&self, _fract: f64) -> [f64; CHANNELS] {
         self.last_sample
     }
 }
 
-struct Cubic {
-    hist: [[f64; 2]; 4],
+struct Cubic<const CHANNELS: usize> {
+    hist: [[f64; CHANNELS]; 4],
 }
 
-impl Interp for Cubic {
-    fn push_input_sample(&mut self, sample: [f64; 2]) {
+impl<const CHANNELS: usize> Interp<CHANNELS> for Cubic<CHANNELS> {
+    fn push_input_sample(&mut self, sample: [f64; CHANNELS]) {
         self.hist.copy_within(1..4, 0);
         self.hist[3] = sample;
     }
     fn copy_last_input_sample(&mut self) {
         self.hist.copy_within(1..4, 0);
     }
-    fn get_output_sample(&self, fract: f64) -> [f64; 2] {
-        let mut result = [0.0; 2];
+    fn get_output_sample(&self, fract: f64) -> [f64; CHANNELS] {
+        let mut result = [0.0; CHANNELS];
         for (i, result) in result.iter_mut().enumerate() {
             let a = self.hist[3][i] - self.hist[2][i] - self.hist[0][i] + self.hist[1][i];
             let b = self.hist[0][i] - self.hist[1][i] - a;

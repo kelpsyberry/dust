@@ -437,7 +437,13 @@ def_config! {
                 resolve resolve_option, set set_option,
             audio_sample_chunk_size: u16 = 512, None,
                 resolve resolve_option, set set_option,
-            audio_interp_method: audio::InterpMethod = audio::InterpMethod::Nearest, None,
+            audio_output_interp_method: audio::InterpMethod
+                = audio::InterpMethod::Nearest, None,
+                resolve resolve_option, set set_option,
+            audio_input_enabled: bool = false, None,
+                resolve resolve_option, set set_option,
+            audio_input_interp_method: audio::InterpMethod
+                = audio::InterpMethod::Nearest, None,
                 resolve resolve_option, set set_option,
             audio_custom_sample_rate: Option<NonZeroU32>, u32 = 0, None,
                 resolve resolve_opt_nonzero_u32, set set_opt_nonzero_u32,

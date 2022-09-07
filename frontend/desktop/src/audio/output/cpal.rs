@@ -1,5 +1,6 @@
 use super::{
-    Interp, InterpMethod, Receiver, DEFAULT_INPUT_SAMPLE_RATE, SAMPLE_RATE_ADJUSTMENT_RATIO,
+    super::{Interp, InterpMethod, SAMPLE_RATE_ADJUSTMENT_RATIO},
+    Receiver, DEFAULT_INPUT_SAMPLE_RATE,
 };
 use cpal::{
     default_host,
@@ -26,7 +27,7 @@ struct SharedData {
 pub struct OutputStream {
     _stream: Stream,
     interp_method: InterpMethod,
-    interp_tx: crossbeam_channel::Sender<Box<dyn Interp>>,
+    interp_tx: crossbeam_channel::Sender<Box<dyn Interp<2>>>,
     #[cfg(feature = "xq-audio")]
     output_sample_rate: u32,
     shared_data: Arc<SharedData>,
@@ -113,7 +114,7 @@ impl OutputStream {
         }
         self.interp_tx
             .send(value.create_interp())
-            .expect("Couldn't send new interpolator to audio thread");
+            .expect("Couldn't send new interpolator to audio output thread");
     }
 
     #[cfg(feature = "xq-audio")]
@@ -133,8 +134,8 @@ impl OutputStream {
 
 struct OutputData {
     rx: Receiver,
-    interp_rx: crossbeam_channel::Receiver<Box<dyn Interp>>,
-    interp: Box<dyn Interp>,
+    interp_rx: crossbeam_channel::Receiver<Box<dyn Interp<2>>>,
+    interp: Box<dyn Interp<2>>,
     shared_data: Arc<SharedData>,
     #[cfg(not(feature = "xq-audio"))]
     sample_rate_ratio: f64,
