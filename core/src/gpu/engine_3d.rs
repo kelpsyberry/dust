@@ -11,8 +11,8 @@ use crate::{
         arm9::{self, Arm9},
         Schedule,
     },
-    emu::{self, Emu},
     gpu::vram::Vram,
+    emu::{self, Emu},
     utils::{
         load_slice_in_place, schedule::RawTimestamp, store_slice, zeroed_box, Fifo, Savestate, Zero,
     },
@@ -191,6 +191,7 @@ proc_bitfield::bitfield! {
 #[derive(Clone, Debug, Savestate)]
 pub struct RenderingState {
     pub control: RenderingControl,
+    pub w_buffering: bool,
 
     #[load(value = "0xF")]
     #[store(skip)]
@@ -403,6 +404,7 @@ impl Engine3d {
 
             rendering_state: RenderingState {
                 control: RenderingControl(0),
+                w_buffering: false,
 
                 texture_dirty: 0xF,
                 tex_pal_dirty: 0x3F,
@@ -1035,7 +1037,7 @@ impl Engine3d {
         for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
             let w = vert.coords[3];
             leading_zeros = leading_zeros.min(w.leading_zeros());
-            poly.depth_values[i] = if self.swap_buffers_attrs.w_buffering() {
+            poly.depth_values[i] = if self.rendering_state.w_buffering {
                 w
             } else if w != 0 {
                 (((((vert.coords[2] as i64) << 14) / w as i64) + 0x3FFF) << 9) as i32 & 0xFF_FFFF
@@ -1081,17 +1083,9 @@ impl Engine3d {
         self.command_finish_time.0 == RawTimestamp::MAX
     }
 
-    pub(super) fn swap_buffers_missed(&mut self, vram: &Vram) {
+    pub(super) fn swap_buffers_missed(&mut self) {
         if self.gx_enabled && self.rendering_enabled {
-            unsafe {
-                self.renderer.repeat_last_frame(
-                    &*vram.texture.as_bytes_ptr(),
-                    &*vram.tex_pal.as_bytes_ptr(),
-                    &self.rendering_state,
-                );
-            }
-            self.rendering_state.texture_dirty = 0;
-            self.rendering_state.tex_pal_dirty = 0;
+            self.renderer.repeat_last_frame(&self.rendering_state);
         }
     }
 
@@ -1125,22 +1119,30 @@ impl Engine3d {
                             | poly.top_y as u32
                     });
             }
-            unsafe {
-                emu.gpu.engine_3d.renderer.swap_buffers(
-                    &*emu.gpu.vram.texture.as_bytes_ptr(),
-                    &*emu.gpu.vram.tex_pal.as_bytes_ptr(),
-                    &emu.gpu.engine_3d.vert_ram[..emu.gpu.engine_3d.vert_ram_level as usize],
-                    &emu.gpu.engine_3d.poly_ram[..emu.gpu.engine_3d.poly_ram_level as usize],
-                    &emu.gpu.engine_3d.rendering_state,
-                    emu.gpu.engine_3d.swap_buffers_attrs.w_buffering(),
-                );
-            }
-            emu.gpu.engine_3d.rendering_state.texture_dirty = 0;
-            emu.gpu.engine_3d.rendering_state.tex_pal_dirty = 0;
+            emu.gpu.engine_3d.renderer.swap_buffers(
+                &emu.gpu.engine_3d.vert_ram[..emu.gpu.engine_3d.vert_ram_level as usize],
+                &emu.gpu.engine_3d.poly_ram[..emu.gpu.engine_3d.poly_ram_level as usize],
+                &emu.gpu.engine_3d.rendering_state,
+            );
         }
+        emu.gpu.engine_3d.rendering_state.w_buffering = emu.gpu.engine_3d.swap_buffers_attrs.w_buffering();
         emu.gpu.engine_3d.vert_ram_level = 0;
         emu.gpu.engine_3d.poly_ram_level = 0;
         Self::process_next_command(emu);
+    }
+
+    pub(super) fn start_rendering(&mut self, vram: &Vram) {
+        if self.rendering_enabled {
+            unsafe {
+                self.renderer.start_rendering(
+                    &*vram.texture.as_bytes_ptr(),
+                    &*vram.tex_pal.as_bytes_ptr(),
+                    &self.rendering_state,
+                );
+            }
+            self.rendering_state.texture_dirty = 0;
+            self.rendering_state.tex_pal_dirty = 0;
+        }
     }
 
     pub(crate) fn process_next_command(emu: &mut Emu<impl cpu::Engine>) {

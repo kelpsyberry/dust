@@ -4,14 +4,12 @@ use crate::{gpu::Scanline, utils::Bytes};
 pub trait Renderer {
     fn swap_buffers(
         &mut self,
-        texture: &Bytes<0x8_0000>,
-        tex_pal: &Bytes<0x1_8000>,
         vert_ram: &[ScreenVertex],
         poly_ram: &[Polygon],
         state: &RenderingState,
-        w_buffering: bool,
     );
-    fn repeat_last_frame(
+    fn repeat_last_frame(&mut self, state: &RenderingState);
+    fn start_rendering(
         &mut self,
         texture: &Bytes<0x8_0000>,
         tex_pal: &Bytes<0x1_8000>,

@@ -48,40 +48,28 @@ impl Renderer {
 impl RendererTrair for Renderer {
     fn swap_buffers(
         &mut self,
-        texture: &Bytes<0x8_0000>,
-        tex_pal: &Bytes<0x1_8000>,
         vert_ram: &[ScreenVertex],
         poly_ram: &[Polygon],
         state: &CoreRenderingState,
-        w_buffering: bool,
     ) {
         self.wait_for_line(SCREEN_HEIGHT as u8 - 1);
 
-        unsafe { &mut *self.shared_data.rendering_data.get() }.prepare(
-            texture,
-            tex_pal,
-            vert_ram,
-            poly_ram,
-            state,
-            w_buffering,
-        );
-
-        self.shared_data
-            .processing_scanline
-            .store(u8::MAX, Ordering::Release);
-        self.thread.as_ref().unwrap().thread().unpark();
+        unsafe { &mut *self.shared_data.rendering_data.get() }.prepare(vert_ram, poly_ram, state);
     }
 
-    fn repeat_last_frame(
+    fn repeat_last_frame(&mut self, state: &CoreRenderingState) {
+        self.wait_for_line(SCREEN_HEIGHT as u8 - 1);
+
+        unsafe { &mut *self.shared_data.rendering_data.get() }.repeat_last_frame(state);
+    }
+
+    fn start_rendering(
         &mut self,
         texture: &Bytes<0x8_0000>,
         tex_pal: &Bytes<0x1_8000>,
         state: &CoreRenderingState,
     ) {
-        self.wait_for_line(SCREEN_HEIGHT as u8 - 1);
-
-        unsafe { &mut *self.shared_data.rendering_data.get() }
-            .repeat_last_frame(texture, tex_pal, state);
+        unsafe { &mut *self.shared_data.rendering_data.get() }.copy_vram(texture, tex_pal, state);
 
         self.shared_data
             .processing_scanline

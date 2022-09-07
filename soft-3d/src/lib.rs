@@ -45,12 +45,7 @@ pub struct RenderingData {
 unsafe impl Zero for RenderingData {}
 
 impl RenderingData {
-    fn copy_rendering_data(
-        &mut self,
-        texture: &Bytes<0x8_0000>,
-        tex_pal: &Bytes<0x1_8000>,
-        state: &RenderingState,
-    ) {
+    fn copy_rendering_data(&mut self, state: &RenderingState) {
         self.control = state.control;
 
         self.alpha_test_ref = if state.control.alpha_test_enabled() {
@@ -71,7 +66,34 @@ impl RenderingData {
         self.edge_colors = state.edge_colors;
         self.clear_color = state.clear_color;
         self.toon_colors = state.toon_colors;
+    }
 
+    #[inline]
+    pub fn prepare(
+        &mut self,
+        vert_ram: &[ScreenVertex],
+        poly_ram: &[Polygon],
+        state: &RenderingState,
+    ) {
+        self.w_buffering = state.w_buffering;
+
+        self.vert_ram[..vert_ram.len()].copy_from_slice(vert_ram);
+        self.poly_ram[..poly_ram.len()].copy_from_slice(poly_ram);
+        self.poly_ram_level = poly_ram.len() as u16;
+
+        self.copy_rendering_data(state);
+    }
+
+    pub fn repeat_last_frame(&mut self, state: &RenderingState) {
+        self.copy_rendering_data(state);
+    }
+
+    pub fn copy_vram(
+        &mut self,
+        texture: &Bytes<0x8_0000>,
+        tex_pal: &Bytes<0x1_8000>,
+        state: &RenderingState,
+    ) {
         for i in 0..4 {
             if state.texture_dirty & 1 << i == 0 {
                 continue;
@@ -87,33 +109,5 @@ impl RenderingData {
             let range = i << 14..(i + 1) << 14;
             self.tex_pal[range.clone()].copy_from_slice(&tex_pal[range]);
         }
-    }
-
-    #[inline]
-    pub fn prepare(
-        &mut self,
-        texture: &Bytes<0x8_0000>,
-        tex_pal: &Bytes<0x1_8000>,
-        vert_ram: &[ScreenVertex],
-        poly_ram: &[Polygon],
-        state: &RenderingState,
-        w_buffering: bool,
-    ) {
-        self.w_buffering = w_buffering;
-
-        self.vert_ram[..vert_ram.len()].copy_from_slice(vert_ram);
-        self.poly_ram[..poly_ram.len()].copy_from_slice(poly_ram);
-        self.poly_ram_level = poly_ram.len() as u16;
-
-        self.copy_rendering_data(texture, tex_pal, state);
-    }
-
-    pub fn repeat_last_frame(
-        &mut self,
-        texture: &Bytes<0x8_0000>,
-        tex_pal: &Bytes<0x1_8000>,
-        state: &RenderingState,
-    ) {
-        self.copy_rendering_data(texture, tex_pal, state);
     }
 }

@@ -333,7 +333,7 @@ impl Gpu {
             if emu.gpu.engine_3d.swap_buffers_waiting() {
                 Engine3d::swap_buffers(emu);
             } else {
-                emu.gpu.engine_3d.swap_buffers_missed(&emu.gpu.vram);
+                emu.gpu.engine_3d.swap_buffers_missed();
             }
             emu.gpu.engine_2d_a.start_vblank();
             emu.gpu.engine_2d_b.start_vblank();
@@ -355,6 +355,8 @@ impl Gpu {
                 emu.arm9
                     .start_dma_transfers_with_timing::<{ arm9::dma::Timing::VBlank }>();
             }
+        } else if emu.gpu.vcount == (TOTAL_SCANLINES - 48) as u16 {
+            emu.gpu.engine_3d.start_rendering(&emu.gpu.vram);
         } else if emu.gpu.vcount == (TOTAL_SCANLINES - 1) as u16
             && emu.gpu.power_control.display_enabled()
         {

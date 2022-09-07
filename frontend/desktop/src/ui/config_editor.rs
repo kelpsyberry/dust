@@ -933,13 +933,19 @@ impl Editor {
                 ui.table_next_row();
                 ui.table_next_column();
 
-                let button_width =
-                    ((ui.content_region_avail()[0] - style!(ui, item_spacing)[0] * 4.0) / 5.0)
-                        .max(20.0 + style!(ui, frame_padding)[0] * 2.0);
+                let (top_button_width, bot_button_width) = {
+                    let min_button_width = 20.0 + style!(ui, frame_padding)[0] * 2.0;
+                    let item_spacing_x = style!(ui, item_spacing)[0];
+                    let avail_x = ui.content_region_avail()[0];
+                    (
+                        ((avail_x - item_spacing_x * 2.0) / 3.0).max(min_button_width),
+                        ((avail_x - style!(ui, item_spacing)[0]) / 2.0).max(min_button_width),
+                    )
+                };
 
                 modify_configs_mask!(
                     ui,
-                    width button_width,
+                    width top_button_width,
                     icon_tooltip "\u{f1f8}", "Restore defaults",
                     "restore_defaults",
                     true,
@@ -956,7 +962,7 @@ impl Editor {
                 ui.same_line();
                 modify_configs_mask!(
                     ui,
-                    width button_width,
+                    width top_button_width,
                     icon_tooltip "\u{f2f9}", "Reload",
                     "reload",
                     config.global_path.is_some(),
@@ -981,7 +987,7 @@ impl Editor {
                 ui.same_line();
                 modify_configs_mask!(
                     ui,
-                    width button_width,
+                    width top_button_width,
                     icon_tooltip "\u{f0c7}", "Save",
                     "save",
                     config.global_path.is_some(),
@@ -1016,10 +1022,9 @@ impl Editor {
                     };
                 }
 
-                ui.same_line();
                 modify_configs!(
                     ui,
-                    width button_width,
+                    width bot_button_width,
                     icon_tooltip "\u{f56f}", "Import ",
                     "import",
                     game_loaded,
@@ -1046,7 +1051,7 @@ impl Editor {
                 ui.same_line();
                 modify_configs!(
                     ui,
-                    width button_width,
+                    width bot_button_width,
                     icon_tooltip "\u{f56e}", "Export ",
                     "export",
                     game_loaded,
@@ -1076,9 +1081,29 @@ impl Editor {
                     ui.set_cursor_screen_pos([cursor_pos[0], cursor_pos[1] + item_spacing * 2.0]);
                 }
 
+                let labels_and_sections = [
+                    ("\u{f07b} Paths", Section::Paths),
+                    ("\u{e163} UI", Section::Ui),
+                    ("\u{f026} Audio", Section::Audio),
+                    ("\u{f0c7} Saves", Section::Saves),
+                    ("\u{f2db} Emulation", Section::Emulation),
+                    ("\u{f11b} Input", Section::Input),
+                    #[cfg(any(feature = "log", feature = "gdb-server"))]
+                    ("\u{f7d9} Debug", Section::Debug),
+                    #[cfg(feature = "discord-presence")]
+                    ("\u{f392} Discord presence", Section::DiscordPresence),
+                ];
+
                 ui.child_window("section_list")
                     .size([
-                        0.0,
+                        {
+                            let base_width = style!(ui, frame_padding)[0] * 2.0;
+                            labels_and_sections
+                                .iter()
+                                .map(|(label, _)| ui.calc_text_size(label)[0] + base_width)
+                                .fold(0.0, f32::max)
+                                + style!(ui, scrollbar_size)
+                        },
                         ui.content_region_avail()[1] - style!(ui, cell_padding)[1],
                     ])
                     .build(|| {
@@ -1090,18 +1115,7 @@ impl Editor {
                         let double_padding_h = padding[0] * 2.0;
                         let height = padding[1] * 2.0 + ui.text_line_height();
 
-                        for (label, section) in [
-                            ("\u{f07b} Paths", Section::Paths),
-                            ("\u{e163} UI", Section::Ui),
-                            ("\u{f026} Audio", Section::Audio),
-                            ("\u{f0c7} Saves", Section::Saves),
-                            ("\u{f2db} Emulation", Section::Emulation),
-                            ("\u{f11b} Input", Section::Input),
-                            #[cfg(any(feature = "log", feature = "gdb-server"))]
-                            ("\u{f7d9} Debug", Section::Debug),
-                            #[cfg(feature = "discord-presence")]
-                            ("\u{f392} Discord presence", Section::DiscordPresence),
-                        ] {
+                        for (label, section) in labels_and_sections {
                             let upper_left = ui.cursor_screen_pos();
 
                             let width = ui.content_region_avail()[0]

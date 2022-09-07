@@ -1,4 +1,4 @@
-use core::simd::{i32x2, u32x4, SimdPartialOrd};
+use core::simd::{i32x2, i64x2, u32x4, u64x4, SimdPartialOrd};
 use dust_core::gpu::engine_3d::{
     InterpColor, PolyVertIndex, PolyVertsLen, Polygon, ScreenVertex, TexCoords, VertexAddr,
 };
@@ -216,8 +216,10 @@ pub struct InterpLineData<const EDGE: bool> {
     p_w1_denom: u16,
 }
 
+const LINEAR_PRECISION: u8 = 30;
+
 impl<const EDGE: bool> InterpLineData<EDGE> {
-    const PRECISION: u8 = 8 + EDGE as u8;
+    const PERSP_PRECISION: u8 = 8 + EDGE as u8;
 
     pub fn new(a_w: u16, b_w: u16) -> Self {
         let linear_test_w_mask = if EDGE { 0x7E } else { 0x7F };
@@ -242,20 +244,17 @@ impl<const EDGE: bool> InterpLineData<EDGE> {
     }
 
     pub fn set_x(&self, x: u16, len: u16) -> InterpData<EDGE> {
-        let l_factor = {
-            let numer = (x as u32) << Self::PRECISION;
-            let denom = len as u32;
-            if denom == 0 {
-                // TODO: ???
+        let l_factor = (
+            x,
+            len,
+            if len == 0 {
                 0
             } else {
-                (numer / denom) as u16
-            }
-        };
-        let p_factor = if self.force_linear {
-            l_factor
-        } else {
-            let numer = (x as u32 * self.p_w0_numer as u32) << Self::PRECISION;
+                (1 << LINEAR_PRECISION) / len as u32
+            },
+        );
+        let p_factor = {
+            let numer = (x as u32 * self.p_w0_numer as u32) << Self::PERSP_PRECISION;
             let denom =
                 x as u32 * self.p_w0_denom as u32 + (len - x) as u32 * self.p_w1_denom as u32;
             if denom == 0 {
@@ -265,70 +264,123 @@ impl<const EDGE: bool> InterpLineData<EDGE> {
                 (numer / denom) as u16
             }
         };
-        InterpData { l_factor, p_factor }
+        InterpData {
+            l_factor,
+            p_factor,
+            force_linear: self.force_linear,
+        }
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct InterpData<const EDGE: bool> {
-    l_factor: u16,
+    l_factor: (u16, u16, u32),
     p_factor: u16,
+    force_linear: bool,
 }
 
 impl<const EDGE: bool> InterpData<EDGE> {
-    const PRECISION: u8 = 8 + EDGE as u8;
+    const PERSP_PRECISION: u8 = 8 + EDGE as u8;
 
     pub fn color(&self, a: InterpColor, b: InterpColor) -> InterpColor {
-        let factor = self.p_factor as u32;
-        let a = a.cast::<u32>();
-        let b = b.cast::<u32>();
-        let lower = a.simd_lt(b);
-        let min = lower.select(a, b);
-        let max = lower.select(b, a);
-        let factor = lower.select(
-            u32x4::splat(factor),
-            u32x4::splat((1 << Self::PRECISION) - factor),
-        );
-        (min + (((max - min) * factor) >> u32x4::splat(Self::PRECISION as u32))).cast()
+        if self.force_linear {
+            let a = a.cast::<u64>();
+            let b = b.cast::<u64>();
+            let lower = a.simd_lt(b);
+            let min = lower.select(a, b);
+            let diff = lower.select(b, a) - min;
+            let (x, len, denom) = self.l_factor;
+            let factor = lower.select(
+                u64x4::splat(x as u64 * denom as u64),
+                u64x4::splat((len - x) as u64 * denom as u64),
+            );
+            (min + ((diff * factor)
+                >> u64x4::splat(LINEAR_PRECISION as u64)))
+            .cast()
+        } else {
+            let a = a.cast::<u32>();
+            let b = b.cast::<u32>();
+            let lower = a.simd_lt(b);
+            let min = lower.select(a, b);
+            let diff = lower.select(b, a) - min;
+            let factor = self.p_factor as u32;
+            let factor = lower.select(
+                u32x4::splat(factor),
+                u32x4::splat((1 << Self::PERSP_PRECISION) - factor),
+            );
+            (min + ((diff * factor) >> u32x4::splat(Self::PERSP_PRECISION as u32))).cast()
+        }
     }
 
     pub fn uv(&self, a: TexCoords, b: TexCoords) -> TexCoords {
-        let factor = self.p_factor as i32;
-        let a = a.cast::<i32>();
-        let b = b.cast::<i32>();
-        let lower = a.simd_lt(b);
-        let min = lower.select(a, b);
-        let max = lower.select(b, a);
-        let factor = lower.select(
-            i32x2::splat(factor),
-            i32x2::splat((1 << Self::PRECISION) - factor),
-        );
-        (min + (((max - min) * factor) >> i32x2::splat(Self::PRECISION as i32))).cast()
+        if self.force_linear {
+            let a = a.cast::<i64>();
+            let b = b.cast::<i64>();
+            let lower = a.simd_lt(b);
+            let min = lower.select(a, b);
+            let diff = lower.select(b, a) - min;
+            let (x, len, denom) = self.l_factor;
+            let factor = lower.select(
+                i64x2::splat(x as i64 * denom as i64),
+                i64x2::splat((len - x) as i64 * denom as i64),
+            );
+            (min + ((diff * factor)
+                >> i64x2::splat(LINEAR_PRECISION as i64)))
+            .cast()
+        } else {
+            let a = a.cast::<i32>();
+            let b = b.cast::<i32>();
+            let lower = a.simd_lt(b);
+            let min = lower.select(a, b);
+            let max = lower.select(b, a);
+            let factor = self.p_factor as i32;
+            let factor = lower.select(
+                i32x2::splat(factor),
+                i32x2::splat((1 << Self::PERSP_PRECISION) - factor),
+            );
+            (min + (((max - min) * factor) >> i32x2::splat(Self::PERSP_PRECISION as i32))).cast()
+        }
     }
 
     pub fn depth(&self, a: i32, b: i32, w_buffering: bool) -> i32 {
         let a = a as i64;
         let b = b as i64;
-        let factor = (if w_buffering {
-            self.p_factor
+        if w_buffering {
+            let factor = self.p_factor as i64;
+            (if b >= a {
+                a + (((b - a) * factor) >> Self::PERSP_PRECISION)
+            } else {
+                b + (((a - b) * ((1 << Self::PERSP_PRECISION) - factor)) >> Self::PERSP_PRECISION)
+            }) as i32
         } else {
-            self.l_factor
-        }) as i64;
-        (if b >= a {
-            a + (((b - a) * factor) >> Self::PRECISION)
-        } else {
-            b + (((a - b) * ((1 << Self::PRECISION) - factor)) >> Self::PRECISION)
-        }) as i32
+            let (x, len, denom) = self.l_factor;
+            (if b >= a {
+                a + (((b - a) * x as i64 * denom as i64) >> LINEAR_PRECISION)
+            } else {
+                b + (((a - b) * (len - x) as i64 * denom as i64) >> LINEAR_PRECISION)
+            }) as i32
+        }
     }
 
     pub fn w(&self, a: u16, b: u16) -> u16 {
-        let factor = self.p_factor as u32;
-        let a = a as u32;
-        let b = b as u32;
-        (if b >= a {
-            a + (((b - a) * factor) >> Self::PRECISION)
+        if self.force_linear {
+            let a = a as u64;
+            let b = b as u64;
+            let (x, len, denom) = self.l_factor;
+            (if b >= a {
+                a + (((b - a) * x as u64 * denom as u64) >> LINEAR_PRECISION)
+            } else {
+                b + (((a - b) * (len - x) as u64 * denom as u64) >> LINEAR_PRECISION)
+            }) as u16
         } else {
-            b + (((a - b) * ((1 << Self::PRECISION) - factor)) >> Self::PRECISION)
-        }) as u16
+            let a = a as u32;
+            let b = b as u32;
+            let factor = self.p_factor as u32;
+            (if b >= a {
+                a + (((b - a) * factor) >> Self::PERSP_PRECISION)
+            } else {
+                b + (((a - b) * ((1 << Self::PERSP_PRECISION) - factor)) >> Self::PERSP_PRECISION)
+            }) as u16
+        }
     }
 }
