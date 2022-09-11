@@ -6,7 +6,6 @@ use core::simd::{
 pub type TexCoords = i16x2;
 pub type Color = u8x4;
 pub type InterpColor = u16x4;
-pub type ConversionScreenCoords = i64x2;
 pub type ScreenCoords = u16x2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
@@ -60,11 +59,17 @@ fn cross_w_as_z(a: i64x4, b: i64x4) -> i64x4 {
     a_ywxz * b_wxyz - a_wxyz * b_ywxz
 }
 
-pub fn front_facing(v0: &Vertex, v1: &Vertex, v2: &Vertex) -> bool {
+pub fn culled(
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
+    show_front: bool,
+    show_back: bool,
+) -> (bool, bool) {
     // This is the same formula as used for back-face culling with a 3D pinhole camera; however,
-    // since coordinates in clip space are divided by W, and not by Z (which could have no
-    // meaning at all after projection), that must be reflected here; keeping that in mind,
-    // the actual calculation for a front-facing polygon is just:
+    // since coordinates in clip space are divided by W, and not by Z (which could have no meaning
+    // at all after projection), that must be reflected here; keeping that in mind, the actual
+    // calculation for a front-facing polygon is just:
     // ((v2 - v1) × (v0 - v1)) · v1 >= 0
     let v1_64 = v1.coords.cast::<i64>();
     let mut normal = cross_w_as_z(v2.coords.cast() - v1_64, v0.coords.cast() - v1_64);
@@ -75,7 +80,12 @@ pub fn front_facing(v0: &Vertex, v1: &Vertex, v2: &Vertex) -> bool {
     {
         normal >>= i64x4::splat(4);
     }
-    (normal * simd_swizzle!(v1_64, [0, 1, 3, 2])).reduce_sum() >= 0
+    let dot = (normal * simd_swizzle!(v1_64, [0, 1, 3, 2])).reduce_sum();
+    let is_front_facing = dot > 0;
+    (
+        (is_front_facing && !show_front) || (dot < 0 && !show_back),
+        is_front_facing,
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]

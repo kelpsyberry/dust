@@ -85,6 +85,7 @@ impl CaptureUnit {
         self.fifo_write_pos = FifoWritePos::new(0);
     }
 
+    #[inline]
     pub(super) fn addition_enabled(&self) -> bool {
         self.addition_enabled
     }

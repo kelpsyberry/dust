@@ -24,12 +24,12 @@ pub fn dec_poly_vert_index(i: PolyVertIndex, verts: PolyVertsLen) -> PolyVertInd
 pub struct Edge {
     a_addr: VertexAddr,
     a_y: u8,
-    a_z: i32,
+    a_z: u32,
     a_w: u16,
 
     b_addr: VertexAddr,
     b_y: u8,
-    b_z: i32,
+    b_z: u32,
     b_w: u16,
 
     x_ref: i32,
@@ -121,7 +121,7 @@ impl Edge {
         self.a_addr
     }
 
-    pub fn a_z(&self) -> i32 {
+    pub fn a_z(&self) -> u32 {
         self.a_z
     }
 
@@ -137,7 +137,7 @@ impl Edge {
         self.b_y
     }
 
-    pub fn b_z(&self) -> i32 {
+    pub fn b_z(&self) -> u32 {
         self.b_z
     }
 
@@ -294,9 +294,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
                 u64x4::splat(x as u64 * denom as u64),
                 u64x4::splat((len - x) as u64 * denom as u64),
             );
-            (min + ((diff * factor)
-                >> u64x4::splat(LINEAR_PRECISION as u64)))
-            .cast()
+            (min + ((diff * factor) >> u64x4::splat(LINEAR_PRECISION as u64))).cast()
         } else {
             let a = a.cast::<u32>();
             let b = b.cast::<u32>();
@@ -324,9 +322,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
                 i64x2::splat(x as i64 * denom as i64),
                 i64x2::splat((len - x) as i64 * denom as i64),
             );
-            (min + ((diff * factor)
-                >> i64x2::splat(LINEAR_PRECISION as i64)))
-            .cast()
+            (min + ((diff * factor) >> i64x2::splat(LINEAR_PRECISION as i64))).cast()
         } else {
             let a = a.cast::<i32>();
             let b = b.cast::<i32>();
@@ -342,7 +338,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
         }
     }
 
-    pub fn depth(&self, a: i32, b: i32, w_buffering: bool) -> i32 {
+    pub fn depth(&self, a: u32, b: u32, w_buffering: bool) -> u32 {
         let a = a as i64;
         let b = b as i64;
         if w_buffering {
@@ -351,14 +347,14 @@ impl<const EDGE: bool> InterpData<EDGE> {
                 a + (((b - a) * factor) >> Self::PERSP_PRECISION)
             } else {
                 b + (((a - b) * ((1 << Self::PERSP_PRECISION) - factor)) >> Self::PERSP_PRECISION)
-            }) as i32
+            }) as u32
         } else {
             let (x, len, denom) = self.l_factor;
             (if b >= a {
                 a + (((b - a) * x as i64 * denom as i64) >> LINEAR_PRECISION)
             } else {
                 b + (((a - b) * (len - x) as i64 * denom as i64) >> LINEAR_PRECISION)
-            }) as i32
+            }) as u32
         }
     }
 

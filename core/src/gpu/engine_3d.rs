@@ -11,18 +11,18 @@ use crate::{
         arm9::{self, Arm9},
         Schedule,
     },
-    gpu::vram::Vram,
     emu::{self, Emu},
+    gpu::vram::Vram,
     utils::{
         load_slice_in_place, schedule::RawTimestamp, store_slice, zeroed_box, Fifo, Savestate, Zero,
     },
 };
 use core::{
-    mem::{replace, transmute},
-    simd::{i32x4, SimdOrd},
+    mem::{replace, transmute, MaybeUninit},
+    simd::{i32x4, u32x2, u64x2, SimdOrd},
 };
 use matrix::{Matrix, MatrixBuffer};
-use vertex::{ConversionScreenCoords, Vertex};
+use vertex::Vertex;
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
@@ -148,7 +148,7 @@ use bounded::{PrimMaxVerts, PrimVertIndex};
 #[repr(C)]
 pub struct Polygon {
     pub vertices: [VertexAddr; 10],
-    pub depth_values: [i32; 10],
+    pub depth_values: [u32; 10],
     pub w_values: [u16; 10],
     pub top_y: u8,
     pub bot_y: u8,
@@ -256,7 +256,8 @@ pub struct Engine3d {
     tex_params: TextureParams,
     tex_palette_base: u16,
 
-    viewport: [u8; 4],
+    viewport_origin: u32x2,
+    viewport_size: u64x2,
 
     vert_color: Color,
     vert_normal: [i16; 3],
@@ -300,7 +301,7 @@ pub struct Engine3d {
     rendering_state: RenderingState,
 }
 
-fn decode_rgb_5(value: u16, alpha: u8) -> Color {
+fn decode_rgb5(value: u16, alpha: u8) -> Color {
     Color::from_array([
         value as u8 & 0x1F,
         (value >> 5) as u8 & 0x1F,
@@ -310,9 +311,42 @@ fn decode_rgb_5(value: u16, alpha: u8) -> Color {
 }
 
 #[inline(always)]
-fn rgb_5_to_6(value: Color) -> Color {
+fn rgb5_to_rgb6(value: Color) -> Color {
     value << Color::splat(1) | (value + Color::splat(0x1F)) >> Color::splat(5)
 }
+
+static CMD_PARAMS: [u8; 0x100] = {
+    #[cfg(feature = "log")]
+    const DEFAULT: u8 = 0xFF;
+    #[cfg(not(feature = "log"))]
+    const DEFAULT: u8 = 0;
+    let mut params = [DEFAULT; 0x100];
+
+    macro_rules! set {
+        ($params: expr, [$($cmd: expr),*]) => {
+            $(
+                params[$cmd] = $params;
+            )*
+        };
+    }
+
+    set!(0, [0x00, 0x11, 0x15, 0x41]);
+    set!(
+        1,
+        [
+            0x10, 0x12, 0x13, 0x14, 0x20, 0x21, 0x22, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A,
+            0x2B, 0x30, 0x31, 0x32, 0x33, 0x40, 0x50, 0x60, 0x72
+        ]
+    );
+    set!(2, [0x23, 0x71]);
+    set!(3, [0x1B, 0x1C, 0x70]);
+    set!(9, [0x1A]);
+    set!(12, [0x17, 0x19]);
+    set!(16, [0x16, 0x18]);
+    set!(32, [0x34]);
+
+    params
+};
 
 impl Engine3d {
     pub(super) fn new(
@@ -367,7 +401,8 @@ impl Engine3d {
             tex_params: TextureParams(0),
             tex_palette_base: 0,
 
-            viewport: [0; 4],
+            viewport_origin: u32x2::splat(0),
+            viewport_size: u64x2::splat(0),
 
             vert_color: Color::splat(0),
             vert_normal: [0; 3],
@@ -511,40 +546,36 @@ impl Engine3d {
             (self.rendering_state.control.0 & 0x3000 & !value.0) | (value.0 & 0x4FFF);
     }
 
+    #[inline]
     pub(super) fn set_texture_dirty(&mut self, slot_mask: u8) {
         self.rendering_state.texture_dirty |= slot_mask;
     }
 
+    #[inline]
     pub(super) fn set_tex_pal_dirty(&mut self, slot_mask: u8) {
         self.rendering_state.tex_pal_dirty |= slot_mask;
     }
 
+    #[inline]
     pub(crate) fn gx_fifo_irq_requested(&self) -> bool {
         self.gx_fifo_irq_requested
     }
 
+    #[inline]
     pub(crate) fn gx_fifo_half_empty(&self) -> bool {
         self.gx_fifo.len() < 128
     }
 
-    #[allow(clippy::match_same_arms)]
+    #[inline]
     fn params_for_command(&self, command: u8) -> u8 {
-        match command {
-            0x00 | 0x11 | 0x15 | 0x41 => 0,
-            0x10 | 0x12 | 0x13 | 0x14 | 0x20 | 0x21 | 0x22 | 0x24 | 0x25 | 0x26 | 0x27 | 0x28
-            | 0x29 | 0x2A | 0x2B | 0x30 | 0x31 | 0x32 | 0x33 | 0x40 | 0x50 | 0x60 | 0x72 => 1,
-            0x23 | 0x71 => 2,
-            0x1B | 0x1C | 0x70 => 3,
-            0x1A => 9,
-            0x17 | 0x19 => 12,
-            0x16 | 0x18 => 16,
-            0x34 => 32,
-            _ => {
-                #[cfg(feature = "log")]
-                slog::warn!(self.logger, "Unknown command: {:#04X}", command);
-                0
-            }
+        let result = CMD_PARAMS[command as usize];
+        #[cfg(feature = "log")]
+        if result == 0xFF {
+            #[cfg(feature = "log")]
+            slog::warn!(self.logger, "Unknown command: {:#04X}", command);
+            return 0;
         }
+        result
     }
 
     fn write_to_gx_fifo(emu: &mut Emu<impl cpu::Engine>, value: FifoEntry) {
@@ -611,49 +642,58 @@ impl Engine3d {
 
     fn write_packed_command(emu: &mut Emu<impl cpu::Engine>, value: u32) {
         // TODO: "Packed commands are first decompressed and then stored in the command FIFO."
-        if emu.gpu.engine_3d.remaining_command_params == 0 {
-            emu.gpu.engine_3d.cur_packed_commands = value;
-            let command = emu.gpu.engine_3d.cur_packed_commands as u8;
-            emu.gpu.engine_3d.remaining_command_params =
-                emu.gpu.engine_3d.params_for_command(command);
-            if emu.gpu.engine_3d.remaining_command_params > 0 {
-                return;
-            }
-            Self::write_to_gx_fifo(emu, FifoEntry { command, param: 0 });
-        } else {
-            let command = emu.gpu.engine_3d.cur_packed_commands as u8;
-            Self::write_to_gx_fifo(
-                emu,
-                FifoEntry {
-                    command,
-                    param: value,
-                },
-            );
-            emu.gpu.engine_3d.remaining_command_params -= 1;
-            if emu.gpu.engine_3d.remaining_command_params > 0 {
-                return;
-            }
+
+        macro_rules! process_command {
+            ($cur_packed_commands: ident) => {
+                let next_command = $cur_packed_commands as u8;
+                let next_command_params = emu.gpu.engine_3d.params_for_command(next_command);
+                if next_command_params > 0 {
+                    emu.gpu.engine_3d.cur_packed_commands = $cur_packed_commands;
+                    emu.gpu.engine_3d.remaining_command_params = next_command_params;
+                    break;
+                }
+                Self::write_to_gx_fifo(
+                    emu,
+                    FifoEntry {
+                        command: next_command,
+                        param: 0,
+                    },
+                );
+            };
         }
-        let mut cur_packed_commands = emu.gpu.engine_3d.cur_packed_commands;
-        loop {
-            cur_packed_commands >>= 8;
-            if cur_packed_commands == 0 {
-                break;
+
+        if emu.gpu.engine_3d.remaining_command_params == 0 {
+            let mut cur_packed_commands = value;
+            loop {
+                process_command!(cur_packed_commands);
+                cur_packed_commands >>= 8;
+                if cur_packed_commands == 0 {
+                    break;
+                }
             }
-            let next_command = cur_packed_commands as u8;
-            let next_command_params = emu.gpu.engine_3d.params_for_command(next_command);
-            if next_command_params > 0 {
-                emu.gpu.engine_3d.cur_packed_commands = cur_packed_commands;
-                emu.gpu.engine_3d.remaining_command_params = next_command_params;
-                break;
+        } else {
+            {
+                let command = emu.gpu.engine_3d.cur_packed_commands as u8;
+                Self::write_to_gx_fifo(
+                    emu,
+                    FifoEntry {
+                        command,
+                        param: value,
+                    },
+                );
+                emu.gpu.engine_3d.remaining_command_params -= 1;
+                if emu.gpu.engine_3d.remaining_command_params > 0 {
+                    return;
+                }
             }
-            Self::write_to_gx_fifo(
-                emu,
-                FifoEntry {
-                    command: next_command,
-                    param: 0,
-                },
-            );
+            let mut cur_packed_commands = emu.gpu.engine_3d.cur_packed_commands;
+            loop {
+                cur_packed_commands >>= 8;
+                if cur_packed_commands == 0 {
+                    break;
+                }
+                process_command!(cur_packed_commands);
+            }
         }
     }
 
@@ -744,7 +784,7 @@ impl Engine3d {
                     >> i32x4::splat(13))
                 + ((self.ambient_color * light.color) >> i32x4::splat(5));
         }
-        self.vert_color = rgb_5_to_6(color.simd_min(i32x4::splat(0x1F)).cast());
+        self.vert_color = rgb5_to_rgb6(color.simd_min(i32x4::splat(0x1F)).cast());
     }
 
     fn add_vert(&mut self, coords: [i16; 3]) {
@@ -817,17 +857,14 @@ impl Engine3d {
 
         let mut clipped_verts_len = self.cur_prim_max_verts.get() as usize;
 
-        let is_front_facing = vertex::front_facing(
+        let (culled, is_front_facing) = vertex::culled(
             &self.cur_prim_verts[0],
             &self.cur_prim_verts[1],
             &self.cur_prim_verts[2],
+            self.cur_poly_attrs.show_front(),
+            self.cur_poly_attrs.show_back(),
         );
-        let not_culled = if is_front_facing {
-            self.cur_poly_attrs.show_front()
-        } else {
-            self.cur_poly_attrs.show_back()
-        };
-        if !not_culled {
+        if culled {
             self.connect_to_last_strip_prim = false;
             return;
         }
@@ -865,7 +902,7 @@ impl Engine3d {
                     if denom != 0 {
                         let mut vert = $vert.interpolate($other, $numer, denom);
                         vert.coords[$axis_i] = $sign * vert.coords[3];
-                        $output[clipped_verts_len] = vert;
+                        $output[clipped_verts_len] = MaybeUninit::new(vert);
                         clipped_verts_len += 1;
                     }
                 }
@@ -873,9 +910,10 @@ impl Engine3d {
         }
 
         macro_rules! run_pass {
-            ($axis_i: expr, $clip_far: expr, $input: expr => $output: expr) => {
+            ($axis_i: expr, $clip_far: expr, $input: expr$(, $assume_init: ident)? => $output: expr) => {
                 let input_len = replace(&mut clipped_verts_len, shared_verts);
                 for (i, vert) in $input[..input_len].iter().enumerate().skip(shared_verts) {
+                    $(let vert = vert.$assume_init();)*
                     let coord = vert.coords[$axis_i] as i64;
                     let w = vert.coords[3] as i64;
                     if coord > w {
@@ -887,7 +925,8 @@ impl Engine3d {
                             $axis_i,
                             $output,
                             (vert, coord, w, 1),
-                            &$input[if i == 0 { input_len - 1 } else { i - 1 }],
+                            (&$input[if i == 0 { input_len - 1 } else { i - 1 }])
+                                $(.$assume_init())*,
                             |other_coord, other_w| (
                                 other_coord <= other_w,
                                 w - coord,
@@ -898,7 +937,8 @@ impl Engine3d {
                             $axis_i,
                             $output,
                             (vert, coord, w, 1),
-                            &$input[if i + 1 == input_len { 0 } else { i + 1 }],
+                            (&$input[if i + 1 == input_len { 0 } else { i + 1 }])
+                                $(.$assume_init())*,
                             |other_coord, other_w| (
                                 other_coord <= other_w,
                                 w - coord,
@@ -911,7 +951,8 @@ impl Engine3d {
                             $axis_i,
                             $output,
                             (vert, coord, w, -1),
-                            &$input[if i == 0 { input_len - 1 } else { i - 1 }],
+                            (&$input[if i == 0 { input_len - 1 } else { i - 1 }])
+                                $(.$assume_init())*,
                             |other_coord, other_w| (
                                 other_coord >= -other_w,
                                 w + coord,
@@ -922,7 +963,8 @@ impl Engine3d {
                             $axis_i,
                             $output,
                             (vert, coord, w, -1),
-                            &$input[if i + 1 == input_len { 0 } else { i + 1 }],
+                            (&$input[if i + 1 == input_len { 0 } else { i + 1 }])
+                                $(.$assume_init())*,
                             |other_coord, other_w| (
                                 other_coord >= -other_w,
                                 w + coord,
@@ -930,7 +972,7 @@ impl Engine3d {
                             ),
                         );
                     } else {
-                        $output[clipped_verts_len] = *vert;
+                        $output[clipped_verts_len] = MaybeUninit::new(*vert);
                         clipped_verts_len += 1;
                     }
                 }
@@ -947,12 +989,17 @@ impl Engine3d {
                 PrimitiveType::TriangleStrip | PrimitiveType::QuadStrip
             ),
         );
-        let [mut buffer_0, mut buffer_1] = [[Vertex::new(); 10]; 2];
-        buffer_0[..shared_verts].copy_from_slice(&self.cur_prim_verts[..shared_verts]);
-        buffer_1[..shared_verts].copy_from_slice(&self.cur_prim_verts[..shared_verts]);
+        let mut buffer_0 = MaybeUninit::uninit_array::<10>();
+        let mut buffer_1 = MaybeUninit::uninit_array::<10>();
+        for i in 0..shared_verts {
+            buffer_0[i] = MaybeUninit::new(self.cur_prim_verts[i]);
+            buffer_1[i] = MaybeUninit::new(self.cur_prim_verts[i]);
+        }
         run_pass!(2, self.cur_poly_attrs.clip_far_plane(), self.cur_prim_verts => buffer_0);
-        run_pass!(1, true, buffer_0 => buffer_1);
-        run_pass!(0, true, buffer_1 => buffer_0);
+        unsafe {
+            run_pass!(1, true, buffer_0, assume_init_ref => buffer_1);
+            run_pass!(0, true, buffer_1, assume_init_ref => buffer_0);
+        }
 
         if self.vert_ram_level as usize > self.vert_ram.len() - (clipped_verts_len - shared_verts) {
             self.rendering_state
@@ -978,37 +1025,33 @@ impl Engine3d {
         let mut top_y = 0xFF;
         let mut bot_y = 0;
 
-        let viewport_origin = ConversionScreenCoords::from_array([
-            self.viewport[0] as i64,
-            191_u8.wrapping_sub(self.viewport[3]) as i64,
-        ]);
-        let viewport_size = ConversionScreenCoords::from_array([
-            (self.viewport[2] as i64 - self.viewport[0] as i64 + 1) & 0x1FF,
-            self.viewport[3]
-                .wrapping_sub(self.viewport[1])
-                .wrapping_add(1) as i64,
-        ]);
-
+        let viewport_origin = self.viewport_origin;
+        let viewport_size = self.viewport_size;
         for (vert, vert_addr) in buffer_0[shared_verts..clipped_verts_len]
             .iter_mut()
             .zip(&mut poly.vertices[shared_verts..clipped_verts_len])
         {
+            let vert = unsafe { vert.assume_init_mut() };
             vert.coords[3] &= 0x00FF_FFFF;
             let w = vert.coords[3];
             let coords = if w == 0 {
                 // TODO: What should actually happen for W == 0?
                 ScreenCoords::splat(0)
             } else {
-                let w_2 = ConversionScreenCoords::splat(w as i64);
-                ((ConversionScreenCoords::from_array([
-                    vert.coords[0] as i64,
-                    -vert.coords[1] as i64,
-                ]) + w_2)
-                    * viewport_size
-                    / (w_2 << ConversionScreenCoords::splat(1))
+                let mut w = w as u32;
+                let mut coords = u32x2::from_array([
+                    (vert.coords[0] + w as i32) as u32,
+                    (-vert.coords[1] + w as i32) as u32,
+                ]);
+                if w > 0xFFFF {
+                    w >>= 1;
+                    coords >>= u32x2::splat(1);
+                }
+                (((coords.cast::<u64>() * viewport_size / u64x2::splat((w << 1) as u64))
+                    .cast::<u32>()
                     + viewport_origin)
-                    .cast::<u16>()
-                    & ScreenCoords::from_array([0x1FF, 0xFF])
+                    & u32x2::from_array([0x1FF, 0xFF]))
+                .cast::<u16>()
             };
             let y = coords[1] as u8;
             top_y = top_y.min(y);
@@ -1032,32 +1075,37 @@ impl Engine3d {
         poly.top_y = top_y;
         poly.bot_y = bot_y;
 
-        let mut leading_zeros = 32;
+        let mut w_leading_zeros = 32;
+        for vert in buffer_0[..clipped_verts_len].iter() {
+            w_leading_zeros =
+                w_leading_zeros.min(unsafe { vert.assume_init_ref() }.coords[3].leading_zeros());
+        }
+        w_leading_zeros &= !3;
+
+        if w_leading_zeros >= 16 {
+            let shift = w_leading_zeros - 16;
+            for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
+                poly.w_values[i] = (unsafe { vert.assume_init_ref() }.coords[3] << shift) as u16;
+            }
+        } else {
+            let shift = 16 - w_leading_zeros;
+            for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
+                poly.w_values[i] = (unsafe { vert.assume_init_ref() }.coords[3] >> shift) as u16;
+            }
+        }
 
         for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
-            let w = vert.coords[3];
-            leading_zeros = leading_zeros.min(w.leading_zeros());
+            let vert = unsafe { vert.assume_init_ref() };
+            let w = vert.coords[3] as u32;
             poly.depth_values[i] = if self.rendering_state.w_buffering {
-                w
+                w & !((((1_u64 << (32 - w_leading_zeros)) - 1) as u32) >> 16)
             } else if w != 0 {
-                (((((vert.coords[2] as i64) << 14) / w as i64) + 0x3FFF) << 9) as i32 & 0xFF_FFFF
+                ((((((vert.coords[2] as i64) << 14) / w as i64) + 0x3FFF) << 9) as i32)
+                    .clamp(0, 0xFF_FFFF) as u32
             } else {
                 // TODO: What should this value be? This is using 0 as (z << 14) / w
                 0x7F_FE00
             };
-        }
-
-        leading_zeros &= !3;
-        if leading_zeros >= 16 {
-            let shift = leading_zeros - 16;
-            for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
-                poly.w_values[i] = (vert.coords[3] << shift) as u16;
-            }
-        } else {
-            let shift = 16 - leading_zeros;
-            for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
-                poly.w_values[i] = (vert.coords[3] >> shift) as u16;
-            }
         }
 
         if self.connect_to_last_strip_prim {
@@ -1125,7 +1173,8 @@ impl Engine3d {
                 &emu.gpu.engine_3d.rendering_state,
             );
         }
-        emu.gpu.engine_3d.rendering_state.w_buffering = emu.gpu.engine_3d.swap_buffers_attrs.w_buffering();
+        emu.gpu.engine_3d.rendering_state.w_buffering =
+            emu.gpu.engine_3d.swap_buffers_attrs.w_buffering();
         emu.gpu.engine_3d.vert_ram_level = 0;
         emu.gpu.engine_3d.poly_ram_level = 0;
         Self::process_next_command(emu);
@@ -1527,7 +1576,7 @@ impl Engine3d {
 
                 0x20 => {
                     // COLOR
-                    emu.gpu.engine_3d.vert_color = rgb_5_to_6(decode_rgb_5(first_param as u16, 0));
+                    emu.gpu.engine_3d.vert_color = rgb5_to_rgb6(decode_rgb5(first_param as u16, 0));
                 }
 
                 0x21 => {
@@ -1648,20 +1697,20 @@ impl Engine3d {
 
                 0x30 => {
                     // DIF_AMB
-                    let diffuse_color = decode_rgb_5(first_param as u16, 0);
+                    let diffuse_color = decode_rgb5(first_param as u16, 0);
                     emu.gpu.engine_3d.diffuse_color = diffuse_color.cast();
                     emu.gpu.engine_3d.ambient_color =
-                        decode_rgb_5((first_param >> 16) as u16, 0).cast();
+                        decode_rgb5((first_param >> 16) as u16, 0).cast();
                     if first_param & 1 << 15 != 0 {
-                        emu.gpu.engine_3d.vert_color = rgb_5_to_6(diffuse_color);
+                        emu.gpu.engine_3d.vert_color = rgb5_to_rgb6(diffuse_color);
                     }
                 }
 
                 0x31 => {
                     // SPE_EMI
-                    emu.gpu.engine_3d.specular_color = decode_rgb_5(first_param as u16, 0).cast();
+                    emu.gpu.engine_3d.specular_color = decode_rgb5(first_param as u16, 0).cast();
                     emu.gpu.engine_3d.emission_color =
-                        decode_rgb_5((first_param >> 16) as u16, 0).cast();
+                        decode_rgb5((first_param >> 16) as u16, 0).cast();
                     emu.gpu.engine_3d.shininess_table_enabled = first_param & 1 << 15 != 0;
                 }
 
@@ -1686,7 +1735,7 @@ impl Engine3d {
                 0x33 => {
                     // LIGHT_COLOR
                     emu.gpu.engine_3d.lights[(first_param >> 30) as usize].color =
-                        decode_rgb_5(first_param as u16, 0).cast();
+                        decode_rgb5(first_param as u16, 0).cast();
                 }
 
                 0x34 => {
@@ -1735,9 +1784,19 @@ impl Engine3d {
 
                 0x60 => {
                     // VIEWPORT
-                    for i in 0..4 {
-                        emu.gpu.engine_3d.viewport[i] = (first_param >> (i << 3)) as u8;
-                    }
+
+                    let x0 = first_param & 0xFF;
+                    let y0_unmasked = first_param >> 8;
+                    let x1 = first_param >> 16 & 0xFF;
+                    let y1 = first_param >> 24;
+
+                    emu.gpu.engine_3d.viewport_origin =
+                        u32x2::from_array([x0, 191_u32.wrapping_sub(y1) & 0xFF]);
+                    emu.gpu.engine_3d.viewport_size = u32x2::from_array([
+                        x1.wrapping_sub(x0).wrapping_add(1) & 0x1FF,
+                        y1.wrapping_sub(y0_unmasked).wrapping_add(1) & 0xFF,
+                    ])
+                    .cast();
                 }
 
                 0x70 => {

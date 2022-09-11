@@ -150,26 +150,31 @@ impl Swram {
     }
 
     #[cfg(any(feature = "bft-r", feature = "bft-w"))]
+    #[inline]
     pub(crate) fn arm7_ptr(&self) -> *mut u8 {
         self.arm7_ptr
     }
 
     #[cfg(any(feature = "bft-r", feature = "bft-w"))]
+    #[inline]
     pub(crate) fn arm7_mask(&self) -> u16 {
         self.arm7_mask
     }
 
     #[cfg(feature = "bft-r")]
+    #[inline]
     pub(crate) fn arm9_r_ptr(&self) -> *const u8 {
         self.arm9_r_ptr
     }
 
     #[cfg(feature = "bft-w")]
+    #[inline]
     pub(crate) fn arm9_w_ptr(&self) -> *mut u8 {
         self.arm9_w_ptr
     }
 
     #[cfg(any(feature = "bft-r", feature = "bft-w"))]
+    #[inline]
     pub(crate) fn arm9_mask(&self) -> u16 {
         self.arm9_mask
     }

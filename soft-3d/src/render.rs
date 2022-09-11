@@ -56,10 +56,12 @@ proc_bitfield::bitfield! {
 }
 
 impl PixelAttrs {
+    #[inline]
     fn from_opaque_poly_attrs(poly: &RenderingPolygon) -> Self {
         PixelAttrs(poly.attrs.0 & 0x3F00_8000).with_back_facing(!poly.is_front_facing)
     }
 
+    #[inline]
     fn from_translucent_poly_attrs(poly: &RenderingPolygon, opaque: PixelAttrs) -> Self {
         PixelAttrs(opaque.0 & 0x3F00_8000)
             .with_translucent(true)
@@ -70,7 +72,7 @@ impl PixelAttrs {
 
 unsafe impl Zero for PixelAttrs {}
 
-fn decode_rgb_5(color: u16, alpha: u16) -> InterpColor {
+fn decode_rgb5(color: u16, alpha: u16) -> InterpColor {
     InterpColor::from_array([
         color & 0x1F,
         (color >> 5) & 0x1F,
@@ -79,7 +81,8 @@ fn decode_rgb_5(color: u16, alpha: u16) -> InterpColor {
     ])
 }
 
-fn rgb_5_to_6(color: InterpColor) -> InterpColor {
+#[inline]
+fn rgb5_to_rgb6(color: InterpColor) -> InterpColor {
     let mut result = (color << InterpColor::splat(1))
         - color.simd_ne(InterpColor::splat(0)).to_int().cast::<u16>();
     result[3] >>= 1;
@@ -100,7 +103,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
     let vert_color = vert_color >> InterpColor::splat(3);
 
     let mut vert_blend_color = match MODE {
-        2 => rgb_5_to_6(rendering_data.toon_colors[vert_color[0] as usize >> 1].cast()),
+        2 => rgb5_to_rgb6(rendering_data.toon_colors[vert_color[0] as usize >> 1].cast()),
         3 => InterpColor::splat(vert_color[0]),
         _ => vert_color,
     };
@@ -146,12 +149,12 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
 
         let i = v << (tex_width_shift + 3) | u;
 
-        let tex_color = rgb_5_to_6(match FORMAT {
+        let tex_color = rgb5_to_rgb6(match FORMAT {
             1 => {
                 let pixel = rendering_data.texture[(tex_base + i) & 0x7_FFFF];
                 let color_index = pixel as usize & 0x1F;
                 let raw_alpha = pixel >> 5;
-                decode_rgb_5(
+                decode_rgb5(
                     rendering_data
                         .tex_pal
                         .read_le::<u16>((pal_base + (color_index << 1)) & 0x1_FFFF),
@@ -163,7 +166,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                 let color_index = rendering_data.texture[(tex_base + (i >> 2)) & 0x7_FFFF]
                     .wrapping_shr((i << 1) as u32) as usize
                     & 3;
-                decode_rgb_5(
+                decode_rgb5(
                     rendering_data
                         .tex_pal
                         .read_le::<u16>(pal_base | color_index << 1),
@@ -179,7 +182,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                 let color_index = rendering_data.texture[(tex_base + (i >> 1)) & 0x7_FFFF]
                     .wrapping_shr((i << 2) as u32) as usize
                     & 0xF;
-                decode_rgb_5(
+                decode_rgb5(
                     rendering_data
                         .tex_pal
                         .read_le::<u16>((pal_base + (color_index << 1)) & 0x1_FFFF),
@@ -193,7 +196,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
 
             4 => {
                 let color_index = rendering_data.texture[(tex_base + i) & 0x7_FFFF] as usize;
-                decode_rgb_5(
+                decode_rgb5(
                     rendering_data
                         .tex_pal
                         .read_le::<u16>((pal_base + (color_index << 1)) & 0x1_FFFF),
@@ -220,7 +223,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
 
                 macro_rules! color {
                     ($i: literal) => {
-                        decode_rgb_5(
+                        decode_rgb5(
                             rendering_data
                                 .tex_pal
                                 .read_le::<u16>((pal_base + ($i << 1)) & 0x1_FFFE),
@@ -270,7 +273,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                 let pixel = rendering_data.texture[(tex_base + i) & 0x7_FFFF];
                 let color_index = pixel as usize & 7;
                 let alpha = pixel >> 3;
-                decode_rgb_5(
+                decode_rgb5(
                     rendering_data
                         .tex_pal
                         .read_le::<u16>((pal_base | color_index << 1) & 0x1_FFFF),
@@ -282,7 +285,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                 let color = rendering_data
                     .texture
                     .read_le::<u16>((tex_base + (i << 1)) & 0x7_FFFE);
-                decode_rgb_5(color, if color & 1 << 15 != 0 { 0x1F } else { 0 })
+                decode_rgb5(color, if color & 1 << 15 != 0 { 0x1F } else { 0 })
             }
         });
 
@@ -312,7 +315,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
     };
 
     if MODE == 3 {
-        let toon_color = rgb_5_to_6(rendering_data.toon_colors[vert_color[0] as usize >> 1].cast());
+        let toon_color = rgb5_to_rgb6(rendering_data.toon_colors[vert_color[0] as usize >> 1].cast());
         (blended_color + toon_color).simd_min(InterpColor::from_array([0x3F, 0x3F, 0x3F, 0x1F]))
     } else {
         blended_color
@@ -609,7 +612,7 @@ impl Renderer {
                 let raw_color = rendering_data
                     .texture
                     .read_le(color_line_base | (x_in_image as usize) << 1);
-                self.color_buffer.0[x] = rgb_5_to_6(decode_rgb_5(
+                self.color_buffer.0[x] = rgb5_to_rgb6(decode_rgb5(
                     raw_color,
                     if raw_color >> 15 != 0 { 31 } else { 0 },
                 ))
@@ -630,7 +633,7 @@ impl Renderer {
         } else {
             self.color_buffer
                 .0
-                .fill(rgb_5_to_6(rendering_data.clear_color.cast()).cast());
+                .fill(rgb5_to_rgb6(rendering_data.clear_color.cast()).cast());
             self.depth_buffer
                 .0
                 .fill(expand_depth(rendering_data.clear_depth));
@@ -741,9 +744,7 @@ impl Renderer {
                     for x in ranges[i].0..=ranges[i].1 {
                         let interp = x_interp.set_x(x - x_span_start, x_span_len);
                         let x = x as usize;
-                        let depth = interp.depth(l_depth, r_depth, rendering_data.w_buffering)
-                            as u32
-                            & 0x00FF_FFFF;
+                        let depth = interp.depth(l_depth, r_depth, rendering_data.w_buffering);
                         if (poly.depth_test)(depth, self.depth_buffer.0[x], self.attr_buffer.0[x]) {
                             let vert_color = interp.color(l_vert_color, r_vert_color);
                             let uv = interp.uv(l_uv, r_uv);

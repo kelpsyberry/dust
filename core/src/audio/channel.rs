@@ -241,6 +241,7 @@ impl Channel {
         self.control
     }
 
+    #[inline]
     pub(super) fn pan(&self) -> u8 {
         self.pan
     }
@@ -620,6 +621,7 @@ impl Channel {
         emu.audio.channels[i.get() as usize].push_sample(0);
     }
 
+    #[inline]
     pub(super) fn raw_output(&self) -> RawChannelSample {
         ((self.last_sample as RawChannelSample) << self.volume_shift)
             * self.volume as RawChannelSample

@@ -10,7 +10,8 @@
     portable_simd,
     const_mut_refs,
     const_trait_impl,
-    const_convert
+    const_convert,
+    const_for
 )]
 #![warn(clippy::pedantic)]
 #![allow(

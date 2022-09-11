@@ -318,7 +318,7 @@ proc_bitfield::bitfield! {
 }
 
 #[derive(Savestate)]
-#[load(in_place_only)]
+#[load(in_place_only, post = "self.post_load()")]
 pub struct Engine2d<R: Role> {
     #[cfg(feature = "log")]
     #[savestate(skip)]
@@ -408,6 +408,11 @@ impl<R: Role> Engine2d<R> {
         }
     }
 
+    fn post_load(&mut self) {
+        self.render_fns
+            .set_color_effect(self.color_effects_control.color_effect());
+    }
+
     #[inline]
     pub fn enabled(&self) -> bool {
         self.enabled
@@ -474,6 +479,7 @@ impl<R: Role> Engine2d<R> {
     #[inline]
     pub fn write_color_effects_control(&mut self, value: ColorEffectsControl) {
         self.color_effects_control.0 = value.0 & 0x3FFF;
+        self.render_fns.set_color_effect(value.color_effect());
     }
 
     #[inline]

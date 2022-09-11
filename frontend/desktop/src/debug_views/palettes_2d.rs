@@ -1,5 +1,5 @@
 use super::{
-    common::{rgb_5_to_rgb_f32, rgb_5_to_rgba_f32, rgb_f32_to_rgb_5},
+    common::{rgb5_to_rgb32f, rgb5_to_rgba32f, rgb32f_to_rgb5},
     FrameDataSlot, InstanceableView, Messages, View,
 };
 use crate::ui::{utils::combo_value, window::Window};
@@ -269,7 +269,7 @@ impl View for Palettes2d {
                     if ui
                         .color_button_config(
                             &format!("Color {i:#05X}"),
-                            rgb_5_to_rgba_f32(raw_color),
+                            rgb5_to_rgba32f(raw_color),
                         )
                         .border(false)
                         .alpha(false)
@@ -278,7 +278,7 @@ impl View for Palettes2d {
                     {
                         ui.open_popup("color_picker");
                         *cur_color_index = i as u16;
-                        *cur_color = rgb_5_to_rgb_f32(raw_color);
+                        *cur_color = rgb5_to_rgb32f(raw_color);
                     }
                 }
             }
@@ -313,7 +313,7 @@ impl View for Palettes2d {
                     .alpha(false)
                     .build()
                 {
-                    messages.push_custom((self.cur_selection, i, rgb_f32_to_rgb_5(self.cur_color)))
+                    messages.push_custom((self.cur_selection, i, rgb32f_to_rgb5(self.cur_color)))
                 }
             });
         }

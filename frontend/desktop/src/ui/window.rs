@@ -229,7 +229,7 @@ impl Window {
             #[cfg(target_os = "macos")]
             {
                 drop(frame_padding);
-                if self.macos_title_bar_hidden {
+                if self.macos_title_bar_hidden && self.window.fullscreen().is_none() {
                     // TODO: There has to be some way to compute this width instead of
                     //       hardcoding it.
                     ui.dummy([68.0, 0.0]);
