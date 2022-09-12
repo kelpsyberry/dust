@@ -163,6 +163,7 @@ pub struct Builder {
     pub audio_backend: Box<dyn audio::Backend>,
     pub mic_backend: Option<Box<dyn spi::tsc::MicBackend>>,
     pub rtc_backend: Box<dyn rtc::Backend>,
+    renderers_2d: [Box<dyn gpu::engine_2d::Renderer>; 2],
     pub renderer_3d: Box<dyn gpu::engine_3d::Renderer>,
 
     pub arm7_bios: Option<Box<Bytes<{ arm7::BIOS_SIZE }>>>,
@@ -209,6 +210,7 @@ impl Builder {
         audio_backend: Box<dyn audio::Backend>,
         mic_backend: Option<Box<dyn spi::tsc::MicBackend>>,
         rtc_backend: Box<dyn rtc::Backend>,
+        renderers_2d: [Box<dyn gpu::engine_2d::Renderer>; 2],
         renderer_3d: Box<dyn gpu::engine_3d::Renderer>,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Self {
@@ -222,6 +224,7 @@ impl Builder {
             audio_backend,
             mic_backend,
             rtc_backend,
+            renderers_2d,
             renderer_3d,
 
             arm7_bios: None,
@@ -295,6 +298,7 @@ impl Builder {
                 self.logger.new(slog::o!("rtc" => "")),
             ),
             gpu: Gpu::new(
+                self.renderers_2d,
                 self.renderer_3d,
                 &mut arm9.schedule,
                 &mut global_schedule,

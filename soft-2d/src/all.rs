@@ -1,7 +1,7 @@
 use super::common::{read_bg_text_tiles, TextTiles};
 use super::*;
 
-pub fn apply_color_effects<R: Role, const EFFECT: u8>(engine: &mut Engine2d<R>) {
+pub fn apply_color_effects<R: Role, const EFFECT: u8>(renderer: &mut Renderer<R>, data: &Data) {
     #[inline]
     fn blend(pixel: u64, coeff_a: u32, coeff_b: u32) -> u32 {
         let top = pixel as u32;
@@ -24,15 +24,15 @@ pub fn apply_color_effects<R: Role, const EFFECT: u8>(engine: &mut Engine2d<R>) 
         (r | g | b) >> 5
     }
 
-    let target_1_mask = engine.color_effects_control.target_1_mask();
-    let target_2_mask = engine.color_effects_control.target_2_mask();
-    let coeff_a = engine.blend_coeffs.0 as u32;
-    let coeff_b = engine.blend_coeffs.1 as u32;
-    let brightness_coeff = engine.brightness_coeff as u32;
+    let target_1_mask = data.color_effects_control().target_1_mask();
+    let target_2_mask = data.color_effects_control().target_2_mask();
+    let coeff_a = data.blend_coeffs().0 as u32;
+    let coeff_b = data.blend_coeffs().1 as u32;
+    let brightness_coeff = data.brightness_coeff() as u32;
     for i in 0..SCREEN_WIDTH {
-        let pixel = engine.bg_obj_scanline.0[i];
+        let pixel = renderer.bg_obj_scanline.0[i];
         let top = BgObjPixel(pixel as u32);
-        engine.bg_obj_scanline.0[i] = if engine.window.0[i].color_effects_enabled() {
+        renderer.bg_obj_scanline.0[i] = if renderer.window.0[i].color_effects_enabled() {
             let top_mask = top.color_effects_mask();
             let bot_matches = (pixel >> 58) as u8 & target_2_mask != 0;
             if top.is_3d() && bot_matches {
@@ -84,24 +84,65 @@ pub fn apply_color_effects<R: Role, const EFFECT: u8>(engine: &mut Engine2d<R>) 
     }
 }
 
+#[inline]
+fn rgb6_to_rgba8(value: u32) -> u32 {
+    let rgb6_8 = (value & 0x3F) | (value << 2 & 0x3F00) | (value << 4 & 0x3F_0000);
+    0xFF00_0000 | rgb6_8 << 2 | (rgb6_8 >> 4 & 0x0003_0303)
+}
+
+pub fn apply_brightness<R: Role>(scanline_buffer: &mut Scanline<u32>, data: &Data) {
+    let master_brightness_factor = data.master_brightness_factor();
+    match data.master_brightness_control().mode() {
+        1 if master_brightness_factor != 0 => {
+            for pixel in &mut scanline_buffer.0 {
+                let increment = {
+                    let complement = 0x3_FFFF ^ *pixel;
+                    ((((complement & 0x3_F03F) * master_brightness_factor) & 0x3F_03F0)
+                        | (((complement & 0xFC0) * master_brightness_factor) & 0xFC00))
+                        >> 4
+                };
+                *pixel = rgb6_to_rgba8(*pixel + increment);
+            }
+        }
+
+        2 if master_brightness_factor != 0 => {
+            for pixel in &mut scanline_buffer.0 {
+                let decrement = {
+                    ((((*pixel & 0x3_F03F) * master_brightness_factor) & 0x3F_03F0)
+                        | (((*pixel & 0xFC0) * master_brightness_factor) & 0xFC00))
+                        >> 4
+                };
+                *pixel = rgb6_to_rgba8(*pixel - decrement);
+            }
+        }
+
+        _ => {
+            for pixel in &mut scanline_buffer.0 {
+                *pixel = rgb6_to_rgba8(*pixel);
+            }
+        }
+    }
+}
+
 pub fn render_scanline_bg_text<R: Role>(
-    engine: &mut Engine2d<R>,
+    renderer: &mut Renderer<R>,
     bg_index: BgIndex,
     line: u8,
+    data: &Data,
     vram: &Vram,
 ) {
-    let bg = &engine.bgs[bg_index.get() as usize];
+    let bg = &data.bgs()[bg_index.get() as usize];
 
     let x_start = bg.scroll[0] as u32;
     let y = bg.scroll[1] as u32 + line as u32;
 
     let mut tiles = TextTiles::new_uninit();
-    let tiles = read_bg_text_tiles(engine, &mut tiles, bg.control, y, vram);
+    let tiles = read_bg_text_tiles::<R>(&mut tiles, data.control(), bg.control(), y, vram);
 
     let tile_base = if R::IS_A {
-        engine.control.a_tile_base() + bg.control.tile_base()
+        data.control().a_tile_base() + bg.control().tile_base()
     } else {
-        bg.control.tile_base()
+        bg.control().tile_base()
     };
 
     let bg_mask = 1 << bg_index.get();
@@ -112,11 +153,11 @@ pub fn render_scanline_bg_text<R: Role>(
     let mut pal_base = 0;
     let mut x = x_start;
 
-    if bg.control.use_256_colors() {
-        let (palette, pal_base_mask) = if engine.control.bg_ext_pal_enabled() {
+    if bg.control().use_256_colors() {
+        let (palette, pal_base_mask) = if data.control().bg_ext_pal_enabled() {
             let slot = bg_index.get()
                 | if bg_index.get() < 2 {
-                    bg.control.bg01_ext_pal_slot() << 1
+                    bg.control().bg01_ext_pal_slot() << 1
                 } else {
                     0
                 };
@@ -173,9 +214,9 @@ pub fn render_scanline_bg_text<R: Role>(
                 read_pixels!();
             }
             let color_index = pixels.wrapping_shr(x << 3) as u8;
-            if color_index != 0 && engine.window.0[i].0 & bg_mask != 0 {
+            if color_index != 0 && renderer.window.0[i].0 & bg_mask != 0 {
                 let color = unsafe { palette.add(pal_base | color_index as usize).read() };
-                engine.bg_obj_scanline.0[i] = (engine.bg_obj_scanline.0[i] as u64) << 32
+                renderer.bg_obj_scanline.0[i] = (renderer.bg_obj_scanline.0[i] as u64) << 32
                     | (rgb5_to_rgb6(color as u32) | pixel_attrs.0) as u64;
             }
             x += 1;
@@ -217,13 +258,13 @@ pub fn render_scanline_bg_text<R: Role>(
                 read_pixels!();
             }
             let color_index = pixels.wrapping_shr(x << 2) & 0xF;
-            if color_index != 0 && engine.window.0[i].0 & bg_mask != 0 {
+            if color_index != 0 && renderer.window.0[i].0 & bg_mask != 0 {
                 let color = unsafe {
                     vram.palette.read_le_aligned_unchecked::<u16>(
                         (!R::IS_A as usize) << 10 | pal_base | (color_index as usize) << 1,
                     )
                 };
-                engine.bg_obj_scanline.0[i] = (engine.bg_obj_scanline.0[i] as u64) << 32
+                renderer.bg_obj_scanline.0[i] = (renderer.bg_obj_scanline.0[i] as u64) << 32
                     | (rgb5_to_rgb6(color as u32) | pixel_attrs.0) as u64;
             }
             x += 1;
@@ -233,20 +274,21 @@ pub fn render_scanline_bg_text<R: Role>(
 
 #[allow(clippy::similar_names)]
 pub fn render_scanline_bg_affine<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
-    engine: &mut Engine2d<R>,
+    renderer: &mut Renderer<R>,
     bg_index: AffineBgIndex,
+    data: &mut Data,
     vram: &Vram,
 ) {
-    let bg_control = engine.bgs[bg_index.get() as usize | 2].control;
-    let affine = &mut engine.affine_bg_data[bg_index.get() as usize];
+    let bg_control = data.bgs()[bg_index.get() as usize | 2].control();
+    let affine = &data.affine_bg_data()[bg_index.get() as usize];
 
     let map_base = if R::IS_A {
-        engine.control.a_map_base() | bg_control.map_base()
+        data.control().a_map_base() | bg_control.map_base()
     } else {
         bg_control.map_base()
     };
     let tile_base = if R::IS_A {
-        engine.control.a_tile_base() + bg_control.tile_base()
+        data.control().a_tile_base() + bg_control.tile_base()
     } else {
         bg_control.tile_base()
     };
@@ -260,10 +302,10 @@ pub fn render_scanline_bg_affine<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
     let pos_map_mask = ((1 << map_row_shift) - 1) << 11;
     let pos_y_to_map_y_shift = 11 - map_row_shift;
 
-    let mut pos = affine.pos;
+    let mut pos = affine.pos();
 
     for i in 0..SCREEN_WIDTH {
-        if engine.window.0[i].0 & bg_mask != 0
+        if renderer.window.0[i].0 & bg_mask != 0
             && (DISPLAY_AREA_OVERFLOW || (pos[0] | pos[1]) & display_area_overflow_mask == 0)
         {
             let tile_addr = map_base
@@ -287,7 +329,7 @@ pub fn render_scanline_bg_affine<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
                         (!R::IS_A as usize) << 10 | (color_index as usize) << 1,
                     )
                 };
-                engine.bg_obj_scanline.0[i] = (engine.bg_obj_scanline.0[i] as u64) << 32
+                renderer.bg_obj_scanline.0[i] = (renderer.bg_obj_scanline.0[i] as u64) << 32
                     | (rgb5_to_rgb6(color as u32) | pixel_attrs.0) as u64;
             }
         }
@@ -296,16 +338,22 @@ pub fn render_scanline_bg_affine<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
         pos[1] = pos[1].wrapping_add(affine.params[2] as i32);
     }
 
-    affine.pos[0] = affine.pos[0].wrapping_add(affine.params[1] as i32);
-    affine.pos[1] = affine.pos[1].wrapping_add(affine.params[3] as i32);
+    data.set_affine_bg_pos(
+        bg_index,
+        [
+            affine.pos()[0].wrapping_add(affine.params[1] as i32),
+            affine.pos()[1].wrapping_add(affine.params[3] as i32),
+        ],
+    );
 }
 
 #[allow(clippy::similar_names)]
 pub fn render_scanline_bg_large<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
-    engine: &mut Engine2d<R>,
+    renderer: &mut Renderer<R>,
+    data: &mut Data,
     vram: &Vram,
 ) {
-    let bg_control = engine.bgs[2].control;
+    let bg_control = data.bgs()[2].control();
 
     let pixel_attrs = BgObjPixel(0).with_color_effects_mask(1 << 2);
 
@@ -322,11 +370,11 @@ pub fn render_scanline_bg_large<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
     let pos_x_map_mask = ((0x100 << x_shift) - 1) << 8;
     let pos_y_map_mask = ((0x100 << y_shift) - 1) << 8;
 
-    let affine = &mut engine.affine_bg_data[0];
-    let mut pos = affine.pos;
+    let affine = &data.affine_bg_data()[0];
+    let mut pos = affine.pos();
 
     for i in 0..SCREEN_WIDTH {
-        if engine.window.0[i].0 & 1 << 2 != 0
+        if renderer.window.0[i].0 & 1 << 2 != 0
             && (DISPLAY_AREA_OVERFLOW
                 || (pos[0] & display_area_x_overflow_mask)
                     | (pos[1] & display_area_y_overflow_mask)
@@ -345,7 +393,7 @@ pub fn render_scanline_bg_large<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
                         (!R::IS_A as usize) << 10 | (color_index as usize) << 1,
                     )
                 };
-                engine.bg_obj_scanline.0[i] = (engine.bg_obj_scanline.0[i] as u64) << 32
+                renderer.bg_obj_scanline.0[i] = (renderer.bg_obj_scanline.0[i] as u64) << 32
                     | (rgb5_to_rgb6(color as u32) | pixel_attrs.0) as u64;
             }
         }
@@ -354,23 +402,29 @@ pub fn render_scanline_bg_large<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
         pos[1] = pos[1].wrapping_add(affine.params[2] as i32);
     }
 
-    affine.pos[0] = affine.pos[0].wrapping_add(affine.params[1] as i32);
-    affine.pos[1] = affine.pos[1].wrapping_add(affine.params[3] as i32);
+    data.set_affine_bg_pos(
+        AffineBgIndex::new(0),
+        [
+            affine.pos()[0].wrapping_add(affine.params[1] as i32),
+            affine.pos()[1].wrapping_add(affine.params[3] as i32),
+        ],
+    );
 }
 
 #[allow(clippy::similar_names)]
 pub fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
-    engine: &mut Engine2d<R>,
+    renderer: &mut Renderer<R>,
     bg_index: AffineBgIndex,
+    data: &mut Data,
     vram: &Vram,
 ) {
-    let bg_control = engine.bgs[bg_index.get() as usize | 2].control;
+    let bg_control = data.bgs()[bg_index.get() as usize | 2].control();
 
     let bg_mask = 4 << bg_index.get();
     let pixel_attrs = BgObjPixel(0).with_color_effects_mask(bg_mask);
 
-    let affine = &mut engine.affine_bg_data[bg_index.get() as usize];
-    let mut pos = affine.pos;
+    let affine = &data.affine_bg_data()[bg_index.get() as usize];
+    let mut pos = affine.pos();
 
     if bg_control.use_bitmap_extended_bg() {
         let data_base = bg_control.map_base() << 3;
@@ -390,7 +444,7 @@ pub fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
 
         if bg_control.use_direct_color_extended_bg() {
             for i in 0..SCREEN_WIDTH {
-                if engine.window.0[i].0 & bg_mask != 0
+                if renderer.window.0[i].0 & bg_mask != 0
                     && (DISPLAY_AREA_OVERFLOW
                         || (pos[0] & display_area_x_overflow_mask)
                             | (pos[1] & display_area_y_overflow_mask)
@@ -405,7 +459,8 @@ pub fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
                         vram.read_b_bg::<u16>(pixel_addr)
                     };
                     if color & 0x8000 != 0 {
-                        engine.bg_obj_scanline.0[i] = (engine.bg_obj_scanline.0[i] as u64) << 32
+                        renderer.bg_obj_scanline.0[i] = (renderer.bg_obj_scanline.0[i] as u64)
+                            << 32
                             | (rgb5_to_rgb6(color as u32) | pixel_attrs.0) as u64;
                     }
                 }
@@ -415,7 +470,7 @@ pub fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
             }
         } else {
             for i in 0..SCREEN_WIDTH {
-                if engine.window.0[i].0 & bg_mask != 0
+                if renderer.window.0[i].0 & bg_mask != 0
                     && (DISPLAY_AREA_OVERFLOW
                         || (pos[0] & display_area_x_overflow_mask)
                             | (pos[1] & display_area_y_overflow_mask)
@@ -435,7 +490,8 @@ pub fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
                                 (!R::IS_A as usize) << 10 | (color_index as usize) << 1,
                             )
                         };
-                        engine.bg_obj_scanline.0[i] = (engine.bg_obj_scanline.0[i] as u64) << 32
+                        renderer.bg_obj_scanline.0[i] = (renderer.bg_obj_scanline.0[i] as u64)
+                            << 32
                             | (rgb5_to_rgb6(color as u32) | pixel_attrs.0) as u64;
                     }
                 }
@@ -446,12 +502,12 @@ pub fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
         }
     } else {
         let map_base = if R::IS_A {
-            engine.control.a_map_base() | bg_control.map_base()
+            data.control().a_map_base() | bg_control.map_base()
         } else {
             bg_control.map_base()
         };
         let tile_base = if R::IS_A {
-            engine.control.a_tile_base() + bg_control.tile_base()
+            data.control().a_tile_base() + bg_control.tile_base()
         } else {
             bg_control.tile_base()
         };
@@ -462,7 +518,7 @@ pub fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
         let pos_map_mask = ((1 << map_row_shift) - 1) << 11;
         let pos_y_to_map_y_shift = 10 - map_row_shift;
 
-        let (palette, pal_base_mask) = if engine.control.bg_ext_pal_enabled() {
+        let (palette, pal_base_mask) = if data.control().bg_ext_pal_enabled() {
             (
                 unsafe {
                     if R::IS_A {
@@ -482,7 +538,7 @@ pub fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
         };
 
         for i in 0..SCREEN_WIDTH {
-            if engine.window.0[i].0 & bg_mask != 0
+            if renderer.window.0[i].0 & bg_mask != 0
                 && (DISPLAY_AREA_OVERFLOW || (pos[0] | pos[1]) & display_area_overflow_mask == 0)
             {
                 let tile_addr = map_base
@@ -515,7 +571,7 @@ pub fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
                 if color_index != 0 {
                     let pal_base = (tile >> 4 & pal_base_mask) as usize;
                     let color = unsafe { palette.add(pal_base | color_index as usize).read() };
-                    engine.bg_obj_scanline.0[i] = (engine.bg_obj_scanline.0[i] as u64) << 32
+                    renderer.bg_obj_scanline.0[i] = (renderer.bg_obj_scanline.0[i] as u64) << 32
                         | (rgb5_to_rgb6(color as u32) | pixel_attrs.0) as u64;
                 }
             }
@@ -525,6 +581,11 @@ pub fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
         }
     }
 
-    affine.pos[0] = affine.pos[0].wrapping_add(affine.params[1] as i32);
-    affine.pos[1] = affine.pos[1].wrapping_add(affine.params[3] as i32);
+    data.set_affine_bg_pos(
+        bg_index,
+        [
+            affine.pos()[0].wrapping_add(affine.params[1] as i32),
+            affine.pos()[1].wrapping_add(affine.params[3] as i32),
+        ],
+    );
 }

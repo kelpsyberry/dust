@@ -204,7 +204,7 @@ impl View for BgMaps2d {
 
         fn get_bgs_data<R: Role>(engine: &engine_2d::Engine2d<R>) -> [BgData; 4] {
             [0, 1, 2, 3].map(|i| {
-                let bg = &engine.bgs[i];
+                let bg = engine.bg(BgIndex::new(i));
 
                 let text = if bg.control().use_256_colors() {
                     BgDisplayMode::Text256
@@ -256,7 +256,7 @@ impl View for BgMaps2d {
             selection: &Selection,
             data: &mut BgMapData,
         ) {
-            let bg = &engine.bgs[selection.bg_index.get() as usize];
+            let bg = engine.bg(selection.bg_index);
             data.cur_bg = {
                 let orig = data.bgs[selection.engine as usize][selection.bg_index.get() as usize];
                 let (display_mode, size) = match selection.display_mode {

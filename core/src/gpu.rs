@@ -94,6 +94,7 @@ pub struct Gpu {
 
 impl Gpu {
     pub(crate) fn new(
+        [renderer_2d_a, renderer_2d_b]: [Box<dyn engine_2d::Renderer>; 2],
         renderer_3d: Box<dyn engine_3d::Renderer>,
         schedule: &mut arm9::Schedule,
         emu_schedule: &mut emu::Schedule,
@@ -115,10 +116,12 @@ impl Gpu {
             swap_screens: false,
             vram: Vram::new(),
             engine_2d_a: Engine2d::new(
+                renderer_2d_a,
                 #[cfg(feature = "log")]
                 logger.new(slog::o!("eng_2d" => "a")),
             ),
             engine_2d_b: Engine2d::new(
+                renderer_2d_b,
                 #[cfg(feature = "log")]
                 logger.new(slog::o!("eng_2d" => "b")),
             ),
@@ -154,9 +157,9 @@ impl Gpu {
         }
         self.power_control.0 = value.0 & 0x820F;
         self.swap_screens = value.swap_screens();
-        self.engine_2d_a.enabled = value.engine_2d_a_enabled();
-        self.engine_2d_b.enabled = value.engine_2d_b_enabled();
-        self.engine_2d_a.engine_3d_enabled = value.engine_3d_rendering_enabled();
+        self.engine_2d_a.data.is_enabled = value.engine_2d_a_enabled();
+        self.engine_2d_b.data.is_enabled = value.engine_2d_b_enabled();
+        self.engine_2d_a.data.engine_3d_enabled = value.engine_3d_rendering_enabled();
         self.engine_3d.gx_enabled = value.engine_3d_geometry_enabled();
         self.engine_3d.rendering_enabled = value.engine_3d_rendering_enabled();
     }
@@ -242,38 +245,52 @@ impl Gpu {
             if emu.gpu.cur_scanline < SCREEN_HEIGHT as u32 {
                 let scanline_base = (emu.gpu.cur_scanline as usize) * SCREEN_WIDTH;
                 unsafe {
-                    emu.gpu.engine_2d_a.render_scanline(
-                        emu.gpu.vcount,
+                    emu.gpu.engine_2d_a.renderer.render_scanline(
+                        emu.gpu.vcount as u8,
                         &mut *(emu.gpu.framebuffer.0[!emu.gpu.swap_screens as usize]
                             .as_mut_ptr()
                             .add(scanline_base)
                             as *mut Scanline<u32>),
+                        &mut emu.gpu.engine_2d_a.data,
                         &mut emu.gpu.vram,
                         &mut *emu.gpu.engine_3d.renderer,
                     );
-                    emu.gpu.engine_2d_b.render_scanline(
-                        emu.gpu.vcount,
+                    emu.gpu.engine_2d_b.renderer.render_scanline(
+                        emu.gpu.vcount as u8,
                         &mut *(emu.gpu.framebuffer.0[emu.gpu.swap_screens as usize]
                             .as_mut_ptr()
                             .add(scanline_base)
                             as *mut Scanline<u32>),
+                        &mut emu.gpu.engine_2d_b.data,
                         &mut emu.gpu.vram,
                         &mut *emu.gpu.engine_3d.renderer,
                     );
                 }
                 if emu.gpu.cur_scanline < (SCREEN_HEIGHT - 1) as u32 {
-                    emu.gpu
-                        .engine_2d_a
-                        .prerender_sprites(emu.gpu.cur_scanline + 1, &emu.gpu.vram);
-                    emu.gpu
-                        .engine_2d_b
-                        .prerender_sprites(emu.gpu.cur_scanline + 1, &emu.gpu.vram);
+                    emu.gpu.engine_2d_a.renderer.prerender_sprites(
+                        emu.gpu.cur_scanline as u8 + 1,
+                        &mut emu.gpu.engine_2d_a.data,
+                        &emu.gpu.vram,
+                    );
+                    emu.gpu.engine_2d_b.renderer.prerender_sprites(
+                        emu.gpu.cur_scanline as u8 + 1,
+                        &mut emu.gpu.engine_2d_b.data,
+                        &emu.gpu.vram,
+                    );
                 }
             }
         } else if emu.gpu.vcount == (TOTAL_SCANLINES - 1) as u16 {
             // Render scanline 0 OBJs
-            emu.gpu.engine_2d_a.prerender_sprites(0, &emu.gpu.vram);
-            emu.gpu.engine_2d_b.prerender_sprites(0, &emu.gpu.vram);
+            emu.gpu.engine_2d_a.renderer.prerender_sprites(
+                0,
+                &mut emu.gpu.engine_2d_a.data,
+                &emu.gpu.vram,
+            );
+            emu.gpu.engine_2d_b.renderer.prerender_sprites(
+                0,
+                &mut emu.gpu.engine_2d_b.data,
+                &emu.gpu.vram,
+            );
         }
 
         emu.schedule.set_event(

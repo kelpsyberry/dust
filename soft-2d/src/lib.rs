@@ -1,30 +1,44 @@
+#![feature(
+    portable_simd,
+    maybe_uninit_uninit_array,
+    maybe_uninit_slice,
+    const_mut_refs,
+    const_trait_impl
+)]
+
 mod all;
 #[cfg(target_arch = "x86_64")]
 mod avx2;
 mod common;
 
-use super::{
-    AffineBgIndex, BgIndex, BgObjPixel, Engine2d, OamAttr0, OamAttr1, OamAttr2, ObjPixel, Role,
-    WindowPixel,
-};
-use crate::{
-    gpu::{engine_3d, vram::Vram, Scanline, SCREEN_HEIGHT, SCREEN_WIDTH},
+use dust_core::{
+    gpu::{
+        engine_2d::{
+            AffineBgIndex, BgIndex, ColorEffectsControl, Data, OamAttr0, OamAttr1, OamAttr2,
+            Renderer as RendererTrait, Role,
+        },
+        engine_3d,
+        vram::Vram,
+        Scanline, SCREEN_HEIGHT, SCREEN_WIDTH,
+    },
     utils::make_zero,
 };
 
-pub struct FnPtrs<R: Role> {
-    apply_color_effects: unsafe fn(&mut Engine2d<R>),
-    render_scanline_bg_text: unsafe fn(&mut Engine2d<R>, bg_index: BgIndex, line: u8, vram: &Vram),
+#[allow(clippy::type_complexity)]
+struct FnPtrs<R: Role> {
+    apply_color_effects: unsafe fn(&mut Renderer<R>, &Data),
+    apply_brightness: unsafe fn(scanline_buffer: &mut Scanline<u32>, &Data),
+    render_scanline_bg_text: unsafe fn(&mut Renderer<R>, bg_index: BgIndex, line: u8, &Data, &Vram),
     render_scanline_bg_affine:
-        [unsafe fn(&mut Engine2d<R>, bg_index: AffineBgIndex, vram: &Vram); 2],
-    render_scanline_bg_large: [unsafe fn(&mut Engine2d<R>, vram: &Vram); 2],
+        [unsafe fn(&mut Renderer<R>, bg_index: AffineBgIndex, &mut Data, &Vram); 2],
+    render_scanline_bg_large: [unsafe fn(&mut Renderer<R>, &mut Data, &Vram); 2],
     render_scanline_bg_extended:
-        [unsafe fn(&mut Engine2d<R>, bg_index: AffineBgIndex, vram: &Vram); 2],
+        [unsafe fn(&mut Renderer<R>, bg_index: AffineBgIndex, &mut Data, &Vram); 2],
 }
 
 impl<R: Role> FnPtrs<R> {
     #[allow(unused_labels)]
-    pub fn new() -> Self {
+    fn new() -> Self {
         macro_rules! fn_ptr {
             ($ident: ident $($generics: tt)*) => {
                 'get_fn_ptr: {
@@ -37,6 +51,8 @@ impl<R: Role> FnPtrs<R> {
             }
         }
         FnPtrs {
+            apply_color_effects: Self::apply_color_effects(0),
+            apply_brightness: fn_ptr!(apply_brightness::<R>),
             render_scanline_bg_text: fn_ptr!(render_scanline_bg_text::<R>),
             render_scanline_bg_affine: [
                 fn_ptr!(render_scanline_bg_affine::<R, false>),
@@ -50,11 +66,10 @@ impl<R: Role> FnPtrs<R> {
                 fn_ptr!(render_scanline_bg_extended::<R, false>),
                 fn_ptr!(render_scanline_bg_extended::<R, true>),
             ],
-            apply_color_effects: Self::apply_color_effects(0),
         }
     }
 
-    fn apply_color_effects(effect: u8) -> unsafe fn(&mut Engine2d<R>) {
+    fn apply_color_effects(effect: u8) -> unsafe fn(&mut Renderer<R>, &Data) {
         'get_fn_ptr: {
             #[cfg(target_arch = "x86_64")]
             if is_x86_feature_detected!("avx2") {
@@ -74,8 +89,42 @@ impl<R: Role> FnPtrs<R> {
         }
     }
 
-    pub fn set_color_effect(&mut self, effect: u8) {
+    fn set_color_effect(&mut self, effect: u8) {
         self.apply_color_effects = Self::apply_color_effects(effect);
+    }
+}
+
+proc_bitfield::bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    const struct ObjPixel(u32): Debug {
+        pub pal_color: u16 @ 0..=11,
+        pub raw_color: u16 @ 0..=15,
+        pub priority: u8 @ 16..=18,
+        pub alpha: u8 @ 19..=23,
+        pub force_blending: bool @ 24,
+        pub custom_alpha: bool @ 25,
+        pub use_raw_color: bool @ 26,
+        pub use_ext_pal: bool @ 27,
+    }
+}
+
+proc_bitfield::bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    const struct BgObjPixel(u32): Debug {
+        pub rgb: u32 @ 0..=17,
+        pub is_3d: bool @ 18,
+        pub alpha: u8 @ 19..=23,
+        pub force_blending: bool @ 24,
+        pub custom_alpha: bool @ 25,
+        pub color_effects_mask: u8 @ 26..=31,
+    }
+}
+
+proc_bitfield::bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    const struct WindowPixel(u8): Debug {
+        pub bg_obj_mask: u8 @ 0..=4,
+        pub color_effects_enabled: bool @ 5,
     }
 }
 
@@ -84,46 +133,55 @@ const fn rgb5_to_rgb6(value: u32) -> u32 {
     (value << 1 & 0x3E) | (value << 2 & 0xF80) | (value << 3 & 0x3_E000)
 }
 
-#[inline]
-const fn rgb6_to_rgba8(value: u32) -> u32 {
-    let rgb6_8 = (value & 0x3F) | (value << 2 & 0x3F00) | (value << 4 & 0x3F_0000);
-    0xFF00_0000 | rgb6_8 << 2 | (rgb6_8 >> 4 & 0x0003_0303)
+pub struct Renderer<R: Role> {
+    fns: FnPtrs<R>,
+    obj_window: [u8; SCREEN_WIDTH / 8],
+    bg_obj_scanline: Scanline<u64>,
+    obj_scanline: Scanline<ObjPixel>,
+    // Allow for slightly out-of-bounds SIMD accesses
+    window: Scanline<WindowPixel, { SCREEN_WIDTH + 7 }>,
 }
 
-impl<R: Role> Engine2d<R> {
-    pub(in super::super) fn update_windows(&mut self, vcount: u16) {
-        for i in 0..2 {
-            if self.control.win01_enabled() & 1 << i == 0 {
-                self.windows_active[i] = false;
-                continue;
-            }
-
-            let y_range = &self.window_ranges[i].y;
-            let y_start = y_range.0;
-            let mut y_end = y_range.1;
-            if y_end < y_start {
-                y_end = 192;
-            }
-            if vcount as u8 == y_start {
-                self.windows_active[i] = true;
-            }
-            if vcount as u8 == y_end {
-                self.windows_active[i] = false;
-            }
+impl<R: Role> Renderer<R> {
+    pub fn new() -> Self {
+        Renderer {
+            fns: FnPtrs::new(),
+            obj_window: [0; SCREEN_WIDTH / 8],
+            bg_obj_scanline: Scanline([0; SCREEN_WIDTH]),
+            obj_scanline: Scanline([ObjPixel(0); SCREEN_WIDTH]),
+            window: Scanline([WindowPixel(0); SCREEN_WIDTH + 7]),
         }
     }
+}
 
-    pub(in super::super) fn render_scanline(
+impl<R: Role> Default for Renderer<R> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<R: Role> RendererTrait for Renderer<R> {
+    fn post_load(&mut self, data: &Data) {
+        self.fns
+            .set_color_effect(data.color_effects_control().color_effect());
+    }
+
+    fn update_color_effects_control(&mut self, value: ColorEffectsControl) {
+        self.fns.set_color_effect(value.color_effect());
+    }
+
+    fn render_scanline(
         &mut self,
-        vcount: u16,
+        line: u8,
         scanline_buffer: &mut Scanline<u32>,
+        data: &mut Data,
         vram: &mut Vram,
         renderer_3d: &mut dyn engine_3d::Renderer,
     ) {
         // According to melonDS, if vcount falls outside the drawing range or 2D engine B is
         // disabled, the scanline is filled with pure white.
-        if vcount >= SCREEN_HEIGHT as u16 || (!R::IS_A && !self.enabled) {
-            if R::IS_A && self.engine_3d_enabled_in_frame {
+        if line >= SCREEN_HEIGHT as u8 || (!R::IS_A && !data.is_enabled()) {
+            if R::IS_A && data.engine_3d_enabled_in_frame() {
                 renderer_3d.skip_scanline();
             }
             // TODO: Display capture interaction?
@@ -132,18 +190,16 @@ impl<R: Role> Engine2d<R> {
             return;
         }
 
-        let vcount = vcount as u8;
-
         let display_mode = if R::IS_A {
-            self.control.display_mode_a()
+            data.control().display_mode_a()
         } else {
-            self.control.display_mode_b()
+            data.control().display_mode_b()
         };
 
-        let scanline_3d = if R::IS_A && self.engine_3d_enabled_in_frame {
-            let enabled_in_bg_obj = self.bgs[0].priority != 4 && self.control.bg0_3d();
-            if (self.capture_enabled_in_frame
-                && (self.capture_control.src_a_3d_only() || enabled_in_bg_obj))
+        let scanline_3d = if R::IS_A && data.engine_3d_enabled_in_frame() {
+            let enabled_in_bg_obj = data.bgs()[0].priority() != 4 && data.control().bg0_3d();
+            if (data.capture_enabled_in_frame()
+                && (data.capture_control().src_a_3d_only() || enabled_in_bg_obj))
                 || (display_mode == 1 && enabled_in_bg_obj)
             {
                 Some(renderer_3d.read_scanline())
@@ -156,16 +212,20 @@ impl<R: Role> Engine2d<R> {
         };
 
         if display_mode == 1
-            || (R::IS_A && self.capture_enabled_in_frame && !self.capture_control.src_a_3d_only())
+            || (R::IS_A
+                && data.capture_enabled_in_frame()
+                && !data.capture_control().src_a_3d_only())
         {
-            self.window.0[..SCREEN_WIDTH].fill(WindowPixel(if self.control.wins_enabled() == 0 {
-                0x3F
-            } else {
-                self.window_control[2].0
-            }));
+            self.window.0[..SCREEN_WIDTH].fill(WindowPixel(
+                if data.control().wins_enabled() == 0 {
+                    0x3F
+                } else {
+                    data.window_control()[2].0
+                },
+            ));
 
-            if self.control.obj_win_enabled() {
-                let obj_window_pixel = WindowPixel(self.window_control[3].0);
+            if data.control().obj_win_enabled() {
+                let obj_window_pixel = WindowPixel(data.window_control()[3].0);
                 for (i, window_pixel) in self.window.0[..SCREEN_WIDTH].iter_mut().enumerate() {
                     if self.obj_window[i >> 3] & 1 << (i & 7) != 0 {
                         *window_pixel = obj_window_pixel;
@@ -174,17 +234,17 @@ impl<R: Role> Engine2d<R> {
             }
 
             for i in (0..2).rev() {
-                if !self.windows_active[i] {
+                if !data.windows_active().0 & 1 << i != 0 {
                     continue;
                 }
 
-                let x_range = &self.window_ranges[i].x;
+                let x_range = &data.window_ranges()[i].x;
                 let x_start = x_range.0 as usize;
                 let mut x_end = x_range.1 as usize;
                 if x_end < x_start {
                     x_end = 256;
                 }
-                self.window.0[x_start..x_end].fill(WindowPixel(self.window_control[i].0));
+                self.window.0[x_start..x_end].fill(WindowPixel(data.window_control()[i].0));
             }
 
             let backdrop = BgObjPixel(rgb5_to_rgb6(
@@ -205,9 +265,9 @@ impl<R: Role> Engine2d<R> {
                 Self::render_scanline_bgs_and_objs::<5>,
                 Self::render_scanline_bgs_and_objs::<6>,
                 Self::render_scanline_bgs_and_objs::<7>,
-            ][self.control.bg_mode() as usize](self, vcount, vram, scanline_3d);
+            ][data.control().bg_mode() as usize](self, line, data, vram, scanline_3d);
             unsafe {
-                (self.render_fns.apply_color_effects)(self);
+                (self.fns.apply_color_effects)(self, data);
             }
         }
 
@@ -230,7 +290,7 @@ impl<R: Role> Engine2d<R> {
 
             2 => {
                 // The bank must be mapped as LCDC VRAM to be used
-                let bank_index = self.control.a_vram_bank();
+                let bank_index = data.control().a_vram_bank();
                 let bank_control = vram.bank_control()[bank_index as usize];
                 if bank_control.enabled() && bank_control.mst() == 0 {
                     let bank = match bank_index {
@@ -239,7 +299,7 @@ impl<R: Role> Engine2d<R> {
                         2 => &vram.banks.c,
                         _ => &vram.banks.d,
                     };
-                    let line_base = (vcount as usize) << 9;
+                    let line_base = (line as usize) << 9;
                     for (i, pixel) in scanline_buffer.0.iter_mut().enumerate() {
                         let src =
                             unsafe { bank.read_le_aligned_unchecked::<u16>(line_base | i << 1) };
@@ -256,11 +316,12 @@ impl<R: Role> Engine2d<R> {
         }
 
         #[allow(clippy::similar_names)]
-        if R::IS_A && self.capture_enabled_in_frame && vcount < self.capture_height {
-            let dst_bank_index = self.capture_control.dst_bank();
+        if R::IS_A && data.capture_enabled_in_frame() && line < data.capture_height() {
+            let capture_control = data.capture_control();
+            let dst_bank_index = capture_control.dst_bank();
             let dst_bank_control = vram.bank_control()[dst_bank_index as usize];
             if dst_bank_control.enabled() && dst_bank_control.mst() == 0 {
-                let capture_width_shift = 7 + (self.capture_control.size() != 0) as u8;
+                let capture_width_shift = 7 + (capture_control.size() != 0) as u8;
 
                 let dst_bank = match dst_bank_index {
                     0 => vram.banks.a.as_ptr(),
@@ -269,54 +330,52 @@ impl<R: Role> Engine2d<R> {
                     _ => vram.banks.d.as_ptr(),
                 };
 
-                let dst_offset = (((self.capture_control.dst_offset_raw() as usize) << 15)
-                    + ((vcount as usize) << (1 + capture_width_shift)))
+                let dst_offset = (((capture_control.dst_offset_raw() as usize) << 15)
+                    + ((line as usize) << (1 + capture_width_shift)))
                     & 0x1_FFFE;
 
                 let dst_line = unsafe { dst_bank.add(dst_offset) as *mut u16 };
 
-                let capture_source = self.capture_control.src();
-                let factor_a = self.capture_control.factor_a().min(16) as u16;
-                let factor_b = self.capture_control.factor_b().min(16) as u16;
+                let capture_source = capture_control.src();
+                let factor_a = capture_control.factor_a().min(16) as u16;
+                let factor_b = capture_control.factor_b().min(16) as u16;
 
-                let src_b_line = if capture_source != 0
-                    && (factor_b != 0 || capture_source & 2 == 0)
-                {
-                    if self.capture_control.src_b_display_fifo() {
-                        todo!("Display capture display FIFO source");
-                    } else {
-                        let src_bank_index = self.control.a_vram_bank();
-                        let src_bank_control = vram.bank_control()[src_bank_index as usize];
-                        if src_bank_control.enabled() && src_bank_control.mst() == 0 {
-                            let src_bank = match src_bank_index {
-                                0 => vram.banks.a.as_ptr(),
-                                1 => vram.banks.b.as_ptr(),
-                                2 => vram.banks.c.as_ptr(),
-                                _ => vram.banks.d.as_ptr(),
-                            };
-
-                            let src_offset = if self.control.display_mode_a() == 2 {
-                                (vcount as usize) << 9
-                            } else {
-                                (((self.capture_control.src_b_vram_offset_raw() as usize) << 15)
-                                    + ((vcount as usize) << 9))
-                                    & 0x1_FFFE
-                            };
-
-                            Some(unsafe { src_bank.add(src_offset) as *const u16 })
+                let src_b_line =
+                    if capture_source != 0 && (factor_b != 0 || capture_source & 2 == 0) {
+                        if capture_control.src_b_display_fifo() {
+                            todo!("Display capture display FIFO source");
                         } else {
-                            None
+                            let src_bank_index = data.control().a_vram_bank();
+                            let src_bank_control = vram.bank_control()[src_bank_index as usize];
+                            if src_bank_control.enabled() && src_bank_control.mst() == 0 {
+                                let src_bank = match src_bank_index {
+                                    0 => vram.banks.a.as_ptr(),
+                                    1 => vram.banks.b.as_ptr(),
+                                    2 => vram.banks.c.as_ptr(),
+                                    _ => vram.banks.d.as_ptr(),
+                                };
+
+                                let src_offset = if data.control().display_mode_a() == 2 {
+                                    (line as usize) << 9
+                                } else {
+                                    (((capture_control.src_b_vram_offset_raw() as usize) << 15)
+                                        + ((line as usize) << 9))
+                                        & 0x1_FFFE
+                                };
+
+                                Some(unsafe { src_bank.add(src_offset) as *const u16 })
+                            } else {
+                                None
+                            }
                         }
-                    }
-                } else {
-                    None
-                };
+                    } else {
+                        None
+                    };
 
                 unsafe {
                     if capture_source == 1
                         || (capture_source & 2 != 0 && factor_a == 0)
-                        || (self.capture_control.src_a_3d_only()
-                            && !self.engine_3d_enabled_in_frame)
+                        || (capture_control.src_a_3d_only() && !data.engine_3d_enabled_in_frame())
                     {
                         if let Some(src_b_line) = src_b_line {
                             if src_b_line != dst_line {
@@ -326,7 +385,7 @@ impl<R: Role> Engine2d<R> {
                         } else {
                             dst_line.write_bytes(0, 1 << capture_width_shift);
                         }
-                    } else if self.capture_control.src_a_3d_only() {
+                    } else if capture_control.src_a_3d_only() {
                         let scanline_3d = scanline_3d.unwrap_unchecked();
                         if let Some(src_b_line) = src_b_line {
                             for x in 0..1 << capture_width_shift {
@@ -394,71 +453,144 @@ impl<R: Role> Engine2d<R> {
             }
         }
 
-        match self.master_brightness_control.mode() {
-            1 if self.master_brightness_factor != 0 => {
-                for pixel in &mut scanline_buffer.0 {
-                    let increment = {
-                        let complement = 0x3_FFFF ^ *pixel;
-                        ((((complement & 0x3_F03F) * self.master_brightness_factor) & 0x3F_03F0)
-                            | (((complement & 0xFC0) * self.master_brightness_factor) & 0xFC00))
-                            >> 4
+        unsafe {
+            (self.fns.apply_brightness)(scanline_buffer, data);
+        }
+    }
+
+    fn prerender_sprites(&mut self, line: u8, data: &mut Data, vram: &Vram) {
+        // Arisotura confirmed that shape 3 just forces 8 pixels of size
+        #[rustfmt::skip]
+        static OBJ_SIZE_SHIFT: [(u8, u8); 16] = [
+            (0, 0), (1, 0), (0, 1), (0, 0),
+            (1, 1), (2, 0), (0, 2), (0, 0),
+            (2, 2), (2, 1), (1, 2), (0, 0),
+            (3, 3), (3, 2), (2, 3), (0, 0),
+        ];
+
+        #[inline]
+        fn obj_size_shift(attr_0: OamAttr0, attr_1: OamAttr1) -> (u8, u8) {
+            OBJ_SIZE_SHIFT[((attr_1.0 >> 12 & 0xC) | attr_0.0 >> 14) as usize]
+        }
+
+        self.obj_scanline.0.fill(ObjPixel(0).with_priority(4));
+        make_zero(&mut self.obj_window);
+        if !data.control().objs_enabled() {
+            return;
+        }
+        for priority in (0..4).rev() {
+            for obj_i in (0..128).rev() {
+                let oam_start = (!R::IS_A as usize) << 10 | obj_i << 3;
+                let attrs = unsafe {
+                    let attr_2 = OamAttr2(vram.oam.read_le_aligned_unchecked::<u16>(oam_start | 4));
+                    if attr_2.bg_priority() != priority {
+                        continue;
+                    }
+                    (
+                        OamAttr0(vram.oam.read_le_aligned_unchecked::<u16>(oam_start)),
+                        OamAttr1(vram.oam.read_le_aligned_unchecked::<u16>(oam_start | 2)),
+                        attr_2,
+                    )
+                };
+                if attrs.0.rot_scale() {
+                    let (width_shift, height_shift) = obj_size_shift(attrs.0, attrs.1);
+                    let y_in_obj = line.wrapping_sub(attrs.0.y_start()) as u32;
+                    let (bounds_width_shift, bounds_height_shift) = if attrs.0.double_size() {
+                        (width_shift + 1, height_shift + 1)
+                    } else {
+                        (width_shift, height_shift)
                     };
-                    *pixel = rgb6_to_rgba8(*pixel + increment);
-                }
-            }
-
-            2 if self.master_brightness_factor != 0 => {
-                for pixel in &mut scanline_buffer.0 {
-                    let decrement = {
-                        ((((*pixel & 0x3_F03F) * self.master_brightness_factor) & 0x3F_03F0)
-                            | (((*pixel & 0xFC0) * self.master_brightness_factor) & 0xFC00))
-                            >> 4
+                    if y_in_obj as u32 >= 8 << bounds_height_shift {
+                        continue;
+                    }
+                    let x_start = attrs.1.x_start() as i32;
+                    if x_start <= -(8 << bounds_width_shift) {
+                        continue;
+                    }
+                    self.prerender_sprite_rot_scale(
+                        attrs,
+                        x_start,
+                        y_in_obj as i32 - (4 << bounds_height_shift),
+                        width_shift,
+                        height_shift,
+                        bounds_width_shift,
+                        data,
+                        vram,
+                    );
+                } else {
+                    if attrs.0.disabled() {
+                        continue;
+                    }
+                    let (width_shift, height_shift) = obj_size_shift(attrs.0, attrs.1);
+                    let y_in_obj = line.wrapping_sub(attrs.0.y_start()) as u32;
+                    if y_in_obj >= 8 << height_shift {
+                        continue;
+                    }
+                    let x_start = attrs.1.x_start() as i32;
+                    if x_start <= -(8 << width_shift) {
+                        continue;
+                    }
+                    let y_in_obj = if attrs.1.y_flip() {
+                        y_in_obj ^ ((8 << height_shift) - 1)
+                    } else {
+                        y_in_obj
                     };
-                    *pixel = rgb6_to_rgba8(*pixel - decrement);
-                }
-            }
-
-            3 => unimplemented!("Unknown 2D engine brightness mode 3"),
-
-            _ => {
-                for pixel in &mut scanline_buffer.0 {
-                    *pixel = rgb6_to_rgba8(*pixel);
+                    (if attrs.1.x_flip() {
+                        Self::prerender_sprite_normal::<true>
+                    } else {
+                        Self::prerender_sprite_normal::<false>
+                    })(
+                        self,
+                        (attrs.0, (), attrs.2),
+                        x_start,
+                        y_in_obj,
+                        width_shift,
+                        data,
+                        vram,
+                    );
                 }
             }
         }
     }
+}
 
+impl<R: Role> Renderer<R> {
     fn render_scanline_bgs_and_objs<const BG_MODE: u8>(
         &mut self,
         line: u8,
+        data: &mut Data,
         vram: &Vram,
         scanline_3d: Option<&Scanline<u32, SCREEN_WIDTH>>,
     ) {
         for priority in (0..4).rev() {
             unsafe {
-                if self.bgs[3].priority == priority {
+                let bgs = data.bgs();
+                if bgs[3].priority() == priority {
                     match BG_MODE {
                         0 => {
-                            (self.render_fns.render_scanline_bg_text)(
+                            (self.fns.render_scanline_bg_text)(
                                 self,
                                 BgIndex::new(3),
                                 line,
+                                data,
                                 vram,
                             );
                         }
                         1..=2 => {
-                            self.render_fns.render_scanline_bg_affine
-                                [self.bgs[3].control.affine_display_area_overflow() as usize](
+                            self.fns.render_scanline_bg_affine
+                                [bgs[3].control().affine_display_area_overflow() as usize](
                                 self,
                                 AffineBgIndex::new(1),
+                                data,
                                 vram,
                             );
                         }
                         3..=5 => {
-                            self.render_fns.render_scanline_bg_extended
-                                [self.bgs[3].control.affine_display_area_overflow() as usize](
+                            self.fns.render_scanline_bg_extended
+                                [bgs[3].control().affine_display_area_overflow() as usize](
                                 self,
                                 AffineBgIndex::new(1),
+                                data,
                                 vram,
                             );
                         }
@@ -466,49 +598,55 @@ impl<R: Role> Engine2d<R> {
                     }
                 }
 
-                if self.bgs[2].priority == priority {
+                let bgs = data.bgs();
+                if bgs[2].priority() == priority {
                     match BG_MODE {
                         0..=1 | 3 => {
-                            (self.render_fns.render_scanline_bg_text)(
+                            (self.fns.render_scanline_bg_text)(
                                 self,
                                 BgIndex::new(2),
                                 line,
+                                data,
                                 vram,
                             );
                         }
                         2 | 4 => {
-                            self.render_fns.render_scanline_bg_affine
-                                [self.bgs[2].control.affine_display_area_overflow() as usize](
+                            self.fns.render_scanline_bg_affine
+                                [bgs[2].control().affine_display_area_overflow() as usize](
                                 self,
                                 AffineBgIndex::new(0),
+                                data,
                                 vram,
                             );
                         }
                         5 => {
-                            self.render_fns.render_scanline_bg_extended
-                                [self.bgs[2].control.affine_display_area_overflow() as usize](
+                            self.fns.render_scanline_bg_extended
+                                [bgs[2].control().affine_display_area_overflow() as usize](
                                 self,
                                 AffineBgIndex::new(0),
+                                data,
                                 vram,
                             );
                         }
                         6 => {
-                            self.render_fns.render_scanline_bg_large
-                                [self.bgs[2].control.affine_display_area_overflow() as usize](
-                                self, vram,
+                            self.fns.render_scanline_bg_large
+                                [bgs[2].control().affine_display_area_overflow() as usize](
+                                self, data, vram,
                             );
                         }
                         _ => {}
                     }
                 }
 
-                if self.bgs[1].priority == priority && BG_MODE != 6 {
-                    (self.render_fns.render_scanline_bg_text)(self, BgIndex::new(1), line, vram);
+                let bgs = data.bgs();
+                if bgs[1].priority() == priority && BG_MODE != 6 {
+                    (self.fns.render_scanline_bg_text)(self, BgIndex::new(1), line, data, vram);
                 }
 
-                if self.bgs[0].priority == priority {
-                    if R::IS_A && self.control.bg0_3d() {
-                        if self.engine_3d_enabled_in_frame {
+                let bgs = data.bgs();
+                if bgs[0].priority() == priority {
+                    if R::IS_A && data.control().bg0_3d() {
+                        if data.engine_3d_enabled_in_frame() {
                             let scanline_3d = scanline_3d.unwrap_unchecked();
                             let pixel_attrs =
                                 BgObjPixel(0).with_color_effects_mask(1).with_is_3d(true);
@@ -525,12 +663,7 @@ impl<R: Role> Engine2d<R> {
                             }
                         }
                     } else if BG_MODE != 6 {
-                        (self.render_fns.render_scanline_bg_text)(
-                            self,
-                            BgIndex::new(0),
-                            line,
-                            vram,
-                        );
+                        (self.fns.render_scanline_bg_text)(self, BgIndex::new(0), line, data, vram);
                     }
                 }
             }
@@ -571,99 +704,6 @@ impl<R: Role> Engine2d<R> {
         }
     }
 
-    pub(in super::super) fn prerender_sprites(&mut self, scanline: u32, vram: &Vram) {
-        // Arisotura confirmed that shape 3 just forces 8 pixels of size
-        #[rustfmt::skip]
-        static OBJ_SIZE_SHIFT: [(u8, u8); 16] = [
-            (0, 0), (1, 0), (0, 1), (0, 0),
-            (1, 1), (2, 0), (0, 2), (0, 0),
-            (2, 2), (2, 1), (1, 2), (0, 0),
-            (3, 3), (3, 2), (2, 3), (0, 0),
-        ];
-
-        #[inline]
-        fn obj_size_shift(attr_0: OamAttr0, attr_1: OamAttr1) -> (u8, u8) {
-            OBJ_SIZE_SHIFT[((attr_1.0 >> 12 & 0xC) | attr_0.0 >> 14) as usize]
-        }
-
-        self.obj_scanline.0.fill(ObjPixel(0).with_priority(4));
-        make_zero(&mut self.obj_window);
-        if !self.control.objs_enabled() {
-            return;
-        }
-        for priority in (0..4).rev() {
-            for obj_i in (0..128).rev() {
-                let oam_start = (!R::IS_A as usize) << 10 | obj_i << 3;
-                let attrs = unsafe {
-                    let attr_2 = OamAttr2(vram.oam.read_le_aligned_unchecked::<u16>(oam_start | 4));
-                    if attr_2.bg_priority() != priority {
-                        continue;
-                    }
-                    (
-                        OamAttr0(vram.oam.read_le_aligned_unchecked::<u16>(oam_start)),
-                        OamAttr1(vram.oam.read_le_aligned_unchecked::<u16>(oam_start | 2)),
-                        attr_2,
-                    )
-                };
-                if attrs.0.rot_scale() {
-                    let (width_shift, height_shift) = obj_size_shift(attrs.0, attrs.1);
-                    let y_in_obj = (scanline as u8).wrapping_sub(attrs.0.y_start()) as u32;
-                    let (bounds_width_shift, bounds_height_shift) = if attrs.0.double_size() {
-                        (width_shift + 1, height_shift + 1)
-                    } else {
-                        (width_shift, height_shift)
-                    };
-                    if y_in_obj as u32 >= 8 << bounds_height_shift {
-                        continue;
-                    }
-                    let x_start = attrs.1.x_start() as i32;
-                    if x_start <= -(8 << bounds_width_shift) {
-                        continue;
-                    }
-                    self.prerender_sprite_rot_scale(
-                        attrs,
-                        x_start,
-                        y_in_obj as i32 - (4 << bounds_height_shift),
-                        width_shift,
-                        height_shift,
-                        bounds_width_shift,
-                        vram,
-                    );
-                } else {
-                    if attrs.0.disabled() {
-                        continue;
-                    }
-                    let (width_shift, height_shift) = obj_size_shift(attrs.0, attrs.1);
-                    let y_in_obj = (scanline as u8).wrapping_sub(attrs.0.y_start()) as u32;
-                    if y_in_obj >= 8 << height_shift {
-                        continue;
-                    }
-                    let x_start = attrs.1.x_start() as i32;
-                    if x_start <= -(8 << width_shift) {
-                        continue;
-                    }
-                    let y_in_obj = if attrs.1.y_flip() {
-                        y_in_obj ^ ((8 << height_shift) - 1)
-                    } else {
-                        y_in_obj
-                    };
-                    (if attrs.1.x_flip() {
-                        Self::prerender_sprite_normal::<true>
-                    } else {
-                        Self::prerender_sprite_normal::<false>
-                    })(
-                        self,
-                        (attrs.0, (), attrs.2),
-                        x_start,
-                        y_in_obj,
-                        width_shift,
-                        vram,
-                    );
-                }
-            }
-        }
-    }
-
     #[allow(clippy::similar_names, clippy::too_many_arguments)]
     fn prerender_sprite_rot_scale(
         &mut self,
@@ -673,6 +713,7 @@ impl<R: Role> Engine2d<R> {
         width_shift: u8,
         height_shift: u8,
         bounds_width_shift: u8,
+        data: &Data,
         vram: &Vram,
     ) {
         let (start_x, end_x, start_rel_x_in_square_obj) = {
@@ -723,20 +764,20 @@ impl<R: Role> Engine2d<R> {
 
             let tile_number = attrs.2.tile_number() as u32;
 
-            let (tile_base, y_shift) = if self.control.obj_bitmap_1d_mapping() {
-                if self.control.bitmap_objs_256x256() {
+            let (tile_base, y_shift) = if data.control().obj_bitmap_1d_mapping() {
+                if data.control().bitmap_objs_256x256() {
                     return;
                 }
                 (
                     tile_number
                         << if R::IS_A {
-                            7 + self.control.a_obj_bitmap_1d_boundary()
+                            7 + data.control().a_obj_bitmap_1d_boundary()
                         } else {
                             7
                         },
                     width_shift + 1,
                 )
-            } else if self.control.bitmap_objs_256x256() {
+            } else if data.control().bitmap_objs_256x256() {
                 (
                     ((tile_number & 0x1F) << 4) + ((tile_number & !0x1F) << 7),
                     9,
@@ -774,13 +815,13 @@ impl<R: Role> Engine2d<R> {
             }
         } else {
             let tile_base = if R::IS_A {
-                self.control.a_tile_base()
+                data.control().a_tile_base()
             } else {
                 0
             } + {
                 let tile_number = attrs.2.tile_number() as u32;
-                if self.control.obj_tile_1d_mapping() {
-                    tile_number << (5 + self.control.obj_tile_1d_boundary())
+                if data.control().obj_tile_1d_mapping() {
+                    tile_number << (5 + data.control().obj_tile_1d_boundary())
                 } else {
                     tile_number << 5
                 }
@@ -792,7 +833,7 @@ impl<R: Role> Engine2d<R> {
                 .with_use_raw_color(false);
 
             if attrs.0.use_256_colors() {
-                let pal_base = if self.control.obj_ext_pal_enabled() {
+                let pal_base = if data.control().obj_ext_pal_enabled() {
                     pixel_attrs.set_use_ext_pal(true);
                     (attrs.2.palette_number() as u16) << 8
                 } else {
@@ -830,7 +871,7 @@ impl<R: Role> Engine2d<R> {
                         }
                     };
                     ($window: expr) => {
-                        if self.control.obj_tile_1d_mapping() {
+                        if data.control().obj_tile_1d_mapping() {
                             render!(
                                 $window,
                                 (pos[1] as u32 >> 11 << (width_shift + 3)
@@ -886,7 +927,7 @@ impl<R: Role> Engine2d<R> {
                         }
                     };
                     ($window: expr) => {
-                        if self.control.obj_tile_1d_mapping() {
+                        if data.control().obj_tile_1d_mapping() {
                             render!(
                                 $window,
                                 (pos[1] as u32 >> 11 << (width_shift + 3)
@@ -917,6 +958,7 @@ impl<R: Role> Engine2d<R> {
         x_start: i32,
         y_in_obj: u32,
         width_shift: u8,
+        data: &Data,
         vram: &Vram,
     ) {
         let (start_x, end_x, mut x_in_obj, x_in_obj_incr) = {
@@ -943,18 +985,18 @@ impl<R: Role> Engine2d<R> {
 
             let tile_number = attrs.2.tile_number() as u32;
 
-            let mut tile_base = if self.control.obj_bitmap_1d_mapping() {
-                if self.control.bitmap_objs_256x256() {
+            let mut tile_base = if data.control().obj_bitmap_1d_mapping() {
+                if data.control().bitmap_objs_256x256() {
                     return;
                 }
                 (tile_number
                     << if R::IS_A {
-                        7 + self.control.a_obj_bitmap_1d_boundary()
+                        7 + data.control().a_obj_bitmap_1d_boundary()
                     } else {
                         7
                     })
                     + (y_in_obj << (width_shift + 1))
-            } else if self.control.bitmap_objs_256x256() {
+            } else if data.control().bitmap_objs_256x256() {
                 ((tile_number & 0x1F) << 4) + ((tile_number & !0x1F) << 7) + (y_in_obj << 9)
             } else {
                 ((tile_number & 0xF) << 4) + ((tile_number & !0xF) << 7) + (y_in_obj << 8)
@@ -1003,13 +1045,14 @@ impl<R: Role> Engine2d<R> {
             }
         } else {
             let mut tile_base = if R::IS_A {
-                self.control.a_tile_base()
+                data.control().a_tile_base()
             } else {
                 0
             } + {
                 let tile_number = attrs.2.tile_number() as u32;
-                if self.control.obj_tile_1d_mapping() {
-                    let tile_number_off = tile_number << (5 + self.control.obj_tile_1d_boundary());
+                if data.control().obj_tile_1d_mapping() {
+                    let tile_number_off =
+                        tile_number << (5 + data.control().obj_tile_1d_boundary());
                     let y_off = ((y_in_obj & !7) << width_shift | (y_in_obj & 7))
                         << (2 | attrs.0.use_256_colors() as u8);
                     tile_number_off + y_off
@@ -1029,7 +1072,7 @@ impl<R: Role> Engine2d<R> {
             let x_in_obj_new_tile_compare = if X_FLIP { 7 } else { 0 };
 
             if attrs.0.use_256_colors() {
-                let pal_base = if self.control.obj_ext_pal_enabled() {
+                let pal_base = if data.control().obj_ext_pal_enabled() {
                     pixel_attrs.set_use_ext_pal(true);
                     (attrs.2.palette_number() as u16) << 8
                 } else {

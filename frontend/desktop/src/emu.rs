@@ -16,7 +16,7 @@ use dust_core::{
     ds_slot::{self, spi::Spi as DsSlotSpi},
     emu::RunOutput,
     flash::Flash,
-    gpu::Framebuffer,
+    gpu::{engine_2d, Framebuffer},
     spi,
     spi::firmware,
     utils::{
@@ -386,6 +386,10 @@ pub(super) fn main(
         },
         mic_rx.map(|mic_rx| Box::new(mic_rx) as Box<dyn spi::tsc::MicBackend>),
         Box::new(rtc::Backend::new(rtc_time_offset_seconds)),
+        [
+            Box::new(dust_soft_2d::Renderer::<engine_2d::EngineA>::new()),
+            Box::new(dust_soft_2d::Renderer::<engine_2d::EngineB>::new()),
+        ],
         Box::new(renderer_3d::Renderer::new()),
         #[cfg(feature = "log")]
         logger.clone(),
@@ -657,6 +661,7 @@ pub(super) fn main(
                 emu.audio.backend,
                 emu.spi.tsc.mic_data.map(|mic_data| mic_data.backend),
                 emu.rtc.backend,
+                [emu.gpu.engine_2d_a.renderer, emu.gpu.engine_2d_b.renderer],
                 emu.gpu.engine_3d.renderer,
                 #[cfg(feature = "log")]
                 logger.clone(),

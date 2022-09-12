@@ -1,0 +1,9 @@
+[package]
+name = "dust-soft-2d"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+dust-core = { path = "../core" }
+proc-bitfield = { version = "0.1.0", features = ["nightly"] }

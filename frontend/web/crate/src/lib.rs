@@ -12,6 +12,7 @@ use dust_core::{
     emu::input::Keys,
     emu::Emu,
     flash::Flash,
+    gpu::engine_2d,
     gpu::{SCREEN_HEIGHT, SCREEN_WIDTH},
     spi::firmware,
     utils::{zeroed_box, BoxedByteSlice, Bytes},
@@ -121,6 +122,10 @@ impl EmuState {
             emu.audio.backend,
             None,
             emu.rtc.backend,
+            [
+                Box::new(dust_soft_2d::Renderer::<engine_2d::EngineA>::new()),
+                Box::new(dust_soft_2d::Renderer::<engine_2d::EngineB>::new()),
+            ],
             emu.gpu.engine_3d.renderer,
             #[cfg(feature = "log")]
             self.logger.clone(),

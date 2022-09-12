@@ -1,6 +1,8 @@
-use super::{super::BgControl, Engine2d, Role};
-use crate::gpu::vram::Vram;
 use core::mem::MaybeUninit;
+use dust_core::gpu::{
+    engine_2d::{BgControl, Control, Role},
+    vram::Vram,
+};
 
 #[repr(align(64))]
 pub struct TextTiles([MaybeUninit<u16>; 64]);
@@ -13,15 +15,15 @@ impl TextTiles {
 
 #[inline(always)]
 pub fn read_bg_text_tiles<'a, R: Role>(
-    engine: &Engine2d<R>,
     tiles: &'a mut TextTiles,
+    control: Control,
     bg_control: BgControl,
     y: u32,
     vram: &Vram,
 ) -> &'a [u16] {
     let map_base = {
         let mut map_base = if R::IS_A {
-            engine.control.a_map_base() | bg_control.map_base()
+            control.a_map_base() | bg_control.map_base()
         } else {
             bg_control.map_base()
         };

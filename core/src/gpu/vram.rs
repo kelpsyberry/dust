@@ -75,10 +75,9 @@ unsafe impl Zero for Writeback {}
 pub struct Vram {
     // Six bytes need to be added to the palette and seven to A/B BG VRAM to allow for 64-bit loads
     // from the last color
-
     bank_control: [BankControl; 9],
     arm7_status: Arm7Status,
-    pub(super) banks: Banks,
+    pub banks: Banks,
     map: Map,
     #[savestate(skip)]
     writeback: Box<Writeback>,
@@ -88,21 +87,21 @@ pub struct Vram {
     #[savestate(skip)]
     lcdc_w_ptrs: [*mut u8; 0x40], // 0x4000 B granularity
     #[savestate(skip)]
-    pub(super) a_bg: OwnedBytesCellPtr<0x8_0007>,
+    pub a_bg: OwnedBytesCellPtr<0x8_0007>,
     #[savestate(skip)]
     a_obj: OwnedBytesCellPtr<0x4_0000>,
     #[savestate(skip)]
-    pub(super) a_bg_ext_pal: OwnedBytesCellPtr<0x8000>,
+    pub a_bg_ext_pal: OwnedBytesCellPtr<0x8000>,
     #[savestate(skip)]
-    pub(super) a_obj_ext_pal: OwnedBytesCellPtr<0x2000>,
+    pub a_obj_ext_pal: OwnedBytesCellPtr<0x2000>,
     #[savestate(skip)]
-    pub(super) b_bg: OwnedBytesCellPtr<0x2_0007>,
+    pub b_bg: OwnedBytesCellPtr<0x2_0007>,
     #[savestate(skip)]
     b_obj: OwnedBytesCellPtr<0x2_0000>,
     #[savestate(skip)]
-    pub(super) b_bg_ext_pal_ptr: *const u8,
+    pub b_bg_ext_pal_ptr: *const u8,
     #[savestate(skip)]
-    pub(super) b_obj_ext_pal_ptr: *const u8,
+    pub b_obj_ext_pal_ptr: *const u8,
     #[savestate(skip)]
     pub(super) texture: OwnedBytesCellPtr<0x8_0000>,
     #[savestate(skip)]

@@ -2,100 +2,93 @@
 
 use super::common::{read_bg_text_tiles, TextTiles};
 use super::*;
-use core::arch::x86_64::*;
+use core::{
+    arch::x86_64::*,
+    mem::transmute,
+    simd::{u32x8, u64x4},
+};
 
 type BlendData = ([__m256i; 3], [__m256i; 3], [__m256i; 3]);
 
-#[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
-unsafe fn blend_data() -> BlendData {
+static BLEND_DATA: BlendData = unsafe {
     (
         [
-            _mm256_set1_epi64x(0x3F),
-            _mm256_set1_epi64x(0xFC0),
-            _mm256_set1_epi64x(0x3_F000),
+            transmute(u64x4::from_array([0x3F; 4])),
+            transmute(u64x4::from_array([0xFC0; 4])),
+            transmute(u64x4::from_array([0x3_F000; 4])),
         ],
         [
-            _mm256_set1_epi64x(0x3F0),
-            _mm256_set1_epi64x(0xFC00),
-            _mm256_set1_epi64x(0x3F_0000),
+            transmute(u64x4::from_array([0x3F0; 4])),
+            transmute(u64x4::from_array([0xFC00; 4])),
+            transmute(u64x4::from_array([0x3F_0000; 4])),
         ],
         [
-            _mm256_set1_epi64x(0x7E0),
-            _mm256_set1_epi64x(0x1_F800),
-            _mm256_set1_epi64x(0x7E_0000),
+            transmute(u64x4::from_array([0x7E0; 4])),
+            transmute(u64x4::from_array([0x1_F800; 4])),
+            transmute(u64x4::from_array([0x7E_0000; 4])),
         ],
     )
-}
+};
 
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
 #[inline]
-unsafe fn blend(
-    pixels: __m256i,
-    coeffs_a: __m256i,
-    coeffs_b: __m256i,
-    blend_data: &BlendData,
-) -> __m256i {
+unsafe fn blend(pixels: __m256i, coeffs_a: __m256i, coeffs_b: __m256i) -> __m256i {
     let bot = _mm256_srli_epi64::<32>(pixels);
     macro_rules! comp {
         ($i: literal) => {{
             let unclamped = _mm256_add_epi64(
-                _mm256_mullo_epi32(_mm256_and_si256(pixels, blend_data.0[$i]), coeffs_a),
-                _mm256_mullo_epi32(_mm256_and_si256(bot, blend_data.0[$i]), coeffs_b),
+                _mm256_mullo_epi32(_mm256_and_si256(pixels, BLEND_DATA.0[$i]), coeffs_a),
+                _mm256_mullo_epi32(_mm256_and_si256(bot, BLEND_DATA.0[$i]), coeffs_b),
             );
             _mm256_castpd_si256(_mm256_blendv_pd(
                 _mm256_castsi256_pd(unclamped),
-                _mm256_castsi256_pd(blend_data.1[$i]),
-                _mm256_castsi256_pd(_mm256_cmpgt_epi64(unclamped, blend_data.1[$i])),
+                _mm256_castsi256_pd(BLEND_DATA.1[$i]),
+                _mm256_castsi256_pd(_mm256_cmpgt_epi64(unclamped, BLEND_DATA.1[$i])),
             ))
         }};
     }
     _mm256_srli_epi64::<4>(_mm256_or_si256(
-        _mm256_or_si256(comp!(0), _mm256_and_si256(comp!(1), blend_data.1[1])),
-        _mm256_and_si256(comp!(2), blend_data.1[2]),
+        _mm256_or_si256(comp!(0), _mm256_and_si256(comp!(1), BLEND_DATA.1[1])),
+        _mm256_and_si256(comp!(2), BLEND_DATA.1[2]),
     ))
 }
 
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
 #[inline]
-unsafe fn blend_5bit_coeff(
-    pixels: __m256i,
-    coeffs_a: __m256i,
-    coeffs_b: __m256i,
-    blend_data: &BlendData,
-) -> __m256i {
+unsafe fn blend_5bit_coeff(pixels: __m256i, coeffs_a: __m256i, coeffs_b: __m256i) -> __m256i {
     let bot = _mm256_srli_epi64::<32>(pixels);
     macro_rules! comp {
         ($i: literal) => {{
             let unclamped = _mm256_add_epi64(
-                _mm256_mullo_epi32(_mm256_and_si256(pixels, blend_data.0[$i]), coeffs_a),
-                _mm256_mullo_epi32(_mm256_and_si256(bot, blend_data.0[$i]), coeffs_b),
+                _mm256_mullo_epi32(_mm256_and_si256(pixels, BLEND_DATA.0[$i]), coeffs_a),
+                _mm256_mullo_epi32(_mm256_and_si256(bot, BLEND_DATA.0[$i]), coeffs_b),
             );
             _mm256_castpd_si256(_mm256_blendv_pd(
                 _mm256_castsi256_pd(unclamped),
-                _mm256_castsi256_pd(blend_data.2[$i]),
-                _mm256_castsi256_pd(_mm256_cmpgt_epi64(unclamped, blend_data.2[$i])),
+                _mm256_castsi256_pd(BLEND_DATA.2[$i]),
+                _mm256_castsi256_pd(_mm256_cmpgt_epi64(unclamped, BLEND_DATA.2[$i])),
             ))
         }};
     }
     _mm256_srli_epi64::<5>(_mm256_or_si256(
-        _mm256_or_si256(comp!(0), _mm256_and_si256(comp!(1), blend_data.2[1])),
-        _mm256_and_si256(comp!(2), blend_data.2[2]),
+        _mm256_or_si256(comp!(0), _mm256_and_si256(comp!(1), BLEND_DATA.2[1])),
+        _mm256_and_si256(comp!(2), BLEND_DATA.2[2]),
     ))
 }
 
 #[allow(clippy::similar_names)]
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
-pub unsafe fn apply_color_effects<R: Role, const EFFECT: u8>(engine: &mut Engine2d<R>) {
-    let ones = _mm256_set1_epi64x(-1);
+pub unsafe fn apply_color_effects<R: Role, const EFFECT: u8>(
+    renderer: &mut Renderer<R>,
+    data: &Data,
+) {
     let zero = _mm256_set1_epi64x(0);
 
-    let target_1_mask = _mm256_set1_epi64x(engine.color_effects_control.target_1_mask() as i64);
-    let target_2_mask = _mm256_set1_epi64x(engine.color_effects_control.target_2_mask() as i64);
-    let coeff_a = _mm256_set1_epi64x(engine.blend_coeffs.0 as i64);
-    let coeff_b = _mm256_set1_epi64x(engine.blend_coeffs.1 as i64);
-    let brightness_coeff = _mm256_set1_epi64x(engine.brightness_coeff as i64);
-
-    let blend_data = blend_data();
+    let target_1_mask = _mm256_set1_epi64x(data.color_effects_control().target_1_mask() as i64);
+    let target_2_mask = _mm256_set1_epi64x(data.color_effects_control().target_2_mask() as i64);
+    let coeff_a = _mm256_set1_epi64x(data.blend_coeffs().0 as i64);
+    let coeff_b = _mm256_set1_epi64x(data.blend_coeffs().1 as i64);
+    let brightness_coeff = _mm256_set1_epi64x(data.brightness_coeff() as i64);
 
     let alpha_mask = _mm256_set1_epi64x(0x1F);
     let coeffs_max_semitransparent = _mm256_set1_epi64x(0x10);
@@ -109,8 +102,8 @@ pub unsafe fn apply_color_effects<R: Role, const EFFECT: u8>(engine: &mut Engine
     let brightness_incr_max = _mm256_set1_epi64x(0x3_FFFF);
 
     for i in (0..SCREEN_WIDTH).step_by(4) {
-        let scanline_pixels_ptr = engine.bg_obj_scanline.0.as_mut_ptr().add(i);
-        let window_ptr = engine.window.0.as_ptr().add(i) as *const u32;
+        let scanline_pixels_ptr = renderer.bg_obj_scanline.0.as_mut_ptr().add(i);
+        let window_ptr = renderer.window.0.as_ptr().add(i) as *const u32;
 
         let modify_mask = _mm256_slli_epi64::<58>(_mm256_cvtepu8_epi64(_mm_set_epi64x(
             0,
@@ -152,12 +145,11 @@ pub unsafe fn apply_color_effects<R: Role, const EFFECT: u8>(engine: &mut Engine
             );
             if EFFECT == 1 {
                 _mm256_blendv_pd(
-                    _mm256_castsi256_pd(blend(pixels, coeff_a, coeff_b, &blend_data)),
+                    _mm256_castsi256_pd(blend(pixels, coeff_a, coeff_b)),
                     _mm256_castsi256_pd(pixels),
                     _mm256_castsi256_pd(_mm256_or_si256(top_matches_inv, bot_matches_inv)),
                 )
             } else {
-                let top_matches = _mm256_xor_si256(top_matches_inv, ones);
                 let value = if EFFECT == 2 {
                     _mm256_xor_si256(brightness_incr_max, pixels)
                 } else {
@@ -180,13 +172,13 @@ pub unsafe fn apply_color_effects<R: Role, const EFFECT: u8>(engine: &mut Engine
                     ),
                 ));
                 _mm256_blendv_pd(
-                    _mm256_castsi256_pd(pixels),
                     _mm256_castsi256_pd(if EFFECT == 2 {
                         _mm256_add_epi64(pixels, offset)
                     } else {
                         _mm256_sub_epi64(pixels, offset)
                     }),
-                    _mm256_castsi256_pd(top_matches),
+                    _mm256_castsi256_pd(pixels),
+                    _mm256_castsi256_pd(top_matches_inv),
                 )
             }
         };
@@ -197,19 +189,13 @@ pub unsafe fn apply_color_effects<R: Role, const EFFECT: u8>(engine: &mut Engine
                     pixels,
                     coeffs_a_semitransparent,
                     coeffs_b_semitransparent,
-                    &blend_data,
                 )),
                 _mm256_castsi256_pd(_mm256_andnot_si256(
                     bot_matches_inv,
                     _mm256_slli_epi64::<39>(pixels),
                 )),
             ),
-            _mm256_castsi256_pd(blend_5bit_coeff(
-                pixels,
-                coeffs_a_3d,
-                coeffs_b_3d,
-                &blend_data,
-            )),
+            _mm256_castsi256_pd(blend_5bit_coeff(pixels, coeffs_a_3d, coeffs_b_3d)),
             _mm256_castsi256_pd(_mm256_andnot_si256(
                 bot_matches_inv,
                 _mm256_slli_epi64::<45>(pixels),
@@ -219,49 +205,146 @@ pub unsafe fn apply_color_effects<R: Role, const EFFECT: u8>(engine: &mut Engine
     }
 }
 
+static RGB6_TO_RGBA8_DATA: ([__m256i; 3], __m256i, __m256i) = unsafe {
+    (
+        [
+            transmute(u32x8::from_array([0x3F; 8])),
+            transmute(u32x8::from_array([0x3F00; 8])),
+            transmute(u32x8::from_array([0x3F_0000; 8])),
+        ],
+        transmute(u32x8::from_array([0xFF00_0000; 8])),
+        transmute(u32x8::from_array([0x0003_0303; 8])),
+    )
+};
+
+#[inline]
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
-unsafe fn rgb5_to_rgb6_data() -> [__m256i; 3] {
-    [
-        _mm256_set1_epi64x(0x3E),
-        _mm256_set1_epi64x(0xF80),
-        _mm256_set1_epi64x(0x3_E000),
-    ]
+unsafe fn rgb6_to_rgba8(values: __m256i) -> __m256i {
+    let rgb6_8 = _mm256_or_si256(
+        _mm256_or_si256(
+            _mm256_and_si256(values, RGB6_TO_RGBA8_DATA.0[0]),
+            _mm256_and_si256(_mm256_slli_epi32::<2>(values), RGB6_TO_RGBA8_DATA.0[1]),
+        ),
+        _mm256_and_si256(_mm256_slli_epi32::<4>(values), RGB6_TO_RGBA8_DATA.0[2]),
+    );
+    _mm256_or_si256(
+        RGB6_TO_RGBA8_DATA.1,
+        _mm256_or_si256(
+            _mm256_slli_epi32::<2>(rgb6_8),
+            _mm256_and_si256(_mm256_srli_epi32::<4>(rgb6_8), RGB6_TO_RGBA8_DATA.2),
+        ),
+    )
 }
 
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
-unsafe fn rgb5_to_rgb6(values: __m256i, data: [__m256i; 3]) -> __m256i {
+pub unsafe fn apply_brightness<R: Role>(
+    scanline_buffer: &mut Scanline<u32>,
+    data: &Data,
+) {
+    let mode = data.master_brightness_control().mode();
+    if matches!(mode, 1 | 2) && data.master_brightness_factor() != 0 {
+        let brightness_in_rb_mask = _mm256_set1_epi32(0x3_F03F);
+        let brightness_in_g_mask = _mm256_set1_epi32(0xFC0);
+        let brightness_out_rb_mask = _mm256_set1_epi32(0x3F_03F0);
+        let brightness_out_g_mask = _mm256_set1_epi32(0xFC00);
+        let brightness_coeff = _mm256_set1_epi32(data.master_brightness_factor() as i32);
+
+        macro_rules! offset {
+            ($value: expr) => {
+                _mm256_srli_epi64::<4>(_mm256_or_si256(
+                    _mm256_and_si256(
+                        _mm256_mullo_epi32(
+                            _mm256_and_si256($value, brightness_in_rb_mask),
+                            brightness_coeff,
+                        ),
+                        brightness_out_rb_mask,
+                    ),
+                    _mm256_and_si256(
+                        _mm256_mullo_epi32(
+                            _mm256_and_si256($value, brightness_in_g_mask),
+                            brightness_coeff,
+                        ),
+                        brightness_out_g_mask,
+                    ),
+                ))
+            };
+        }
+
+        if mode == 1 {
+            let brightness_incr_max = _mm256_set1_epi32(0x3_FFFF);
+            for i in (0..SCREEN_WIDTH).step_by(8) {
+                let scanline_pixels_ptr = scanline_buffer.0.as_mut_ptr().add(i) as *mut __m256i;
+                let pixels = _mm256_load_si256(scanline_pixels_ptr);
+                let offset = offset!(_mm256_xor_si256(brightness_incr_max, pixels));
+                _mm256_store_si256(
+                    scanline_pixels_ptr,
+                    rgb6_to_rgba8(_mm256_add_epi32(pixels, offset)),
+                );
+            }
+        } else {
+            for i in (0..SCREEN_WIDTH).step_by(8) {
+                let scanline_pixels_ptr = scanline_buffer.0.as_mut_ptr().add(i) as *mut __m256i;
+                let pixels = _mm256_load_si256(scanline_pixels_ptr);
+                let offset = offset!(pixels);
+                _mm256_store_si256(
+                    scanline_pixels_ptr,
+                    rgb6_to_rgba8(_mm256_sub_epi32(pixels, offset)),
+                );
+            }
+        }
+    } else {
+        for i in (0..SCREEN_WIDTH).step_by(8) {
+            let scanline_pixels_ptr = scanline_buffer.0.as_mut_ptr().add(i) as *mut __m256i;
+            _mm256_store_si256(
+                scanline_pixels_ptr,
+                rgb6_to_rgba8(_mm256_load_si256(scanline_pixels_ptr)),
+            );
+        }
+    }
+}
+
+static RGB5_TO_RGB6_DATA: [__m256i; 3] = unsafe {
+    [
+        transmute(u64x4::from_array([0x3E; 4])),
+        transmute(u64x4::from_array([0xF80; 4])),
+        transmute(u64x4::from_array([0x3_E000; 4])),
+    ]
+};
+
+#[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
+unsafe fn rgb5_to_rgb6(values: __m256i) -> __m256i {
     _mm256_or_si256(
         _mm256_or_si256(
-            _mm256_and_si256(_mm256_slli_epi64::<1>(values), data[0]),
-            _mm256_and_si256(_mm256_slli_epi64::<2>(values), data[1]),
+            _mm256_and_si256(_mm256_slli_epi64::<1>(values), RGB5_TO_RGB6_DATA[0]),
+            _mm256_and_si256(_mm256_slli_epi64::<2>(values), RGB5_TO_RGB6_DATA[1]),
         ),
-        _mm256_and_si256(_mm256_slli_epi64::<3>(values), data[2]),
+        _mm256_and_si256(_mm256_slli_epi64::<3>(values), RGB5_TO_RGB6_DATA[2]),
     )
 }
 
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
 pub unsafe fn render_scanline_bg_text<R: Role>(
-    engine: &mut Engine2d<R>,
+    renderer: &mut Renderer<R>,
     bg_index: BgIndex,
     line: u8,
+    data: &Data,
     vram: &Vram,
 ) {
-    let bg = &engine.bgs[bg_index.get() as usize];
+    let bg = &data.bgs()[bg_index.get() as usize];
 
     let x_start = bg.scroll[0] as u32;
     let y = bg.scroll[1] as u32 + line as u32;
 
     let tile_base = if R::IS_A {
-        engine.control.a_tile_base() + bg.control.tile_base()
+        data.control().a_tile_base() + bg.control().tile_base()
     } else {
-        bg.control.tile_base()
+        bg.control().tile_base()
     };
 
     let mut tiles = TextTiles::new_uninit();
-    let tiles = read_bg_text_tiles(engine, &mut tiles, bg.control, y, vram);
+    let tiles = read_bg_text_tiles::<R>(&mut tiles, data.control(), bg.control(), y, vram);
 
     let zero = _mm256_setzero_si256();
-    let conv_data = rgb5_to_rgb6_data();
 
     let bg_mask = 1 << bg_index.get();
     let pixel_attrs = _mm256_set1_epi64x(BgObjPixel(0).with_color_effects_mask(bg_mask).0 as i64);
@@ -312,8 +395,8 @@ pub unsafe fn render_scanline_bg_text<R: Role>(
                 let palette = $palette;
                 let $remaining_ident = SCREEN_WIDTH - screen_i;
                 let color_indices = $color_indices;
-                let scanline_pixels_ptr = engine.bg_obj_scanline.0.as_mut_ptr().add(screen_i);
-                let window_ptr = engine.window.0.as_ptr().add(screen_i) as *const u32;
+                let scanline_pixels_ptr = renderer.bg_obj_scanline.0.as_mut_ptr().add(screen_i);
+                let window_ptr = renderer.window.0.as_ptr().add(screen_i) as *const u32;
                 $(
                     let half_scanline_pixels_ptr = scanline_pixels_ptr.add($i * 4);
                     let half_window_ptr = window_ptr.add($i);
@@ -338,7 +421,6 @@ pub unsafe fn render_scanline_bg_text<R: Role>(
                                     half_color_indices,
                                     modify_mask,
                                 ),
-                                conv_data,
                             ),
                             pixel_attrs,
                         ),
@@ -361,11 +443,11 @@ pub unsafe fn render_scanline_bg_text<R: Role>(
         };
     }
 
-    if bg.control.use_256_colors() {
-        let (palette, pal_base_mask) = if engine.control.bg_ext_pal_enabled() {
+    if bg.control().use_256_colors() {
+        let (palette, pal_base_mask) = if data.control().bg_ext_pal_enabled() {
             let slot = bg_index.get()
                 | if bg_index.get() < 2 {
-                    bg.control.bg01_ext_pal_slot() << 1
+                    bg.control().bg01_ext_pal_slot() << 1
                 } else {
                     0
                 };
@@ -448,20 +530,20 @@ pub unsafe fn render_scanline_bg_text<R: Role>(
 #[allow(clippy::similar_names)]
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
 pub unsafe fn render_scanline_bg_affine<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
-    engine: &mut Engine2d<R>,
+    renderer: &mut Renderer<R>,
     bg_index: AffineBgIndex,
+    data: &mut Data,
     vram: &Vram,
 ) {
-    let bg_control = engine.bgs[bg_index.get() as usize | 2].control;
+    let bg_control = data.bgs()[bg_index.get() as usize | 2].control();
 
     let zero = _mm256_setzero_si256();
-    let conv_data = rgb5_to_rgb6_data();
 
     let bg_mask = 4 << bg_index.get();
     let pixel_attrs = _mm256_set1_epi64x(BgObjPixel(0).with_color_effects_mask(bg_mask).0 as i64);
     let addr_mask = _mm256_set1_epi64x(if R::IS_A { 0x7_FFFF } else { 0x1_FFFF });
 
-    let affine = &mut engine.affine_bg_data[bg_index.get() as usize];
+    let affine = &data.affine_bg_data()[bg_index.get() as usize];
     let affine_params = [affine.params[0] as i64, affine.params[2] as i64];
     let mut x = _mm256_add_epi64(
         _mm256_set_epi64x(
@@ -470,7 +552,7 @@ pub unsafe fn render_scanline_bg_affine<R: Role, const DISPLAY_AREA_OVERFLOW: bo
             affine_params[0],
             0,
         ),
-        _mm256_set1_epi64x(affine.pos[0] as i64),
+        _mm256_set1_epi64x(affine.pos()[0] as i64),
     );
     let x_incr = _mm256_set1_epi64x(affine_params[0] << 2);
     let mut y = _mm256_add_epi64(
@@ -480,17 +562,17 @@ pub unsafe fn render_scanline_bg_affine<R: Role, const DISPLAY_AREA_OVERFLOW: bo
             affine_params[1],
             0,
         ),
-        _mm256_set1_epi64x(affine.pos[1] as i64),
+        _mm256_set1_epi64x(affine.pos()[1] as i64),
     );
     let y_incr = _mm256_set1_epi64x(affine_params[1] << 2);
 
     let map_base = _mm256_set1_epi64x(if R::IS_A {
-        engine.control.a_map_base() | bg_control.map_base()
+        data.control().a_map_base() | bg_control.map_base()
     } else {
         bg_control.map_base()
     } as i64);
     let tile_base = _mm256_set1_epi64x(if R::IS_A {
-        engine.control.a_tile_base() + bg_control.tile_base()
+        data.control().a_tile_base() + bg_control.tile_base()
     } else {
         bg_control.tile_base()
     } as i64);
@@ -507,8 +589,8 @@ pub unsafe fn render_scanline_bg_affine<R: Role, const DISPLAY_AREA_OVERFLOW: bo
     let palette = (vram.palette.as_ptr() as *const u16).add((!R::IS_A as usize) << 9);
 
     for i in (0..SCREEN_WIDTH).step_by(4) {
-        let scanline_pixels_ptr = engine.bg_obj_scanline.0.as_mut_ptr().add(i);
-        let window_ptr = engine.window.0.as_ptr().add(i) as *const u32;
+        let scanline_pixels_ptr = renderer.bg_obj_scanline.0.as_mut_ptr().add(i);
+        let window_ptr = renderer.window.0.as_ptr().add(i) as *const u32;
 
         let mut modify_mask = _mm256_sll_epi64(
             _mm256_cvtepu8_epi64(_mm_set_epi64x(0, window_ptr.read() as i64)),
@@ -572,15 +654,12 @@ pub unsafe fn render_scanline_bg_affine<R: Role, const DISPLAY_AREA_OVERFLOW: bo
 
         let new_pixels = _mm256_or_si256(
             _mm256_or_si256(
-                rgb5_to_rgb6(
-                    _mm256_mask_i64gather_epi64::<2>(
-                        zero,
-                        palette as *const i64,
-                        color_indices,
-                        modify_mask,
-                    ),
-                    conv_data,
-                ),
+                rgb5_to_rgb6(_mm256_mask_i64gather_epi64::<2>(
+                    zero,
+                    palette as *const i64,
+                    color_indices,
+                    modify_mask,
+                )),
                 pixel_attrs,
             ),
             _mm256_slli_epi64::<32>(_mm256_maskload_epi64(
@@ -594,25 +673,30 @@ pub unsafe fn render_scanline_bg_affine<R: Role, const DISPLAY_AREA_OVERFLOW: bo
         y = _mm256_add_epi64(y, y_incr);
     }
 
-    affine.pos[0] = affine.pos[0].wrapping_add(affine.params[1] as i32);
-    affine.pos[1] = affine.pos[1].wrapping_add(affine.params[3] as i32);
+    data.set_affine_bg_pos(
+        bg_index,
+        [
+            affine.pos()[0].wrapping_add(affine.params[1] as i32),
+            affine.pos()[1].wrapping_add(affine.params[3] as i32),
+        ],
+    );
 }
 
 #[allow(clippy::similar_names)]
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
 pub unsafe fn render_scanline_bg_large<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
-    engine: &mut Engine2d<R>,
+    renderer: &mut Renderer<R>,
+    data: &mut Data,
     vram: &Vram,
 ) {
-    let bg_control = engine.bgs[2].control;
+    let bg_control = data.bgs()[2].control();
 
     let zero = _mm256_setzero_si256();
-    let conv_data = rgb5_to_rgb6_data();
 
     let pixel_attrs = _mm256_set1_epi64x(BgObjPixel(0).with_color_effects_mask(1 << 2).0 as i64);
     let addr_mask = _mm256_set1_epi64x(if R::IS_A { 0x7_FFFF } else { 0x1_FFFF });
 
-    let affine = &mut engine.affine_bg_data[0];
+    let affine = &data.affine_bg_data()[0];
     let affine_params = [affine.params[0] as i64, affine.params[2] as i64];
     let mut x = _mm256_add_epi64(
         _mm256_set_epi64x(
@@ -621,7 +705,7 @@ pub unsafe fn render_scanline_bg_large<R: Role, const DISPLAY_AREA_OVERFLOW: boo
             affine_params[0],
             0,
         ),
-        _mm256_set1_epi64x(affine.pos[0] as i64),
+        _mm256_set1_epi64x(affine.pos()[0] as i64),
     );
     let x_incr = _mm256_set1_epi64x(affine_params[0] << 2);
     let mut y = _mm256_add_epi64(
@@ -631,7 +715,7 @@ pub unsafe fn render_scanline_bg_large<R: Role, const DISPLAY_AREA_OVERFLOW: boo
             affine_params[1],
             0,
         ),
-        _mm256_set1_epi64x(affine.pos[1] as i64),
+        _mm256_set1_epi64x(affine.pos()[1] as i64),
     );
     let y_incr = _mm256_set1_epi64x(affine_params[1] << 2);
 
@@ -653,8 +737,8 @@ pub unsafe fn render_scanline_bg_large<R: Role, const DISPLAY_AREA_OVERFLOW: boo
     let palette = (vram.palette.as_ptr() as *const u16).add((!R::IS_A as usize) << 9);
 
     for i in (0..SCREEN_WIDTH).step_by(4) {
-        let scanline_pixels_ptr = engine.bg_obj_scanline.0.as_mut_ptr().add(i);
-        let window_ptr = engine.window.0.as_ptr().add(i) as *const u32;
+        let scanline_pixels_ptr = renderer.bg_obj_scanline.0.as_mut_ptr().add(i);
+        let window_ptr = renderer.window.0.as_ptr().add(i) as *const u32;
 
         let mut modify_mask = _mm256_slli_epi64::<61>(_mm256_cvtepu8_epi64(_mm_set_epi64x(
             0,
@@ -697,15 +781,12 @@ pub unsafe fn render_scanline_bg_large<R: Role, const DISPLAY_AREA_OVERFLOW: boo
 
         let new_pixels = _mm256_or_si256(
             _mm256_or_si256(
-                rgb5_to_rgb6(
-                    _mm256_mask_i64gather_epi64::<2>(
-                        zero,
-                        palette as *const i64,
-                        color_indices,
-                        modify_mask,
-                    ),
-                    conv_data,
-                ),
+                rgb5_to_rgb6(_mm256_mask_i64gather_epi64::<2>(
+                    zero,
+                    palette as *const i64,
+                    color_indices,
+                    modify_mask,
+                )),
                 pixel_attrs,
             ),
             _mm256_slli_epi64::<32>(_mm256_maskload_epi64(
@@ -719,29 +800,33 @@ pub unsafe fn render_scanline_bg_large<R: Role, const DISPLAY_AREA_OVERFLOW: boo
         y = _mm256_add_epi64(y, y_incr);
     }
 
-    affine.pos[0] = affine.pos[0].wrapping_add(affine.params[1] as i32);
-    affine.pos[1] = affine.pos[1].wrapping_add(affine.params[3] as i32);
+    data.set_affine_bg_pos(
+        AffineBgIndex::new(0),
+        [
+            affine.pos()[0].wrapping_add(affine.params[1] as i32),
+            affine.pos()[1].wrapping_add(affine.params[3] as i32),
+        ],
+    );
 }
 
 #[allow(clippy::similar_names)]
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
 pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: bool>(
-    engine: &mut Engine2d<R>,
+    renderer: &mut Renderer<R>,
     bg_index: AffineBgIndex,
+    data: &mut Data,
     vram: &Vram,
 ) {
-    let bg_control = engine.bgs[bg_index.get() as usize | 2].control;
+    let bg_control = data.bgs()[bg_index.get() as usize | 2].control();
 
     let zero = _mm256_setzero_si256();
-    let ones = _mm256_set1_epi64x(-1);
-    let conv_data = rgb5_to_rgb6_data();
 
     let bg_mask = 4 << bg_index.get();
     let pixel_attrs = _mm256_set1_epi64x(BgObjPixel(0).with_color_effects_mask(bg_mask).0 as i64);
     let window_mask_shift = _mm_set_epi64x(0, (61 - bg_index.get()) as i64);
     let addr_mask = _mm256_set1_epi64x(if R::IS_A { 0x7_FFFF } else { 0x1_FFFF });
 
-    let affine = &mut engine.affine_bg_data[bg_index.get() as usize];
+    let affine = &data.affine_bg_data()[bg_index.get() as usize];
     let affine_params = [affine.params[0] as i64, affine.params[2] as i64];
     let mut x = _mm256_add_epi64(
         _mm256_set_epi64x(
@@ -750,7 +835,7 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
             affine_params[0],
             0,
         ),
-        _mm256_set1_epi64x(affine.pos[0] as i64),
+        _mm256_set1_epi64x(affine.pos()[0] as i64),
     );
     let x_incr = _mm256_set1_epi64x(affine_params[0] << 2);
     let mut y = _mm256_add_epi64(
@@ -760,7 +845,7 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
             affine_params[1],
             0,
         ),
-        _mm256_set1_epi64x(affine.pos[1] as i64),
+        _mm256_set1_epi64x(affine.pos()[1] as i64),
     );
     let y_incr = _mm256_set1_epi64x(affine_params[1] << 2);
 
@@ -784,8 +869,8 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
 
         if bg_control.use_direct_color_extended_bg() {
             for i in (0..SCREEN_WIDTH).step_by(4) {
-                let scanline_pixels_ptr = engine.bg_obj_scanline.0.as_mut_ptr().add(i);
-                let window_ptr = engine.window.0.as_ptr().add(i) as *const u32;
+                let scanline_pixels_ptr = renderer.bg_obj_scanline.0.as_mut_ptr().add(i);
+                let window_ptr = renderer.window.0.as_ptr().add(i) as *const u32;
 
                 let mut modify_mask = _mm256_sll_epi64(
                     _mm256_cvtepu8_epi64(_mm_set_epi64x(0, window_ptr.read() as i64)),
@@ -828,7 +913,7 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
                 modify_mask = _mm256_and_si256(modify_mask, _mm256_slli_epi64(raw_colors, 32));
 
                 let new_pixels = _mm256_or_si256(
-                    _mm256_or_si256(rgb5_to_rgb6(raw_colors, conv_data), pixel_attrs),
+                    _mm256_or_si256(rgb5_to_rgb6(raw_colors), pixel_attrs),
                     _mm256_slli_epi64::<32>(_mm256_maskload_epi64(
                         scanline_pixels_ptr as *const i64,
                         modify_mask,
@@ -843,8 +928,8 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
             let color_indices_mask = _mm256_set1_epi64x(0xFF);
             let palette = (vram.palette.as_ptr() as *const u16).add((!R::IS_A as usize) << 9);
             for i in (0..SCREEN_WIDTH).step_by(4) {
-                let scanline_pixels_ptr = engine.bg_obj_scanline.0.as_mut_ptr().add(i);
-                let window_ptr = engine.window.0.as_ptr().add(i) as *const u32;
+                let scanline_pixels_ptr = renderer.bg_obj_scanline.0.as_mut_ptr().add(i);
+                let window_ptr = renderer.window.0.as_ptr().add(i) as *const u32;
 
                 let mut modify_mask = _mm256_sll_epi64(
                     _mm256_cvtepu8_epi64(_mm_set_epi64x(0, window_ptr.read() as i64)),
@@ -894,15 +979,12 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
 
                 let new_pixels = _mm256_or_si256(
                     _mm256_or_si256(
-                        rgb5_to_rgb6(
-                            _mm256_mask_i64gather_epi64::<2>(
-                                zero,
-                                palette as *const i64,
-                                color_indices,
-                                modify_mask,
-                            ),
-                            conv_data,
-                        ),
+                        rgb5_to_rgb6(_mm256_mask_i64gather_epi64::<2>(
+                            zero,
+                            palette as *const i64,
+                            color_indices,
+                            modify_mask,
+                        )),
                         pixel_attrs,
                     ),
                     _mm256_slli_epi64::<32>(_mm256_maskload_epi64(
@@ -918,12 +1000,12 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
         }
     } else {
         let map_base = _mm256_set1_epi64x(if R::IS_A {
-            engine.control.a_map_base() | bg_control.map_base()
+            data.control().a_map_base() | bg_control.map_base()
         } else {
             bg_control.map_base()
         } as i64);
         let tile_base = _mm256_set1_epi64x(if R::IS_A {
-            engine.control.a_tile_base() + bg_control.tile_base()
+            data.control().a_tile_base() + bg_control.tile_base()
         } else {
             bg_control.tile_base()
         } as i64);
@@ -939,7 +1021,7 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
         let color_indices_mask = _mm256_set1_epi64x(0xFF);
         let tile_number_mask = _mm256_set1_epi64x(0x3FF);
 
-        let (palette, pal_base_mask) = if engine.control.bg_ext_pal_enabled() {
+        let (palette, pal_base_mask) = if data.control().bg_ext_pal_enabled() {
             (
                 if R::IS_A {
                     vram.a_bg_ext_pal.as_ptr()
@@ -958,8 +1040,8 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
         let pal_base_mask = _mm256_set1_epi64x(pal_base_mask);
 
         for i in (0..SCREEN_WIDTH).step_by(4) {
-            let scanline_pixels_ptr = engine.bg_obj_scanline.0.as_mut_ptr().add(i);
-            let window_ptr = engine.window.0.as_ptr().add(i) as *const u32;
+            let scanline_pixels_ptr = renderer.bg_obj_scanline.0.as_mut_ptr().add(i);
+            let window_ptr = renderer.window.0.as_ptr().add(i) as *const u32;
 
             let mut modify_mask = _mm256_sll_epi64(
                 _mm256_cvtepu8_epi64(_mm_set_epi64x(0, window_ptr.read() as i64)),
@@ -996,7 +1078,7 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
             let x_offsets = _mm256_and_si256(
                 _mm256_srli_epi64::<8>(_mm256_castpd_si256(_mm256_blendv_pd(
                     _mm256_castsi256_pd(x),
-                    _mm256_castsi256_pd(_mm256_xor_si256(x, ones)),
+                    _mm256_castsi256_pd(_mm256_xor_si256(x, x_offset_mask)),
                     _mm256_castsi256_pd(_mm256_slli_epi64::<53>(tiles)),
                 ))),
                 x_offset_mask,
@@ -1004,7 +1086,7 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
             let y_offsets = _mm256_and_si256(
                 _mm256_srli_epi64::<5>(_mm256_castpd_si256(_mm256_blendv_pd(
                     _mm256_castsi256_pd(y),
-                    _mm256_castsi256_pd(_mm256_xor_si256(y, ones)),
+                    _mm256_castsi256_pd(_mm256_xor_si256(y, y_offset_mask)),
                     _mm256_castsi256_pd(_mm256_slli_epi64::<52>(tiles)),
                 ))),
                 y_offset_mask,
@@ -1040,18 +1122,15 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
 
             let new_pixels = _mm256_or_si256(
                 _mm256_or_si256(
-                    rgb5_to_rgb6(
-                        _mm256_mask_i64gather_epi64::<2>(
-                            zero,
-                            palette as *const i64,
-                            _mm256_or_si256(
-                                _mm256_and_si256(_mm256_srli_epi64::<4>(tiles), pal_base_mask),
-                                color_indices,
-                            ),
-                            modify_mask,
+                    rgb5_to_rgb6(_mm256_mask_i64gather_epi64::<2>(
+                        zero,
+                        palette as *const i64,
+                        _mm256_or_si256(
+                            _mm256_and_si256(_mm256_srli_epi64::<4>(tiles), pal_base_mask),
+                            color_indices,
                         ),
-                        conv_data,
-                    ),
+                        modify_mask,
+                    )),
                     pixel_attrs,
                 ),
                 _mm256_slli_epi64::<32>(_mm256_maskload_epi64(
@@ -1066,6 +1145,11 @@ pub unsafe fn render_scanline_bg_extended<R: Role, const DISPLAY_AREA_OVERFLOW: 
         }
     }
 
-    affine.pos[0] = affine.pos[0].wrapping_add(affine.params[1] as i32);
-    affine.pos[1] = affine.pos[1].wrapping_add(affine.params[3] as i32);
+    data.set_affine_bg_pos(
+        bg_index,
+        [
+            affine.pos()[0].wrapping_add(affine.params[1] as i32),
+            affine.pos()[1].wrapping_add(affine.params[3] as i32),
+        ],
+    );
 }
