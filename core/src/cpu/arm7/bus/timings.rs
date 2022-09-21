@@ -1,5 +1,3 @@
-use crate::utils::{fill_8, zeroed_box, Fill8, Zero};
-
 #[repr(C, align(4))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cycles {
@@ -12,9 +10,6 @@ pub struct Cycles {
 #[repr(transparent)]
 pub struct Timings([Cycles; Self::ENTRIES]);
 
-unsafe impl Zero for Timings {}
-unsafe impl Fill8 for Timings {}
-
 impl Timings {
     // The smallest possible block size is 32 KiB (used by the Wi-Fi region)
     pub const PAGE_SHIFT: usize = 15;
@@ -23,7 +18,7 @@ impl Timings {
     pub const ENTRIES: usize = 1 << (32 - Self::PAGE_SHIFT);
 
     pub(in super::super) fn new_boxed() -> Box<Self> {
-        zeroed_box()
+        unsafe { Box::new_zeroed().assume_init() }
     }
 
     #[inline]
@@ -47,7 +42,12 @@ impl Timings {
         //   they're mapped, what actually happens?
         // - GBA slot, Wi-Fi
 
-        fill_8(self, 1);
+        self.0.fill(Cycles {
+            n32: 1,
+            s32: 1,
+            n16: 1,
+            s16: 1,
+        });
 
         // BIOS: same as unmapped
 

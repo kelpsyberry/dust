@@ -13,9 +13,7 @@ use crate::{
     },
     emu::{self, Emu},
     gpu::vram::Vram,
-    utils::{
-        load_slice_in_place, schedule::RawTimestamp, store_slice, zeroed_box, Fifo, Savestate, Zero,
-    },
+    utils::{load_slice_in_place, schedule::RawTimestamp, store_slice, Fifo, Savestate},
 };
 use core::{
     mem::{replace, transmute, MaybeUninit},
@@ -55,8 +53,6 @@ struct FifoEntry {
     command: u8,
     param: u32,
 }
-
-unsafe impl Zero for FifoEntry {}
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
@@ -160,8 +156,6 @@ pub struct Polygon {
     pub tex_palette_base: u16,
 }
 
-unsafe impl Zero for Polygon {}
-
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct RenderingControl(pub u16): Debug {
@@ -193,13 +187,6 @@ pub struct RenderingState {
     pub control: RenderingControl,
     pub w_buffering: bool,
 
-    #[load(value = "0xF")]
-    #[store(skip)]
-    pub texture_dirty: u8,
-    #[load(value = "0x3F")]
-    #[store(skip)]
-    pub tex_pal_dirty: u8,
-
     pub alpha_test_ref: u8,
 
     pub clear_color: Color,
@@ -208,13 +195,19 @@ pub struct RenderingState {
     pub clear_image_offset: [u8; 2],
 
     pub toon_colors: [Color; 0x20],
-
     pub edge_colors: [Color; 8],
 
     pub fog_color: Color,
     pub fog_densities: [u8; 0x20],
     pub fog_offset: u16,
     pub rear_plane_fog_enabled: bool,
+
+    #[load(value = "0xF")]
+    #[store(skip)]
+    pub texture_dirty: u8,
+    #[load(value = "0x3F")]
+    #[store(skip)]
+    pub tex_pal_dirty: u8,
 }
 
 #[derive(Savestate)]
@@ -435,30 +428,31 @@ impl Engine3d {
             vert_ram_level: 0,
             poly_ram_level: 0,
             vert_ram: Box::new([ScreenVertex::new(); 6144]),
-            poly_ram: zeroed_box(),
+            poly_ram: unsafe { Box::new_zeroed().assume_init() },
 
             rendering_state: RenderingState {
                 control: RenderingControl(0),
                 w_buffering: false,
 
-                texture_dirty: 0xF,
-                tex_pal_dirty: 0x3F,
-
                 alpha_test_ref: 0,
-
                 clear_color: Color::splat(0),
+
                 clear_poly_id: 0,
+
                 clear_depth: 0,
                 clear_image_offset: [0; 2],
-
                 toon_colors: [Color::splat(0); 0x20],
-
                 edge_colors: [Color::splat(0); 8],
 
                 fog_color: Color::splat(0),
+
                 fog_densities: [0; 0x20],
+
                 fog_offset: 0,
                 rear_plane_fog_enabled: false,
+
+                texture_dirty: 0xF,
+                tex_pal_dirty: 0x3F,
             },
         }
     }

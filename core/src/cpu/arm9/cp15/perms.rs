@@ -1,5 +1,3 @@
-use crate::utils::Zero;
-
 pub(super) type Perms = u8;
 #[allow(clippy::module_inception)]
 pub(super) mod perms {
@@ -40,8 +38,6 @@ pub(super) mod perms {
 }
 
 pub struct PermMap([Perms; Self::ENTRIES]);
-
-unsafe impl Zero for PermMap {}
 
 macro_rules! def_checks {
     ($($fn_ident: ident, $unpriv_mask_ident: ident);*$(;)?) => {

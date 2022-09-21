@@ -6,7 +6,7 @@ use crate::ui::{utils::combo_value, window::Window};
 use dust_core::{
     cpu,
     emu::Emu,
-    utils::{zeroed_box, ByteSlice, Bytes},
+    utils::{ByteSlice, Bytes},
 };
 use imgui::{StyleVar, TableFlags, Ui};
 
@@ -53,7 +53,7 @@ impl Default for PaletteData {
     fn default() -> Self {
         PaletteData {
             selection: None,
-            data: zeroed_box(),
+            data: unsafe { Box::new_zeroed().assume_init() },
         }
     }
 }

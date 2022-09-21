@@ -245,7 +245,7 @@ impl Cp15 {
             code_cache_lockdown_control: CacheLockdownControl(0),
             trace_process_id: 0,
             #[cfg(feature = "pu-checks")]
-            perm_map: crate::utils::zeroed_box(),
+            perm_map: unsafe { Box::new_zeroed().assume_init() },
             ptrs: Ptrs::new_boxed(),
             timings: Timings::new_boxed(),
         }

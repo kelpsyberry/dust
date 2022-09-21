@@ -5,16 +5,13 @@
 use super::{map_mask, MapMask};
 #[cfg(any(feature = "bft-r", feature = "bft-w"))]
 use crate::cpu::arm9::bus::ptrs::attrs as sys_bus_attrs;
+use crate::cpu::arm9::bus::ptrs::{
+    mask as sys_bus_mask, Attrs as SysBusAttrs, Mask as SysBusMask, Ptrs as SysBusPtrs,
+};
 #[cfg(feature = "bft-r")]
 use crate::cpu::bus::{r_disable_flags, RDisableFlags};
 #[cfg(feature = "bft-w")]
 use crate::cpu::bus::{w_disable_flags, WDisableFlags};
-use crate::{
-    cpu::arm9::bus::ptrs::{
-        mask as sys_bus_mask, Attrs as SysBusAttrs, Mask as SysBusMask, Ptrs as SysBusPtrs,
-    },
-    utils::{zeroed_box, Zero},
-};
 
 type Attrs = u8;
 mod attrs {
@@ -92,8 +89,6 @@ pub struct Ptrs {
     map_attrs: [MapAttrs; Self::ENTRIES],
 }
 
-unsafe impl Zero for Ptrs {}
-
 macro_rules! def_ptr_getters {
     ($($fn_ident: ident, $ty: ty, $ptr_arr: ident, $mask_ident: ident);*$(;)?) => {
         $(
@@ -121,7 +116,7 @@ impl Ptrs {
     const ENTRIES_PER_SYS_ENTRY: usize = Self::ENTRIES / SysBusPtrs::ENTRIES;
 
     pub(super) fn new_boxed() -> Box<Self> {
-        zeroed_box()
+        unsafe { Box::new_zeroed().assume_init() }
     }
 
     def_ptr_getters! {

@@ -1,7 +1,7 @@
 use super::Power;
 use crate::{
     emu::{input, Timestamp},
-    utils::{zeroed_box, Savestate},
+    utils::Savestate,
 };
 
 proc_bitfield::bitfield! {
@@ -33,7 +33,7 @@ impl MicData {
         MicData {
             backend,
             read_in_current_frame: false,
-            samples: zeroed_box(),
+            samples: unsafe { Box::new_zeroed().assume_init() },
         }
     }
 }

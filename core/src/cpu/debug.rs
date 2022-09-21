@@ -1,24 +1,14 @@
-use crate::{
-    cpu::Engine,
-    emu::Emu,
-    utils::{zeroed_box, Zero},
-};
+use crate::{cpu::Engine, emu::Emu};
 use bitflags::bitflags;
 
 #[repr(transparent)]
 pub struct MemWatchpointRootTable(pub [Option<Box<MemWatchpointSubTable>>; 0x800]);
 
-unsafe impl Zero for MemWatchpointRootTable {}
-
 #[repr(transparent)]
 pub struct MemWatchpointSubTable(pub [Option<Box<MemWatchpointLeafTable>>; 0x800]);
 
-unsafe impl Zero for MemWatchpointSubTable {}
-
 #[repr(transparent)]
 pub struct MemWatchpointLeafTable(pub [usize; MWLT_ENTRY_COUNT as usize]);
-
-unsafe impl Zero for MemWatchpointLeafTable {}
 
 bitflags! {
     pub struct MemWatchpointRwMask: u8 {
@@ -69,8 +59,10 @@ macro_rules! check_watchpoints {
 
 impl MemWatchpointRootTable {
     pub(super) fn add(&mut self, addr: u32, size: u8, rw: MemWatchpointRwMask) {
-        let sub_table = self.0[(addr >> 21) as usize].get_or_insert_with(zeroed_box);
-        let leaf_table = sub_table.0[(addr >> 10 & 0x7FF) as usize].get_or_insert_with(zeroed_box);
+        let sub_table = self.0[(addr >> 21) as usize]
+            .get_or_insert_with(|| unsafe { Box::new_zeroed().assume_init() });
+        let leaf_table = sub_table.0[(addr >> 10 & 0x7FF) as usize]
+            .get_or_insert_with(|| unsafe { Box::new_zeroed().assume_init() });
         let mut mask = rw.bits() as usize;
         for i in 0..size.trailing_zeros() {
             mask |= mask << (2 << i);
@@ -215,7 +207,7 @@ impl<E: Engine> Arm7Data<E> {
             breakpoints: Vec::new(),
             breakpoint_hook: None,
             mem_watchpoint_hook: None,
-            mem_watchpoints: zeroed_box(),
+            mem_watchpoints: unsafe { Box::new_zeroed().assume_init() },
         }
     }
 }
@@ -239,7 +231,7 @@ impl<E: Engine> Arm9Data<E> {
             breakpoints: Vec::new(),
             breakpoint_hook: None,
             mem_watchpoint_hook: None,
-            mem_watchpoints: zeroed_box(),
+            mem_watchpoints: unsafe { Box::new_zeroed().assume_init() },
             prefetch_abort_hook: None,
             data_abort_hook: None,
         }

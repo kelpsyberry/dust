@@ -3,9 +3,12 @@ mod bank_cnt;
 
 use crate::{
     cpu::{arm7, arm9, Engine},
-    utils::{zero, zeroed_box, OwnedBytesCellPtr, Savestate, Zero},
+    utils::{OwnedBytesCellPtr, Savestate},
 };
-use core::cell::{Cell, UnsafeCell};
+use core::{
+    cell::{Cell, UnsafeCell},
+    mem::MaybeUninit,
+};
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
@@ -54,8 +57,6 @@ struct Map {
     arm7: [Cell<u8>; 2],
 }
 
-unsafe impl Zero for Map {}
-
 #[repr(C)]
 struct Writeback {
     // NOTE: Same as `Map`
@@ -65,8 +66,6 @@ struct Writeback {
     b_obj: UnsafeCell<[usize; 0x2_0000 / usize::BITS as usize]>,
     arm7: UnsafeCell<[usize; 0x4_0000 / usize::BITS as usize]>,
 }
-
-unsafe impl Zero for Writeback {}
 
 #[derive(Default)]
 pub struct Updates {
@@ -153,8 +152,8 @@ impl Vram {
             bank_control: [BankControl(0); 9],
             arm7_status: Arm7Status(0),
             banks,
-            map: zero(),
-            writeback: zeroed_box(),
+            map: unsafe { MaybeUninit::zeroed().assume_init() },
+            writeback: unsafe { Box::new_zeroed().assume_init() },
 
             bg_obj_updates: bg_obj_vram_tracking.then(UnsafeCell::default),
 

@@ -2,7 +2,6 @@
 use crate::cpu::bus::{r_disable_flags, RDisableFlags};
 #[cfg(feature = "bft-w")]
 use crate::cpu::bus::{w_disable_flags, WDisableFlags};
-use crate::utils::{zeroed_box, Zero};
 
 pub type Mask = u8;
 pub mod mask {
@@ -63,8 +62,6 @@ pub struct Ptrs {
     disable_attrs: [DisableAttrs; Self::ENTRIES],
 }
 
-unsafe impl Zero for Ptrs {}
-
 macro_rules! def_ptr_getters {
     ($($fn_ident: ident, $ty: ty, $mask_ident: ident);*$(;)?) => {
         $(
@@ -90,7 +87,7 @@ impl Ptrs {
     pub const ENTRIES: usize = 1 << (32 - Self::PAGE_SHIFT);
 
     pub(in super::super) fn new_boxed() -> Box<Self> {
-        zeroed_box()
+        unsafe { Box::new_zeroed().assume_init() }
     }
 
     pub(in super::super) fn ptrs(&self) -> &[*mut u8; Self::ENTRIES] {

@@ -1,8 +1,5 @@
 use super::{map_mask, MapMask};
-use crate::{
-    cpu::arm9::bus::timings::{Cycles as SysBusCycles, Timings as SysBusTimings},
-    utils::{zeroed_box, Zero},
-};
+use crate::cpu::arm9::bus::timings::{Cycles as SysBusCycles, Timings as SysBusTimings};
 
 #[repr(C, align(8))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,8 +44,6 @@ impl Cycles {
 #[repr(transparent)]
 pub struct Timings([Cycles; Self::ENTRIES]);
 
-unsafe impl Zero for Timings {}
-
 impl Timings {
     // Min. shift: 12 (the smallest possible TCM and PU region size is 4 KiB)
     // A value of 14 specifies a minimum size of 16 KiB, the size of DTCM, so it shouldn't need
@@ -60,7 +55,7 @@ impl Timings {
     const ENTRIES_PER_SYS_ENTRY: usize = Self::ENTRIES / SysBusTimings::ENTRIES;
 
     pub(super) fn new_boxed() -> Box<Self> {
-        zeroed_box()
+        unsafe { Box::new_zeroed().assume_init() }
     }
 
     #[inline]

@@ -27,7 +27,7 @@ pub mod spi;
 use crate::{
     cpu::{arm7, arm9, Engine, Schedule as _},
     emu::{Emu, Timestamp},
-    utils::{schedule::RawTimestamp, zeroed_box, Bytes, Savestate},
+    utils::{schedule::RawTimestamp, Bytes, Savestate},
 };
 
 proc_bitfield::bitfield! {
@@ -127,7 +127,7 @@ impl DsSlot {
             rom_cmd: Bytes::new([0; 8]),
             arm7_access: false,
             arm9_access: true,
-            rom_output_buffer: zeroed_box(),
+            rom_output_buffer: unsafe { Box::new_zeroed().assume_init() },
             rom_output_len: RomOutputLen::new(0),
             rom_output_pos: RomOutputPos::new(0),
             rom_data_out: 0,

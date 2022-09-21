@@ -1,4 +1,4 @@
-#![feature(portable_simd, const_mut_refs, const_trait_impl)]
+#![feature(portable_simd, const_mut_refs, const_trait_impl, new_uninit)]
 
 mod render;
 pub use render::Renderer as RawRenderer;
@@ -8,13 +8,12 @@ use dust_core::{
         engine_3d::RenderingState,
         engine_3d::{Color, Polygon, RenderingControl, ScreenVertex},
     },
-    utils::{Bytes, Zero},
+    utils::Bytes,
 };
 
 #[repr(C)]
 pub struct RenderingData {
     pub control: RenderingControl,
-
     pub w_buffering: bool,
 
     pub alpha_test_ref: u8,
@@ -33,7 +32,6 @@ pub struct RenderingData {
     pub toon_colors: [Color; 0x20],
 
     pub texture: Bytes<0x8_0000>,
-    // TODO: How is the texture palette region mirrored?
     pub tex_pal: Bytes<0x2_0000>,
 
     pub vert_ram: [ScreenVertex; 6144],
@@ -41,8 +39,6 @@ pub struct RenderingData {
     pub poly_ram: [Polygon; 2048],
     pub poly_ram_level: u16,
 }
-
-unsafe impl Zero for RenderingData {}
 
 impl RenderingData {
     fn copy_rendering_data(&mut self, state: &RenderingState) {
@@ -54,18 +50,18 @@ impl RenderingData {
             0
         };
 
+        self.clear_color = state.clear_color;
         self.clear_poly_id = state.clear_poly_id;
-        self.clear_image_offset = state.clear_image_offset;
         self.clear_depth = state.clear_depth;
+        self.clear_image_offset = state.clear_image_offset;
 
-        self.fog_offset = state.fog_offset;
-        self.fog_densities = state.fog_densities;
-        self.rear_plane_fog_enabled = state.rear_plane_fog_enabled;
+        self.toon_colors = state.toon_colors;
+        self.edge_colors = state.edge_colors;
 
         self.fog_color = state.fog_color;
-        self.edge_colors = state.edge_colors;
-        self.clear_color = state.clear_color;
-        self.toon_colors = state.toon_colors;
+        self.fog_densities = state.fog_densities;
+        self.fog_offset = state.fog_offset;
+        self.rear_plane_fog_enabled = state.rear_plane_fog_enabled;
     }
 
     #[inline]
@@ -84,6 +80,7 @@ impl RenderingData {
         self.copy_rendering_data(state);
     }
 
+    #[inline]
     pub fn repeat_last_frame(&mut self, state: &RenderingState) {
         self.copy_rendering_data(state);
     }

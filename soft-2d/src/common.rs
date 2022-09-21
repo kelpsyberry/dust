@@ -46,7 +46,7 @@ proc_bitfield::bitfield! {
         pub bot_is_3d: bool @ 55,
         pub bot_force_blending: bool @ 56,
         pub bot_custom_alpha: bool @ 57,
-        
+
         pub bot_color_effects_mask: u8 @ 58..=63,
     }
 }

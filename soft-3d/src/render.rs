@@ -3,14 +3,11 @@ use utils::{dec_poly_vert_index, inc_poly_vert_index, Edge, InterpLineData};
 
 use super::RenderingData;
 use core::simd::{SimdOrd, SimdPartialEq};
-use dust_core::{
-    gpu::{
-        engine_3d::{
-            Color, InterpColor, PolyAddr, PolyVertIndex, PolygonAttrs, TexCoords, TextureParams,
-        },
-        Scanline,
+use dust_core::gpu::{
+    engine_3d::{
+        Color, InterpColor, PolyAddr, PolyVertIndex, PolygonAttrs, TexCoords, TextureParams,
     },
-    utils::{zeroed_box, Zero},
+    Scanline,
 };
 
 type DepthTestFn = fn(u32, u32, PixelAttrs) -> bool;
@@ -69,8 +66,6 @@ impl PixelAttrs {
             .with_translucent_id(poly.id | 0x40)
     }
 }
-
-unsafe impl Zero for PixelAttrs {}
 
 fn decode_rgb5(color: u16, alpha: u16) -> InterpColor {
     InterpColor::from_array([
@@ -404,8 +399,8 @@ impl Renderer {
     pub fn new() -> Self {
         Renderer {
             color_buffer: Box::new(Scanline([Color::splat(0); 256])),
-            depth_buffer: zeroed_box(),
-            attr_buffer: zeroed_box(),
+            depth_buffer: unsafe { Box::new_zeroed().assume_init() },
+            attr_buffer: unsafe { Box::new_zeroed().assume_init() },
             polys: Vec::with_capacity(2048),
         }
     }

@@ -43,12 +43,8 @@ impl<R: Role> Engine2d<R> {
             0x0A => self.bgs[1].control.0,
             0x0C => self.bgs[2].control.0,
             0x0E => self.bgs[3].control.0,
-            0x48 => {
-                self.window_control[0].0 as u16 | (self.window_control[1].0 as u16) << 8
-            }
-            0x4A => {
-                self.window_control[2].0 as u16 | (self.window_control[3].0 as u16) << 8
-            }
+            0x48 => self.window_control[0].0 as u16 | (self.window_control[1].0 as u16) << 8,
+            0x4A => self.window_control[2].0 as u16 | (self.window_control[3].0 as u16) << 8,
             0x50 => self.color_effects_control.0,
             0x52 => self.blend_coeffs_raw.0,
             0x64 => self.capture_control.0 as u16,
@@ -76,10 +72,7 @@ impl<R: Role> Engine2d<R> {
                     | (self.window_control[2].0 as u32) << 16
                     | (self.window_control[3].0 as u32) << 24
             }
-            0x50 => {
-                self.color_effects_control.0 as u32
-                    | (self.blend_coeffs_raw.0 as u32) << 16
-            }
+            0x50 => self.color_effects_control.0 as u32 | (self.blend_coeffs_raw.0 as u32) << 16,
             0x64 => self.capture_control.0,
             0x6C => self.master_brightness_control.0 as u32,
             _ => {
@@ -105,27 +98,23 @@ impl<R: Role> Engine2d<R> {
             0x03 => self.write_control(Control(
                 (self.control.0 & 0x00FF_FFFF) | (value as u32) << 24,
             )),
-            0x08 => self.bgs[0].write_control(BgControl(
-                (self.bgs[0].control.0 & 0xFF00) | value as u16,
-            )),
+            0x08 => self.bgs[0]
+                .write_control(BgControl((self.bgs[0].control.0 & 0xFF00) | value as u16)),
             0x09 => self.bgs[0].write_control(BgControl(
                 (self.bgs[0].control.0 & 0x00FF) | (value as u16) << 8,
             )),
-            0x0A => self.bgs[1].write_control(BgControl(
-                (self.bgs[1].control.0 & 0xFF00) | value as u16,
-            )),
+            0x0A => self.bgs[1]
+                .write_control(BgControl((self.bgs[1].control.0 & 0xFF00) | value as u16)),
             0x0B => self.bgs[1].write_control(BgControl(
                 (self.bgs[1].control.0 & 0x00FF) | (value as u16) << 8,
             )),
-            0x0C => self.bgs[2].write_control(BgControl(
-                (self.bgs[2].control.0 & 0xFF00) | value as u16,
-            )),
+            0x0C => self.bgs[2]
+                .write_control(BgControl((self.bgs[2].control.0 & 0xFF00) | value as u16)),
             0x0D => self.bgs[2].write_control(BgControl(
                 (self.bgs[2].control.0 & 0x00FF) | (value as u16) << 8,
             )),
-            0x0E => self.bgs[3].write_control(BgControl(
-                (self.bgs[3].control.0 & 0xFF00) | value as u16,
-            )),
+            0x0E => self.bgs[3]
+                .write_control(BgControl((self.bgs[3].control.0 & 0xFF00) | value as u16)),
             0x0F => self.bgs[3].write_control(BgControl(
                 (self.bgs[3].control.0 & 0x00FF) | (value as u16) << 8,
             )),
@@ -133,57 +122,49 @@ impl<R: Role> Engine2d<R> {
                 self.bgs[0].scroll[0] = (self.bgs[0].scroll[0] & 0xFF00) | value as u16;
             }
             0x11 => {
-                self.bgs[0].scroll[0] =
-                    (self.bgs[0].scroll[0] & 0x00FF) | (value as u16 & 1) << 8;
+                self.bgs[0].scroll[0] = (self.bgs[0].scroll[0] & 0x00FF) | (value as u16 & 1) << 8;
             }
             0x12 => {
                 self.bgs[0].scroll[1] = (self.bgs[0].scroll[1] & 0xFF00) | value as u16;
             }
             0x13 => {
-                self.bgs[0].scroll[1] =
-                    (self.bgs[0].scroll[1] & 0x00FF) | (value as u16 & 1) << 8;
+                self.bgs[0].scroll[1] = (self.bgs[0].scroll[1] & 0x00FF) | (value as u16 & 1) << 8;
             }
             0x14 => {
                 self.bgs[1].scroll[0] = (self.bgs[1].scroll[0] & 0xFF00) | value as u16;
             }
             0x15 => {
-                self.bgs[1].scroll[0] =
-                    (self.bgs[1].scroll[0] & 0x00FF) | (value as u16 & 1) << 8;
+                self.bgs[1].scroll[0] = (self.bgs[1].scroll[0] & 0x00FF) | (value as u16 & 1) << 8;
             }
             0x16 => {
                 self.bgs[1].scroll[1] = (self.bgs[1].scroll[1] & 0xFF00) | value as u16;
             }
             0x17 => {
-                self.bgs[1].scroll[1] =
-                    (self.bgs[1].scroll[1] & 0x00FF) | (value as u16 & 1) << 8;
+                self.bgs[1].scroll[1] = (self.bgs[1].scroll[1] & 0x00FF) | (value as u16 & 1) << 8;
             }
             0x18 => {
                 self.bgs[2].scroll[0] = (self.bgs[2].scroll[0] & 0xFF00) | value as u16;
             }
             0x19 => {
-                self.bgs[2].scroll[0] =
-                    (self.bgs[2].scroll[0] & 0x00FF) | (value as u16 & 1) << 8;
+                self.bgs[2].scroll[0] = (self.bgs[2].scroll[0] & 0x00FF) | (value as u16 & 1) << 8;
             }
             0x1A => {
                 self.bgs[2].scroll[1] = (self.bgs[2].scroll[1] & 0xFF00) | value as u16;
             }
             0x1B => {
-                self.bgs[2].scroll[1] =
-                    (self.bgs[2].scroll[1] & 0x00FF) | (value as u16 & 1) << 8;
+                self.bgs[2].scroll[1] = (self.bgs[2].scroll[1] & 0x00FF) | (value as u16 & 1) << 8;
             }
             0x1C => {
                 self.bgs[3].scroll[0] = (self.bgs[3].scroll[0] & 0xFF00) | value as u16;
             }
             0x1D => {
-                self.bgs[3].scroll[0] =
-                    (self.bgs[3].scroll[0] & 0x00FF) | (value as u16 & 1) << 8;
+                self.bgs[3].scroll[0] = (self.bgs[3].scroll[0] & 0x00FF) | (value as u16 & 1) << 8;
             }
             0x1E => {
                 self.bgs[3].scroll[1] = (self.bgs[3].scroll[1] & 0xFF00) | value as u16;
             }
             0x1F => {
-                self.bgs[3].scroll[1] =
-                    (self.bgs[3].scroll[1] & 0x00FF) | (value as u16 & 1) << 8;
+                self.bgs[3].scroll[1] = (self.bgs[3].scroll[1] & 0x00FF) | (value as u16 & 1) << 8;
             }
             0x40 => self.window_x_ranges[0].1 = value,
             0x41 => self.window_x_ranges[0].0 = value,
@@ -250,8 +231,7 @@ impl<R: Role> Engine2d<R> {
             }
             0x2A => {
                 self.affine_bg_data[0].ref_point[0] =
-                    (self.affine_bg_data[0].ref_point[0] & 0xFFFF)
-                        | (value as i32) << 20 >> 4;
+                    (self.affine_bg_data[0].ref_point[0] & 0xFFFF) | (value as i32) << 20 >> 4;
                 self.affine_bg_data[0].pos[0] = self.affine_bg_data[0].ref_point[0];
             }
             0x2C => {
@@ -261,8 +241,7 @@ impl<R: Role> Engine2d<R> {
             }
             0x2E => {
                 self.affine_bg_data[0].ref_point[1] =
-                    (self.affine_bg_data[0].ref_point[1] & 0xFFFF)
-                        | (value as i32) << 20 >> 4;
+                    (self.affine_bg_data[0].ref_point[1] & 0xFFFF) | (value as i32) << 20 >> 4;
                 self.affine_bg_data[0].pos[1] = self.affine_bg_data[0].ref_point[1];
             }
             0x30 => self.affine_bg_data[1].x_incr[0] = value as i16,
@@ -276,8 +255,7 @@ impl<R: Role> Engine2d<R> {
             }
             0x3A => {
                 self.affine_bg_data[1].ref_point[0] =
-                    (self.affine_bg_data[1].ref_point[0] & 0xFFFF)
-                        | (value as i32) << 20 >> 4;
+                    (self.affine_bg_data[1].ref_point[0] & 0xFFFF) | (value as i32) << 20 >> 4;
                 self.affine_bg_data[1].pos[0] = self.affine_bg_data[1].ref_point[0];
             }
             0x3C => {
@@ -287,8 +265,7 @@ impl<R: Role> Engine2d<R> {
             }
             0x3E => {
                 self.affine_bg_data[1].ref_point[1] =
-                    (self.affine_bg_data[1].ref_point[1] & 0xFFFF)
-                        | (value as i32) << 20 >> 4;
+                    (self.affine_bg_data[1].ref_point[1] & 0xFFFF) | (value as i32) << 20 >> 4;
                 self.affine_bg_data[1].pos[1] = self.affine_bg_data[1].ref_point[1];
             }
             0x40 => self.window_x_ranges[0] = ((value >> 8) as u8, value as u8),

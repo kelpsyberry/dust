@@ -5,7 +5,7 @@ pub mod vram;
 use crate::{
     cpu::{arm7, arm9, Engine},
     emu::{self, event_slots, Emu, Timestamp},
-    utils::{schedule::RawTimestamp, Savestate, Zero},
+    utils::{schedule::RawTimestamp, Savestate},
 };
 use engine_2d::Engine2d;
 use engine_3d::Engine3d;
@@ -64,8 +64,6 @@ const HBLANK_DURATION: Timestamp = Timestamp(99 * DOT_CYCLES - 48);
 pub struct Scanline<T, const LEN: usize = SCREEN_WIDTH>(pub [T; LEN]);
 
 pub type Framebuffer = [[u32; SCREEN_WIDTH * SCREEN_HEIGHT]; 2];
-
-unsafe impl<T, const LEN: usize> Zero for Scanline<T, LEN> where T: Zero {}
 
 #[derive(Savestate)]
 #[load(in_place_only)]
@@ -306,7 +304,7 @@ impl Gpu {
             .next_vcount
             .unwrap_or_else(|| emu.gpu.vcount.wrapping_add(1));
         emu.gpu.next_vcount = None;
-        
+
         if emu.gpu.vcount == TOTAL_SCANLINES as u16 {
             emu.gpu.vcount = 0;
             emu.gpu.cur_scanline = 0;

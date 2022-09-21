@@ -7,13 +7,12 @@ use dust_core::{
         },
         Scanline, SCREEN_HEIGHT,
     },
-    utils::{zeroed_box, Bytes},
+    utils::Bytes,
 };
 use dust_soft_3d::{RawRenderer, RenderingData};
 use std::{
     cell::UnsafeCell,
     hint,
-    mem::transmute,
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
         OnceLock,
@@ -123,8 +122,8 @@ impl RendererRx for Rx {
 pub fn init() -> (Tx, Rx) {
     SHARED_DATA.get_or_init(|| unsafe {
         SharedData {
-            rendering_data: transmute(zeroed_box::<RenderingData>()),
-            scanline_buffer: transmute(zeroed_box::<[Scanline<u32, 256>; SCREEN_HEIGHT]>()),
+            rendering_data: Box::new_zeroed().assume_init(),
+            scanline_buffer: Box::new_zeroed().assume_init(),
             processing_scanline: AtomicU8::new(SCREEN_HEIGHT as u8),
             stopped: AtomicBool::new(false),
         }

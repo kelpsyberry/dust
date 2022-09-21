@@ -1,5 +1,3 @@
-use crate::utils::{zeroed_box, Zero};
-
 #[repr(C, align(8))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cycles {
@@ -13,8 +11,6 @@ pub struct Cycles {
 #[repr(transparent)]
 pub struct Timings([Cycles; Self::ENTRIES]);
 
-unsafe impl Zero for Timings {}
-
 impl Timings {
     // The smallest possible block size is 16 MiB (the boundary of most memory regions)
     pub const PAGE_SHIFT: usize = 24;
@@ -23,7 +19,7 @@ impl Timings {
     pub const ENTRIES: usize = 1 << (32 - Self::PAGE_SHIFT);
 
     pub(in super::super) fn new_boxed() -> Box<Self> {
-        zeroed_box()
+        unsafe { Box::new_zeroed().assume_init() }
     }
 
     pub(in super::super) fn timings(&self) -> &[Cycles; Self::ENTRIES] {

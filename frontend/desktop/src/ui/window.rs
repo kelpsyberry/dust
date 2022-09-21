@@ -17,7 +17,6 @@ use winit::{
 };
 
 pub struct GfxDeviceState {
-    pub instance: wgpu::Instance,
     pub surface: wgpu::Surface,
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
@@ -43,7 +42,7 @@ impl GfxDeviceState {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::default(),
+                    limits: wgpu::Limits::downlevel_webgl2_defaults(),
                 },
                 None,
             )
@@ -62,7 +61,6 @@ impl GfxDeviceState {
         };
         surface.configure(&device, &surf_config);
         GfxDeviceState {
-            instance,
             surface,
             adapter,
             device,
