@@ -3,7 +3,7 @@ use crate::{config::Config, emu};
 use chrono::DateTime;
 use dust_core::{
     gpu::{Framebuffer, SCREEN_HEIGHT, SCREEN_WIDTH},
-    utils::{zeroed_box, ByteSlice, MemValue},
+    utils::{ByteSlice, MemValue},
 };
 use imgui::{Image, StyleColor, TableFlags, TextureId, Ui, WindowHoveredFlags};
 use miniz_oxide::{
@@ -64,7 +64,7 @@ impl Savestate {
         texture.set_data(
             &window.gfx.device_state.queue,
             slice::from_raw_parts(
-                framebuffer.0[0].as_ptr() as *const u8,
+                framebuffer.as_ptr() as *const u8,
                 2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT,
             ),
             imgui_wgpu::TextureSetRange::default(),
@@ -79,18 +79,18 @@ impl Savestate {
         })?;
 
         let framebuffer = {
-            let mut buffer: Box<Framebuffer> = zeroed_box();
+            let mut buffer: Box<Framebuffer> = unsafe { Box::new_zeroed().assume_init() };
             let src_start_i = contents
                 .len()
                 .checked_sub(2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT)
                 .unwrap();
             unsafe {
                 let mut ptr = contents.as_ptr().add(src_start_i) as *const u32;
-                for pixel in &mut buffer.0[0] {
+                for pixel in &mut buffer[0] {
                     *pixel = u32::read_le(ptr);
                     ptr = ptr.add(1);
                 }
-                for pixel in &mut buffer.0[1] {
+                for pixel in &mut buffer[1] {
                     *pixel = u32::read_le(ptr);
                     ptr = ptr.add(1);
                 }
@@ -109,7 +109,7 @@ impl Savestate {
                 contents
                     .as_ptr()
                     .add(src_start_i)
-                    .copy_to(buffer.as_mut_ptr(), len);
+                    .copy_to_nonoverlapping(buffer.as_mut_ptr(), len);
             }
             contents.truncate(src_start_i);
             Some(buffer.into_boxed_slice())
@@ -150,7 +150,7 @@ impl Savestate {
                 contents.reserve(2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT);
                 let mut ptr = contents.as_mut_ptr().add(contents.len()) as *mut u32;
                 contents.set_len(contents.len() + 2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT);
-                for pixel in framebuffer.0[0].iter().chain(&framebuffer.0[1]) {
+                for pixel in framebuffer[0].iter().chain(&framebuffer[1]) {
                     pixel.write_le(ptr);
                     ptr = ptr.add(1);
                 }

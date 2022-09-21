@@ -1,76 +1,111 @@
-use core::mem::MaybeUninit;
-use dust_core::gpu::{
-    engine_2d::{BgControl, Control, Role},
-    vram::Vram,
+pub mod capture;
+pub mod render;
+
+use dust_core::{
+    gpu::{
+        engine_2d::{
+            AffineBgIndex, BgControl, BgIndex, BrightnessControl, ColorEffectsControl, Control,
+            Role,
+        },
+        Scanline, SCREEN_WIDTH,
+    },
+    utils::Bytes,
 };
 
-#[repr(align(64))]
-pub struct TextTiles([MaybeUninit<u16>; 64]);
+proc_bitfield::bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub const struct ObjPixel(pub u32): Debug {
+        pub pal_color: u16 @ 0..=11,
+        pub raw_color: u16 @ 0..=15,
+        pub use_raw_color: bool @ 16,
+        pub use_ext_pal: bool @ 17,
 
-impl TextTiles {
-    pub fn new_uninit() -> Self {
-        TextTiles(MaybeUninit::uninit_array())
+        pub alpha: u8 @ 18..=22,
+        pub force_blending: bool @ 24,
+        pub custom_alpha: bool @ 25,
+
+        pub priority: u8 @ 26..=28,
     }
 }
 
-#[inline(always)]
-pub fn read_bg_text_tiles<'a, R: Role>(
-    tiles: &'a mut TextTiles,
-    control: Control,
-    bg_control: BgControl,
-    y: u32,
-    vram: &Vram,
-) -> &'a [u16] {
-    let map_base = {
-        let mut map_base = if R::IS_A {
-            control.a_map_base() | bg_control.map_base()
-        } else {
-            bg_control.map_base()
-        };
-        match bg_control.size_key() {
-            0 | 1 => {
-                map_base |= (y & 0xF8) << 3;
-            }
-            2 => {
-                map_base += (y & 0x1F8) << 3;
-                if R::IS_A {
-                    map_base &= R::BG_VRAM_MASK;
-                }
-            }
-            _ => {
-                map_base |= (y & 0xF8) << 3;
-                map_base += (y & 0x100) << 4;
-                if R::IS_A {
-                    map_base &= R::BG_VRAM_MASK;
-                }
-            }
-        }
-        map_base
-    };
+proc_bitfield::bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub const struct BgObjPixel(pub u64): Debug {
+        pub rgb: u32 @ 0..=17,
 
-    unsafe {
-        if R::IS_A {
-            vram.read_a_bg_slice::<usize>(map_base, 64, tiles.0.as_mut_ptr() as *mut usize);
-        } else {
-            vram.read_b_bg_slice::<usize>(map_base, 64, tiles.0.as_mut_ptr() as *mut usize);
-        }
-        if bg_control.size_key() & 1 == 0 {
-            MaybeUninit::slice_assume_init_ref(&tiles.0[..32])
-        } else {
-            if R::IS_A {
-                vram.read_a_bg_slice::<usize>(
-                    (map_base + 0x800) & R::BG_VRAM_MASK,
-                    64,
-                    tiles.0.as_mut_ptr().add(32) as *mut usize,
-                );
-            } else {
-                vram.read_b_bg_slice::<usize>(
-                    (map_base + 0x800) & R::BG_VRAM_MASK,
-                    64,
-                    tiles.0.as_mut_ptr().add(32) as *mut usize,
-                );
-            }
-            MaybeUninit::slice_assume_init_ref(&tiles.0[..])
-        }
+        pub alpha: u8 @ 18..=22,
+        pub is_3d: bool @ 23,
+        pub force_blending: bool @ 24,
+        pub custom_alpha: bool @ 25,
+
+        pub color_effects_mask: u8 @ 26..=31,
+
+        pub bot_rgb: u32 @ 32..=49,
+
+        pub bot_alpha: u8 @ 50..=54,
+        pub bot_is_3d: bool @ 55,
+        pub bot_force_blending: bool @ 56,
+        pub bot_custom_alpha: bool @ 57,
+        
+        pub bot_color_effects_mask: u8 @ 58..=63,
     }
+}
+
+proc_bitfield::bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub const struct WindowPixel(pub u8): Debug {
+        pub bg_obj_mask: u8 @ 0..=4,
+        pub color_effects_enabled: bool @ 5,
+    }
+}
+
+#[inline]
+pub const fn rgb5_to_rgb6(value: u16) -> u32 {
+    let value = value as u32;
+    (value << 1 & 0x3E) | (value << 2 & 0xF80) | (value << 3 & 0x3_E000)
+}
+
+#[inline]
+pub const fn rgb5_to_rgb6_64(value: u16) -> u64 {
+    let value = value as u64;
+    (value << 1 & 0x3E) | (value << 2 & 0xF80) | (value << 3 & 0x3_E000)
+}
+
+#[allow(clippy::mut_from_ref)]
+pub trait Buffers {
+    unsafe fn obj_window(&self) -> &mut [u8; SCREEN_WIDTH / 8];
+    unsafe fn obj_scanline(&self) -> &mut Scanline<ObjPixel>;
+    unsafe fn bg_obj_scanline(&self) -> &mut Scanline<BgObjPixel>;
+    unsafe fn window(&self) -> &mut Scanline<WindowPixel, { SCREEN_WIDTH + 7 }>;
+}
+
+#[allow(clippy::mut_from_ref)]
+pub trait Vram<R: Role> {
+    fn bg(&self) -> &Bytes<{ R::BG_VRAM_LEN }>;
+    fn obj(&self) -> &Bytes<{ R::OBJ_VRAM_LEN }>;
+    fn bg_palette(&self) -> &Bytes<0x206>;
+    fn obj_palette(&self) -> &Bytes<0x206>;
+    fn bg_ext_palette(&self) -> &Bytes<0x8006>;
+    fn obj_ext_palette(&self) -> &Bytes<0x2006>;
+    fn oam(&self) -> &Bytes<0x400>;
+}
+
+#[allow(clippy::mut_from_ref)]
+pub trait RenderingData {
+    fn control(&self) -> Control;
+
+    fn master_brightness_control(&self) -> BrightnessControl;
+    fn master_brightness_factor(&self) -> u32;
+
+    fn bg_control(&self, i: BgIndex) -> BgControl;
+    fn bg_priority(&self, i: BgIndex) -> u8;
+    fn bg_scroll(&self, i: BgIndex) -> [u16; 2];
+
+    fn affine_bg_x_incr(&self, i: AffineBgIndex) -> [i16; 2];
+    fn affine_bg_pos(&self, i: AffineBgIndex) -> [i32; 2];
+    fn increase_affine_bg_pos(&mut self, i: AffineBgIndex);
+
+    fn color_effects_control(&self) -> ColorEffectsControl;
+    fn blend_coeffs(&self) -> (u8, u8);
+    fn brightness_coeff(&self) -> u8;
 }

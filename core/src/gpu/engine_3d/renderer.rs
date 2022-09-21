@@ -1,7 +1,7 @@
 use super::{Polygon, RenderingState, ScreenVertex};
 use crate::{gpu::Scanline, utils::Bytes};
 
-pub trait Renderer {
+pub trait RendererTx {
     fn swap_buffers(
         &mut self,
         vert_ram: &[ScreenVertex],
@@ -15,9 +15,10 @@ pub trait Renderer {
         tex_pal: &Bytes<0x1_8000>,
         state: &RenderingState,
     );
+}
 
+pub trait RendererRx {
     fn start_frame(&mut self);
-
     fn read_scanline(&mut self) -> &Scanline<u32, 256>;
     fn skip_scanline(&mut self);
 }

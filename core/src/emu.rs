@@ -155,7 +155,7 @@ impl<E: cpu::Engine> Emu<E> {
 
 pub struct Builder {
     #[cfg(feature = "log")]
-    logger: slog::Logger,
+    pub logger: slog::Logger,
 
     pub firmware: Flash,
     pub ds_rom: ds_slot::rom::Rom,
@@ -163,8 +163,8 @@ pub struct Builder {
     pub audio_backend: Box<dyn audio::Backend>,
     pub mic_backend: Option<Box<dyn spi::tsc::MicBackend>>,
     pub rtc_backend: Box<dyn rtc::Backend>,
-    renderers_2d: [Box<dyn gpu::engine_2d::Renderer>; 2],
-    pub renderer_3d: Box<dyn gpu::engine_3d::Renderer>,
+    pub renderer_2d: Box<dyn gpu::engine_2d::Renderer>,
+    pub renderer_3d_tx: Box<dyn gpu::engine_3d::RendererTx>,
 
     pub arm7_bios: Option<Box<Bytes<{ arm7::BIOS_SIZE }>>>,
     pub arm9_bios: Option<Box<Bytes<{ arm9::BIOS_SIZE }>>>,
@@ -210,8 +210,8 @@ impl Builder {
         audio_backend: Box<dyn audio::Backend>,
         mic_backend: Option<Box<dyn spi::tsc::MicBackend>>,
         rtc_backend: Box<dyn rtc::Backend>,
-        renderers_2d: [Box<dyn gpu::engine_2d::Renderer>; 2],
-        renderer_3d: Box<dyn gpu::engine_3d::Renderer>,
+        renderer_2d: Box<dyn gpu::engine_2d::Renderer>,
+        renderer_3d_tx: Box<dyn gpu::engine_3d::RendererTx>,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Self {
         Builder {
@@ -224,8 +224,8 @@ impl Builder {
             audio_backend,
             mic_backend,
             rtc_backend,
-            renderers_2d,
-            renderer_3d,
+            renderer_2d,
+            renderer_3d_tx,
 
             arm7_bios: None,
             arm9_bios: None,
@@ -298,8 +298,8 @@ impl Builder {
                 self.logger.new(slog::o!("rtc" => "")),
             ),
             gpu: Gpu::new(
-                self.renderers_2d,
-                self.renderer_3d,
+                self.renderer_2d,
+                self.renderer_3d_tx,
                 &mut arm9.schedule,
                 &mut global_schedule,
                 #[cfg(feature = "log")]

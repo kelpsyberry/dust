@@ -117,7 +117,7 @@ use super::{utils::heading, Config, EmuState};
 use crate::config::LoggingKind;
 use crate::{
     audio,
-    config::{self, saves, ModelConfig, Setting as _, TitleBarMode},
+    config::{self, saves, ModelConfig, Renderer2dKind, Setting as _, TitleBarMode},
     ui::utils::combo_value,
     utils::HomePathBuf,
 };
@@ -601,6 +601,7 @@ struct EmulationSettings {
     model: setting::Overridable<setting::Combo<ModelConfig>>,
     ds_slot_rom_in_memory_max_size: setting::Overridable<setting::Scalar<u32>>,
     rtc_time_offset_seconds: setting::Overridable<setting::Scalar<i64>>,
+    renderer_2d_kind: setting::Overridable<setting::Combo<Renderer2dKind>>,
 }
 
 impl EmulationSettings {
@@ -644,6 +645,17 @@ impl EmulationSettings {
                 rtc_time_offset_seconds,
                 scalar,
                 Some(1)
+            ),
+            renderer_2d_kind: overridable!(
+                "2D renderer kind",
+                renderer_2d_kind,
+                combo,
+                &[Renderer2dKind::Sync, Renderer2dKind::LockstepScanlines,],
+                |kind| match kind {
+                    Renderer2dKind::Sync => "Sync",
+                    Renderer2dKind::LockstepScanlines => "Async, per-scanline",
+                }
+                .into()
             ),
         }
     }
@@ -1321,7 +1333,8 @@ impl Editor {
                                         prefer_hle_bios,
                                         model,
                                         ds_slot_rom_in_memory_max_size,
-                                        rtc_time_offset_seconds
+                                        rtc_time_offset_seconds,
+                                        renderer_2d_kind
                                     ]
                                 );
                             }

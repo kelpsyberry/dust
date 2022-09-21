@@ -4,6 +4,10 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
+[features]
+threaded = ["crossbeam-channel"]
+
 [dependencies]
 dust-core = { path = "../core" }
-proc-bitfield = { version = "0.1.0", features = ["nightly"] }
+proc-bitfield = { version = "0.2.0", features = ["nightly"] }
+crossbeam-channel = { version = "0.5", optional = true }

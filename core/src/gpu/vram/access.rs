@@ -104,14 +104,40 @@ macro_rules! handle_mirroring {
 macro_rules! handle_non_writeback_write {
     (
         $self: ident,
-        $usage: ident, $region_shift: expr,
+        $usage: ident, $updates_i: literal, $updates_field: ident,
         $addr: ident, $value: ident, $T: ty,
         ($($bit: literal => $bank: ident,)*)
     ) => {
         let addr = $addr as usize & (($self.$usage.len() - 1) & !(mem::size_of::<$T>() - 1));
         unsafe {
-            $self.a_bg_ext_pal.write_le_aligned_unchecked(addr, $value);
+            $self.$usage.write_le_aligned_unchecked(addr, $value);
+            if let Some(updates) = &mut $self.bg_obj_updates {
+                updates.get_mut()[$updates_i].$updates_field = true;
+            }
+            let mapped = $self.map.$usage[0].get();
+            $(
+                if mapped & 1 << $bit != 0 {
+                    $self.banks.$bank.write_le_aligned_unchecked(
+                        addr & ($self.banks.$bank.len() - 1),
+                        $value,
+                    );
+                }
+            )*
+        }
+    };
+    (
+        $self: ident,
+        $usage: ident, $region_shift: expr, $updates_i: literal, $updates_field: ident,
+        $addr: ident, $value: ident, $T: ty,
+        ($($bit: literal => $bank: ident,)*)
+    ) => {
+        let addr = $addr as usize & (($self.$usage.len() - 1) & !(mem::size_of::<$T>() - 1));
+        unsafe {
+            $self.$usage.write_le_aligned_unchecked(addr, $value);
             let region = addr >> $region_shift;
+            if let Some(updates) = &mut $self.bg_obj_updates {
+                updates.get_mut()[$updates_i].$updates_field |= 1 << region;
+            }
             let mapped = $self.map.$usage.get_unchecked(region).get();
             $(
                 if mapped & 1 << $bit != 0 {
@@ -210,6 +236,9 @@ impl Vram {
             set_writeback!(self.writeback.a_bg.get_mut(), addr, T);
             self.a_bg.write_le_aligned_unchecked(addr, value);
         }
+        if let Some(updates) = &mut self.bg_obj_updates {
+            updates.get_mut()[0].bg |= 1 << region;
+        }
         if mapped & 0x60 != 0 {
             let mirror_addr = addr ^ 0x8000;
             if mapped & !0x60 == 0 {
@@ -265,6 +294,9 @@ impl Vram {
         unsafe {
             set_writeback!(self.writeback.a_obj.get_mut(), addr, T);
             self.a_obj.write_le_aligned_unchecked(addr, value);
+        }
+        if let Some(updates) = &mut self.bg_obj_updates {
+            updates.get_mut()[0].obj |= 1 << region;
         }
         if mapped & 0x18 != 0 {
             let mirror_addr = addr ^ 0x8000;
@@ -347,6 +379,9 @@ impl Vram {
             set_writeback!(self.writeback.b_bg.get_mut(), addr, T);
             self.b_bg.write_le_aligned_unchecked(addr, value);
         }
+        if let Some(updates) = &mut self.bg_obj_updates {
+            updates.get_mut()[1].bg |= 1 << (addr >> 14);
+        }
         if mapped & 6 != 0 {
             match mapped {
                 2 => {
@@ -418,6 +453,9 @@ impl Vram {
             set_writeback!(self.writeback.b_obj.get_mut(), addr, T);
             self.b_obj.write_le_aligned_unchecked(addr, value);
         }
+        if let Some(updates) = &mut self.bg_obj_updates {
+            updates.get_mut()[1].obj |= 1 << (addr >> 14);
+        }
         if mapped & 2 != 0 {
             if mapped & !2 == 0 {
                 for mirror_addr in [
@@ -473,7 +511,7 @@ impl Vram {
     {
         handle_non_writeback_write!(
             self,
-            a_bg_ext_pal, 14,
+            a_bg_ext_pal, 14, 0, bg_ext_palette,
             addr, value, T,
             (
                 0 => e,
@@ -516,7 +554,7 @@ impl Vram {
     {
         handle_non_writeback_write!(
             self,
-            a_obj_ext_pal, 13,
+            a_obj_ext_pal, 0, obj_ext_palette,
             addr, value, T,
             (
                 0 => f,
@@ -569,6 +607,9 @@ impl Vram {
                         as *mut T,
                 );
             }
+            if let Some(updates) = &mut self.bg_obj_updates {
+                updates.get_mut()[1].bg_ext_palette |= 1 << (addr >> 14 & 1);
+            }
         }
     }
 
@@ -615,6 +656,9 @@ impl Vram {
                         .add(addr as usize & (0x1FFF & !(mem::size_of::<T>() - 1)))
                         as *mut T,
                 );
+            }
+            if let Some(updates) = &mut self.bg_obj_updates {
+                updates.get_mut()[1].obj_ext_palette = true;
             }
         }
     }

@@ -17,9 +17,9 @@ use core::{iter::once, mem::size_of, ops::Range};
 macro_rules! map_cpu_visible {
     (
         $cpu: expr, $mask: expr, $cpu_start_addr: expr, $cpu_end_addr: expr,
-        $usage: expr, $region: expr, $region_shift: expr
+        $usage: expr, $usage_len: literal, $region: expr, $region_shift: expr
     ) => {
-        for mirror_base_addr in ($cpu_start_addr..$cpu_end_addr).step_by($usage.len()) {
+        for mirror_base_addr in ($cpu_start_addr..$cpu_end_addr).step_by($usage_len) {
             let region_base_addr = mirror_base_addr | ($region as u32) << $region_shift;
             $cpu.map_sys_bus_ptr_range(
                 $mask,
@@ -35,6 +35,7 @@ macro_rules! map_cpu_visible {
 }
 
 unsafe fn copy_slice_wrapping_unchecked_with_dst_range<
+    const SRC_MASK: usize,
     const DST_LEN: usize,
     const SRC_LEN: usize,
 >(
@@ -44,15 +45,19 @@ unsafe fn copy_slice_wrapping_unchecked_with_dst_range<
 ) {
     let mut dst = dst.as_byte_mut_slice();
     let src = src.as_byte_slice();
-    let src_base_addr = dst_range.start & (SRC_LEN - 1);
-    let copy_len = ((dst_range.end - 1) & (SRC_LEN - 1)) - src_base_addr + 1;
+    let src_base_addr = dst_range.start & SRC_MASK;
+    let copy_len = ((dst_range.end - 1) & SRC_MASK) - src_base_addr + 1;
     for dst_base_addr in dst_range.step_by(copy_len) {
         dst.get_unchecked_mut(dst_base_addr..dst_base_addr + copy_len)
             .copy_from_slice(src.get_unchecked(src_base_addr..src_base_addr + copy_len));
     }
 }
 
-unsafe fn or_assign_slice_wrapping_unchecked<const DST_LEN: usize, const SRC_LEN: usize>(
+unsafe fn or_assign_slice_wrapping_unchecked<
+    const SRC_MASK: usize,
+    const DST_LEN: usize,
+    const SRC_LEN: usize,
+>(
     dst: &OwnedBytesCellPtr<DST_LEN>,
     src: &OwnedBytesCellPtr<SRC_LEN>,
     dst_range: Range<usize>,
@@ -61,7 +66,7 @@ unsafe fn or_assign_slice_wrapping_unchecked<const DST_LEN: usize, const SRC_LEN
         dst.write_ne_aligned_unchecked(
             dst_addr,
             dst.read_ne_aligned_unchecked::<usize>(dst_addr)
-                | src.read_ne_aligned_unchecked::<usize>(dst_addr & (SRC_LEN - 1)),
+                | src.read_ne_aligned_unchecked::<usize>(dst_addr & SRC_MASK),
         );
     }
 }
@@ -70,27 +75,29 @@ macro_rules! map_region {
     (
         no_wb $self: expr,
         $usage: ident, $region_shift: expr,
-        $bank: expr, $bank_bit: expr, $region: expr
+        $bank: expr, $mask: expr, $bank_bit: expr, $region: expr
     ) => {{
         let prev = $self.map.$usage[$region].get();
         $self.map.$usage[$region].set(prev | 1 << $bank_bit);
         let usage_addr_range = $region << $region_shift..($region + 1) << $region_shift;
         if prev == 0 {
-            copy_slice_wrapping_unchecked_with_dst_range(
+            copy_slice_wrapping_unchecked_with_dst_range::<$mask, _, _>(
                 &$self.$usage,
                 $bank,
                 usage_addr_range,
             );
         } else {
-            or_assign_slice_wrapping_unchecked(&$self.$usage, $bank, usage_addr_range);
+            or_assign_slice_wrapping_unchecked::<$mask, _, _>(&$self.$usage, $bank, usage_addr_range);
         }
     }};
     (
         wb $self: expr,
         $usage: ident,
+        $usage_len: literal,
         $region_shift: expr,
         $mirrored_banks_mask: expr,
-        ($($bit: literal => $mappable_bank: ident,)*),
+        $($bg_obj_updates: ident,)?
+        ($($bit: literal => $mappable_bank: ident, $mask: literal,)*),
 
         $cpu: expr,
         $cpu_r_mask: expr,
@@ -98,6 +105,7 @@ macro_rules! map_region {
         $cpu_start_addr: expr,
         $cpu_end_addr: expr,
         $bank: ident,
+        $bank_mask: expr,
         $bank_bit: expr,
         $region: expr
     ) => {{
@@ -107,30 +115,34 @@ macro_rules! map_region {
         let writeback_arr = &mut *$self.writeback.$usage.get();
         #[allow(clippy::bad_bit_mask)]
         if prev == 0 {
-            copy_slice_wrapping_unchecked_with_dst_range(
+            copy_slice_wrapping_unchecked_with_dst_range::<$bank_mask, _, _>(
                 &$self.$usage,
                 $bank,
                 usage_addr_range.clone(),
             );
-            if 1 << $bank_bit & $mirrored_banks_mask == 0 {
+            if 1 << $bank_bit & $mirrored_banks_mask == 0
+                $(&& $self.$bg_obj_updates.is_none())*
+            {
                 map_cpu_visible!(
                     $cpu, $cpu_rw_mask, $cpu_start_addr, $cpu_end_addr,
-                    $self.$usage, $region, $region_shift
+                    $self.$usage, $usage_len, $region, $region_shift
                 );
             }
         } else {
-            if prev & (prev - 1) == 0 && prev & $mirrored_banks_mask == 0 {
+            if prev & (prev - 1) == 0
+                && prev & $mirrored_banks_mask == 0
+                $(&& $self.$bg_obj_updates.is_none())*
+            {
                 map_cpu_visible!(
                     $cpu, $cpu_r_mask, $cpu_start_addr, $cpu_end_addr,
-                    $self.$usage, $region, $region_shift
+                    $self.$usage, $usage_len, $region, $region_shift
                 );
                 'writeback_to_prev_bank: {
                     $(
                         if $bit != $bank_bit && prev & 1 << $bit != 0 {
-                            let bank_len_mask = $self.banks.$mappable_bank.len() - 1;
-                            let bank_base_addr = usage_addr_range.start & bank_len_mask;
+                            let bank_base_addr = usage_addr_range.start & $mask;
                             let copy_len =
-                                ((usage_addr_range.end - 1) & bank_len_mask) - bank_base_addr + 1;
+                                ((usage_addr_range.end - 1) & $mask) - bank_base_addr + 1;
                             $self.banks.$mappable_bank.as_byte_mut_slice()
                                 .get_unchecked_mut(bank_base_addr..bank_base_addr + copy_len)
                                 .copy_from_slice($self.$usage.as_byte_slice().get_unchecked(
@@ -150,7 +162,7 @@ macro_rules! map_region {
                         $(
                             if $bit != $bank_bit && prev & 1 << $bit != 0 {
                                 $self.banks.$mappable_bank.write_unchecked(
-                                    usage_addr & ($self.banks.$mappable_bank.len() - 1),
+                                    usage_addr & $mask,
                                     prev_value,
                                 );
                             }
@@ -158,7 +170,11 @@ macro_rules! map_region {
                     }
                 }
             }
-            or_assign_slice_wrapping_unchecked(&$self.$usage, $bank, usage_addr_range.clone());
+            or_assign_slice_wrapping_unchecked::<$bank_mask, _, _>(
+                &$self.$usage,
+                $bank,
+                usage_addr_range.clone(),
+            );
         }
         #[allow(clippy::bad_bit_mask)]
         if prev != 0 || 1 << $bank_bit & $mirrored_banks_mask != 0 {
@@ -173,7 +189,8 @@ macro_rules! map_region {
 macro_rules! unmap_region {
     (
         no_wb $self: expr,
-        $usage: ident, $region_shift: expr, ($($bit: literal => $mappable_bank: ident,)*),
+        $usage: ident, $region_shift: expr,
+        ($($bit: literal => $mappable_bank: ident, $mask: literal,)*),
         $bank_bit: expr, $region: expr
     ) => {{
         let new = $self.map.$usage[$region].get() & !(1 << $bank_bit);
@@ -190,7 +207,7 @@ macro_rules! unmap_region {
                             .banks
                             .$mappable_bank
                             .read_ne_aligned_unchecked::<usize>(
-                                usage_addr & ($self.banks.$mappable_bank.len() - 1),
+                                usage_addr & $mask,
                             );
                     }
                 )*
@@ -202,9 +219,11 @@ macro_rules! unmap_region {
         wb $self: expr,
 
         $usage: ident,
+        $usage_len: literal,
         $region_shift: expr,
         $mirrored_banks_mask: expr,
-        ($($bit: literal => $mappable_bank: ident,)*),
+        $($bg_obj_updates: ident,)?
+        ($($bit: literal => $mappable_bank: ident, $mask: literal,)*),
 
         $cpu: expr,
         $cpu_r_mask: expr,
@@ -213,6 +232,7 @@ macro_rules! unmap_region {
         $cpu_end_addr: expr,
 
         $bank: expr,
+        $bank_mask: expr,
         $bank_bit: expr,
         $is_mirror: expr,
         $region: expr
@@ -224,26 +244,28 @@ macro_rules! unmap_region {
         #[allow(clippy::bad_bit_mask)]
         if new == 0 {
             if !$is_mirror {
-                let bank_len_mask = $bank.len() - 1;
                 $bank.as_byte_mut_slice().get_unchecked_mut(
-                    usage_addr_range.start & bank_len_mask
-                        ..=(usage_addr_range.end - 1) & bank_len_mask
+                    usage_addr_range.start & $bank_mask
+                        ..=(usage_addr_range.end - 1) & $bank_mask
                 ).copy_from_slice(
                     &$self.$usage.as_byte_slice().get_unchecked(usage_addr_range.clone())
                 );
             }
             $self.$usage.as_byte_mut_slice().get_unchecked_mut(usage_addr_range).fill(0);
-            if prev & $mirrored_banks_mask == 0 {
+            if prev & $mirrored_banks_mask == 0 $(&& $self.$bg_obj_updates.is_none())* {
                 map_cpu_visible!(
                     $cpu, $cpu_r_mask, $cpu_start_addr, $cpu_end_addr,
-                    $self.$usage, $region, $region_shift
+                    $self.$usage, $usage_len, $region, $region_shift
                 );
             }
         } else {
-            if new & (new - 1) == 0 && new & $mirrored_banks_mask == 0 {
+            if new & (new - 1) == 0
+                && new & $mirrored_banks_mask == 0
+                $(&& $self.$bg_obj_updates.is_none())*
+            {
                 map_cpu_visible!(
                     $cpu, $cpu_rw_mask, $cpu_start_addr, $cpu_end_addr,
-                    $self.$usage, $region, $region_shift
+                    $self.$usage, $usage_len, $region, $region_shift
                 );
             }
             let writeback_arr = &*$self.writeback.$usage.get();
@@ -256,14 +278,14 @@ macro_rules! unmap_region {
                     $(
                         if $bit != $bank_bit && new & 1 << $bit != 0 {
                             value |= $self.banks.$mappable_bank.read_unchecked(
-                                usage_addr & ($self.banks.$mappable_bank.len() - 1),
+                                usage_addr & $mask,
                             );
                         }
                     )*
                     $self.$usage.write_unchecked(usage_addr, value);
                 } else if !$is_mirror {
                     $bank.write_unchecked(
-                        usage_addr & ($bank.len() - 1),
+                        usage_addr & $bank_mask,
                         $self.$usage.read_unchecked(usage_addr),
                     );
                 }
@@ -272,12 +294,22 @@ macro_rules! unmap_region {
     }};
 }
 
+macro_rules! modify_bg_obj_updates {
+    ($self: ident, $i: literal, |$bg_obj_updates: ident| $f: expr) => {
+        #[allow(unused_unsafe)]
+        if let Some(updates) = &$self.bg_obj_updates {
+            let $bg_obj_updates = &mut unsafe { &mut *updates.get() }[$i];
+            $f
+        }
+    };
+}
+
 impl Vram {
     pub(super) fn flush_writeback(&mut self) {
         macro_rules! flush_usage {
             (
                 $usage: ident, $region_shift: expr, $mirrored_banks_mask: expr,
-                ($($bit: literal => $bank: ident $(mirror $mirror_mask: expr)?,)*)
+                ($($bit: literal => $bank: ident, $mask: literal,)*)
             ) => {
                 for (region, mapped) in self.map.$usage.iter().enumerate() {
                     let mapped = mapped.get();
@@ -293,9 +325,9 @@ impl Vram {
                                 $(
                                     if mapped & 1 << $bit != 0 {
                                         let bank_start =
-                                            usage_addr_range.start & (self.banks.$bank.len() - 1);
+                                            usage_addr_range.start & $mask;
                                         let bank_end = (usage_addr_range.end - 1)
-                                            & (self.banks.$bank.len() - 1);
+                                            & $mask;
                                         let usage_end =
                                             usage_addr_range.start + (bank_end - bank_start);
                                         self.banks.$bank.as_byte_mut_slice().get_unchecked_mut(
@@ -319,7 +351,7 @@ impl Vram {
                                     $(
                                         if mapped & 1 << $bit != 0 {
                                             self.banks.$bank.write_unchecked(
-                                                usage_addr & (self.banks.$bank.len() - 1),
+                                                usage_addr & $mask,
                                                 self.$usage.read_unchecked(usage_addr),
                                             );
                                         }
@@ -342,47 +374,128 @@ impl Vram {
         flush_usage!(
             a_bg, 14, 0x60,
             (
-                0 => a,
-                1 => b,
-                2 => c,
-                3 => d,
-                4 => e,
-                5 => f,
-                6 => g,
+                0 => a, 0x1_FFFF,
+                1 => b, 0x1_FFFF,
+                2 => c, 0x1_FFFF,
+                3 => d, 0x1_FFFF,
+                4 => e, 0xFFFF,
+                5 => f, 0x3FFF,
+                6 => g, 0x3FFF,
             )
         );
         flush_usage!(
             a_obj, 14, 0x18,
             (
-                0 => a,
-                1 => b,
-                2 => e,
-                3 => f,
-                4 => g,
+                0 => a, 0x1_FFFF,
+                1 => b, 0x1_FFFF,
+                2 => e, 0xFFFF,
+                3 => f, 0x3FFF,
+                4 => g, 0x3FFF,
             )
         );
         flush_usage!(
             b_bg, 15, 6,
             (
-                0 => c,
-                1 => h,
-                2 => i,
+                0 => c, 0x1_FFFF,
+                1 => h, 0x7FFF,
+                2 => i, 0x3FFF,
             )
         );
         flush_usage!(
             b_obj, 17, 2,
             (
-                0 => d,
-                1 => i,
+                0 => d, 0x1_FFFF,
+                1 => i, 0x3FFF,
             )
         );
         flush_usage!(
             arm7, 17, 0,
             (
-                0 => c,
-                1 => d,
+                0 => c, 0x1_FFFF,
+                1 => d, 0x1_FFFF,
             )
         );
+    }
+
+    pub(super) fn restore_cpu_bg_obj_mappings<E: cpu::Engine>(&mut self, arm9: &mut Arm9<E>) {
+        macro_rules! restore_region {
+            (
+                $cpu: expr, $cpu_r_mask: expr, $cpu_rw_mask: expr,
+                $usage: ident, $usage_len: literal, $region_shift: expr, $mirrored_banks_mask: expr,
+                $cpu_start_addr: expr, $cpu_end_addr: expr
+            ) => {{
+                (&mut *self.writeback.$usage.get()).fill(0);
+                for (region, mapped) in self.map.$usage.iter().enumerate() {
+                    let mapped = mapped.get();
+                    let mask = if mapped != 0
+                        && mapped & (mapped - 1) == 0
+                        && mapped & $mirrored_banks_mask == 0
+                        && self.bg_obj_updates.is_none()
+                    {
+                        $cpu_rw_mask
+                    } else {
+                        $cpu_r_mask
+                    };
+                    map_cpu_visible!(
+                        $cpu,
+                        mask,
+                        $cpu_start_addr,
+                        $cpu_end_addr,
+                        self.$usage,
+                        $usage_len,
+                        region,
+                        $region_shift
+                    );
+                }
+            }};
+        }
+
+        unsafe {
+            restore_region!(
+                arm9,
+                ptr_mask::R,
+                ptr_mask::R | ptr_mask::W_16_32,
+                a_bg,
+                0x8_0000,
+                14,
+                0x60,
+                0x0600_0000,
+                0x0620_0000
+            );
+            restore_region!(
+                arm9,
+                ptr_mask::R,
+                ptr_mask::R | ptr_mask::W_16_32,
+                a_obj,
+                0x4_0000,
+                14,
+                0x18,
+                0x0640_0000,
+                0x0660_0000
+            );
+            restore_region!(
+                arm9,
+                ptr_mask::R,
+                ptr_mask::R | ptr_mask::W_16_32,
+                b_bg,
+                0x2_0000,
+                15,
+                6,
+                0x0620_0000,
+                0x0640_0000
+            );
+            restore_region!(
+                arm9,
+                ptr_mask::R,
+                ptr_mask::R | ptr_mask::W_16_32,
+                b_obj,
+                0x2_0000,
+                17,
+                2,
+                0x0660_0000,
+                0x0680_0000
+            );
+        }
     }
 
     pub(crate) fn restore_mappings<E: cpu::Engine>(
@@ -441,9 +554,9 @@ impl Vram {
         macro_rules! restore_region {
             (
                 cpu_visible $cpu: expr, $cpu_r_mask: expr, $cpu_rw_mask: expr,
-                $usage: ident, $region_shift: expr, $mirrored_banks_mask: expr,
-                $cpu_start_addr: expr, $cpu_end_addr: expr,
-                ($($bit: literal => $bank: ident,)*)
+                $usage: ident, $usage_len: literal, $region_shift: expr, $mirrored_banks_mask: expr,
+                $cpu_start_addr: expr, $cpu_end_addr: expr, $($bg_obj_updates: ident,)?
+                ($($bit: literal => $bank: ident, $mask: literal,)*)
             ) => {{
                 (&mut *self.writeback.$usage.get()).fill(0);
                 for (region, mapped) in self.map.$usage.iter().enumerate() {
@@ -459,7 +572,7 @@ impl Vram {
                         'copy_bank: {
                             $(
                                 if mapped & 1 << $bit != 0 {
-                                    copy_slice_wrapping_unchecked_with_dst_range(
+                                    copy_slice_wrapping_unchecked_with_dst_range::<$mask, _, _>(
                                         &self.$usage,
                                         &self.banks.$bank,
                                         usage_addr_range,
@@ -469,7 +582,7 @@ impl Vram {
                             )*
                         }
                         #[allow(clippy::bad_bit_mask)]
-                        if mapped & $mirrored_banks_mask == 0 {
+                        if mapped & $mirrored_banks_mask == 0 $(&& self.$bg_obj_updates.is_none())* {
                             $cpu_rw_mask
                         } else {
                             $cpu_r_mask
@@ -481,7 +594,7 @@ impl Vram {
                             .fill(0);
                         $(
                             if mapped & 1 << $bit != 0 {
-                                or_assign_slice_wrapping_unchecked(
+                                or_assign_slice_wrapping_unchecked::<$mask, _, _>(
                                     &self.$usage,
                                     &self.banks.$bank,
                                     usage_addr_range.clone(),
@@ -492,13 +605,13 @@ impl Vram {
                     };
                     map_cpu_visible!(
                         $cpu, mask, $cpu_start_addr, $cpu_end_addr,
-                        self.$usage, region, $region_shift
+                        self.$usage, $usage_len, region, $region_shift
                     );
                 }
             }};
             (
                 $usage: ident, $region_shift: expr,
-                ($($bit: literal => $bank: ident,)*)
+                ($($bit: literal => $bank: ident, $mask: literal,)*)
             ) => {{
                 for (region, mapped) in self.map.$usage.iter().enumerate() {
                     let mapped = mapped.get();
@@ -508,7 +621,7 @@ impl Vram {
                     } else if mapped & (mapped - 1) == 0 {
                         $(
                             if mapped & 1 << $bit != 0 {
-                                copy_slice_wrapping_unchecked_with_dst_range(
+                                copy_slice_wrapping_unchecked_with_dst_range::<$mask, _, _>(
                                     &self.$usage,
                                     &self.banks.$bank,
                                     usage_addr_range.clone(),
@@ -523,7 +636,7 @@ impl Vram {
                             .fill(0);
                         $(
                             if mapped & 1 << $bit != 0 {
-                                or_assign_slice_wrapping_unchecked(
+                                or_assign_slice_wrapping_unchecked::<$mask, _, _>(
                                     &self.$usage,
                                     &self.banks.$bank,
                                     usage_addr_range.clone(),
@@ -539,88 +652,88 @@ impl Vram {
             restore_region!(
                 a_bg_ext_pal, 14,
                 (
-                    0 => e,
-                    1 => f,
-                    2 => g,
+                    0 => e, 0xFFFF,
+                    1 => f, 0x3FFF,
+                    2 => g, 0x3FFF,
                 )
             );
             restore_region!(
                 a_obj_ext_pal, 13,
                 (
-                    0 => f,
-                    1 => g,
+                    0 => f, 0x3FFF,
+                    1 => g, 0x3FFF,
                 )
             );
             restore_region!(
                 texture, 17,
                 (
-                    0 => a,
-                    1 => b,
-                    2 => c,
-                    3 => d,
+                    0 => a, 0x1_FFFF,
+                    1 => b, 0x1_FFFF,
+                    2 => c, 0x1_FFFF,
+                    3 => d, 0x1_FFFF,
                 )
             );
             restore_region!(
                 tex_pal, 14,
                 (
-                    0 => e,
-                    1 => f,
-                    2 => g,
+                    0 => e, 0xFFFF,
+                    1 => f, 0x3FFF,
+                    2 => g, 0x3FFF,
                 )
             );
 
             restore_region!(
                 cpu_visible arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32,
-                a_bg, 14, 0x60,
-                0x0600_0000, 0x0620_0000,
+                a_bg, 0x8_0000, 14, 0x60,
+                0x0600_0000, 0x0620_0000, bg_obj_updates,
                 (
-                    0 => a,
-                    1 => b,
-                    2 => c,
-                    3 => d,
-                    4 => e,
-                    5 => f,
-                    6 => g,
+                    0 => a, 0x1_FFFF,
+                    1 => b, 0x1_FFFF,
+                    2 => c, 0x1_FFFF,
+                    3 => d, 0x1_FFFF,
+                    4 => e, 0xFFFF,
+                    5 => f, 0x3FFF,
+                    6 => g, 0x3FFF,
                 )
             );
             restore_region!(
                 cpu_visible arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32,
-                a_obj, 14, 0x18,
-                0x0640_0000, 0x0660_0000,
+                a_obj, 0x4_0000, 14, 0x18,
+                0x0640_0000, 0x0660_0000, bg_obj_updates,
                 (
-                    0 => a,
-                    1 => b,
-                    2 => e,
-                    3 => f,
-                    4 => g,
+                    0 => a, 0x1_FFFF,
+                    1 => b, 0x1_FFFF,
+                    2 => e, 0xFFFF,
+                    3 => f, 0x3FFF,
+                    4 => g, 0x3FFF,
                 )
             );
             restore_region!(
                 cpu_visible arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32,
-                b_bg, 15, 6,
-                0x0620_0000, 0x0640_0000,
+                b_bg, 0x2_0000, 15, 6,
+                0x0620_0000, 0x0640_0000, bg_obj_updates,
                 (
-                    0 => c,
-                    1 => h,
-                    2 => i,
+                    0 => c, 0x1_FFFF,
+                    1 => h, 0x7FFF,
+                    2 => i, 0x3FFF,
                 )
             );
             restore_region!(
                 cpu_visible arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32,
-                b_obj, 17, 2,
-                0x0660_0000, 0x0680_0000,
+                b_obj, 0x2_0000, 17, 2,
+                0x0660_0000, 0x0680_0000, bg_obj_updates,
                 (
-                    0 => d,
-                    1 => i,
+                    0 => d, 0x1_FFFF,
+                    1 => i, 0x3FFF,
                 )
             );
             restore_region!(
                 cpu_visible arm7, arm7_ptr_mask::R, arm7_ptr_mask::ALL,
-                arm7, 17, 0,
+                arm7, 0x4_0000, 17, 0,
                 0x0600_0000, 0x0700_0000,
                 (
-                    0 => c,
-                    1 => d,
+                    0 => c, 0x1_FFFF,
+                    1 => d, 0x1_FFFF,
                 )
             );
         }
@@ -682,6 +795,7 @@ impl Vram {
         E: cpu::Engine,
         R: IntoIterator<Item = usize>,
         const LEN: usize,
+        const MASK: usize,
         const BANK_BIT: u8,
     >(
         &self,
@@ -692,19 +806,22 @@ impl Vram {
         for region in regions {
             map_region!(
                 wb self,
-                a_bg, 14, 0x60,
+                a_bg, 0x8_0000, 14, 0x60, bg_obj_updates,
                 (
-                    0 => a,
-                    1 => b,
-                    2 => c,
-                    3 => d,
-                    4 => e,
-                    5 => f,
-                    6 => g,
+                    0 => a, 0x1_FFFF,
+                    1 => b, 0x1_FFFF,
+                    2 => c, 0x1_FFFF,
+                    3 => d, 0x1_FFFF,
+                    4 => e, 0xFFFF,
+                    5 => f, 0x3FFF,
+                    6 => g, 0x3FFF,
                 ),
                 arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32, 0x0600_0000, 0x0620_0000,
-                bank, BANK_BIT, region
+                bank, MASK, BANK_BIT, region
             );
+            modify_bg_obj_updates!(self, 0, |updates| {
+                updates.bg |= 1 << region;
+            });
         }
     }
 
@@ -712,6 +829,7 @@ impl Vram {
         E: cpu::Engine,
         R: IntoIterator<Item = usize>,
         const LEN: usize,
+        const MASK: usize,
         const IS_MIRROR: bool,
         const BANK_BIT: u8,
     >(
@@ -723,19 +841,22 @@ impl Vram {
         for region in regions {
             unmap_region!(
                 wb self,
-                a_bg, 14, 0x60,
+                a_bg, 0x8_0000, 14, 0x60, bg_obj_updates,
                 (
-                    0 => a,
-                    1 => b,
-                    2 => c,
-                    3 => d,
-                    4 => e,
-                    5 => f,
-                    6 => g,
+                    0 => a, 0x1_FFFF,
+                    1 => b, 0x1_FFFF,
+                    2 => c, 0x1_FFFF,
+                    3 => d, 0x1_FFFF,
+                    4 => e, 0xFFFF,
+                    5 => f, 0x3FFF,
+                    6 => g, 0x3FFF,
                 ),
                 arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32, 0x0600_0000, 0x0620_0000,
-                bank, BANK_BIT, IS_MIRROR, region
+                bank, MASK, BANK_BIT, IS_MIRROR, region
             );
+            modify_bg_obj_updates!(self, 0, |updates| {
+                updates.bg |= 1 << region;
+            });
         }
     }
 
@@ -743,6 +864,7 @@ impl Vram {
         E: cpu::Engine,
         R: IntoIterator<Item = usize>,
         const LEN: usize,
+        const MASK: usize,
         const BANK_BIT: u8,
     >(
         &self,
@@ -753,17 +875,20 @@ impl Vram {
         for region in regions {
             map_region!(
                 wb self,
-                a_obj, 14, 0x18,
+                a_obj, 0x4_0000, 14, 0x18, bg_obj_updates,
                 (
-                    0 => a,
-                    1 => b,
-                    2 => e,
-                    3 => f,
-                    4 => g,
+                    0 => a, 0x1_FFFF,
+                    1 => b, 0x1_FFFF,
+                    2 => e, 0xFFFF,
+                    3 => f, 0x3FFF,
+                    4 => g, 0x3FFF,
                 ),
                 arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32, 0x0640_0000, 0x0660_0000,
-                bank, BANK_BIT, region
+                bank, MASK, BANK_BIT, region
             );
+            modify_bg_obj_updates!(self, 0, |updates| {
+                updates.obj |= 1 << region;
+            });
         }
     }
 
@@ -771,6 +896,7 @@ impl Vram {
         E: cpu::Engine,
         R: IntoIterator<Item = usize>,
         const LEN: usize,
+        const MASK: usize,
         const IS_MIRROR: bool,
         const BANK_BIT: u8,
     >(
@@ -782,23 +908,27 @@ impl Vram {
         for region in regions {
             unmap_region!(
                 wb self,
-                a_obj, 14, 0x18,
+                a_obj, 0x4_0000, 14, 0x18, bg_obj_updates,
                 (
-                    0 => a,
-                    1 => b,
-                    2 => e,
-                    3 => f,
-                    4 => g,
+                    0 => a, 0x1_FFFF,
+                    1 => b, 0x1_FFFF,
+                    2 => e, 0xFFFF,
+                    3 => f, 0x3FFF,
+                    4 => g, 0x3FFF,
                 ),
                 arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32, 0x0640_0000, 0x0660_0000,
-                bank, BANK_BIT, IS_MIRROR, region
+                bank, MASK, BANK_BIT, IS_MIRROR, region
             );
+            modify_bg_obj_updates!(self, 0, |updates| {
+                updates.obj |= 1 << region;
+            });
         }
     }
 
     unsafe fn map_a_bg_ext_pal<
         R: IntoIterator<Item = usize>,
         const LEN: usize,
+        const MASK: usize,
         const BANK_BIT: u8,
     >(
         &self,
@@ -806,7 +936,10 @@ impl Vram {
         regions: R,
     ) {
         for region in regions {
-            map_region!(no_wb self, a_bg_ext_pal, 14, bank, BANK_BIT, region);
+            map_region!(no_wb self, a_bg_ext_pal, 14, bank, MASK, BANK_BIT, region);
+            modify_bg_obj_updates!(self, 0, |updates| {
+                updates.bg_ext_palette |= 1 << region;
+            });
         }
     }
 
@@ -819,20 +952,26 @@ impl Vram {
                 no_wb self,
                 a_bg_ext_pal, 14,
                 (
-                    0 => e,
-                    1 => f,
-                    2 => g,
+                    0 => e, 0xFFFF,
+                    1 => f, 0x3FFF,
+                    2 => g, 0x3FFF,
                 ),
                 BANK_BIT, region
             );
+            modify_bg_obj_updates!(self, 0, |updates| {
+                updates.bg_ext_palette |= 1 << region;
+            });
         }
     }
 
-    unsafe fn map_a_obj_ext_pal<const LEN: usize, const BANK_BIT: u8>(
+    unsafe fn map_a_obj_ext_pal<const LEN: usize, const MASK: usize, const BANK_BIT: u8>(
         &self,
         bank: &OwnedBytesCellPtr<LEN>,
     ) {
-        map_region!(no_wb self, a_obj_ext_pal, 13, bank, BANK_BIT, 0);
+        map_region!(no_wb self, a_obj_ext_pal, 13, bank, MASK, BANK_BIT, 0);
+        modify_bg_obj_updates!(self, 0, |updates| {
+            updates.obj_ext_palette = true;
+        });
     }
 
     unsafe fn unmap_a_obj_ext_pal<const BANK_BIT: u8>(&self) {
@@ -840,17 +979,21 @@ impl Vram {
             no_wb self,
             a_obj_ext_pal, 13,
             (
-                0 => f,
-                1 => g,
+                0 => f, 0x3FFF,
+                1 => g, 0x3FFF,
             ),
             BANK_BIT, 0
         );
+        modify_bg_obj_updates!(self, 0, |updates| {
+            updates.obj_ext_palette = true;
+        });
     }
 
     unsafe fn map_b_bg<
         E: cpu::Engine,
         R: IntoIterator<Item = usize>,
         const LEN: usize,
+        const MASK: usize,
         const BANK_BIT: u8,
     >(
         &self,
@@ -861,15 +1004,18 @@ impl Vram {
         for region in regions {
             map_region!(
                 wb self,
-                b_bg, 15, 6,
+                b_bg, 0x2_0000, 15, 6, bg_obj_updates,
                 (
-                    0 => c,
-                    1 => h,
-                    2 => i,
+                    0 => c, 0x1_FFFF,
+                    1 => h, 0x7FFF,
+                    2 => i, 0x3FFF,
                 ),
                 arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32, 0x0620_0000, 0x0640_0000,
-                bank, BANK_BIT, region
+                bank, MASK, BANK_BIT, region
             );
+            modify_bg_obj_updates!(self, 1, |updates| {
+                updates.bg |= 3 << (region << 1);
+            });
         }
     }
 
@@ -877,6 +1023,7 @@ impl Vram {
         E: cpu::Engine,
         R: IntoIterator<Item = usize>,
         const LEN: usize,
+        const MASK: usize,
         const IS_MIRROR: bool,
         const BANK_BIT: u8,
     >(
@@ -888,58 +1035,72 @@ impl Vram {
         for region in regions {
             unmap_region!(
                 wb self,
-                b_bg, 15, 6,
+                b_bg, 0x2_0000, 15, 6, bg_obj_updates,
                 (
-                    0 => c,
-                    1 => h,
-                    2 => i,
+                    0 => c, 0x1_FFFF,
+                    1 => h, 0x7FFF,
+                    2 => i, 0x3FFF,
                 ),
                 arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32, 0x0620_0000, 0x0640_0000,
-                bank, BANK_BIT, IS_MIRROR, region
+                bank, MASK, BANK_BIT, IS_MIRROR, region
             );
+            modify_bg_obj_updates!(self, 1, |updates| {
+                updates.bg |= 3 << (region << 1);
+            });
         }
     }
 
-    unsafe fn map_b_obj<E: cpu::Engine, const LEN: usize, const BANK_BIT: u8>(
+    unsafe fn map_b_obj<E: cpu::Engine, const LEN: usize, const MASK: usize, const BANK_BIT: u8>(
         &self,
         arm9: &mut Arm9<E>,
         bank: &OwnedBytesCellPtr<LEN>,
     ) {
         map_region!(
             wb self,
-            b_obj, 17, 2,
+            b_obj, 0x2_0000, 17, 2, bg_obj_updates,
             (
-                0 => d,
-                1 => i,
+                0 => d, 0x1_FFFF,
+                1 => i, 0x3FFF,
             ),
             arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32, 0x0660_0000, 0x0680_0000,
-            bank, BANK_BIT, 0
+            bank, MASK, BANK_BIT, 0
         );
+        modify_bg_obj_updates!(self, 1, |updates| {
+            updates.obj = 0xFF;
+        });
     }
 
-    unsafe fn unmap_b_obj<E: cpu::Engine, const LEN: usize, const BANK_BIT: u8>(
+    unsafe fn unmap_b_obj<
+        E: cpu::Engine,
+        const LEN: usize,
+        const MASK: usize,
+        const BANK_BIT: u8,
+    >(
         &self,
         arm9: &mut Arm9<E>,
         bank: &OwnedBytesCellPtr<LEN>,
     ) {
         unmap_region!(
             wb self,
-            b_obj, 17, 2,
+            b_obj, 0x2_0000, 17, 2, bg_obj_updates,
             (
-                0 => d,
-                1 => i,
+                0 => d, 0x1_FFFF,
+                1 => i, 0x3FFF,
             ),
             arm9, ptr_mask::R, ptr_mask::R | ptr_mask::W_16_32, 0x0660_0000, 0x0680_0000,
-            bank, BANK_BIT, false, 0
+            bank, MASK, BANK_BIT, false, 0
         );
+        modify_bg_obj_updates!(self, 1, |updates| {
+            updates.obj = 0xFF;
+        });
     }
 
-    unsafe fn map_texture<const LEN: usize, const BANK_BIT: u8>(
+    unsafe fn map_texture<const LEN: usize, const MASK: usize, const BANK_BIT: u8>(
         &self,
         bank: &OwnedBytesCellPtr<LEN>,
         region: usize,
     ) {
-        map_region!(no_wb self, texture, 17, bank, BANK_BIT, region);
+        map_region!(no_wb self, texture, 17, bank, MASK, BANK_BIT, region);
     }
 
     unsafe fn unmap_texture<const BANK_BIT: u8>(&self, region: usize) {
@@ -947,22 +1108,27 @@ impl Vram {
             no_wb self,
             texture, 17,
             (
-                0 => a,
-                1 => b,
-                2 => c,
-                3 => d,
+                0 => a, 0x1_FFFF,
+                1 => b, 0x1_FFFF,
+                2 => c, 0x1_FFFF,
+                3 => d, 0x1_FFFF,
             ),
             BANK_BIT, region
         );
     }
 
-    unsafe fn map_tex_pal<R: IntoIterator<Item = usize>, const LEN: usize, const BANK_BIT: u8>(
+    unsafe fn map_tex_pal<
+        R: IntoIterator<Item = usize>,
+        const LEN: usize,
+        const MASK: usize,
+        const BANK_BIT: u8,
+    >(
         &self,
         bank: &OwnedBytesCellPtr<LEN>,
         regions: R,
     ) {
         for region in regions {
-            map_region!(no_wb self, tex_pal, 14, bank, BANK_BIT, region);
+            map_region!(no_wb self, tex_pal, 14, bank, MASK, BANK_BIT, region);
         }
     }
 
@@ -972,16 +1138,16 @@ impl Vram {
                 no_wb self,
                 tex_pal, 14,
                 (
-                    0 => e,
-                    1 => f,
-                    2 => g,
+                    0 => e, 0xFFFF,
+                    1 => f, 0x3FFF,
+                    2 => g, 0x3FFF,
                 ),
                 BANK_BIT, region
             );
         }
     }
 
-    unsafe fn map_arm7<E: cpu::Engine, const LEN: usize, const BANK_BIT: u8>(
+    unsafe fn map_arm7<E: cpu::Engine, const LEN: usize, const MASK: usize, const BANK_BIT: u8>(
         &self,
         arm7: &mut Arm7<E>,
         bank: &OwnedBytesCellPtr<LEN>,
@@ -989,17 +1155,22 @@ impl Vram {
     ) {
         map_region!(
             wb self,
-            arm7, 17, 0,
+            arm7, 0x4_0000, 17, 0,
             (
-                0 => c,
-                1 => d,
+                0 => c, 0x1_FFFF,
+                1 => d, 0x1_FFFF,
             ),
             arm7, arm7_ptr_mask::R, arm7_ptr_mask::ALL, 0x0600_0000, 0x0700_0000,
-            bank, BANK_BIT, region
+            bank, MASK, BANK_BIT, region
         );
     }
 
-    unsafe fn unmap_arm7<E: cpu::Engine, const LEN: usize, const BANK_BIT: u8>(
+    unsafe fn unmap_arm7<
+        E: cpu::Engine,
+        const LEN: usize,
+        const MASK: usize,
+        const BANK_BIT: u8,
+    >(
         &self,
         arm7: &mut Arm7<E>,
         bank: &OwnedBytesCellPtr<LEN>,
@@ -1008,13 +1179,13 @@ impl Vram {
         use arm7::bus::ptrs::mask as ptr_mask;
         unmap_region!(
             wb self,
-            arm7, 17, 0,
+            arm7, 0x4_0000, 17, 0,
             (
-                0 => c,
-                1 => d,
+                0 => c, 0x1_FFFF,
+                1 => d, 0x1_FFFF,
             ),
             arm7, ptr_mask::R, ptr_mask::ALL, 0x0600_0000, 0x0700_0000,
-            bank, BANK_BIT, false, region
+            bank, MASK, BANK_BIT, false, region
         );
     }
 
@@ -1036,7 +1207,7 @@ impl Vram {
                     0 => self.unmap_lcdc(arm9, 0, 7),
                     1 => {
                         let base_region = (prev_value.offset() as usize) << 3;
-                        self.unmap_a_bg::<_, _, 0x2_0000, false, 0>(
+                        self.unmap_a_bg::<_, _, _, 0x1_FFFF, false, 0>(
                             arm9,
                             &self.banks.a,
                             base_region..base_region + 8,
@@ -1044,7 +1215,7 @@ impl Vram {
                     }
                     2 => {
                         let base_region = (prev_value.offset() as usize & 1) << 3;
-                        self.unmap_a_obj::<_, _, 0x2_0000, false, 0>(
+                        self.unmap_a_obj::<_, _, _, 0x1_FFFF, false, 0>(
                             arm9,
                             &self.banks.a,
                             base_region..base_region + 8,
@@ -1062,7 +1233,7 @@ impl Vram {
                     0 => self.map_lcdc(arm9, 0, 7, self.banks.a.as_ptr()),
                     1 => {
                         let base_region = (value.offset() as usize) << 3;
-                        self.map_a_bg::<_, _, _, 0>(
+                        self.map_a_bg::<_, _, _, 0x1_FFFF, 0>(
                             arm9,
                             &self.banks.a,
                             base_region..base_region + 8,
@@ -1070,7 +1241,7 @@ impl Vram {
                     }
                     2 => {
                         let base_region = (value.offset() as usize & 1) << 3;
-                        self.map_a_obj::<_, _, _, 0>(
+                        self.map_a_obj::<_, _, _, 0x1_FFFF, 0>(
                             arm9,
                             &self.banks.a,
                             base_region..base_region + 8,
@@ -1079,7 +1250,7 @@ impl Vram {
                     _ => {
                         let region = value.offset() as usize;
                         engine_3d.set_texture_dirty(1 << region);
-                        self.map_texture::<_, 0>(&self.banks.a, region);
+                        self.map_texture::<_, 0x1_FFFF, 0>(&self.banks.a, region);
                     }
                 }
             }
@@ -1104,7 +1275,7 @@ impl Vram {
                     0 => self.unmap_lcdc(arm9, 8, 0xF),
                     1 => {
                         let base_region = (prev_value.offset() as usize) << 3;
-                        self.unmap_a_bg::<_, _, 0x2_0000, false, 1>(
+                        self.unmap_a_bg::<_, _, _, 0x1_FFFF, false, 1>(
                             arm9,
                             &self.banks.b,
                             base_region..base_region + 8,
@@ -1112,7 +1283,7 @@ impl Vram {
                     }
                     2 => {
                         let base_region = (prev_value.offset() as usize & 1) << 3;
-                        self.unmap_a_obj::<_, _, 0x2_0000, false, 1>(
+                        self.unmap_a_obj::<_, _, _, 0x1_FFFF, false, 1>(
                             arm9,
                             &self.banks.b,
                             base_region..base_region + 8,
@@ -1130,7 +1301,7 @@ impl Vram {
                     0 => self.map_lcdc(arm9, 8, 0xF, self.banks.b.as_ptr()),
                     1 => {
                         let base_region = (value.offset() as usize) << 3;
-                        self.map_a_bg::<_, _, _, 1>(
+                        self.map_a_bg::<_, _, _, 0x1_FFFF, 1>(
                             arm9,
                             &self.banks.b,
                             base_region..base_region + 8,
@@ -1138,7 +1309,7 @@ impl Vram {
                     }
                     2 => {
                         let base_region = (value.offset() as usize & 1) << 3;
-                        self.map_a_obj::<_, _, _, 1>(
+                        self.map_a_obj::<_, _, _, 0x1_FFFF, 1>(
                             arm9,
                             &self.banks.b,
                             base_region..base_region + 8,
@@ -1147,7 +1318,7 @@ impl Vram {
                     _ => {
                         let region = value.offset() as usize;
                         engine_3d.set_texture_dirty(1 << region);
-                        self.map_texture::<_, 1>(&self.banks.b, region);
+                        self.map_texture::<_, 0x1_FFFF, 1>(&self.banks.b, region);
                     }
                 }
             }
@@ -1175,7 +1346,7 @@ impl Vram {
                     }
                     1 => {
                         let base_region = (prev_value.offset() as usize) << 3;
-                        self.unmap_a_bg::<_, _, 0x2_0000, false, 2>(
+                        self.unmap_a_bg::<_, _, _, 0x1_FFFF, false, 2>(
                             arm9,
                             &self.banks.c,
                             base_region..base_region + 8,
@@ -1183,7 +1354,7 @@ impl Vram {
                     }
                     2 => {
                         let region = prev_value.offset() as usize & 1;
-                        self.unmap_arm7::<_, _, 0>(arm7, &self.banks.c, region);
+                        self.unmap_arm7::<_, _, 0x1_FFFF, 0>(arm7, &self.banks.c, region);
                         self.arm7_status.set_c_used_as_arm7(false);
                     }
                     3 => {
@@ -1191,7 +1362,7 @@ impl Vram {
                         engine_3d.set_texture_dirty(1 << region);
                         self.unmap_texture::<2>(region);
                     }
-                    4 => self.unmap_b_bg::<_, _, 0x2_0000, false, 0>(arm9, &self.banks.c, 0..4),
+                    4 => self.unmap_b_bg::<_, _, _, 0x1_FFFF, false, 0>(arm9, &self.banks.c, 0..4),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank C: {}", prev_value.mst())
                     }
@@ -1204,7 +1375,7 @@ impl Vram {
                     }
                     1 => {
                         let base_region = (value.offset() as usize) << 3;
-                        self.map_a_bg::<_, _, _, 2>(
+                        self.map_a_bg::<_, _, _, 0x1_FFFF, 2>(
                             arm9,
                             &self.banks.c,
                             base_region..base_region + 8,
@@ -1212,15 +1383,15 @@ impl Vram {
                     }
                     2 => {
                         let region = value.offset() as usize & 1;
-                        self.map_arm7::<_, _, 0>(arm7, &self.banks.c, region);
+                        self.map_arm7::<_, _, 0x1_FFFF, 0>(arm7, &self.banks.c, region);
                         self.arm7_status.set_c_used_as_arm7(true);
                     }
                     3 => {
                         let region = value.offset() as usize;
                         engine_3d.set_texture_dirty(1 << region);
-                        self.map_texture::<_, 2>(&self.banks.c, region);
+                        self.map_texture::<_, 0x1_FFFF, 2>(&self.banks.c, region);
                     }
-                    4 => self.map_b_bg::<_, _, _, 0>(arm9, &self.banks.c, 0..4),
+                    4 => self.map_b_bg::<_, _, _, 0x1_FFFF, 0>(arm9, &self.banks.c, 0..4),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank C: {}", value.mst())
                     }
@@ -1250,7 +1421,7 @@ impl Vram {
                     }
                     1 => {
                         let base_region = (prev_value.offset() as usize) << 3;
-                        self.unmap_a_bg::<_, _, 0x2_0000, false, 3>(
+                        self.unmap_a_bg::<_, _, _, 0x1_FFFF, false, 3>(
                             arm9,
                             &self.banks.d,
                             base_region..base_region + 8,
@@ -1258,7 +1429,7 @@ impl Vram {
                     }
                     2 => {
                         let region = prev_value.offset() as usize & 1;
-                        self.unmap_arm7::<_, _, 1>(arm7, &self.banks.d, region);
+                        self.unmap_arm7::<_, _, 0x1_FFFF, 1>(arm7, &self.banks.d, region);
                         self.arm7_status.set_d_used_as_arm7(false);
                     }
                     3 => {
@@ -1266,7 +1437,7 @@ impl Vram {
                         engine_3d.set_texture_dirty(1 << region);
                         self.unmap_texture::<3>(region);
                     }
-                    4 => self.unmap_b_obj::<_, _, 0>(arm9, &self.banks.d),
+                    4 => self.unmap_b_obj::<_, _, 0x1_FFFF, 0>(arm9, &self.banks.d),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank D: {}", prev_value.mst())
                     }
@@ -1277,7 +1448,7 @@ impl Vram {
                     0 => self.map_lcdc(arm9, 0x18, 0x1F, self.banks.d.as_ptr()),
                     1 => {
                         let base_region = (value.offset() as usize) << 3;
-                        self.map_a_bg::<_, _, _, 3>(
+                        self.map_a_bg::<_, _, _, 0x1_FFFF, 3>(
                             arm9,
                             &self.banks.d,
                             base_region..base_region + 8,
@@ -1285,15 +1456,15 @@ impl Vram {
                     }
                     2 => {
                         let region = value.offset() as usize & 1;
-                        self.map_arm7::<_, _, 1>(arm7, &self.banks.d, region);
+                        self.map_arm7::<_, _, 0x1_FFFF, 1>(arm7, &self.banks.d, region);
                         self.arm7_status.set_d_used_as_arm7(true);
                     }
                     3 => {
                         let region = value.offset() as usize;
                         engine_3d.set_texture_dirty(1 << region);
-                        self.map_texture::<_, 3>(&self.banks.d, region);
+                        self.map_texture::<_, 0x1_FFFF, 3>(&self.banks.d, region);
                     }
-                    4 => self.map_b_obj::<_, _, 0>(arm9, &self.banks.d),
+                    4 => self.map_b_obj::<_, _, 0x1_FFFF, 0>(arm9, &self.banks.d),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank D: {}", value.mst())
                     }
@@ -1318,8 +1489,8 @@ impl Vram {
             if prev_value.enabled() {
                 match prev_value.mst() {
                     0 => self.unmap_lcdc(arm9, 0x20, 0x23),
-                    1 => self.unmap_a_bg::<_, _, 0x1_0000, false, 4>(arm9, &self.banks.e, 0..4),
-                    2 => self.unmap_a_obj::<_, _, 0x1_0000, false, 2>(arm9, &self.banks.e, 0..4),
+                    1 => self.unmap_a_bg::<_, _, _, 0xFFFF, false, 4>(arm9, &self.banks.e, 0..4),
+                    2 => self.unmap_a_obj::<_, _, _, 0xFFFF, false, 2>(arm9, &self.banks.e, 0..4),
                     3 => {
                         engine_3d.set_tex_pal_dirty(0xF);
                         self.unmap_tex_pal::<_, 0>(0..4);
@@ -1333,13 +1504,13 @@ impl Vram {
             if value.enabled() {
                 match value.mst() {
                     0 => self.map_lcdc(arm9, 0x20, 0x23, self.banks.e.as_ptr()),
-                    1 => self.map_a_bg::<_, _, _, 4>(arm9, &self.banks.e, 0..4),
-                    2 => self.map_a_obj::<_, _, _, 2>(arm9, &self.banks.e, 0..4),
+                    1 => self.map_a_bg::<_, _, _, 0xFFFF, 4>(arm9, &self.banks.e, 0..4),
+                    2 => self.map_a_obj::<_, _, _, 0xFFFF, 2>(arm9, &self.banks.e, 0..4),
                     3 => {
                         engine_3d.set_tex_pal_dirty(0xF);
-                        self.map_tex_pal::<_, _, 0>(&self.banks.e, 0..4);
+                        self.map_tex_pal::<_, _, 0xFFFF, 0>(&self.banks.e, 0..4);
                     }
-                    4 => self.map_a_bg_ext_pal::<_, _, 0>(&self.banks.e, 0..2),
+                    4 => self.map_a_bg_ext_pal::<_, _, 0xFFFF, 0>(&self.banks.e, 0..2),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank E: {}", value.mst())
                     }
@@ -1369,12 +1540,12 @@ impl Vram {
                     1 => {
                         let base_region =
                             ((prev_value.offset() & 1) | (prev_value.offset() & 2) << 1) as usize;
-                        self.unmap_a_bg::<_, _, 0x4000, false, 5>(
+                        self.unmap_a_bg::<_, _, _, 0x3FFF, false, 5>(
                             arm9,
                             &self.banks.f,
                             once(base_region),
                         );
-                        self.unmap_a_bg::<_, _, 0x4000, true, 5>(
+                        self.unmap_a_bg::<_, _, _, 0x3FFF, true, 5>(
                             arm9,
                             &self.banks.f,
                             once(base_region | 2),
@@ -1383,12 +1554,12 @@ impl Vram {
                     2 => {
                         let base_region =
                             ((prev_value.offset() & 1) | (prev_value.offset() & 2) << 1) as usize;
-                        self.unmap_a_obj::<_, _, 0x4000, false, 3>(
+                        self.unmap_a_obj::<_, _, _, 0x3FFF, false, 3>(
                             arm9,
                             &self.banks.f,
                             once(base_region),
                         );
-                        self.unmap_a_obj::<_, _, 0x4000, true, 3>(
+                        self.unmap_a_obj::<_, _, _, 0x3FFF, true, 3>(
                             arm9,
                             &self.banks.f,
                             once(base_region | 2),
@@ -1416,7 +1587,7 @@ impl Vram {
                     1 => {
                         let base_region =
                             ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
-                        self.map_a_bg::<_, _, _, 5>(
+                        self.map_a_bg::<_, _, _, 0x3FFF, 5>(
                             arm9,
                             &self.banks.f,
                             [base_region, base_region | 2],
@@ -1425,7 +1596,7 @@ impl Vram {
                     2 => {
                         let base_region =
                             ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
-                        self.map_a_obj::<_, _, _, 3>(
+                        self.map_a_obj::<_, _, _, 0x3FFF, 3>(
                             arm9,
                             &self.banks.f,
                             [base_region, base_region | 2],
@@ -1434,13 +1605,13 @@ impl Vram {
                     3 => {
                         let region = ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
                         engine_3d.set_tex_pal_dirty(1 << region);
-                        self.map_tex_pal::<_, _, 1>(&self.banks.f, once(region));
+                        self.map_tex_pal::<_, _, 0x3FFF, 1>(&self.banks.f, once(region));
                     }
                     4 => {
                         let region = value.offset() as usize & 1;
-                        self.map_a_bg_ext_pal::<_, _, 1>(&self.banks.f, once(region));
+                        self.map_a_bg_ext_pal::<_, _, 0x3FFF, 1>(&self.banks.f, once(region));
                     }
-                    5 => self.map_a_obj_ext_pal::<_, 0>(&self.banks.f),
+                    5 => self.map_a_obj_ext_pal::<_, 0x3FFF, 0>(&self.banks.f),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank F: {}", value.mst())
                     }
@@ -1470,12 +1641,12 @@ impl Vram {
                     1 => {
                         let base_region =
                             ((prev_value.offset() & 1) | (prev_value.offset() & 2) << 1) as usize;
-                        self.unmap_a_bg::<_, _, 0x4000, false, 6>(
+                        self.unmap_a_bg::<_, _, _, 0x3FFF, false, 6>(
                             arm9,
                             &self.banks.g,
                             once(base_region),
                         );
-                        self.unmap_a_bg::<_, _, 0x4000, true, 6>(
+                        self.unmap_a_bg::<_, _, _, 0x3FFF, true, 6>(
                             arm9,
                             &self.banks.g,
                             once(base_region | 2),
@@ -1484,12 +1655,12 @@ impl Vram {
                     2 => {
                         let base_region =
                             ((prev_value.offset() & 1) | (prev_value.offset() & 2) << 1) as usize;
-                        self.unmap_a_obj::<_, _, 0x4000, false, 4>(
+                        self.unmap_a_obj::<_, _, _, 0x3FFF, false, 4>(
                             arm9,
                             &self.banks.g,
                             once(base_region),
                         );
-                        self.unmap_a_obj::<_, _, 0x4000, true, 4>(
+                        self.unmap_a_obj::<_, _, _, 0x3FFF, true, 4>(
                             arm9,
                             &self.banks.g,
                             once(base_region | 2),
@@ -1517,7 +1688,7 @@ impl Vram {
                     1 => {
                         let base_region =
                             ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
-                        self.map_a_bg::<_, _, _, 6>(
+                        self.map_a_bg::<_, _, _, 0x3FFF, 6>(
                             arm9,
                             &self.banks.g,
                             [base_region, base_region | 2],
@@ -1526,7 +1697,7 @@ impl Vram {
                     2 => {
                         let base_region =
                             ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
-                        self.map_a_obj::<_, _, _, 4>(
+                        self.map_a_obj::<_, _, _, 0x3FFF, 4>(
                             arm9,
                             &self.banks.g,
                             [base_region, base_region | 2],
@@ -1535,13 +1706,13 @@ impl Vram {
                     3 => {
                         let region = ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
                         engine_3d.set_tex_pal_dirty(1 << region);
-                        self.map_tex_pal::<_, _, 2>(&self.banks.g, once(region));
+                        self.map_tex_pal::<_, _, 0x3FFF, 2>(&self.banks.g, once(region));
                     }
                     4 => {
                         let region = value.offset() as usize & 1;
-                        self.map_a_bg_ext_pal::<_, _, 2>(&self.banks.g, once(region));
+                        self.map_a_bg_ext_pal::<_, _, 0x3FFF, 2>(&self.banks.g, once(region));
                     }
-                    5 => self.map_a_obj_ext_pal::<_, 1>(&self.banks.g),
+                    5 => self.map_a_obj_ext_pal::<_, 0x3FFF, 1>(&self.banks.g),
                     _ => {
                         unimplemented!("Specified invalid mapping for bank G: {}", value.mst())
                     }
@@ -1568,10 +1739,15 @@ impl Vram {
                         self.unmap_lcdc(arm9, 0x26, 0x27);
                     }
                     1 => {
-                        self.unmap_b_bg::<_, _, 0x8000, false, 1>(arm9, &self.banks.h, once(0));
-                        self.unmap_b_bg::<_, _, 0x8000, true, 1>(arm9, &self.banks.h, once(2));
+                        self.unmap_b_bg::<_, _, _, 0x7FFF, false, 1>(arm9, &self.banks.h, once(0));
+                        self.unmap_b_bg::<_, _, _, 0x7FFF, true, 1>(arm9, &self.banks.h, once(2));
                     }
-                    2 => self.b_bg_ext_pal_ptr = self.zero_buffer.as_ptr(),
+                    2 => {
+                        self.b_bg_ext_pal_ptr = self.zero_buffer.as_ptr();
+                        modify_bg_obj_updates!(self, 1, |updates| {
+                            updates.bg_ext_palette = 3;
+                        });
+                    }
                     _ => {
                         unimplemented!("Specified invalid mapping for bank H: {}", prev_value.mst())
                     }
@@ -1580,8 +1756,13 @@ impl Vram {
             if value.enabled() {
                 match value.mst() & 3 {
                     0 => self.map_lcdc(arm9, 0x26, 0x27, self.banks.h.as_ptr()),
-                    1 => self.map_b_bg::<_, _, _, 1>(arm9, &self.banks.h, [0, 2]),
-                    2 => self.b_bg_ext_pal_ptr = self.banks.h.as_ptr(),
+                    1 => self.map_b_bg::<_, _, _, 0x7FFF, 1>(arm9, &self.banks.h, [0, 2]),
+                    2 => {
+                        self.b_bg_ext_pal_ptr = self.banks.h.as_ptr();
+                        modify_bg_obj_updates!(self, 1, |updates| {
+                            updates.bg_ext_palette = 3;
+                        });
+                    }
                     _ => {
                         unimplemented!("Specified invalid mapping for bank H: {}", value.mst())
                     }
@@ -1610,6 +1791,9 @@ impl Vram {
                         self.unmap_lcdc(arm9, 0x28, 0x28);
                     }
                     1 => {
+                        modify_bg_obj_updates!(self, 1, |updates| {
+                            updates.bg |= 0xCC;
+                        });
                         if self.map.b_bg[1].get() == 1 << 2 {
                             self.map.b_bg[1].set(0);
                             self.map.b_bg[3].set(0);
@@ -1621,16 +1805,19 @@ impl Vram {
                             b_bg[0x8000..0x1_0000].fill(0);
                             b_bg[0x1_8000..0x2_0000].fill(0);
                         } else {
-                            for region in [1, 3] {
-                                map_cpu_visible!(
-                                    arm9,
-                                    ptr_mask::R | ptr_mask::W_16_32,
-                                    0x0620_0000,
-                                    0x0640_0000,
-                                    self.b_bg,
-                                    region,
-                                    15
-                                );
+                            if self.bg_obj_updates.is_none() {
+                                for region in [1, 3] {
+                                    map_cpu_visible!(
+                                        arm9,
+                                        ptr_mask::R | ptr_mask::W_16_32,
+                                        0x0620_0000,
+                                        0x0640_0000,
+                                        self.b_bg,
+                                        0x2_0000,
+                                        region,
+                                        15
+                                    );
+                                }
                             }
                             self.map.b_bg[1].set(1);
                             let writeback_arr = self.writeback.b_bg.get_mut();
@@ -1664,6 +1851,9 @@ impl Vram {
                         }
                     }
                     2 => {
+                        modify_bg_obj_updates!(self, 1, |updates| {
+                            updates.obj = 0xFF;
+                        });
                         let new = self.map.b_obj[0].get() & !(1 << 1);
                         self.map.b_obj[0].set(new);
                         if new == 0 {
@@ -1673,12 +1863,14 @@ impl Vram {
                                 .copy_from_slice(&self.b_obj.as_byte_slice()[..0x4000]);
                             self.b_obj.as_byte_mut_slice().fill(0);
                         } else {
-                            arm9.map_sys_bus_ptr_range(
-                                ptr_mask::R | ptr_mask::W_16_32,
-                                self.b_obj.as_ptr(),
-                                0x2_0000,
-                                (0x0660_0000, 0x0680_0000),
-                            );
+                            if self.bg_obj_updates.is_none() {
+                                arm9.map_sys_bus_ptr_range(
+                                    ptr_mask::R | ptr_mask::W_16_32,
+                                    self.b_obj.as_ptr(),
+                                    0x2_0000,
+                                    (0x0660_0000, 0x0680_0000),
+                                );
+                            }
                             let writeback_arr = self.writeback.b_obj.get_mut();
                             for (usage_addr, byte) in
                                 self.b_obj.as_byte_mut_slice().iter_mut().enumerate()
@@ -1694,15 +1886,25 @@ impl Vram {
                             }
                         }
                     }
-                    _ => self.b_obj_ext_pal_ptr = self.zero_buffer.as_ptr(),
+                    _ => {
+                        self.b_obj_ext_pal_ptr = self.zero_buffer.as_ptr();
+                        modify_bg_obj_updates!(self, 1, |updates| {
+                            updates.obj_ext_palette = true;
+                        });
+                    }
                 }
             }
             if value.enabled() {
                 match value.mst() & 3 {
                     0 => self.map_lcdc(arm9, 0x28, 0x28, self.banks.i.as_ptr()),
-                    1 => self.map_b_bg::<_, _, _, 2>(arm9, &self.banks.i, [1, 3]),
-                    2 => self.map_b_obj::<_, _, 1>(arm9, &self.banks.i),
-                    _ => self.b_obj_ext_pal_ptr = self.banks.i.as_ptr(),
+                    1 => self.map_b_bg::<_, _, _, 0x3FFF, 2>(arm9, &self.banks.i, [1, 3]),
+                    2 => self.map_b_obj::<_, _, 0x3FFF, 1>(arm9, &self.banks.i),
+                    _ => {
+                        self.b_obj_ext_pal_ptr = self.banks.i.as_ptr();
+                        modify_bg_obj_updates!(self, 1, |updates| {
+                            updates.obj_ext_palette = true;
+                        });
+                    }
                 }
             }
         }

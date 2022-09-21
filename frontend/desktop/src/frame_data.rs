@@ -1,6 +1,6 @@
 #[cfg(feature = "debug-views")]
 use crate::debug_views;
-use dust_core::{gpu::Framebuffer, utils::zeroed_box};
+use dust_core::gpu::Framebuffer;
 
 #[repr(C)]
 pub struct FrameData {
@@ -13,7 +13,7 @@ pub struct FrameData {
 impl Default for FrameData {
     fn default() -> Self {
         FrameData {
-            fb: zeroed_box(),
+            fb: unsafe { Box::new_zeroed().assume_init() },
             fps: 0.0,
             #[cfg(feature = "debug-views")]
             debug: debug_views::FrameData::new(),

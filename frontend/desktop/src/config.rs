@@ -338,6 +338,13 @@ pub enum ModelConfig {
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+pub enum Renderer2dKind {
+    Sync,
+    LockstepScanlines,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum TitleBarMode {
     System,
     Mixed,
@@ -452,6 +459,8 @@ def_config! {
             save_interval_ms: f32 = 1000.0, None,
                 resolve resolve_option, set set_option,
             rtc_time_offset_seconds: i64 = 0, None,
+                resolve resolve_option, set set_option,
+            renderer_2d_kind: Renderer2dKind = Renderer2dKind::Sync, None,
                 resolve resolve_option, set set_option,
         }
         game {

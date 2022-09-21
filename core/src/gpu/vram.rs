@@ -2,7 +2,7 @@ mod access;
 mod bank_cnt;
 
 use crate::{
-    cpu::{arm7, arm9},
+    cpu::{arm7, arm9, Engine},
     utils::{zero, zeroed_box, OwnedBytesCellPtr, Savestate, Zero},
 };
 use core::cell::{Cell, UnsafeCell};
@@ -34,7 +34,7 @@ pub struct Banks {
     pub e: OwnedBytesCellPtr<0x1_0000>,
     pub f: OwnedBytesCellPtr<0x4000>,
     pub g: OwnedBytesCellPtr<0x4000>,
-    pub h: OwnedBytesCellPtr<0x8000>,
+    pub h: OwnedBytesCellPtr<0x8006>,
     pub i: OwnedBytesCellPtr<0x4000>,
 }
 
@@ -68,9 +68,19 @@ struct Writeback {
 
 unsafe impl Zero for Writeback {}
 
+#[derive(Default)]
+pub struct Updates {
+    pub bg: u32,               // 8-32 16 KiB (0x4000 bytes) regions
+    pub obj: u16,              // 8-16 16 KiB (0x4000 bytes) regions
+    pub bg_ext_palette: u8,    // 2 16 KiB (0x4000 bytes) regions
+    pub obj_ext_palette: bool, // One 8 KiB (0x2000 bytes) region
+    pub palette: bool,         // One 1 KiB (0x400 bytes) region
+    pub oam: bool,             // One 1 KiB (0x400 bytes) region
+}
+
 #[repr(C)]
 #[derive(Savestate)]
-#[load(in_place_only)]
+#[load(in_place_only, post = "self.post_load()")]
 #[store(pre = "self.flush_writeback()")]
 pub struct Vram {
     // Six bytes need to be added to the palette and seven to A/B BG VRAM to allow for 64-bit loads
@@ -83,21 +93,24 @@ pub struct Vram {
     writeback: Box<Writeback>,
 
     #[savestate(skip)]
+    pub bg_obj_updates: Option<UnsafeCell<[Updates; 2]>>,
+
+    #[savestate(skip)]
     lcdc_r_ptrs: [*const u8; 0x40], // 0x4000 B granularity
     #[savestate(skip)]
     lcdc_w_ptrs: [*mut u8; 0x40], // 0x4000 B granularity
     #[savestate(skip)]
     pub a_bg: OwnedBytesCellPtr<0x8_0007>,
     #[savestate(skip)]
-    a_obj: OwnedBytesCellPtr<0x4_0000>,
+    pub a_obj: OwnedBytesCellPtr<0x4_0007>,
     #[savestate(skip)]
-    pub a_bg_ext_pal: OwnedBytesCellPtr<0x8000>,
+    pub a_bg_ext_pal: OwnedBytesCellPtr<0x8006>,
     #[savestate(skip)]
-    pub a_obj_ext_pal: OwnedBytesCellPtr<0x2000>,
+    pub a_obj_ext_pal: OwnedBytesCellPtr<0x2006>,
     #[savestate(skip)]
     pub b_bg: OwnedBytesCellPtr<0x2_0007>,
     #[savestate(skip)]
-    b_obj: OwnedBytesCellPtr<0x2_0000>,
+    pub b_obj: OwnedBytesCellPtr<0x2_0007>,
     #[savestate(skip)]
     pub b_bg_ext_pal_ptr: *const u8,
     #[savestate(skip)]
@@ -113,14 +126,14 @@ pub struct Vram {
     pub oam: OwnedBytesCellPtr<0x800>,
 
     #[savestate(skip)]
-    zero_buffer: OwnedBytesCellPtr<0x8000>, // Used to return zero for reads
+    zero_buffer: OwnedBytesCellPtr<0x8006>, // Used to return zero for reads
     #[savestate(skip)]
     ignore_buffer: OwnedBytesCellPtr<0x8000>, // Used to ignore writes
 }
 
 impl Vram {
     #[inline]
-    pub(super) fn new() -> Self {
+    pub(super) fn new(bg_obj_vram_tracking: bool) -> Self {
         let banks = Banks {
             a: OwnedBytesCellPtr::new_zeroed(),
             b: OwnedBytesCellPtr::new_zeroed(),
@@ -143,6 +156,8 @@ impl Vram {
             map: zero(),
             writeback: zeroed_box(),
 
+            bg_obj_updates: bg_obj_vram_tracking.then(UnsafeCell::default),
+
             lcdc_r_ptrs: [zero_buffer.as_ptr(); 0x40],
             lcdc_w_ptrs: [ignore_buffer.as_ptr(); 0x40],
             a_bg: OwnedBytesCellPtr::new_zeroed(),
@@ -163,6 +178,46 @@ impl Vram {
             zero_buffer,
             ignore_buffer,
         }
+    }
+
+    fn post_load(&mut self) {
+        self.mark_all_vram_updated();
+    }
+
+    fn mark_all_vram_updated(&mut self) {
+        if let Some(updates) = &mut self.bg_obj_updates {
+            let updates = updates.get_mut();
+            updates[0] = Updates {
+                bg: 0xFFFF_FFFF,
+                obj: 0xFFFF,
+                bg_ext_palette: 3,
+                obj_ext_palette: true,
+                palette: true,
+                oam: true,
+            };
+            updates[1] = Updates {
+                bg: 0xFF,
+                obj: 0xFF,
+                bg_ext_palette: 3,
+                obj_ext_palette: true,
+                palette: true,
+                oam: true,
+            };
+        }
+    }
+
+    #[inline]
+    pub(super) fn set_vram_tracking<E: Engine>(
+        &mut self,
+        bg_obj_vram_tracking: bool,
+        arm9: &mut arm9::Arm9<E>,
+    ) {
+        if bg_obj_vram_tracking == self.bg_obj_updates.is_some() {
+            return;
+        }
+        self.bg_obj_updates = bg_obj_vram_tracking.then(UnsafeCell::default);
+        self.mark_all_vram_updated();
+        self.restore_cpu_bg_obj_mappings(arm9);
     }
 
     #[inline]

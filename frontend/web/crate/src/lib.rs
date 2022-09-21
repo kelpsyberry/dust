@@ -9,11 +9,10 @@ pub mod renderer_3d;
 use dust_core::{
     cpu::{arm7, arm9, interpreter::Interpreter},
     ds_slot::{self, spi::Spi as DsSlotSpi},
-    emu::input::Keys,
-    emu::Emu,
+    emu::{self, input::Keys, Emu},
     flash::Flash,
-    gpu::engine_2d,
     gpu::{SCREEN_HEIGHT, SCREEN_WIDTH},
+    rtc,
     spi::firmware,
     utils::{zeroed_box, BoxedByteSlice, Bytes},
     Model, SaveContents,
@@ -107,7 +106,9 @@ impl EmuState {
     pub fn reset(&mut self) {
         let emu = self.emu.take().unwrap();
 
-        let mut emu_builder = dust_core::emu::Builder::new(
+        let (renderer_2d, renderer_3d_tx) = emu.gpu.into_renderers();
+
+        let mut emu_builder = emu::Builder::new(
             emu.spi.firmware.reset(),
             match emu.ds_slot.rom {
                 ds_slot::rom::Rom::Empty(device) => ds_slot::rom::Rom::Empty(device.reset()),
@@ -122,11 +123,8 @@ impl EmuState {
             emu.audio.backend,
             None,
             emu.rtc.backend,
-            [
-                Box::new(dust_soft_2d::Renderer::<engine_2d::EngineA>::new()),
-                Box::new(dust_soft_2d::Renderer::<engine_2d::EngineB>::new()),
-            ],
-            emu.gpu.engine_3d.renderer,
+            renderer_2d,
+            renderer_3d_tx,
             #[cfg(feature = "log")]
             self.logger.clone(),
         );
@@ -169,7 +167,7 @@ impl EmuState {
         emu.run(true);
         Uint32Array::from(unsafe {
             core::slice::from_raw_parts(
-                emu.gpu.framebuffer.0.as_ptr() as *const u32,
+                emu.gpu.renderer_2d().framebuffer().as_ptr() as *const u32,
                 SCREEN_WIDTH * SCREEN_HEIGHT * 2,
             )
         })
@@ -356,7 +354,9 @@ pub fn create_emu_state(
         (rom, spi)
     };
 
-    let mut emu_builder = dust_core::emu::Builder::new(
+    let (tx_3d, rx_3d) = renderer_3d::init();
+
+    let mut emu_builder = emu::Builder::new(
         Flash::new(
             SaveContents::Existing(firmware),
             firmware::id_for_model(model),
@@ -368,8 +368,9 @@ pub fn create_emu_state(
         ds_slot_spi,
         Box::new(audio::Backend::new(audio_callback)),
         None,
-        Box::new(dust_core::rtc::DummyBackend),
-        Box::new(renderer_3d::EmuState::new()),
+        Box::new(rtc::DummyBackend),
+        Box::new(dust_soft_2d::sync::Renderer::new(Box::new(rx_3d))),
+        Box::new(tx_3d),
         #[cfg(feature = "log")]
         logger.clone(),
     );

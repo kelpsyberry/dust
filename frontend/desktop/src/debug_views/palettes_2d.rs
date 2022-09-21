@@ -1,5 +1,5 @@
 use super::{
-    common::{rgb5_to_rgb32f, rgb5_to_rgba32f, rgb32f_to_rgb5},
+    common::{rgb32f_to_rgb5, rgb5_to_rgb32f, rgb5_to_rgba32f},
     FrameDataSlot, InstanceableView, Messages, View,
 };
 use crate::ui::{utils::combo_value, window::Window};
@@ -267,10 +267,7 @@ impl View for Palettes2d {
                     ui.table_next_column();
                     let raw_color = colors.read_le::<u16>(i << 1);
                     if ui
-                        .color_button_config(
-                            &format!("Color {i:#05X}"),
-                            rgb5_to_rgba32f(raw_color),
-                        )
+                        .color_button_config(&format!("Color {i:#05X}"), rgb5_to_rgba32f(raw_color))
                         .border(false)
                         .alpha(false)
                         .size([16.0, 16.0])

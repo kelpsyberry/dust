@@ -315,7 +315,8 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
     };
 
     if MODE == 3 {
-        let toon_color = rgb5_to_rgb6(rendering_data.toon_colors[vert_color[0] as usize >> 1].cast());
+        let toon_color =
+            rgb5_to_rgb6(rendering_data.toon_colors[vert_color[0] as usize >> 1].cast());
         (blended_color + toon_color).simd_min(InterpColor::from_array([0x3F, 0x3F, 0x3F, 0x1F]))
     } else {
         blended_color

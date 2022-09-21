@@ -3,7 +3,7 @@ mod matrix;
 mod vertex;
 pub use vertex::{Color, InterpColor, ScreenCoords, ScreenVertex, TexCoords};
 mod renderer;
-pub use renderer::Renderer;
+pub use renderer::{RendererRx, RendererTx};
 
 use crate::{
     cpu::{
@@ -224,7 +224,7 @@ pub struct Engine3d {
     #[savestate(skip)]
     logger: slog::Logger,
     #[savestate(skip)]
-    pub renderer: Box<dyn Renderer>,
+    pub renderer_tx: Box<dyn RendererTx>,
 
     pub(super) gx_enabled: bool,
     pub(super) rendering_enabled: bool,
@@ -350,7 +350,7 @@ static CMD_PARAMS: [u8; 0x100] = {
 
 impl Engine3d {
     pub(super) fn new(
-        renderer: Box<dyn Renderer>,
+        renderer_tx: Box<dyn RendererTx>,
         schedule: &mut arm9::Schedule,
         emu_schedule: &mut emu::Schedule,
         #[cfg(feature = "log")] logger: slog::Logger,
@@ -368,7 +368,7 @@ impl Engine3d {
         Engine3d {
             #[cfg(feature = "log")]
             logger,
-            renderer,
+            renderer_tx,
 
             gx_enabled: false,
             rendering_enabled: false,
@@ -1133,7 +1133,7 @@ impl Engine3d {
 
     pub(super) fn swap_buffers_missed(&mut self) {
         if self.gx_enabled && self.rendering_enabled {
-            self.renderer.repeat_last_frame(&self.rendering_state);
+            self.renderer_tx.repeat_last_frame(&self.rendering_state);
         }
     }
 
@@ -1167,7 +1167,7 @@ impl Engine3d {
                             | poly.top_y as u32
                     });
             }
-            emu.gpu.engine_3d.renderer.swap_buffers(
+            emu.gpu.engine_3d.renderer_tx.swap_buffers(
                 &emu.gpu.engine_3d.vert_ram[..emu.gpu.engine_3d.vert_ram_level as usize],
                 &emu.gpu.engine_3d.poly_ram[..emu.gpu.engine_3d.poly_ram_level as usize],
                 &emu.gpu.engine_3d.rendering_state,
@@ -1183,7 +1183,7 @@ impl Engine3d {
     pub(super) fn start_rendering(&mut self, vram: &Vram) {
         if self.rendering_enabled {
             unsafe {
-                self.renderer.start_rendering(
+                self.renderer_tx.start_rendering(
                     &*vram.texture.as_bytes_ptr(),
                     &*vram.tex_pal.as_bytes_ptr(),
                     &self.rendering_state,

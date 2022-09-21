@@ -1,6 +1,6 @@
 pub mod input;
-pub mod output;
 mod interp;
+pub mod output;
 pub use interp::{Interp, InterpMethod};
 
 const SYS_CLOCK_RATE: u32 = 1 << 25;

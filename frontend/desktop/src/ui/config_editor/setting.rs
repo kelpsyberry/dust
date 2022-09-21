@@ -154,7 +154,7 @@ impl RawSetting for OptHomePath {
                         .as_ref(),
                 );
             }
-            
+
             let mut new_value = None;
 
             ui.set_next_item_width(

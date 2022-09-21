@@ -6,7 +6,10 @@ mod rtc;
 #[cfg(feature = "debug-views")]
 use super::debug_views;
 use crate::{
-    audio, config::SysFiles, game_db::SaveType, input, triple_buffer, DsSlotRom, FrameData,
+    audio,
+    config::{Renderer2dKind, SysFiles},
+    game_db::SaveType,
+    input, triple_buffer, DsSlotRom, FrameData,
 };
 #[cfg(feature = "xq-audio")]
 use dust_core::audio::{Audio, ChannelInterpMethod as AudioChannelInterpMethod};
@@ -14,11 +17,10 @@ use dust_core::{
     audio::DummyBackend as DummyAudioBackend,
     cpu::{arm7, interpreter::Interpreter},
     ds_slot::{self, spi::Spi as DsSlotSpi},
-    emu::RunOutput,
+    emu::{self, RunOutput},
     flash::Flash,
-    gpu::{engine_2d, Framebuffer},
-    spi,
-    spi::firmware,
+    gpu::{engine_2d, engine_3d, Framebuffer},
+    spi::{self, firmware},
     utils::{
         BoxedByteSlice, Bytes, PersistentReadSavestate, PersistentWriteSavestate, ReadSavestate,
         WriteSavestate,
@@ -81,6 +83,8 @@ pub enum Message {
     UpdateSaveIntervalMs(f32),
 
     UpdateRtcTimeOffsetSeconds(i64),
+
+    UpdateRenderer2dKind(Renderer2dKind),
 
     UpdateSyncToAudio(bool),
     UpdateAudioSampleChunkSize(u16),
@@ -313,8 +317,22 @@ pub struct LaunchData {
 
     pub rtc_time_offset_seconds: i64,
 
+    pub renderer_2d_kind: Renderer2dKind,
+
     #[cfg(feature = "log")]
     pub logger: slog::Logger,
+}
+
+fn renderer_2d(
+    kind: Renderer2dKind,
+    rx_3d: Box<dyn engine_3d::RendererRx + Send>,
+) -> Box<dyn engine_2d::Renderer> {
+    match kind {
+        Renderer2dKind::Sync => Box::new(dust_soft_2d::sync::Renderer::new(rx_3d)),
+        Renderer2dKind::LockstepScanlines => Box::new(
+            dust_soft_2d::threaded::lockstep_scanlines::Renderer::new(rx_3d),
+        ),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -346,6 +364,8 @@ pub(super) fn main(
 
         mut rtc_time_offset_seconds,
 
+        mut renderer_2d_kind,
+
         #[cfg(feature = "log")]
         logger,
     }: LaunchData,
@@ -366,7 +386,9 @@ pub(super) fn main(
         &logger,
     );
 
-    let mut emu_builder = dust_core::emu::Builder::new(
+    let (tx_3d, rx_3d) = renderer_3d::init();
+
+    let mut emu_builder = emu::Builder::new(
         Flash::new(
             SaveContents::Existing(
                 sys_files
@@ -386,11 +408,8 @@ pub(super) fn main(
         },
         mic_rx.map(|mic_rx| Box::new(mic_rx) as Box<dyn spi::tsc::MicBackend>),
         Box::new(rtc::Backend::new(rtc_time_offset_seconds)),
-        [
-            Box::new(dust_soft_2d::Renderer::<engine_2d::EngineA>::new()),
-            Box::new(dust_soft_2d::Renderer::<engine_2d::EngineB>::new()),
-        ],
-        Box::new(renderer_3d::Renderer::new()),
+        renderer_2d(renderer_2d_kind, Box::new(rx_3d.clone())),
+        Box::new(tx_3d),
         #[cfg(feature = "log")]
         logger.clone(),
     );
@@ -490,7 +509,14 @@ pub(super) fn main(
                                 } else {
                                     None
                                 },
-                                framebuffer: emu.gpu.framebuffer.clone(),
+                                framebuffer: unsafe {
+                                    let mut framebuffer = Box::<Framebuffer>::new_uninit();
+                                    framebuffer.as_mut_ptr().copy_from_nonoverlapping(
+                                        emu.gpu.renderer_2d().framebuffer(),
+                                        1,
+                                    );
+                                    framebuffer.assume_init()
+                                },
                             }
                         ));
                     } else {
@@ -503,7 +529,6 @@ pub(super) fn main(
                         .and_then(|mut savestate| savestate.load_into(&mut emu).map_err(drop))
                         .is_ok()
                     {
-                        emu.gpu.framebuffer = savestate.framebuffer;
                         if let Some(save) = savestate.save {
                             // TODO: Avoid this copy
                             let mut contents = BoxedByteSlice::new_zeroed(save.len());
@@ -571,6 +596,16 @@ pub(super) fn main(
                         .downcast_mut::<rtc::Backend>()
                         .unwrap()
                         .set_time_offset_seconds(value);
+                }
+
+                Message::UpdateRenderer2dKind(value) => {
+                    if value != renderer_2d_kind {
+                        renderer_2d_kind = value;
+                        emu.gpu.set_renderer_2d(
+                            renderer_2d(value, Box::new(rx_3d.clone())),
+                            &mut emu.arm9,
+                        );
+                    }
                 }
 
                 Message::UpdateSyncToAudio(new_sync_to_audio) => {
@@ -646,7 +681,9 @@ pub(super) fn main(
             #[cfg(feature = "xq-audio")]
             let audio_channel_interp_method = emu.audio.channel_interp_method();
 
-            let mut emu_builder = dust_core::emu::Builder::new(
+            let (renderer_2d, renderer_3d_tx) = emu.gpu.into_renderers();
+
+            let mut emu_builder = emu::Builder::new(
                 emu.spi.firmware.reset(),
                 match emu.ds_slot.rom {
                     ds_slot::rom::Rom::Empty(device) => ds_slot::rom::Rom::Empty(device.reset()),
@@ -661,8 +698,8 @@ pub(super) fn main(
                 emu.audio.backend,
                 emu.spi.tsc.mic_data.map(|mic_data| mic_data.backend),
                 emu.rtc.backend,
-                [emu.gpu.engine_2d_a.renderer, emu.gpu.engine_2d_b.renderer],
-                emu.gpu.engine_3d.renderer,
+                renderer_2d,
+                renderer_3d_tx,
                 #[cfg(feature = "log")]
                 logger.clone(),
             );
@@ -732,7 +769,9 @@ pub(super) fn main(
                 }
             }
         }
-        frame.fb.0.copy_from_slice(&emu.gpu.framebuffer.0);
+        frame
+            .fb
+            .copy_from_slice(&emu.gpu.renderer_2d().framebuffer()[..]);
 
         #[cfg(feature = "debug-views")]
         debug_views.prepare_frame_data(&mut emu, &mut frame.debug);

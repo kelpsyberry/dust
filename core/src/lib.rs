@@ -11,7 +11,8 @@
     const_mut_refs,
     const_trait_impl,
     const_convert,
-    const_for
+    const_for,
+    new_uninit
 )]
 #![warn(clippy::pedantic)]
 #![allow(

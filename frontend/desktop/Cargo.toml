@@ -32,7 +32,7 @@ compile-shaders = ["shaderc"]
 
 [dependencies]
 dust-core = { path = "../../core" }
-dust-soft-2d = { path = "../../soft-2d" }
+dust-soft-2d = { path = "../../soft-2d", features = ["threaded"] }
 dust-soft-3d = { path = "../../soft-3d" }
 
 # UI

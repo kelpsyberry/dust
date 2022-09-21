@@ -480,6 +480,8 @@ impl UiState {
 
             rtc_time_offset_seconds: config!(config.config, rtc_time_offset_seconds),
 
+            renderer_2d_kind: config!(config.config, renderer_2d_kind),
+
             #[cfg(feature = "log")]
             logger,
         };
@@ -546,7 +548,7 @@ impl UiState {
             (self.frame_tx.as_mut().unwrap(), &mut self.frame_rx),
             |frame_data| {
                 for data in frame_data {
-                    for fb in &mut data.fb.0 {
+                    for fb in &mut data.fb[..] {
                         fb.fill(0);
                     }
                     data.fps = 0.0;
@@ -587,21 +589,33 @@ impl UiState {
     }
 
     fn title(&self, components: TitleComponents) -> String {
+        let mut needs_separator = false;
         let mut buffer = if components.contains(TitleComponents::EMU_NAME) {
-            "Dust - ".to_string()
+            needs_separator = true;
+            "Dust".to_string()
         } else {
             String::new()
         };
         if let Some(emu) = &self.emu {
             if components.contains(TitleComponents::GAME_TITLE) {
+                if needs_separator {
+                    buffer.push_str(" - ");
+                }
                 buffer.push_str(&emu.title);
+                needs_separator = true;
             }
             if components.contains(TitleComponents::FPS) {
                 if let Some(fps_fixed) = self.fps_fixed {
-                    let _ = write!(buffer, " - {:.01} FPS", fps_fixed as f32 / 10.0);
+                    if needs_separator {
+                        buffer.push_str(" - ");
+                    }
+                    let _ = write!(buffer, "{:.01} FPS", fps_fixed as f32 / 10.0);
                 }
             }
         } else if components.contains(TitleComponents::GAME_TITLE) {
+            if needs_separator {
+                buffer.push_str(" - ");
+            }
             buffer.push_str("No game loaded");
         }
         buffer
@@ -677,7 +691,7 @@ impl FbTexture {
             &window.gfx.device_state.queue,
             unsafe {
                 slice::from_raw_parts(
-                    data.0.as_ptr() as *const u8,
+                    data.as_ptr() as *const u8,
                     2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT,
                 )
             },
@@ -953,6 +967,12 @@ pub fn main() {
                             emu.mic_input_stream = mic_input_stream;
                             emu.send_message(emu::Message::ToggleAudioInput(mic_rx));
                         }
+                    }
+
+                    if let Some(renderer_2d_kind) =
+                        config_changed_value!(config.config, renderer_2d_kind)
+                    {
+                        emu.send_message(emu::Message::UpdateRenderer2dKind(renderer_2d_kind));
                     }
                 }
 

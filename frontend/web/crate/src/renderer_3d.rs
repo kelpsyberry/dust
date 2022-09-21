@@ -3,7 +3,7 @@
 use dust_core::{
     gpu::{
         engine_3d::{
-            Polygon, Renderer as RendererTrair, RenderingState as CoreRenderingState, ScreenVertex,
+            Polygon, RendererRx, RendererTx, RenderingState as CoreRenderingState, ScreenVertex,
         },
         Scanline, SCREEN_HEIGHT,
     },
@@ -38,36 +38,32 @@ struct SharedData {
 
 unsafe impl Sync for SharedData {}
 
-pub(super) struct EmuState {
-    next_scanline: u8,
-}
+pub struct Tx;
 
-impl EmuState {
-    fn wait_for_line(&self, line: u8) {
+impl Tx {
+    fn wait_for_frame_end(&self) {
         while {
             let processing_scanline = shared_data!().processing_scanline.load(Ordering::Acquire);
-            processing_scanline == u8::MAX || processing_scanline <= line
+            processing_scanline == u8::MAX || processing_scanline < SCREEN_HEIGHT as u8
         } {
             hint::spin_loop();
         }
     }
 }
 
-impl RendererTrair for EmuState {
+impl RendererTx for Tx {
     fn swap_buffers(
         &mut self,
         vert_ram: &[ScreenVertex],
         poly_ram: &[Polygon],
         state: &CoreRenderingState,
     ) {
-        self.wait_for_line(SCREEN_HEIGHT as u8 - 1);
-
+        self.wait_for_frame_end();
         unsafe { &mut *shared_data!().rendering_data.get() }.prepare(vert_ram, poly_ram, state);
     }
 
     fn repeat_last_frame(&mut self, state: &CoreRenderingState) {
-        self.wait_for_line(SCREEN_HEIGHT as u8 - 1);
-
+        self.wait_for_frame_end();
         unsafe { &mut *shared_data!().rendering_data.get() }.repeat_last_frame(state);
     }
 
@@ -83,7 +79,30 @@ impl RendererTrair for EmuState {
             .processing_scanline
             .store(u8::MAX, Ordering::Release);
     }
+}
 
+impl Drop for Tx {
+    fn drop(&mut self) {
+        shared_data!().stopped.store(true, Ordering::Relaxed);
+    }
+}
+
+pub struct Rx {
+    next_scanline: u8,
+}
+
+impl Rx {
+    fn wait_for_line(&self, line: u8) {
+        while {
+            let processing_scanline = shared_data!().processing_scanline.load(Ordering::Acquire);
+            processing_scanline == u8::MAX || processing_scanline <= line
+        } {
+            hint::spin_loop();
+        }
+    }
+}
+
+impl RendererRx for Rx {
     fn start_frame(&mut self) {
         self.next_scanline = 0;
     }
@@ -101,24 +120,16 @@ impl RendererTrair for EmuState {
     }
 }
 
-impl Drop for EmuState {
-    fn drop(&mut self) {
-        shared_data!().stopped.store(true, Ordering::Relaxed);
-    }
-}
-
-impl EmuState {
-    pub fn new() -> Self {
-        SHARED_DATA.get_or_init(|| unsafe {
-            SharedData {
-                rendering_data: transmute(zeroed_box::<RenderingData>()),
-                scanline_buffer: transmute(zeroed_box::<[Scanline<u32, 256>; SCREEN_HEIGHT]>()),
-                processing_scanline: AtomicU8::new(SCREEN_HEIGHT as u8),
-                stopped: AtomicBool::new(false),
-            }
-        });
-        EmuState { next_scanline: 0 }
-    }
+pub fn init() -> (Tx, Rx) {
+    SHARED_DATA.get_or_init(|| unsafe {
+        SharedData {
+            rendering_data: transmute(zeroed_box::<RenderingData>()),
+            scanline_buffer: transmute(zeroed_box::<[Scanline<u32, 256>; SCREEN_HEIGHT]>()),
+            processing_scanline: AtomicU8::new(SCREEN_HEIGHT as u8),
+            stopped: AtomicBool::new(false),
+        }
+    });
+    (Tx, Rx { next_scanline: 0 })
 }
 
 #[wasm_bindgen]
