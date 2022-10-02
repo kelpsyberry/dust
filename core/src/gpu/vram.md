@@ -74,14 +74,14 @@
     - `4`: A BG extpal @ `0..=1` (only lower 32 KiB used)
 - F (`6..=7` invalid?):
     - `0`: LCDC         @ `0x24`
-    - `2`: A BG         @ `(OFS & 1) | (OFS & 2) << 1`, `(OFS & 1) | (OFS & 2) << 1 | 2` (mirrored)
+    - `1`: A BG         @ `(OFS & 1) | (OFS & 2) << 1`, `(OFS & 1) | (OFS & 2) << 1 | 2` (mirrored)
     - `2`: A OBJ        @ `(OFS & 1) | (OFS & 2) << 1`, `(OFS & 1) | (OFS & 2) << 1 | 2` (mirrored)
     - `3`: Tex pal      @ `(OFS & 1) | (OFS & 2) << 1`
     - `4`: A BG extpal  @ `OFS & 1`
     - `5`: A OBJ extpal @ `0` (only lower 8 KiB used)
 - G (`6..=7` invalid?):
     - `0`: LCDC         @ `0x25`
-    - `2`: A BG         @ `(OFS & 1) | (OFS & 2) << 1`, `(OFS & 1) | (OFS & 2) << 1 | 2` (mirrored)
+    - `1`: A BG         @ `(OFS & 1) | (OFS & 2) << 1`, `(OFS & 1) | (OFS & 2) << 1 | 2` (mirrored)
     - `2`: A OBJ        @ `(OFS & 1) | (OFS & 2) << 1`, `(OFS & 1) | (OFS & 2) << 1 | 2` (mirrored)
     - `3`: Tex pal      @ `(OFS & 1) | (OFS & 2) << 1`
     - `4`: A BG extpal  @ `OFS & 1`
