@@ -142,6 +142,10 @@ pub fn asr_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     let result: u32;
     let carry_flag: u8;
     unsafe {
+        // NOTE: This code relies on `shift.wrapping_sub(1)` wrapping to 255 when `shift` is 0, so
+        // that, when used as a shift amount with a 32-bit register, it wraps back to 31 + the
+        // later sar by 1, doing a 32-bit shift and exhibiting the correct behavior without
+        // branching.
         core::arch::asm!(
             "sar {value_res:e}, cl",
             "sar {value_res:e}, 1",
@@ -153,24 +157,6 @@ pub fn asr_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
         );
     }
     regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
-    result
-}
-
-pub fn asr_reg(value: u32, shift: u8) -> u32 {
-    let result: u32;
-    unsafe {
-        core::arch::asm!(
-            "mov {scratch:e}, {value_res:e}",
-            "sar {value_res:e}, cl",
-            "sar {scratch:e}, 31",
-            "cmp cl, 32",
-            "cmovae {value_res:e}, {scratch:e}",
-            value_res = inout(reg) value => result,
-            scratch = out(reg) _,
-            in("cl") shift,
-            options(pure, nomem, nostack),
-        );
-    }
     result
 }
 
@@ -206,7 +192,7 @@ pub fn asr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     }
 }
 
-fn rrx(regs: &Regs, value: u32) -> u32 {
+pub fn rrx(regs: &Regs, value: u32) -> u32 {
     let result: u32;
     unsafe {
         core::arch::asm!(
@@ -239,32 +225,28 @@ fn rrx_s(regs: &mut Regs, value: u32) -> u32 {
     result
 }
 
-pub fn ror_imm(regs: &Regs, value: u32, shift: u8) -> u32 {
-    if shift == 0 {
-        rrx(regs, value)
-    } else {
-        value.rotate_right(shift as u32)
+fn ror_imm_s_nonzero(regs: &mut Regs, value: u32, shift: u8) -> u32 {
+    let result: u32;
+    let carry_flag: u8;
+    unsafe {
+        core::arch::asm!(
+            "ror {value_res:e}, cl",
+            "setc {carry_flag}",
+            value_res = inlateout(reg) value => result,
+            carry_flag = lateout(reg_byte) carry_flag,
+            in("cl") shift,
+            options(pure, nomem, nostack),
+        );
     }
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
+    result
 }
 
 pub fn ror_imm_s_no_rrx(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     if shift == 0 {
         value
     } else {
-        let result: u32;
-        let carry_flag: u8;
-        unsafe {
-            core::arch::asm!(
-                "ror {value_res:e}, cl",
-                "setc {carry_flag}",
-                value_res = inlateout(reg) value => result,
-                carry_flag = lateout(reg_byte) carry_flag,
-                in("cl") shift,
-                options(pure, nomem, nostack),
-            );
-        }
-        regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
-        result
+        ror_imm_s_nonzero(regs, value, shift)
     }
 }
 
@@ -272,20 +254,7 @@ pub fn ror_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     if shift == 0 {
         rrx_s(regs, value)
     } else {
-        let result: u32;
-        let carry_flag: u8;
-        unsafe {
-            core::arch::asm!(
-                "ror {value_res:e}, cl",
-                "setc {carry_flag}",
-                value_res = inlateout(reg) value => result,
-                carry_flag = lateout(reg_byte) carry_flag,
-                in("cl") shift,
-                options(pure, nomem, nostack),
-            );
-        }
-        regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0x2000_0000) | (carry_flag as u32) << 29);
-        result
+        ror_imm_s_nonzero(regs, value, shift)
     }
 }
 

@@ -45,7 +45,6 @@ pub fn adc(regs: &Regs, a: u32, b: u32) -> u32 {
 pub fn adc_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
     let result: u32;
     let flags: u32;
-    let cpsr = regs.cpsr.raw();
     unsafe {
         core::arch::asm!(
             "bt {cpsr:e}, 29",
@@ -58,12 +57,12 @@ pub fn adc_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
             "shl eax, 22",
             a_res = inlateout(reg) a => result,
             b = in(reg) b,
-            cpsr = in(reg) cpsr,
+            cpsr = in(reg) regs.cpsr.raw(),
             lateout("eax") flags,
             options(pure, nomem, nostack),
         );
     }
-    regs.cpsr = Psr::from_raw((cpsr & 0x0FFF_FFFF) | flags);
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & 0x0FFF_FFFF) | flags);
     result
 }
 

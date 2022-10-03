@@ -36,7 +36,7 @@ dust-soft-2d = { path = "../../soft-2d", features = ["threaded"] }
 dust-soft-3d = { path = "../../soft-3d" }
 
 # UI
-winit = { version = "0.26", features = ["serde"] } # TODO: Update when imgui-winit-support supports winit 0.27
+winit = { version = "0.27", features = ["serde"] }
 wgpu = { version = "0.13", features = ["spirv"] }
 # TODO: Switch to imgui 0.9 when it's released with the docking API
 imgui = { git = "https://github.com/imgui-rs/imgui-rs", features = ["docking", "tables-api"] }

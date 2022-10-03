@@ -75,10 +75,6 @@ pub fn asr_imm_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     )
 }
 
-pub fn asr_reg(value: u32, shift: u8) -> u32 {
-    (value as i32 >> shift.min(31)) as u32
-}
-
 pub fn asr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     if shift == 0 {
         value
@@ -91,7 +87,7 @@ pub fn asr_reg_s(regs: &mut Regs, value: u32, shift: u8) -> u32 {
     }
 }
 
-fn rrx(regs: &Regs, value: u32) -> u32 {
+pub fn rrx(regs: &Regs, value: u32) -> u32 {
     (regs.cpsr.raw() << 2 & 0x8000_0000) | value >> 1
 }
 
@@ -99,14 +95,6 @@ fn rrx_s(regs: &mut Regs, value: u32) -> u32 {
     let result = rrx(regs, value);
     regs.cpsr.set_carry(value & 1 != 0);
     result
-}
-
-pub fn ror_imm(regs: &Regs, value: u32, shift: u8) -> u32 {
-    if shift == 0 {
-        rrx(regs, value)
-    } else {
-        value.rotate_right(shift as u32)
-    }
 }
 
 pub fn ror_imm_s_no_rrx(regs: &mut Regs, value: u32, shift: u8) -> u32 {

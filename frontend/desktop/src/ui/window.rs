@@ -42,7 +42,10 @@ impl GfxDeviceState {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                    limits: wgpu::Limits {
+                        max_texture_dimension_2d: 4096,
+                        ..wgpu::Limits::downlevel_webgl2_defaults()
+                    },
                 },
                 None,
             )
@@ -51,10 +54,21 @@ impl GfxDeviceState {
         let size = window.inner_size();
         let surf_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: *surface
-                .get_supported_formats(&adapter)
-                .get(0)
-                .expect("Couldn't get surface preferred format"),
+            format: {
+                let formats = surface.get_supported_formats(&adapter);
+                let preferred = formats
+                    .get(0)
+                    .expect("Couldn't get surface preferred format");
+                #[cfg(target_os = "macos")]
+                {
+                    *formats
+                        .iter()
+                        .find(|f| !f.describe().srgb)
+                        .unwrap_or(preferred)
+                }
+                #[cfg(not(target_os = "macos"))]
+                *preferred
+            },
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
@@ -194,7 +208,7 @@ impl Window {
         };
         unsafe {
             let window = self.window.ns_window() as id;
-            window.setTitlebarAppearsTransparent_(hidden as i8);
+            window.setTitlebarAppearsTransparent_(hidden as cocoa::base::BOOL);
             let prev_style_mask = window.styleMask();
             window.setStyleMask_(if hidden {
                 prev_style_mask | NSWindowStyleMask::NSFullSizeContentViewWindowMask
@@ -307,7 +321,10 @@ impl Builder {
             imgui::FontSource::TtfData {
                 data: OPEN_SANS_DATA,
                 size_pixels: (16.0 * scale_factor) as f32,
-                config: None,
+                config: Some(imgui::FontConfig {
+                    oversample_h: 2,
+                    ..Default::default()
+                }),
             },
             imgui::FontSource::TtfData {
                 data: FA_SOLID_DATA,
@@ -316,6 +333,7 @@ impl Builder {
                     glyph_ranges: fa_solid_glyph_ranges.clone(),
                     glyph_min_advance_x: (20.0 * scale_factor) as f32,
                     glyph_offset: [0.0, 2.0],
+                    oversample_h: 2,
                     ..Default::default()
                 }),
             },
@@ -326,6 +344,7 @@ impl Builder {
                     glyph_ranges: fa_brands_glyph_ranges.clone(),
                     glyph_min_advance_x: (20.0 * scale_factor) as f32,
                     glyph_offset: [0.0, 2.0],
+                    oversample_h: 2,
                     ..Default::default()
                 }),
             },
@@ -333,7 +352,10 @@ impl Builder {
         let mono_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
             data: include_bytes!("../../fonts/FiraMono-Regular.ttf"),
             size_pixels: (13.0 * scale_factor) as f32,
-            config: None,
+            config: Some(imgui::FontConfig {
+                oversample_h: 2,
+                ..Default::default()
+            }),
         }]);
         let large_icon_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
             data: FA_SOLID_DATA,
@@ -343,6 +365,7 @@ impl Builder {
                     0x002B, 0x002B, 0xE000, 0xF8FF, 0,
                 ]),
                 glyph_min_advance_x: (40.0 * scale_factor) as f32,
+                oversample_h: 2,
                 ..Default::default()
             }),
         }]);
