@@ -3,13 +3,13 @@
 use dust_core::{
     gpu::{
         engine_3d::{
-            Polygon, RendererRx, RendererTx, RenderingState as CoreRenderingState, ScreenVertex,
+            Polygon, RendererTx, RenderingState as CoreRenderingState, ScreenVertex, SoftRendererRx,
         },
         Scanline, SCREEN_HEIGHT,
     },
     utils::Bytes,
 };
-use dust_soft_3d::{RawRenderer, RenderingData};
+use dust_soft_3d::{Renderer, RenderingData};
 use std::{
     cell::UnsafeCell,
     hint,
@@ -30,7 +30,7 @@ macro_rules! shared_data {
 
 struct SharedData {
     rendering_data: Box<UnsafeCell<RenderingData>>,
-    scanline_buffer: Box<UnsafeCell<[Scanline<u32, 256>; SCREEN_HEIGHT]>>,
+    scanline_buffer: Box<UnsafeCell<[Scanline<u32>; SCREEN_HEIGHT]>>,
     processing_scanline: AtomicU8,
     stopped: AtomicBool,
 }
@@ -78,6 +78,8 @@ impl RendererTx for Tx {
             .processing_scanline
             .store(u8::MAX, Ordering::Release);
     }
+
+    fn skip_rendering(&mut self) {}
 }
 
 impl Drop for Tx {
@@ -101,12 +103,12 @@ impl Rx {
     }
 }
 
-impl RendererRx for Rx {
+impl SoftRendererRx for Rx {
     fn start_frame(&mut self) {
         self.next_scanline = 0;
     }
 
-    fn read_scanline(&mut self) -> &Scanline<u32, 256> {
+    fn read_scanline(&mut self) -> &Scanline<u32> {
         self.wait_for_line(self.next_scanline);
         let result =
             unsafe { &(&*shared_data!().scanline_buffer.get())[self.next_scanline as usize] };
@@ -134,7 +136,7 @@ pub fn init() -> (Tx, Rx) {
 #[wasm_bindgen]
 pub fn run_worker() {
     let shared_data = shared_data!();
-    let mut raw_renderer = RawRenderer::new();
+    let mut raw_renderer = Renderer::new();
     loop {
         loop {
             if shared_data.stopped.load(Ordering::Relaxed) {

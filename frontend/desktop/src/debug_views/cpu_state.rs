@@ -138,7 +138,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
         mut messages: impl Messages<Self>,
     ) -> Option<Self::EmuState> {
         if let Some((reg_values, cpsr)) = self.reg_values.as_mut() {
-            let _mono_font_token = ui.push_font(window.mono_font);
+            let _mono_font_token = ui.push_font(window.imgui.mono_font);
             let _item_spacing =
                 ui.push_style_var(StyleVar::ItemSpacing([0.0, style!(ui, item_spacing)[1]]));
             let _table_border = ui.push_style_color(

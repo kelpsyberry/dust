@@ -251,7 +251,7 @@ impl View for AudioChannels {
             .scale_min(0.0)
             .build();
 
-        let _mono_font_token = ui.push_font(window.mono_font);
+        let _mono_font_token = ui.push_font(window.imgui.mono_font);
         let _item_spacing = ui.push_style_var(StyleVar::ItemSpacing([0.0, item_spacing[1]]));
 
         ui.text("Control:");

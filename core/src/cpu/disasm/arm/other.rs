@@ -5,7 +5,7 @@ pub(super) fn invalid_dsp_mul(ctx: &mut Context, _instr: u32, cond: &'static str
     ctx.next_instr.opcode = if cond.is_empty() {
         "<Invalid DSP multiply>".to_string()
     } else {
-        format!("<Invalid DSP multiply, {}>", cond)
+        format!("<Invalid DSP multiply, {cond}>")
     };
 }
 
@@ -37,10 +37,10 @@ pub(super) fn msr<const IMM: bool, const SPSR: bool>(
     let cpsr_spsr = if SPSR { "spsr" } else { "cpsr" };
     ctx.next_instr.opcode = if IMM {
         let src = (instr & 0xFF).rotate_right(instr >> 7 & 0x1E);
-        format!("msr{} {}_{}, #{:#010X}", cond, cpsr_spsr, mask, src)
+        format!("msr{cond} {cpsr_spsr}_{mask}, #{src:#010X}")
     } else {
         let src_reg = instr & 0xF;
-        format!("msr{} {}_{}, r{}", cond, cpsr_spsr, mask, src_reg)
+        format!("msr{cond} {cpsr_spsr}_{mask}, r{src_reg}")
     };
     if (!IMM && instr >> 8 & 0xF != 0) || instr >> 12 & 0xF != 0xF {
         ctx.next_instr.comment = "Unpredictable".to_string();
@@ -49,7 +49,7 @@ pub(super) fn msr<const IMM: bool, const SPSR: bool>(
 
 pub(super) fn bkpt(ctx: &mut Context, instr: u32, cond: &'static str) {
     let comment = instr & 0xFF;
-    ctx.next_instr.opcode = format!("bkpt{} #{:#04X}", cond, comment);
+    ctx.next_instr.opcode = format!("bkpt{cond} #{comment:#04X}");
     if instr >> 28 != 0 {
         ctx.next_instr.comment = "Unpredictable".to_string();
     }
@@ -57,11 +57,11 @@ pub(super) fn bkpt(ctx: &mut Context, instr: u32, cond: &'static str) {
 
 pub(super) fn swi(ctx: &mut Context, instr: u32, cond: &'static str) {
     let comment = instr & 0xFF;
-    ctx.next_instr.opcode = format!("swi{} #{:#04X}", cond, comment);
+    ctx.next_instr.opcode = format!("swi{cond} #{comment:#04X}");
 }
 
 pub(super) fn undefined(ctx: &mut Context, _instr: u32, cond: &'static str) {
-    ctx.next_instr.opcode = format!("udf{}", cond);
+    ctx.next_instr.opcode = format!("udf{cond}");
 }
 
 pub(super) fn undefined_uncond(ctx: &mut Context, _instr: u32) {
@@ -87,7 +87,7 @@ pub(super) fn mrc_mcr<const LOAD: bool>(ctx: &mut Context, instr: u32, cond: &'s
         coproc_rm
     );
     if opcode_2 != 0 {
-        let _ = write!(ctx.next_instr.opcode, ", {}", opcode_2);
+        let _ = write!(ctx.next_instr.opcode, ", {opcode_2}");
     }
     if !LOAD && src_dst_reg == 15 {
         ctx.next_instr.comment = "Unpredictable".to_string();
@@ -172,7 +172,7 @@ pub(super) fn ldc_stc<const LOAD: bool>(ctx: &mut Context, instr: u32, cond: &'s
             offset_sign,
             offset << 2
         ),
-        (true, true) => write!(ctx.next_instr.opcode, ", {{{}}}", offset),
+        (true, true) => write!(ctx.next_instr.opcode, ", {{{offset}}}"),
     };
     if writeback && base_reg == 15 {
         ctx.next_instr.comment = "Unpredictable".to_string();

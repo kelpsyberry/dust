@@ -7,8 +7,6 @@ use save_slot_editor::Editor as SaveSlotEditor;
 mod savestate_editor;
 use savestate_editor::Editor as SavestateEditor;
 
-#[allow(dead_code)]
-pub mod imgui_wgpu;
 #[cfg(feature = "log")]
 mod log;
 pub mod window;
@@ -17,15 +15,16 @@ pub mod window;
 use crate::debug_views;
 use crate::{
     audio,
-    config::{self, Launch, TitleBarMode},
-    emu, game_db, input, triple_buffer,
+    config::{self, Launch, Renderer2dKind, Renderer3dKind, TitleBarMode},
+    emu, game_db, input,
     utils::{config_base, Lazy},
     DsSlotRom, FrameData,
 };
 use dust_core::{
     ds_slot::rom::Contents,
-    gpu::{Framebuffer, SCREEN_HEIGHT, SCREEN_WIDTH},
+    gpu::{engine_2d, engine_3d, Framebuffer, SCREEN_HEIGHT, SCREEN_WIDTH},
 };
+use emu_utils::triple_buffer;
 #[cfg(feature = "log")]
 use log::Log;
 use rfd::FileDialog;
@@ -57,6 +56,16 @@ fn adjust_custom_sample_rate(sample_rate: Option<NonZeroU32>) -> Option<NonZeroU
     })
 }
 
+enum Renderer2dData {
+    Soft,
+    Wgpu(dust_wgpu_2d::threaded::lockstep_scanlines::FrontendChannels),
+}
+
+enum Renderer3dData {
+    Soft,
+    Wgpu(dust_wgpu_3d::threaded::FrontendChannels),
+}
+
 struct EmuState {
     playing: bool,
     title: String,
@@ -72,6 +81,9 @@ struct EmuState {
     to_emu: crossbeam_channel::Sender<emu::Message>,
 
     mic_input_stream: Option<audio::input::InputStream>,
+
+    renderer_2d: Renderer2dData,
+    renderer_3d: Renderer3dData,
 }
 
 impl EmuState {
@@ -327,6 +339,121 @@ impl UiState {
         }
     }
 
+    fn create_renderers(
+        window: &window::Window,
+        config: &config::Config,
+        fb_texture: &mut FbTexture,
+    ) -> (
+        bool,
+        Box<dyn engine_2d::Renderer + Send>,
+        Box<dyn engine_3d::RendererTx + Send>,
+        Renderer2dData,
+        Renderer3dData,
+    ) {
+        let mut renderer_2d_kind = config!(config, renderer_2d_kind);
+        let renderer_3d_kind = config!(config, renderer_3d_kind);
+        if renderer_3d_kind == Renderer3dKind::Wgpu {
+            renderer_2d_kind = Renderer2dKind::WgpuLockstepScanlines;
+        }
+
+        let resolution_scale_shift = config!(config, resolution_scale_shift);
+
+        let (renderer_2d, renderer_3d_tx, renderer_2d_data, renderer_3d_data) = {
+            match renderer_2d_kind {
+                Renderer2dKind::WgpuLockstepScanlines => {
+                    let (tx_3d, rx_3d_2d_data, renderer_3d_data) = match renderer_3d_kind {
+                        Renderer3dKind::Soft => {
+                            let (tx_3d, rx_3d) = emu::soft_renderer_3d::init();
+                            (
+                                Box::new(tx_3d) as Box<dyn engine_3d::RendererTx + Send>,
+                                dust_wgpu_2d::Renderer3dRx::Soft(Box::new(rx_3d)),
+                                Renderer3dData::Soft,
+                            )
+                        }
+
+                        Renderer3dKind::Wgpu => {
+                            let (tx_3d, rx_3d, renderer_3d_channels, rx_3d_2d_data) =
+                                dust_wgpu_3d::threaded::init(
+                                    Arc::clone(window.gfx().device()),
+                                    Arc::clone(window.gfx().queue()),
+                                    resolution_scale_shift,
+                                );
+                            (
+                                Box::new(tx_3d) as Box<dyn engine_3d::RendererTx + Send>,
+                                dust_wgpu_2d::Renderer3dRx::Accel {
+                                    rx: Box::new(rx_3d),
+                                    color_output_view: rx_3d_2d_data.color_output_view,
+                                    color_output_view_rx: rx_3d_2d_data.color_output_view_rx,
+                                    last_submitted_frame: rx_3d_2d_data.last_submitted_frame,
+                                },
+                                Renderer3dData::Wgpu(renderer_3d_channels),
+                            )
+                        }
+                    };
+
+                    let (renderer_2d, color_output_view, renderer_2d_data) =
+                        dust_wgpu_2d::threaded::lockstep_scanlines::Renderer::new(
+                            Arc::clone(window.gfx().device()),
+                            Arc::clone(window.gfx().queue()),
+                            resolution_scale_shift,
+                            rx_3d_2d_data,
+                        );
+                    fb_texture.set_view(window, color_output_view);
+
+                    (
+                        Box::new(renderer_2d) as Box<dyn engine_2d::Renderer + Send>,
+                        tx_3d,
+                        Renderer2dData::Wgpu(renderer_2d_data),
+                        renderer_3d_data,
+                    )
+                }
+
+                _ => {
+                    let (tx_3d, rx_3d) = emu::soft_renderer_3d::init();
+
+                    let (renderer_2d, renderer_2d_data) = match renderer_2d_kind {
+                        Renderer2dKind::SoftSync => {
+                            let renderer_2d = dust_soft_2d::sync::Renderer::new(Box::new(rx_3d));
+                            (
+                                Box::new(renderer_2d) as Box<dyn engine_2d::Renderer + Send>,
+                                Renderer2dData::Soft,
+                            )
+                        }
+
+                        Renderer2dKind::SoftLockstepScanlines => {
+                            let renderer_2d =
+                                dust_soft_2d::threaded::lockstep_scanlines::Renderer::new(
+                                    Box::new(rx_3d),
+                                );
+                            (
+                                Box::new(renderer_2d) as Box<dyn engine_2d::Renderer + Send>,
+                                Renderer2dData::Soft,
+                            )
+                        }
+
+                        _ => unreachable!(),
+                    };
+                    fb_texture.set_owned(window);
+
+                    (
+                        renderer_2d,
+                        Box::new(tx_3d) as Box<dyn engine_3d::RendererTx + Send>,
+                        renderer_2d_data,
+                        Renderer3dData::Soft,
+                    )
+                }
+            }
+        };
+
+        (
+            matches!(renderer_2d_kind, Renderer2dKind::WgpuLockstepScanlines),
+            renderer_2d,
+            renderer_3d_tx,
+            renderer_2d_data,
+            renderer_3d_data,
+        )
+    }
+
     fn start(
         &mut self,
         config: &mut Config,
@@ -446,11 +573,13 @@ impl UiState {
 
         let shared_state = Arc::new(emu::SharedState {
             playing: AtomicBool::new(playing),
-            limit_framerate: AtomicBool::new(config!(config.config, limit_framerate)),
 
             #[cfg(feature = "gdb-server")]
             gdb_server_active: AtomicBool::new(false),
         });
+
+        let (renderer_2d_is_accel, renderer_2d, renderer_3d_tx, renderer_2d_data, renderer_3d_data) =
+            Self::create_renderers(window, &config.config, &mut self.fb_texture);
 
         let launch_data = emu::LaunchData {
             sys_files: launch_config.sys_files,
@@ -470,6 +599,12 @@ impl UiState {
             mic_rx,
             frame_tx,
 
+            framerate_ratio_limit: {
+                let (active, value) = config!(config.config, framerate_ratio_limit);
+                active.then_some(value)
+            },
+            paused_framerate_limit: config!(config.config, paused_framerate_limit),
+
             sync_to_audio: config!(config.config, sync_to_audio),
             audio_sample_chunk_size: config!(config.config, audio_sample_chunk_size),
             #[cfg(feature = "xq-audio")]
@@ -479,7 +614,9 @@ impl UiState {
 
             rtc_time_offset_seconds: config!(config.config, rtc_time_offset_seconds),
 
-            renderer_2d_kind: config!(config.config, renderer_2d_kind),
+            renderer_2d_is_accel,
+            renderer_2d,
+            renderer_3d_tx,
 
             #[cfg(feature = "log")]
             logger,
@@ -487,7 +624,7 @@ impl UiState {
 
         let thread = thread::Builder::new()
             .name("emulation".to_string())
-            .spawn(move || emu::main(launch_data))
+            .spawn(move || emu::run(launch_data))
             .expect("couldn't spawn emulation thread");
 
         #[cfg(feature = "debug-views")]
@@ -508,6 +645,9 @@ impl UiState {
             to_emu,
 
             mic_input_stream,
+
+            renderer_2d: renderer_2d_data,
+            renderer_3d: renderer_3d_data,
         });
     }
 
@@ -567,6 +707,7 @@ impl UiState {
             presence.stop();
         }
 
+        self.fb_texture.set_owned(window);
         self.fb_texture.clear(window);
     }
 
@@ -627,45 +768,78 @@ impl UiState {
             TitleBarMode::Mixed => !self.show_menu_bar,
             TitleBarMode::Imgui => true,
         } {
-            window.window.set_title("");
+            window.window().set_title("");
         } else {
-            window.window.set_title(&self.title(TitleComponents::all()));
+            window
+                .window()
+                .set_title(&self.title(TitleComponents::all()));
         }
     }
 }
 
 struct FbTexture {
     id: imgui::TextureId,
+    is_view: bool,
 }
 
 impl FbTexture {
-    fn new(window: &mut window::Window) -> Self {
-        let texture = window.gfx.imgui.create_texture(
-            &window.gfx.device_state.device,
-            &wgpu::SamplerDescriptor {
-                label: Some("framebuffer sampler"),
+    fn create_owned(window: &window::Window) -> imgui::TextureId {
+        window.imgui.gfx.create_and_add_owned_texture(
+            Some("Framebuffer".into()),
+            imgui_wgpu::TextureDescriptor {
+                width: SCREEN_WIDTH as u32,
+                height: SCREEN_HEIGHT as u32 * 2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                ..Default::default()
+            },
+            imgui_wgpu::SamplerDescriptor {
                 min_filter: wgpu::FilterMode::Linear,
                 ..Default::default()
             },
-            imgui_wgpu::TextureDescriptor {
-                label: Some("framebuffer texture".to_string()),
-                size: wgpu::Extent3d {
-                    width: SCREEN_WIDTH as u32,
-                    height: SCREEN_HEIGHT as u32 * 2,
-                    depth_or_array_layers: 1,
-                },
-                format: Some(
-                    if window.gfx.device_state.surf_config.format.describe().srgb {
-                        wgpu::TextureFormat::Rgba8UnormSrgb
-                    } else {
-                        wgpu::TextureFormat::Rgba8Unorm
-                    },
-                ),
+        )
+    }
+
+    fn create_view(window: &window::Window, view: wgpu::TextureView) -> imgui::TextureId {
+        window.imgui.gfx.create_and_add_texture_view(
+            Some("Framebuffer".into()),
+            view,
+            imgui_wgpu::SamplerDescriptor {
+                min_filter: wgpu::FilterMode::Linear,
                 ..Default::default()
             },
-        );
-        FbTexture {
-            id: window.gfx.imgui.add_texture(texture),
+        )
+    }
+
+    fn new(window: &mut window::Window) -> Self {
+        let result = FbTexture {
+            id: Self::create_owned(window),
+            is_view: false,
+        };
+        result.clear(window);
+        result
+    }
+
+    fn set_owned(&mut self, window: &window::Window) {
+        if !self.is_view {
+            return;
+        }
+        window.imgui.gfx.remove_texture(self.id);
+        self.id = Self::create_owned(window);
+        self.is_view = false;
+    }
+
+    fn set_view(&mut self, window: &window::Window, view: wgpu::TextureView) {
+        if self.is_view {
+            window
+                .imgui
+                .gfx
+                .texture_mut(self.id)
+                .unwrap_view_mut()
+                .set_texture_view(view);
+        } else {
+            window.imgui.gfx.remove_texture(self.id);
+            self.id = Self::create_view(window, view);
+            self.is_view = true;
         }
     }
 
@@ -679,24 +853,36 @@ impl FbTexture {
         for i in (3..data.len()).step_by(4) {
             data[i] = 0xFF;
         }
-        window.gfx.imgui.texture(self.id).set_data(
-            &window.gfx.device_state.queue,
-            &data[..],
-            imgui_wgpu::TextureSetRange::default(),
-        );
+        window
+            .imgui
+            .gfx
+            .texture(self.id)
+            .unwrap_owned_ref()
+            .set_data(
+                window.gfx().device(),
+                window.gfx().queue(),
+                &data[..],
+                imgui_wgpu::TextureSetRange::default(),
+            );
     }
 
     fn set_data(&self, window: &window::Window, data: &Framebuffer) {
-        window.gfx.imgui.texture(self.id).set_data(
-            &window.gfx.device_state.queue,
-            unsafe {
-                slice::from_raw_parts(
-                    data.as_ptr() as *const u8,
-                    2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT,
-                )
-            },
-            imgui_wgpu::TextureSetRange::default(),
-        );
+        window
+            .imgui
+            .gfx
+            .texture(self.id)
+            .unwrap_owned_ref()
+            .set_data(
+                window.gfx().device(),
+                window.gfx().queue(),
+                unsafe {
+                    slice::from_raw_parts(
+                        data.as_ptr() as *const u8,
+                        2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT,
+                    )
+                },
+                imgui_wgpu::TextureSetRange::default(),
+            );
     }
 }
 
@@ -717,6 +903,8 @@ pub fn main() {
 
     let mut window_builder = futures_executor::block_on(window::Builder::new(
         "Dust",
+        wgpu::Features::DEPTH32FLOAT_STENCIL8,
+        window::AdapterSelection::Auto(wgpu::PowerPreference::LowPower),
         config.config.window_size,
         #[cfg(target_os = "macos")]
         config!(config.config, title_bar_mode).system_title_bar_hidden(),
@@ -745,7 +933,6 @@ pub fn main() {
     ]);
 
     let fb_texture = FbTexture::new(&mut window_builder.window);
-    fb_texture.clear(&window_builder.window);
 
     let mut state = UiState {
         game_db: Lazy::new(),
@@ -838,7 +1025,8 @@ pub fn main() {
                         state.stop(config, window);
                     }
                     input::Action::ToggleFramerateLimit => {
-                        toggle_config!(config.config, limit_framerate)
+                        let (active, value) = config!(config.config, framerate_ratio_limit);
+                        set_config!(config.config, framerate_ratio_limit, (!active, value));
                     }
                     input::Action::ToggleSyncToAudio => {
                         toggle_config!(config.config, sync_to_audio)
@@ -883,10 +1071,18 @@ pub fn main() {
                 }
 
                 if let Some(emu) = &mut state.emu {
-                    if let Some(value) = config_changed_value!(config.config, limit_framerate) {
-                        emu.shared_state
-                            .limit_framerate
-                            .store(value, Ordering::Relaxed);
+                    if let Some((active, value)) =
+                        config_changed_value!(config.config, framerate_ratio_limit)
+                    {
+                        emu.send_message(emu::Message::UpdateFramerateLimit(
+                            active.then_some(value),
+                        ));
+                    }
+
+                    if let Some(value) =
+                        config_changed_value!(config.config, paused_framerate_limit)
+                    {
+                        emu.send_message(emu::Message::UpdatePausedFramerateLimit(value));
                     }
 
                     if config_changed!(config.config, save_dir_path | save_path_config)
@@ -969,10 +1165,44 @@ pub fn main() {
                         }
                     }
 
-                    if let Some(renderer_2d_kind) =
-                        config_changed_value!(config.config, renderer_2d_kind)
+                    if config_changed!(config.config, renderer_2d_kind | renderer_3d_kind) {
+                        let (
+                            renderer_2d_is_accel,
+                            renderer_2d,
+                            renderer_3d_tx,
+                            renderer_2d_data,
+                            renderer_3d_data,
+                        ) = UiState::create_renderers(
+                            window,
+                            &config.config,
+                            &mut state.fb_texture,
+                        );
+
+                        emu.renderer_2d = renderer_2d_data;
+                        emu.renderer_3d = renderer_3d_data;
+
+                        emu.send_message(emu::Message::UpdateRenderers {
+                            renderer_2d_is_accel,
+                            renderer_2d,
+                            renderer_3d_tx,
+                        });
+                    }
+
+                    if let Some(value) =
+                        config_changed_value!(config.config, resolution_scale_shift)
                     {
-                        emu.send_message(emu::Message::UpdateRenderer2dKind(renderer_2d_kind));
+                        match &emu.renderer_2d {
+                            Renderer2dData::Soft => {}
+                            Renderer2dData::Wgpu(channels) => {
+                                channels.set_resolution_scale_shift(value);
+                            }
+                        }
+                        match &emu.renderer_3d {
+                            Renderer3dData::Soft => {}
+                            Renderer3dData::Wgpu(channels) => {
+                                channels.set_resolution_scale_shift(value);
+                            }
+                        }
                     }
                 }
 
@@ -1051,7 +1281,9 @@ pub fn main() {
                     .debug_views
                     .update_from_frame_data(&frame.debug, window);
 
-                state.fb_texture.set_data(window, &frame.fb);
+                if !state.fb_texture.is_view {
+                    state.fb_texture.set_data(window, &frame.fb);
+                }
 
                 let fps_fixed = (frame.fps * 10.0).round() as u64;
                 if Some(fps_fixed) != state.fps_fixed {
@@ -1071,7 +1303,7 @@ pub fn main() {
                     macro_rules! icon {
                         ($tooltip: expr, $inner: expr) => {{
                             {
-                                let _font = ui.push_font(window.large_icon_font);
+                                let _font = ui.push_font(window.imgui.large_icon_font);
                                 $inner;
                             }
                             if ui.is_item_hovered() {
@@ -1246,7 +1478,15 @@ pub fn main() {
 
                         ui.separator();
 
-                        draw_config_toggle!(limit_framerate, "\u{e163} Limit framerate");
+                        {
+                            let (mut active, value) = config!(config.config, framerate_ratio_limit);
+                            if ui
+                                .menu_item_config("\u{e163} Limit framerate")
+                                .build_with_ref(&mut active)
+                            {
+                                set_config!(config.config, framerate_ratio_limit, (active, value));
+                            }
+                        }
                         draw_config_toggle!(sync_to_audio, "\u{f026} Sync to audio");
                     });
 
@@ -1384,7 +1624,7 @@ pub fn main() {
 
             // Draw log
             #[cfg(feature = "log")]
-            state.log.draw(ui, window.mono_font);
+            state.log.draw(ui, window.imgui.mono_font);
 
             // Draw debug views
             #[cfg(feature = "debug-views")]
@@ -1404,7 +1644,18 @@ pub fn main() {
             }
 
             // Draw screen
-            let window_size = window.window.inner_size();
+            if let Some(emu) = &mut state.emu {
+                match &emu.renderer_2d {
+                    Renderer2dData::Soft => {}
+                    Renderer2dData::Wgpu(channels) => {
+                        if let Some(color_output_view) = channels.new_color_output_view() {
+                            state.fb_texture.set_view(window, color_output_view);
+                        }
+                    }
+                }
+            }
+
+            let window_size = window.window().inner_size();
             let screen_integer_scale = config!(config.config, screen_integer_scale);
             let screen_rot = (config!(config.config, screen_rot) as f32).to_radians();
             if config!(config.config, full_window_screen) {
@@ -1413,8 +1664,8 @@ pub fn main() {
                     screen_integer_scale,
                     screen_rot,
                     [
-                        (window_size.width as f64 / window.scale_factor) as f32,
-                        (window_size.height as f64 / window.scale_factor) as f32,
+                        (window_size.width as f64 / window.scale_factor()) as f32,
+                        (window_size.height as f64 / window.scale_factor()) as f32,
                     ],
                 );
                 ui.get_background_draw_list()
@@ -1432,7 +1683,7 @@ pub fn main() {
                     center,
                     &points,
                     screen_rot,
-                    window.scale_factor,
+                    window.scale_factor(),
                 );
             } else {
                 let _window_padding = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0; 2]));
@@ -1449,8 +1700,8 @@ pub fn main() {
                     )
                     .position(
                         [
-                            (window_size.width as f64 * 0.5 / window.scale_factor) as f32,
-                            (window_size.height as f64 * 0.5 / window.scale_factor) as f32,
+                            (window_size.width as f64 * 0.5 / window.scale_factor()) as f32,
+                            (window_size.height as f64 * 0.5 / window.scale_factor()) as f32,
                         ],
                         imgui::Condition::FirstUseEver,
                     )
@@ -1494,7 +1745,7 @@ pub fn main() {
                             [center[0] + upper_left[0], center[1] + upper_left[1]],
                             &abs_points,
                             screen_rot,
-                            window.scale_factor,
+                            window.scale_factor(),
                         );
                     });
             };
@@ -1502,26 +1753,55 @@ pub fn main() {
             // Process icon and title changes
             #[cfg(target_os = "windows")]
             if let Some(icon) = state.icon_update.take() {
-                window.window.set_window_icon(icon.and_then(|icon_pixels| {
-                    let mut rgba = Vec::with_capacity(32 * 32 * 4);
-                    for pixel in icon_pixels {
-                        rgba.extend_from_slice(&pixel.to_le_bytes());
-                    }
-                    winit::window::Icon::from_rgba(rgba, 32, 32).ok()
-                }));
+                window
+                    .window()
+                    .set_window_icon(icon.and_then(|icon_pixels| {
+                        let mut rgba = Vec::with_capacity(32 * 32 * 4);
+                        for pixel in icon_pixels {
+                            rgba.extend_from_slice(&pixel.to_le_bytes());
+                        }
+                        winit::window::Icon::from_rgba(rgba, 32, 32).ok()
+                    }));
             }
 
             state.update_title(&config.config, window);
 
             window::ControlFlow::Continue
         },
-        move |window, mut imgui, (mut config, mut state)| {
+        move |_, (config, _), mut imgui| {
+            if let Some(path) = config!(config.config, &imgui_config_path) {
+                if let Some(init_path) = init_imgui_config_path {
+                    if init_path != *path {
+                        let _ = fs::remove_file(&init_path.0);
+                    }
+                }
+                let mut buf = String::new();
+                imgui.save_ini_settings(&mut buf);
+                fs::write(&path.0, &buf).expect("couldn't save imgui configuration");
+            }
+        },
+        move |_, _, frame, encoder, _| {
+            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &frame.texture.create_view(&Default::default()),
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+            window::ControlFlow::Continue
+        },
+        move |window, (mut config, mut state)| {
             state.stop_emu(&mut config);
 
             config.config.window_size = window
-                .window
+                .window()
                 .inner_size()
-                .to_logical::<u32>(window.scale_factor)
+                .to_logical::<u32>(window.scale_factor())
                 .into();
 
             if let Some(path) = config.global_path {
@@ -1532,17 +1812,6 @@ pub fn main() {
                 global_config
                     .write()
                     .expect("couldn't save global configuration");
-            }
-
-            if let Some(path) = config!(config.config, &imgui_config_path) {
-                if let Some(init_path) = init_imgui_config_path {
-                    if init_path != *path {
-                        let _ = fs::remove_file(&init_path.0);
-                    }
-                }
-                let mut buf = String::new();
-                imgui.save_ini_settings(&mut buf);
-                fs::write(&path.0, &buf).expect("couldn't save imgui configuration");
             }
         },
     );

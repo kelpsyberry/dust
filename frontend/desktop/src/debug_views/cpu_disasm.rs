@@ -150,7 +150,7 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
     ) -> Option<Self::EmuState> {
         let mut emu_state_changed = false;
 
-        let _mono_font = ui.push_font(window.mono_font);
+        let _mono_font = ui.push_font(window.imgui.mono_font);
         ui.align_text_to_frame_padding();
 
         if ui.checkbox("Thumb", &mut self.thumb) {

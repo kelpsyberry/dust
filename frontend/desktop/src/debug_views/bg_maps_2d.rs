@@ -1,6 +1,5 @@
 use super::{common::rgb5_to_rgba8, FrameDataSlot, InstanceableView, Messages, View};
 use crate::ui::{
-    imgui_wgpu,
     utils::{combo_value, scale_to_fit},
     window::Window,
 };
@@ -113,33 +112,19 @@ impl View for BgMaps2d {
     type EmuState = Selection;
 
     fn new(window: &mut Window) -> Self {
-        let tex_id = {
-            let texture = window.gfx.imgui.create_texture(
-                &window.gfx.device_state.device,
-                &wgpu::SamplerDescriptor {
-                    label: Some("BG map sampler"),
-                    min_filter: wgpu::FilterMode::Linear,
-                    ..Default::default()
-                },
-                imgui_wgpu::TextureDescriptor {
-                    label: Some("BG map texture".to_string()),
-                    size: wgpu::Extent3d {
-                        width: 1024,
-                        height: 1024,
-                        depth_or_array_layers: 1,
-                    },
-                    format: Some(
-                        if window.gfx.device_state.surf_config.format.describe().srgb {
-                            wgpu::TextureFormat::Rgba8UnormSrgb
-                        } else {
-                            wgpu::TextureFormat::Rgba8Unorm
-                        },
-                    ),
-                    ..Default::default()
-                },
-            );
-            window.gfx.imgui.add_texture(texture)
-        };
+        let tex_id = window.imgui.gfx.create_and_add_owned_texture(
+            Some("BG map".into()),
+            imgui_wgpu::TextureDescriptor {
+                width: 1024,
+                height: 1024,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                ..Default::default()
+            },
+            imgui_wgpu::SamplerDescriptor {
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            },
+        );
         unsafe {
             BgMaps2d {
                 cur_selection: Selection {
@@ -159,7 +144,7 @@ impl View for BgMaps2d {
     }
 
     fn destroy(self, window: &mut Window) {
-        window.gfx.imgui.remove_texture(self.tex_id);
+        window.imgui.gfx.remove_texture(self.tex_id);
     }
 
     fn emu_state(&self) -> Self::EmuState {
@@ -744,7 +729,7 @@ impl View for BgMaps2d {
                         let src_base = (tile & 0x3FF) << 5;
                         let dst_base =
                             (tile_i >> tile_x_shift << 10 | (tile_i & tile_i_x_mask)) << 3;
-                        let pal_base = tile as usize >> 8 & 0xF0;
+                        let pal_base = tile >> 8 & 0xF0;
                         let src_x_xor_mask = if tile & 0x400 != 0 { 7 } else { 0 };
                         let src_y_xor_mask = if tile & 0x800 != 0 { 7 } else { 0 };
                         for y in 0..8 {
@@ -782,7 +767,7 @@ impl View for BgMaps2d {
                         let dst_base =
                             (tile_i >> tile_x_shift << 10 | (tile_i & tile_i_x_mask)) << 3;
                         let pal_base = if self.data.cur_bg.uses_ext_palettes {
-                            tile as usize >> 4 & 0xF00
+                            tile >> 4 & 0xF00
                         } else {
                             0
                         };
@@ -883,17 +868,23 @@ impl View for BgMaps2d {
             }
         }
 
-        window.gfx.imgui.texture_mut(self.tex_id).set_data(
-            &window.gfx.device_state.queue,
-            unsafe {
-                slice::from_raw_parts(self.pixel_buffer.as_ptr() as *const u8, 1024 * 1024 * 4)
-            },
-            imgui_wgpu::TextureSetRange {
-                width: Some(self.data.cur_bg.size[0] as u32),
-                height: Some(self.data.cur_bg.size[1] as u32),
-                ..Default::default()
-            },
-        );
+        window
+            .imgui
+            .gfx
+            .texture(self.tex_id)
+            .unwrap_owned_ref()
+            .set_data(
+                window.gfx().device(),
+                window.gfx().queue(),
+                unsafe {
+                    slice::from_raw_parts(self.pixel_buffer.as_ptr() as *const u8, 1024 * 1024 * 4)
+                },
+                imgui_wgpu::TextureSetRange {
+                    width: Some(self.data.cur_bg.size[0] as u32),
+                    height: Some(self.data.cur_bg.size[1] as u32),
+                    ..Default::default()
+                },
+            );
 
         new_state
     }

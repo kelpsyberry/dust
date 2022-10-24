@@ -15,6 +15,7 @@ impl dust_core::audio::Backend for Backend {
     fn handle_sample_chunk(&mut self, samples: &mut Vec<[OutputSample; 2]>) {
         let mut l_buf = Vec::with_capacity(samples.len());
         let mut r_buf = Vec::with_capacity(samples.len());
+        #[allow(clippy::unnecessary_cast)]
         for [l, r] in samples.drain(..) {
             l_buf.push(l as f32 * (1.0 / 512.0) - 1.0);
             r_buf.push(r as f32 * (1.0 / 512.0) - 1.0);

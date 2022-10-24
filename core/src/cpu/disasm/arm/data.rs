@@ -39,18 +39,18 @@ pub(super) fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLA
         }
     );
     if !OP_TY.is_test() {
-        let _ = write!(ctx.next_instr.opcode, "r{}, ", dst_reg);
+        let _ = write!(ctx.next_instr.opcode, "r{dst_reg}, ");
     }
     if !OP_TY.is_unary() {
-        let _ = write!(ctx.next_instr.opcode, "r{}, ", src_reg);
+        let _ = write!(ctx.next_instr.opcode, "r{src_reg}, ");
     }
     match OPERAND {
         DpOperand::Imm => {
             let value = instr & 0xFF;
             let shift = instr >> 7 & 0x1E;
-            let _ = write!(ctx.next_instr.opcode, "#{:#04X}", value);
+            let _ = write!(ctx.next_instr.opcode, "#{value:#04X}");
             if shift != 0 {
-                let _ = write!(ctx.next_instr.opcode, ", {}", shift);
+                let _ = write!(ctx.next_instr.opcode, ", {shift}");
             }
         }
         DpOperand::Reg {
@@ -58,7 +58,7 @@ pub(super) fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLA
             shift_imm,
         } => {
             let op_reg = instr & 0xF;
-            let _ = write!(ctx.next_instr.opcode, "r{}", op_reg);
+            let _ = write!(ctx.next_instr.opcode, "r{op_reg}");
             if shift_imm {
                 let mut shift = instr >> 7 & 0x1F;
                 if matches!(shift_ty, ShiftTy::Lsr | ShiftTy::Asr) && shift == 0 {
@@ -67,20 +67,20 @@ pub(super) fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLA
                 match shift_ty {
                     ShiftTy::Lsl => {
                         if shift != 0 {
-                            let _ = write!(ctx.next_instr.opcode, ", lsl #{}", shift);
+                            let _ = write!(ctx.next_instr.opcode, ", lsl #{shift}");
                         }
                     }
                     ShiftTy::Lsr => {
-                        let _ = write!(ctx.next_instr.opcode, ", lsr #{}", shift);
+                        let _ = write!(ctx.next_instr.opcode, ", lsr #{shift}");
                     }
                     ShiftTy::Asr => {
-                        let _ = write!(ctx.next_instr.opcode, ", asr #{}", shift);
+                        let _ = write!(ctx.next_instr.opcode, ", asr #{shift}");
                     }
                     ShiftTy::Ror => {
                         let _ = if shift == 0 {
                             write!(ctx.next_instr.opcode, ", rrx")
                         } else {
-                            write!(ctx.next_instr.opcode, ", ror #{}", shift)
+                            write!(ctx.next_instr.opcode, ", ror #{shift}")
                         };
                     }
                 }
@@ -108,7 +108,7 @@ pub(super) fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLA
 pub(super) fn clz(ctx: &mut Context, instr: u32, cond: &'static str) {
     let dst_reg = instr >> 12 & 0xF;
     let src_reg = instr & 0xF;
-    ctx.next_instr.opcode = format!("clz{} r{}, r{}", cond, dst_reg, src_reg);
+    ctx.next_instr.opcode = format!("clz{cond} r{dst_reg}, r{src_reg}");
     if src_reg == 15 || dst_reg == 15 {
         ctx.next_instr.comment = "Unpredictable".to_string();
     }
@@ -133,7 +133,7 @@ pub(super) fn mul<const ACC: bool, const SET_FLAGS: bool>(
         op_reg
     );
     if ACC {
-        let _ = write!(ctx.next_instr.opcode, ", r{}", acc_reg);
+        let _ = write!(ctx.next_instr.opcode, ", r{acc_reg}");
     }
     if (!ACC && acc_reg != 0) || dst_reg == 15 || src_reg == 15 || op_reg == 15 || acc_reg == 15 {
         ctx.next_instr.comment = "Unpredictable".to_string();
@@ -181,7 +181,7 @@ pub(super) fn smulxy<const ACC: bool>(ctx: &mut Context, instr: u32, cond: &'sta
         op_reg
     );
     if ACC {
-        let _ = write!(ctx.next_instr.opcode, ", r{}", acc_reg);
+        let _ = write!(ctx.next_instr.opcode, ", r{acc_reg}");
     }
     if (!ACC && acc_reg != 0) || dst_reg == 15 || src_reg == 15 || op_reg == 15 || acc_reg == 15 {
         ctx.next_instr.comment = "Unpredictable".to_string();
@@ -203,7 +203,7 @@ pub(super) fn smulwy<const ACC: bool>(ctx: &mut Context, instr: u32, cond: &'sta
         op_reg
     );
     if ACC {
-        let _ = write!(ctx.next_instr.opcode, ", r{}", acc_reg);
+        let _ = write!(ctx.next_instr.opcode, ", r{acc_reg}");
     }
     if (!ACC && acc_reg != 0) || dst_reg == 15 || src_reg == 15 || op_reg == 15 || acc_reg == 15 {
         ctx.next_instr.comment = "Unpredictable".to_string();

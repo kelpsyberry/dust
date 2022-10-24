@@ -1,0 +1,13 @@
+[package]
+name = "dust-soft-2d"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[features]
+threaded = ["crossbeam-channel"]
+
+[dependencies]
+dust-core = { path = "../../core" }
+dust-soft-2d-base = { path = "base" }
+crossbeam-channel = { version = "0.5", optional = true }

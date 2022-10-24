@@ -15,10 +15,19 @@ pub trait RendererTx {
         tex_pal: &Bytes<0x1_8000>,
         state: &RenderingState,
     );
+    fn skip_rendering(&mut self);
 }
 
-pub trait RendererRx {
+// TODO: Use the SCREEN_WIDTH/SCREEN_HEIGHT constants, can't right now due to a compiler bug making
+//       the trait stop being object-safe in that case.
+
+pub trait SoftRendererRx {
     fn start_frame(&mut self);
-    fn read_scanline(&mut self) -> &Scanline<u32, 256>;
+    fn read_scanline(&mut self) -> &Scanline<u32>;
     fn skip_scanline(&mut self);
+}
+
+pub trait AccelRendererRx {
+    fn start_frame(&mut self);
+    fn read_frame(&mut self) -> Box<[Scanline<u32>; 192]>;
 }

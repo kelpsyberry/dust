@@ -358,8 +358,7 @@ impl DisassemblyView {
                 } else {
                     self.scrollbar.scroll.as_signed()
                 }
-                .min(scroll_max_int.as_signed())
-                .max(SignedYPos(0))
+                .clamp(SignedYPos(0), scroll_max_int.as_signed())
                 .as_unsigned();
 
                 if ui.is_window_focused() {

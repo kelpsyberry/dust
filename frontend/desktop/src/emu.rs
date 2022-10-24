@@ -1,16 +1,11 @@
 #[cfg(feature = "gdb-server")]
 mod gdb_server;
-mod renderer_3d;
 mod rtc;
+pub mod soft_renderer_3d;
 
 #[cfg(feature = "debug-views")]
 use super::debug_views;
-use crate::{
-    audio,
-    config::{Renderer2dKind, SysFiles},
-    game_db::SaveType,
-    input, triple_buffer, DsSlotRom, FrameData,
-};
+use crate::{audio, config::SysFiles, game_db::SaveType, input, DsSlotRom, FrameData};
 #[cfg(feature = "xq-audio")]
 use dust_core::audio::{Audio, ChannelInterpMethod as AudioChannelInterpMethod};
 use dust_core::{
@@ -27,6 +22,7 @@ use dust_core::{
     },
     Model, SaveContents, SaveReloadContents,
 };
+use emu_utils::triple_buffer;
 #[cfg(feature = "gdb-server")]
 use std::net::SocketAddr;
 #[cfg(feature = "xq-audio")]
@@ -46,7 +42,6 @@ use std::{
 pub struct SharedState {
     // UI to emu
     pub playing: AtomicBool,
-    pub limit_framerate: AtomicBool,
 
     // Emu to UI
     #[cfg(feature = "gdb-server")]
@@ -84,7 +79,14 @@ pub enum Message {
 
     UpdateRtcTimeOffsetSeconds(i64),
 
-    UpdateRenderer2dKind(Renderer2dKind),
+    UpdateRenderers {
+        renderer_2d_is_accel: bool,
+        renderer_2d: Box<dyn engine_2d::Renderer + Send>,
+        renderer_3d_tx: Box<dyn engine_3d::RendererTx + Send>,
+    },
+
+    UpdateFramerateLimit(Option<f32>),
+    UpdatePausedFramerateLimit(f32),
 
     UpdateSyncToAudio(bool),
     UpdateAudioSampleChunkSize(u16),
@@ -308,6 +310,9 @@ pub struct LaunchData {
     pub mic_rx: Option<audio::input::Receiver>,
     pub frame_tx: triple_buffer::Sender<FrameData>,
 
+    pub framerate_ratio_limit: Option<f32>,
+    pub paused_framerate_limit: f32,
+
     pub sync_to_audio: bool,
     pub audio_sample_chunk_size: u16,
     #[cfg(feature = "xq-audio")]
@@ -317,26 +322,16 @@ pub struct LaunchData {
 
     pub rtc_time_offset_seconds: i64,
 
-    pub renderer_2d_kind: Renderer2dKind,
+    pub renderer_2d_is_accel: bool,
+    pub renderer_2d: Box<dyn engine_2d::Renderer + Send>,
+    pub renderer_3d_tx: Box<dyn engine_3d::RendererTx + Send>,
 
     #[cfg(feature = "log")]
     pub logger: slog::Logger,
 }
 
-fn renderer_2d(
-    kind: Renderer2dKind,
-    rx_3d: Box<dyn engine_3d::RendererRx + Send>,
-) -> Box<dyn engine_2d::Renderer> {
-    match kind {
-        Renderer2dKind::Sync => Box::new(dust_soft_2d::sync::Renderer::new(rx_3d)),
-        Renderer2dKind::LockstepScanlines => Box::new(
-            dust_soft_2d::threaded::lockstep_scanlines::Renderer::new(rx_3d),
-        ),
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
-pub(super) fn main(
+pub(super) fn run(
     LaunchData {
         sys_files,
         ds_slot,
@@ -355,6 +350,9 @@ pub(super) fn main(
         mic_rx,
         mut frame_tx,
 
+        framerate_ratio_limit,
+        paused_framerate_limit,
+
         mut sync_to_audio,
         audio_sample_chunk_size,
         #[cfg(feature = "xq-audio")]
@@ -364,7 +362,9 @@ pub(super) fn main(
 
         mut rtc_time_offset_seconds,
 
-        mut renderer_2d_kind,
+        mut renderer_2d_is_accel,
+        renderer_2d,
+        renderer_3d_tx,
 
         #[cfg(feature = "log")]
         logger,
@@ -386,8 +386,6 @@ pub(super) fn main(
         &logger,
     );
 
-    let (tx_3d, rx_3d) = renderer_3d::init();
-
     let mut emu_builder = emu::Builder::new(
         Flash::new(
             SaveContents::Existing(
@@ -408,8 +406,8 @@ pub(super) fn main(
         },
         mic_rx.map(|mic_rx| Box::new(mic_rx) as Box<dyn spi::tsc::MicBackend>),
         Box::new(rtc::Backend::new(rtc_time_offset_seconds)),
-        renderer_2d(renderer_2d_kind, Box::new(rx_3d.clone())),
-        Box::new(tx_3d),
+        renderer_2d,
+        renderer_3d_tx,
         #[cfg(feature = "log")]
         logger.clone(),
     );
@@ -429,7 +427,9 @@ pub(super) fn main(
 
     let mut emu = emu_builder.build(Interpreter).unwrap();
 
-    const FRAME_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
+    const FRAME_BASE_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
+    let mut frame_interval = framerate_ratio_limit.map(|value| FRAME_BASE_INTERVAL.div_f32(value));
+    let mut paused_frame_interval = Duration::SECOND.div_f32(paused_framerate_limit);
     let mut last_frame_time = Instant::now();
 
     const FPS_CALC_INTERVAL: Duration = Duration::from_secs(1);
@@ -598,36 +598,44 @@ pub(super) fn main(
                         .set_time_offset_seconds(value);
                 }
 
-                Message::UpdateRenderer2dKind(value) => {
-                    if value != renderer_2d_kind {
-                        renderer_2d_kind = value;
-                        emu.gpu.set_renderer_2d(
-                            renderer_2d(value, Box::new(rx_3d.clone())),
-                            &mut emu.arm9,
-                        );
-                    }
+                Message::UpdateRenderers {
+                    renderer_2d_is_accel: new_renderer_2d_is_accel,
+                    renderer_2d,
+                    renderer_3d_tx,
+                } => {
+                    renderer_2d_is_accel = new_renderer_2d_is_accel;
+                    emu.gpu.engine_3d.set_renderer_tx(renderer_3d_tx);
+                    emu.gpu.set_renderer_2d(renderer_2d, &mut emu.arm9);
                 }
 
-                Message::UpdateSyncToAudio(new_sync_to_audio) => {
-                    sync_to_audio = new_sync_to_audio;
+                Message::UpdateFramerateLimit(value) => {
+                    frame_interval = value.map(|value| FRAME_BASE_INTERVAL.div_f32(value));
+                }
+
+                Message::UpdatePausedFramerateLimit(value) => {
+                    paused_frame_interval = Duration::SECOND.div_f32(value);
+                }
+
+                Message::UpdateSyncToAudio(value) => {
+                    sync_to_audio = value;
                     if let Some(data) = &audio_tx_data {
                         emu.audio.backend =
                             Box::new(audio::output::Sender::new(data, sync_to_audio));
                     }
                 }
 
-                Message::UpdateAudioSampleChunkSize(chunk_size) => {
-                    emu.audio.sample_chunk_size = chunk_size;
+                Message::UpdateAudioSampleChunkSize(value) => {
+                    emu.audio.sample_chunk_size = value;
                 }
 
                 #[cfg(feature = "xq-audio")]
-                Message::UpdateAudioCustomSampleRate(sample_rate) => {
-                    Audio::set_custom_sample_rate(&mut emu, sample_rate);
+                Message::UpdateAudioCustomSampleRate(value) => {
+                    Audio::set_custom_sample_rate(&mut emu, value);
                 }
 
                 #[cfg(feature = "xq-audio")]
-                Message::UpdateAudioChannelInterpMethod(interp_method) => {
-                    emu.audio.set_channel_interp_method(interp_method);
+                Message::UpdateAudioChannelInterpMethod(value) => {
+                    emu.audio.set_channel_interp_method(value);
                 }
 
                 Message::ToggleAudioInput(mic_rx) => {
@@ -726,7 +734,7 @@ pub(super) fn main(
 
         playing &= shared_state.playing.load(Ordering::Relaxed);
 
-        let frame = frame_tx.start();
+        let frame = frame_tx.current();
 
         if playing {
             #[cfg(feature = "gdb-server")]
@@ -769,9 +777,12 @@ pub(super) fn main(
                 }
             }
         }
-        frame
-            .fb
-            .copy_from_slice(&emu.gpu.renderer_2d().framebuffer()[..]);
+
+        if !renderer_2d_is_accel {
+            frame
+                .fb
+                .copy_from_slice(&emu.gpu.renderer_2d().framebuffer()[..]);
+        }
 
         #[cfg(feature = "debug-views")]
         debug_views.prepare_frame_data(&mut emu, &mut frame.debug);
@@ -808,13 +819,17 @@ pub(super) fn main(
             ));
         }
 
-        if !playing || shared_state.limit_framerate.load(Ordering::Relaxed) {
+        if let Some(frame_interval) = if playing {
+            frame_interval
+        } else {
+            Some(paused_frame_interval)
+        } {
             let now = Instant::now();
             let elapsed = now - last_frame_time;
-            if elapsed < FRAME_INTERVAL {
-                last_frame_time += FRAME_INTERVAL;
+            if elapsed < frame_interval {
+                last_frame_time += frame_interval;
                 let sleep_interval =
-                    (FRAME_INTERVAL - elapsed).saturating_sub(Duration::from_millis(1));
+                    (frame_interval - elapsed).saturating_sub(Duration::from_millis(1));
                 if !sleep_interval.is_zero() {
                     std::thread::sleep(sleep_interval);
                 }

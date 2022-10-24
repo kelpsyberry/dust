@@ -1,9 +1,0 @@
-[package]
-name = "dust-soft-3d"
-version = "0.0.0"
-edition = "2021"
-publish = false
-
-[dependencies]
-dust-core = { path = "../core" }
-proc-bitfield = { git = "https://github.com/Kelpsy/proc-bitfield", features = ["nightly"] }

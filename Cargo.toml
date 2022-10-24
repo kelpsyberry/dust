@@ -1,8 +1,11 @@
 [workspace]
 members = [
     "core",
-    "soft-2d",
-    "soft-3d",
+    "render/soft-2d/base",
+    "render/soft-2d",
+    "render/soft-3d",
+    "render/wgpu-2d",
+    "render/wgpu-3d",
     "frontend/desktop",
     "frontend/web/crate",
 ]

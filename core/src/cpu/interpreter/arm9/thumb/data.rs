@@ -174,7 +174,7 @@ pub fn dp_op_reg<const OP_TY: DpOpRegTy>(emu: &mut Emu<Interpreter>, instr: u16)
         }
         DpOpRegTy::Neg => {
             let result = arithmetic::sub_s(&mut emu.arm9.engine_data.regs, 0, op);
-            write_reg_clear_interlock_ab(emu, src_dst_reg, result as u32);
+            write_reg_clear_interlock_ab(emu, src_dst_reg, result);
             prefetch_thumb::<true, true>(emu);
         }
         DpOpRegTy::Cmp => {

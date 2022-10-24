@@ -586,7 +586,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
                             | (emu.input.arm7_key_irq_control().0 as u32) << 16
                     }
 
-                    0x134 => emu.rcnt() as u32 | (emu.input.status().0 & 0xFFFF_0000) as u32,
+                    0x134 => emu.rcnt() as u32 | (emu.input.status().0 & 0xFFFF_0000),
 
                     0x138 => emu.rtc.control().0 as u32,
 

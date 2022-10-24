@@ -23,6 +23,8 @@ interp-pipeline-accurate-reloads = ["interp-pipeline"]
 interp-arm9-interlocks = ["interp-pipeline"]
 interp-r15-write-checks = []
 
+3d-hi-res-coords = []
+
 xq-audio = []
 channel-audio-capture = []
 debugger-hooks = ["bft-r", "bft-w"]

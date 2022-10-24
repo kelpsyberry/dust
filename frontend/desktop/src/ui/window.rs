@@ -1,4 +1,3 @@
-use super::imgui_wgpu;
 #[cfg(target_os = "macos")]
 use cocoa::{
     appkit::{NSWindow, NSWindowOcclusionState, NSWindowStyleMask},
@@ -6,7 +5,12 @@ use cocoa::{
     foundation::NSRect,
 };
 use copypasta::{ClipboardContext, ClipboardProvider};
-use std::{iter, mem::ManuallyDrop, time::Instant};
+use std::{
+    iter,
+    mem::ManuallyDrop,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 #[cfg(target_os = "macos")]
 use winit::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 use winit::{
@@ -16,32 +20,51 @@ use winit::{
     window::{Window as WinitWindow, WindowBuilder as WinitWindowBuilder},
 };
 
-pub struct GfxDeviceState {
-    pub surface: wgpu::Surface,
-    pub adapter: wgpu::Adapter,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
-    pub sc_needs_rebuild: bool,
-    pub surf_config: wgpu::SurfaceConfiguration,
+pub enum AdapterSelection {
+    Auto(wgpu::PowerPreference),
+    Manual(wgpu::Backends, Box<dyn FnMut(&wgpu::Adapter) -> bool>),
 }
 
-impl GfxDeviceState {
-    pub async fn new(window: &WinitWindow) -> Self {
+pub struct GfxState {
+    surface: wgpu::Surface,
+    adapter: wgpu::Adapter,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
+    sc_needs_rebuild: bool,
+    surface_config: wgpu::SurfaceConfiguration,
+    surface_format_changed: bool,
+}
+
+impl GfxState {
+    async fn new(
+        window: &WinitWindow,
+        features: wgpu::Features,
+        adapter: AdapterSelection,
+    ) -> Self {
         let instance = wgpu::Instance::new(wgpu::Backends::all());
         let surface = unsafe { instance.create_surface(window) };
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::LowPower,
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
-            })
-            .await
-            .expect("Couldn't create graphics adapter");
+
+        let adapter = match adapter {
+            AdapterSelection::Auto(power_preference) => {
+                instance
+                    .request_adapter(&wgpu::RequestAdapterOptions {
+                        power_preference,
+                        force_fallback_adapter: false,
+                        compatible_surface: Some(&surface),
+                    })
+                    .await
+            }
+            AdapterSelection::Manual(backends, suitable) => {
+                instance.enumerate_adapters(backends).find(suitable)
+            }
+        }
+        .expect("couldn't create graphics adapter");
+
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::empty(),
+                    features,
                     limits: wgpu::Limits {
                         max_texture_dimension_2d: 4096,
                         ..wgpu::Limits::downlevel_webgl2_defaults()
@@ -50,7 +73,8 @@ impl GfxDeviceState {
                 None,
             )
             .await
-            .expect("Couldn't open connection to graphics device");
+            .expect("couldn't open connection to graphics device");
+
         let size = window.inner_size();
         let surf_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -58,7 +82,7 @@ impl GfxDeviceState {
                 let formats = surface.get_supported_formats(&adapter);
                 let preferred = formats
                     .get(0)
-                    .expect("Couldn't get surface preferred format");
+                    .expect("couldn't get surface preferred format");
                 #[cfg(target_os = "macos")]
                 {
                     *formats
@@ -71,76 +95,79 @@ impl GfxDeviceState {
             },
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: wgpu::PresentMode::AutoNoVsync,
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
         };
         surface.configure(&device, &surf_config);
-        GfxDeviceState {
+
+        GfxState {
             surface,
             adapter,
-            device,
-            queue,
+            device: Arc::new(device),
+            queue: Arc::new(queue),
             sc_needs_rebuild: false,
-            surf_config,
+            surface_config: surf_config,
+            surface_format_changed: false,
         }
     }
 
-    pub fn invalidate_swapchain(&mut self) {
+    pub fn surface(&self) -> &wgpu::Surface {
+        &self.surface
+    }
+
+    pub fn adapter(&self) -> &wgpu::Adapter {
+        &self.adapter
+    }
+
+    pub fn device(&self) -> &Arc<wgpu::Device> {
+        &self.device
+    }
+
+    pub fn queue(&self) -> &Arc<wgpu::Queue> {
+        &self.queue
+    }
+
+    pub fn surface_config(&self) -> &wgpu::SurfaceConfiguration {
+        &self.surface_config
+    }
+
+    pub fn surface_format_changed(&self) -> bool {
+        self.surface_format_changed
+    }
+
+    fn invalidate_swapchain(&mut self) {
         self.sc_needs_rebuild = true;
     }
 
-    pub fn rebuild_swapchain(&mut self, size: PhysicalSize<u32>) {
+    fn rebuild_swapchain(&mut self, size: PhysicalSize<u32>) {
         self.sc_needs_rebuild = false;
-        self.surf_config.width = size.width;
-        self.surf_config.height = size.height;
+        self.surface_config.width = size.width;
+        self.surface_config.height = size.height;
         if size.width != 0 && size.height != 0 {
-            self.surface.configure(&self.device, &self.surf_config);
-        }
-    }
-
-    pub fn update_format_and_rebuild_swapchain(&mut self, size: PhysicalSize<u32>) {
-        self.surf_config.format = *self
-            .surface
-            .get_supported_formats(&self.adapter)
-            .get(0)
-            .expect("Couldn't get surface preferred format");
-        self.rebuild_swapchain(size);
-    }
-}
-
-pub struct GfxState {
-    pub device_state: GfxDeviceState,
-    pub imgui: imgui_wgpu::Renderer,
-}
-
-impl GfxState {
-    pub async fn new(window: &WinitWindow, imgui: &mut imgui::Context) -> Self {
-        let device_state = GfxDeviceState::new(window).await;
-        let imgui = imgui_wgpu::Renderer::new(
-            &device_state.device,
-            &device_state.queue,
-            imgui,
-            device_state.surf_config.format,
-        );
-        GfxState {
-            device_state,
-            imgui,
+            self.surface.configure(&self.device, &self.surface_config);
         }
     }
 
     fn update_format_and_rebuild_swapchain(&mut self, size: PhysicalSize<u32>) {
-        self.device_state.update_format_and_rebuild_swapchain(size);
-        self.imgui.change_swapchain_format(
-            &self.device_state.device,
-            self.device_state.surf_config.format,
-        );
+        let new_format = *self
+            .surface
+            .get_supported_formats(&self.adapter)
+            .get(0)
+            .expect("couldn't get surface preferred format");
+        if new_format != self.surface_config.format {
+            self.surface_config.format = new_format;
+            self.surface_format_changed = true;
+        }
+        self.rebuild_swapchain(size);
     }
 
-    pub fn redraw(&mut self, imgui_draw_data: &imgui::DrawData, size: PhysicalSize<u32>) {
-        if self.device_state.sc_needs_rebuild {
-            self.device_state.rebuild_swapchain(size);
+    pub fn start_frame(&mut self, size: PhysicalSize<u32>) -> wgpu::SurfaceTexture {
+        self.surface_format_changed = false;
+        if self.sc_needs_rebuild {
+            self.rebuild_swapchain(size);
         }
-        let frame = loop {
-            match self.device_state.surface.get_current_texture() {
+        loop {
+            match self.surface.get_current_texture() {
                 Ok(frame) => {
                     if frame.suboptimal {
                         self.update_format_and_rebuild_swapchain(size);
@@ -153,44 +180,157 @@ impl GfxState {
                     wgpu::SurfaceError::Lost => {
                         self.update_format_and_rebuild_swapchain(size);
                     }
-                    wgpu::SurfaceError::OutOfMemory => panic!("Swapchain ran out of memory"),
+                    wgpu::SurfaceError::OutOfMemory => panic!("swapchain ran out of memory"),
                 },
             }
-        };
-        let mut encoder = self
-            .device_state
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        self.imgui.render(
-            &self.device_state.device,
-            &self.device_state.queue,
-            &mut encoder,
-            &frame
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default()),
-            imgui_draw_data,
+        }
+    }
+}
+
+pub struct ImGuiState {
+    pub gfx: imgui_wgpu::Renderer,
+    pub winit: imgui_winit_support::WinitPlatform,
+    pub normal_font: imgui::FontId,
+    pub mono_font: imgui::FontId,
+    pub large_icon_font: imgui::FontId,
+}
+
+impl ImGuiState {
+    fn new(
+        window: &WinitWindow,
+        gfx_state: &GfxState,
+        scale_factor: f64,
+        imgui: &mut imgui::Context,
+    ) -> Self {
+        struct ClipboardBackend(ClipboardContext);
+
+        impl imgui::ClipboardBackend for ClipboardBackend {
+            fn get(&mut self) -> Option<String> {
+                self.0.get_contents().ok()
+            }
+
+            fn set(&mut self, value: &str) {
+                let _ = self.0.set_contents(value.to_string());
+            }
+        }
+
+        imgui.set_ini_filename(None);
+        if let Ok(ctx) = ClipboardContext::new() {
+            imgui.set_clipboard_backend(ClipboardBackend(ctx));
+        }
+        let imgui_io = imgui.io_mut();
+        imgui_io.config_flags |= imgui::ConfigFlags::IS_SRGB | imgui::ConfigFlags::DOCKING_ENABLE;
+        imgui_io.config_windows_move_from_title_bar_only = true;
+        imgui_io.font_global_scale = (1.0 / scale_factor) as f32;
+
+        static OPEN_SANS_DATA: &[u8] = include_bytes!("../../fonts/OpenSans-Regular.ttf");
+        static FA_SOLID_DATA: &[u8] = include_bytes!("../../fonts/FontAwesome-Solid.ttf");
+        static FA_BRANDS_DATA: &[u8] = include_bytes!("../../fonts/FontAwesome-Brands.ttf");
+        let fa_solid_glyph_ranges = imgui::FontGlyphRanges::from_slice(&[0xE000, 0xF8FF, 0]);
+        let fa_brands_glyph_ranges = imgui::FontGlyphRanges::from_slice(&[0xF392, 0xF392, 0]);
+
+        let normal_font = imgui.fonts().add_font(&[
+            imgui::FontSource::TtfData {
+                data: OPEN_SANS_DATA,
+                size_pixels: (16.0 * scale_factor) as f32,
+                config: Some(imgui::FontConfig {
+                    oversample_h: 2,
+                    ..Default::default()
+                }),
+            },
+            imgui::FontSource::TtfData {
+                data: FA_SOLID_DATA,
+                size_pixels: (16.0 * scale_factor) as f32,
+                config: Some(imgui::FontConfig {
+                    glyph_ranges: fa_solid_glyph_ranges,
+                    glyph_min_advance_x: (20.0 * scale_factor) as f32,
+                    glyph_offset: [0.0, 2.0],
+                    oversample_h: 2,
+                    ..Default::default()
+                }),
+            },
+            imgui::FontSource::TtfData {
+                data: FA_BRANDS_DATA,
+                size_pixels: (16.0 * scale_factor) as f32,
+                config: Some(imgui::FontConfig {
+                    glyph_ranges: fa_brands_glyph_ranges,
+                    glyph_min_advance_x: (20.0 * scale_factor) as f32,
+                    glyph_offset: [0.0, 2.0],
+                    oversample_h: 2,
+                    ..Default::default()
+                }),
+            },
+        ]);
+        let mono_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
+            data: include_bytes!("../../fonts/FiraMono-Regular.ttf"),
+            size_pixels: (13.0 * scale_factor) as f32,
+            config: Some(imgui::FontConfig {
+                oversample_h: 2,
+                ..Default::default()
+            }),
+        }]);
+        let large_icon_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
+            data: FA_SOLID_DATA,
+            size_pixels: (32.0 * scale_factor) as f32,
+            config: Some(imgui::FontConfig {
+                glyph_ranges: imgui::FontGlyphRanges::from_slice(&[
+                    0x002B, 0x002B, 0xE000, 0xF8FF, 0,
+                ]),
+                glyph_min_advance_x: (40.0 * scale_factor) as f32,
+                oversample_h: 2,
+                ..Default::default()
+            }),
+        }]);
+
+        if gfx_state.surface_config.format.describe().srgb {
+            let style = imgui.style_mut();
+            for color in &mut style.colors {
+                for component in &mut color[..3] {
+                    *component = component.powf(2.2);
+                }
+            }
+        }
+
+        let gfx = imgui_wgpu::Renderer::new(
+            &gfx_state.device,
+            &gfx_state.queue,
+            imgui,
+            gfx_state.surface_config.format,
         );
-        self.device_state.queue.submit(iter::once(encoder.finish()));
-        frame.present();
+
+        let mut winit = imgui_winit_support::WinitPlatform::init(imgui);
+        winit.attach_window(
+            imgui.io_mut(),
+            window,
+            imgui_winit_support::HiDpiMode::Default,
+        );
+
+        ImGuiState {
+            gfx,
+            winit,
+            normal_font,
+            mono_font,
+            large_icon_font,
+        }
     }
 }
 
 pub struct Builder {
     pub event_loop: EventLoop<()>,
     pub window: Window,
+
     pub imgui: imgui::Context,
 }
 
 pub struct Window {
-    pub window: WinitWindow,
-    pub is_hidden: bool,
-    pub scale_factor: f64,
-    pub last_frame: Instant,
-    pub imgui_winit_platform: imgui_winit_support::WinitPlatform,
-    pub gfx: GfxState,
-    pub normal_font: imgui::FontId,
-    pub mono_font: imgui::FontId,
-    pub large_icon_font: imgui::FontId,
+    window: WinitWindow,
+    is_hidden: bool,
+    scale_factor: f64,
+    last_frame: Instant,
+    gfx: GfxState,
+
+    pub imgui: ImGuiState,
+
     #[cfg(target_os = "macos")]
     macos_title_bar_hidden: bool,
     #[cfg(target_os = "macos")]
@@ -198,6 +338,26 @@ pub struct Window {
 }
 
 impl Window {
+    pub fn window(&self) -> &WinitWindow {
+        &self.window
+    }
+
+    pub fn scale_factor(&self) -> f64 {
+        self.scale_factor
+    }
+
+    pub fn gfx(&self) -> &GfxState {
+        &self.gfx
+    }
+
+    #[cfg(target_os = "macos")]
+    fn macos_title_bar_height(&self) -> f32 {
+        let content_layout_rect: NSRect =
+            unsafe { msg_send![self.window.ns_window() as id, contentLayoutRect] };
+        (self.window.outer_size().height as f64 / self.scale_factor
+            - content_layout_rect.size.height) as f32
+    }
+
     #[cfg(target_os = "macos")]
     pub fn set_macos_title_bar_hidden(&mut self, hidden: bool) {
         self.macos_title_bar_hidden = hidden;
@@ -216,14 +376,6 @@ impl Window {
                 prev_style_mask & !NSWindowStyleMask::NSFullSizeContentViewWindowMask
             });
         }
-    }
-
-    #[cfg(target_os = "macos")]
-    fn macos_title_bar_height(&self) -> f32 {
-        let content_layout_rect: NSRect =
-            unsafe { msg_send![self.window.ns_window() as id, contentLayoutRect] };
-        (self.window.outer_size().height as f64 / self.scale_factor
-            - content_layout_rect.size.height) as f32
     }
 
     pub fn main_menu_bar(&mut self, ui: &imgui::Ui, f: impl FnOnce(&mut Self)) {
@@ -260,21 +412,11 @@ pub enum ControlFlow {
     Exit,
 }
 
-struct ClipboardBackend(ClipboardContext);
-
-impl imgui::ClipboardBackend for ClipboardBackend {
-    fn get(&mut self) -> Option<String> {
-        self.0.get_contents().ok()
-    }
-
-    fn set(&mut self, value: &str) {
-        let _ = self.0.set_contents(value.to_string());
-    }
-}
-
 impl Builder {
     pub async fn new(
         title: impl Into<String>,
+        features: wgpu::Features,
+        adapter: AdapterSelection,
         default_logical_size: (u32, u32),
         #[cfg(target_os = "macos")] macos_title_bar_hidden: bool,
     ) -> Self {
@@ -298,86 +440,12 @@ impl Builder {
         let window = window_builder
             .build(&event_loop)
             .expect("Couldn't create window");
-
         let scale_factor = window.scale_factor();
 
+        let gfx = GfxState::new(&window, features, adapter).await;
+
         let mut imgui = imgui::Context::create();
-        imgui.set_ini_filename(None);
-        if let Ok(ctx) = ClipboardContext::new() {
-            imgui.set_clipboard_backend(ClipboardBackend(ctx));
-        }
-        let imgui_io = imgui.io_mut();
-        imgui_io.config_flags |= imgui::ConfigFlags::IS_SRGB | imgui::ConfigFlags::DOCKING_ENABLE;
-        imgui_io.config_windows_move_from_title_bar_only = true;
-        imgui_io.font_global_scale = (1.0 / scale_factor) as f32;
-
-        static OPEN_SANS_DATA: &[u8] = include_bytes!("../../fonts/OpenSans-Regular.ttf");
-        static FA_SOLID_DATA: &[u8] = include_bytes!("../../fonts/FontAwesome-Solid.ttf");
-        static FA_BRANDS_DATA: &[u8] = include_bytes!("../../fonts/FontAwesome-Brands.ttf");
-        let fa_solid_glyph_ranges = imgui::FontGlyphRanges::from_slice(&[0xE000, 0xF8FF, 0]);
-        let fa_brands_glyph_ranges = imgui::FontGlyphRanges::from_slice(&[0xF392, 0xF392, 0]);
-
-        let normal_font = imgui.fonts().add_font(&[
-            imgui::FontSource::TtfData {
-                data: OPEN_SANS_DATA,
-                size_pixels: (16.0 * scale_factor) as f32,
-                config: Some(imgui::FontConfig {
-                    oversample_h: 2,
-                    ..Default::default()
-                }),
-            },
-            imgui::FontSource::TtfData {
-                data: FA_SOLID_DATA,
-                size_pixels: (16.0 * scale_factor) as f32,
-                config: Some(imgui::FontConfig {
-                    glyph_ranges: fa_solid_glyph_ranges.clone(),
-                    glyph_min_advance_x: (20.0 * scale_factor) as f32,
-                    glyph_offset: [0.0, 2.0],
-                    oversample_h: 2,
-                    ..Default::default()
-                }),
-            },
-            imgui::FontSource::TtfData {
-                data: FA_BRANDS_DATA,
-                size_pixels: (16.0 * scale_factor) as f32,
-                config: Some(imgui::FontConfig {
-                    glyph_ranges: fa_brands_glyph_ranges.clone(),
-                    glyph_min_advance_x: (20.0 * scale_factor) as f32,
-                    glyph_offset: [0.0, 2.0],
-                    oversample_h: 2,
-                    ..Default::default()
-                }),
-            },
-        ]);
-        let mono_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
-            data: include_bytes!("../../fonts/FiraMono-Regular.ttf"),
-            size_pixels: (13.0 * scale_factor) as f32,
-            config: Some(imgui::FontConfig {
-                oversample_h: 2,
-                ..Default::default()
-            }),
-        }]);
-        let large_icon_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
-            data: FA_SOLID_DATA,
-            size_pixels: (32.0 * scale_factor) as f32,
-            config: Some(imgui::FontConfig {
-                glyph_ranges: imgui::FontGlyphRanges::from_slice(&[
-                    0x002B, 0x002B, 0xE000, 0xF8FF, 0,
-                ]),
-                glyph_min_advance_x: (40.0 * scale_factor) as f32,
-                oversample_h: 2,
-                ..Default::default()
-            }),
-        }]);
-
-        let mut imgui_winit_platform = imgui_winit_support::WinitPlatform::init(&mut imgui);
-        imgui_winit_platform.attach_window(
-            imgui.io_mut(),
-            &window,
-            imgui_winit_support::HiDpiMode::Default,
-        );
-
-        let gfx = GfxState::new(&window, &mut imgui).await;
+        let imgui_state = ImGuiState::new(&window, &gfx, scale_factor, &mut imgui);
 
         #[allow(unused_mut)]
         let mut window = Window {
@@ -386,10 +454,9 @@ impl Builder {
             scale_factor,
             gfx,
             last_frame: Instant::now(),
-            imgui_winit_platform,
-            normal_font,
-            mono_font,
-            large_icon_font,
+
+            imgui: imgui_state,
+
             #[cfg(target_os = "macos")]
             macos_title_bar_hidden,
             #[cfg(target_os = "macos")]
@@ -426,8 +493,19 @@ impl Builder {
         self,
         state: S,
         mut process_event: impl FnMut(&mut Window, &mut S, &Event<()>) + 'static,
-        mut run_frame: impl FnMut(&mut Window, &mut S, &imgui::Ui) -> ControlFlow + 'static,
-        on_exit: impl FnOnce(Window, imgui::Context, S) + 'static,
+
+        mut draw_imgui: impl FnMut(&mut Window, &mut S, &imgui::Ui) -> ControlFlow + 'static,
+        on_exit_imgui: impl FnOnce(&mut Window, &mut S, imgui::Context) + 'static,
+
+        mut draw: impl FnMut(
+                &mut Window,
+                &mut S,
+                &wgpu::SurfaceTexture,
+                &mut wgpu::CommandEncoder,
+                Duration,
+            ) -> ControlFlow
+            + 'static,
+        on_exit: impl FnOnce(Window, S) + 'static,
     ) -> ! {
         // Since Rust can't prove that after Event::LoopDestroyed the program will exit and prevent
         // these from being used again, they have to be wrapped in ManuallyDrop to be able to pass
@@ -435,13 +513,15 @@ impl Builder {
         let mut window_ = ManuallyDrop::new(self.window);
         let mut imgui_ = ManuallyDrop::new(self.imgui);
         let mut state = ManuallyDrop::new(state);
+        let mut on_exit_imgui = ManuallyDrop::new(on_exit_imgui);
         let mut on_exit = ManuallyDrop::new(on_exit);
 
         self.event_loop.run(move |event, _, control_flow| {
             let window = &mut *window_;
             let imgui = &mut *imgui_;
             window
-                .imgui_winit_platform
+                .imgui
+                .winit
                 .handle_event(imgui.io_mut(), &window.window, &event);
             process_event(window, &mut state, &event);
             match event {
@@ -457,35 +537,72 @@ impl Builder {
                 }
 
                 Event::WindowEvent {
-                    event: WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. },
+                    event: WindowEvent::Resized(_),
                     ..
                 } => {
-                    window.gfx.device_state.invalidate_swapchain();
+                    window.gfx.invalidate_swapchain();
+                }
+
+                Event::WindowEvent {
+                    event: WindowEvent::ScaleFactorChanged { scale_factor, .. },
+                    ..
+                } => {
+                    window.scale_factor = scale_factor;
+                    window.gfx.invalidate_swapchain();
                 }
 
                 Event::RedrawRequested(_) => {
                     let now = Instant::now();
-                    let io = imgui.io_mut();
-                    io.update_delta_time(now - window.last_frame);
+                    let delta_time = now - window.last_frame;
                     window.last_frame = now;
+
+                    let frame = window.gfx.start_frame(window.window.inner_size());
+                    let mut encoder = window
+                        .gfx
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+                    if window.gfx.surface_format_changed {
+                        window.imgui.gfx.change_swapchain_format(
+                            &window.gfx.device,
+                            window.gfx.surface_config.format,
+                        );
+                    }
+
+                    let io = imgui.io_mut();
+                    io.update_delta_time(delta_time);
                     window
-                        .imgui_winit_platform
+                        .imgui
+                        .winit
                         .prepare_frame(io, &window.window)
                         .expect("Couldn't prepare imgui frame");
 
                     let ui = imgui.frame();
-                    if run_frame(window, &mut state, ui) == ControlFlow::Exit {
+                    if draw_imgui(window, &mut state, ui) == ControlFlow::Exit {
                         *control_flow = WinitControlFlow::Exit;
                     }
 
-                    window
-                        .imgui_winit_platform
-                        .prepare_render(ui, &window.window);
+                    if draw(window, &mut state, &frame, &mut encoder, delta_time)
+                        == ControlFlow::Exit
+                    {
+                        *control_flow = WinitControlFlow::Exit;
+                    }
 
-                    window
-                        .gfx
-                        .redraw(imgui.render(), window.window.inner_size());
-                    window.gfx.device_state.device.poll(wgpu::Maintain::Poll);
+                    window.imgui.winit.prepare_render(ui, &window.window);
+                    window.imgui.gfx.render(
+                        &window.gfx.device,
+                        &window.gfx.queue,
+                        &mut encoder,
+                        &frame
+                            .texture
+                            .create_view(&wgpu::TextureViewDescriptor::default()),
+                        imgui.render(),
+                    );
+
+                    window.gfx.queue.submit(iter::once(encoder.finish()));
+                    frame.present();
+
+                    window.gfx.device.poll(wgpu::Maintain::Poll);
                 }
 
                 Event::RedrawEventsCleared => {
@@ -509,9 +626,14 @@ impl Builder {
 
                 Event::LoopDestroyed => {
                     unsafe {
+                        ManuallyDrop::take(&mut on_exit_imgui)(
+                            window,
+                            &mut *state,
+                            ManuallyDrop::take(&mut imgui_),
+                        );
+
                         ManuallyDrop::take(&mut on_exit)(
                             ManuallyDrop::take(&mut window_),
-                            ManuallyDrop::take(&mut imgui_),
                             ManuallyDrop::take(&mut state),
                         )
                     };

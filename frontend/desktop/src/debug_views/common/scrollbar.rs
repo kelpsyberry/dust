@@ -62,8 +62,7 @@ impl Scrollbar {
             let delta = (mouse_pos[1] - self.grab_start_y) / (height - grab_height);
             self.scroll = (self.grab_start_scroll.as_signed()
                 + scroll_max_int.as_signed() * SignedYPos::from(delta))
-            .min(scroll_max_int.as_signed())
-            .max(SignedYPos(0))
+            .clamp(SignedYPos(0), scroll_max_int.as_signed())
             .as_unsigned();
         }
         let grab_style_color = if self.grabbing {

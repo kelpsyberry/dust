@@ -1,0 +1,11 @@
+[package]
+name = "dust-soft-2d-base"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[features]
+
+[dependencies]
+dust-core = { path = "../../../core" }
+proc-bitfield = { git = "https://github.com/Kelpsy/proc-bitfield", features = ["nightly"] }

@@ -146,7 +146,7 @@ impl Gpu {
     ) {
         self.renderer_2d = renderer;
         self.vram
-            .set_vram_tracking(self.renderer_2d.uses_bg_obj_vram_tracking(), arm9);
+            .renderer_2d_updated(self.renderer_2d.uses_bg_obj_vram_tracking(), arm9);
 
         self.renderer_2d.start_scanline(
             0,

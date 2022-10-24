@@ -155,7 +155,7 @@ impl Audio {
                 }
 
                 0x8 => {
-                    let new_timer_reload = (channel.timer_reload() & 0xFF00) as u16 | value as u16;
+                    let new_timer_reload = (channel.timer_reload() & 0xFF00) | value as u16;
                     channel.write_timer_reload(new_timer_reload);
                     match i {
                         1 => self.capture[0].timer_reload = new_timer_reload,
@@ -164,8 +164,7 @@ impl Audio {
                     }
                 }
                 0x9 => {
-                    let new_timer_reload =
-                        (channel.timer_reload() & 0x00FF) as u16 | (value as u16) << 8;
+                    let new_timer_reload = (channel.timer_reload() & 0x00FF) | (value as u16) << 8;
                     channel.write_timer_reload(new_timer_reload);
                     match i {
                         1 => self.capture[0].timer_reload = new_timer_reload,

@@ -18,17 +18,14 @@ pub(super) fn load_store_wb<
     let src_dst_reg = instr >> 12 & 0xF;
     let base_reg = instr >> 16 & 0xF;
     ctx.next_instr.opcode = format!(
-        "{}{}{}{} r{}, [r{}",
+        "{}{cond}{}{} r{src_dst_reg}, [r{base_reg}",
         if LOAD { "ldr" } else { "str" },
-        cond,
         if BYTE { "b" } else { "" },
         if ADDRESSING == WbAddressing::PostUser {
             "t"
         } else {
             ""
         },
-        src_dst_reg,
-        base_reg
     );
     if !ADDRESSING.preincrement() {
         ctx.next_instr.opcode.push(']');
@@ -38,25 +35,25 @@ pub(super) fn load_store_wb<
         WbOffTy::Imm => {
             let offset = instr & 0xFFF;
             if offset != 0 {
-                let _ = write!(ctx.next_instr.opcode, ", #{}{:#05X}", offset_sign, offset);
+                let _ = write!(ctx.next_instr.opcode, ", #{offset_sign}{offset:#05X}");
             }
         }
         WbOffTy::Reg(shift_ty) => {
             let off_reg = instr & 0xF;
-            let _ = write!(ctx.next_instr.opcode, ", {}r{}, ", offset_sign, off_reg);
+            let _ = write!(ctx.next_instr.opcode, ", {offset_sign}r{off_reg}, ");
             let mut shift = (instr >> 7 & 0x1F) as u8;
             if matches!(shift_ty, ShiftTy::Lsr | ShiftTy::Asr) && shift == 0 {
                 shift = 32;
             }
             let _ = match shift_ty {
-                ShiftTy::Lsl => write!(ctx.next_instr.opcode, "lsl #{}", shift),
-                ShiftTy::Lsr => write!(ctx.next_instr.opcode, "lsr #{}", shift),
-                ShiftTy::Asr => write!(ctx.next_instr.opcode, "asr #{}", shift),
+                ShiftTy::Lsl => write!(ctx.next_instr.opcode, "lsl #{shift}"),
+                ShiftTy::Lsr => write!(ctx.next_instr.opcode, "lsr #{shift}"),
+                ShiftTy::Asr => write!(ctx.next_instr.opcode, "asr #{shift}"),
                 ShiftTy::Ror => {
                     if shift == 0 {
                         write!(ctx.next_instr.opcode, "rrx")
                     } else {
-                        write!(ctx.next_instr.opcode, "ror #{}", shift)
+                        write!(ctx.next_instr.opcode, "ror #{shift}")
                     }
                 }
             };
@@ -89,12 +86,8 @@ pub(super) fn load_store_misc<
     let src_dst_reg = instr >> 12 & 0xF;
     let base_reg = instr >> 16 & 0xF;
     ctx.next_instr.opcode = format!(
-        "{}{}{} r{}, [r{}",
+        "{}{cond}{SUFFIX} r{src_dst_reg}, [r{base_reg}",
         if LOAD { "ldr" } else { "str" },
-        cond,
-        SUFFIX,
-        src_dst_reg,
-        base_reg
     );
     if !ADDRESSING.preincrement() {
         ctx.next_instr.opcode.push(']');
@@ -103,11 +96,11 @@ pub(super) fn load_store_misc<
     if OFF_IMM {
         let offset = (instr & 0xF) | (instr >> 4 & 0xF0);
         if offset != 0 {
-            let _ = write!(ctx.next_instr.opcode, ", #{}{:#05X}", offset_sign, offset);
+            let _ = write!(ctx.next_instr.opcode, ", #{offset_sign}{offset:#05X}");
         }
     } else {
         let off_reg = instr & 0xF;
-        let _ = write!(ctx.next_instr.opcode, ", {}r{}", offset_sign, off_reg);
+        let _ = write!(ctx.next_instr.opcode, ", {offset_sign}r{off_reg}");
     }
     if ADDRESSING.preincrement() {
         ctx.next_instr.opcode.push(']');
@@ -170,7 +163,7 @@ pub(super) fn ldm_stm<
             range_start.get_or_insert(reg);
         } else if let Some(start) = range_start {
             let _ = if start == reg - 1 {
-                write!(ctx.next_instr.opcode, "{} r{}", separator, start)
+                write!(ctx.next_instr.opcode, "{separator} r{start}")
             } else {
                 write!(
                     ctx.next_instr.opcode,
@@ -203,9 +196,9 @@ pub(super) fn ldm_stm<
 
 pub(super) fn pld(ctx: &mut Context, instr: u32) {
     let base_reg = instr >> 16 & 0xF;
-    ctx.next_instr.opcode = format!("pld [r{}, ", base_reg);
+    ctx.next_instr.opcode = format!("pld [r{base_reg}, ");
     let offset_sign = if instr & 1 << 23 == 0 { "-" } else { "" };
     // TODO
-    let _ = write!(ctx.next_instr.opcode, "{}<TODO>", offset_sign);
+    let _ = write!(ctx.next_instr.opcode, "{offset_sign}<TODO>");
     ctx.next_instr.opcode.push(']');
 }

@@ -12,7 +12,8 @@
     associated_type_defaults,
     const_trait_impl,
     const_mut_refs,
-    slice_as_chunks
+    slice_as_chunks,
+    duration_constants
 )]
 
 #[cfg(target_os = "macos")]
@@ -34,7 +35,6 @@ mod frame_data;
 use frame_data::FrameData;
 mod game_db;
 mod input;
-mod triple_buffer;
 
 mod emu;
 mod ui;

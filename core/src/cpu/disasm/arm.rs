@@ -26,9 +26,9 @@ pub(super) fn handle_instr<const ARM9: bool>(ctx: &mut Context, instr: u32) {
     let cond = (instr >> 28) as usize;
     let index = ((instr >> 16 & 0xFF0) | (instr >> 4 & 0xF)) as usize;
     if !ARM9 {
-        INSTR_TABLE_ARM7_COND[index](ctx, instr, COND_STRINGS[cond as usize]);
+        INSTR_TABLE_ARM7_COND[index](ctx, instr, COND_STRINGS[cond]);
     } else if cond != 0xF {
-        INSTR_TABLE_ARM9_COND[index](ctx, instr, COND_STRINGS[cond as usize]);
+        INSTR_TABLE_ARM9_COND[index](ctx, instr, COND_STRINGS[cond]);
     } else {
         INSTR_TABLE_UNCOND[index](ctx, instr);
     }

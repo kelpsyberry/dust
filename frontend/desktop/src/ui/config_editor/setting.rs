@@ -374,6 +374,70 @@ impl RawSetting for OptNonZeroU32Slider {
     }
 }
 
+pub struct BoolAndValueSlider<T: DataTypeKind> {
+    pub get: fn(&Config) -> (bool, T),
+    pub set: fn(&mut Config, (bool, T)),
+    pub min: T,
+    pub max: T,
+    pub display_format: &'static str,
+}
+
+impl<T: DataTypeKind> BoolAndValueSlider<T> {
+    pub const fn new(
+        get: fn(&Config) -> (bool, T),
+        set: fn(&mut Config, (bool, T)),
+        min: T,
+        max: T,
+        display_format: &'static str,
+    ) -> Self {
+        BoolAndValueSlider {
+            get,
+            set,
+            min,
+            max,
+            display_format,
+        }
+    }
+}
+
+impl<T: DataTypeKind> RawSetting for BoolAndValueSlider<T> {
+    fn draw(&mut self, ui: &Ui, config: &mut Config, tooltip: &str, width: f32) {
+        let (mut active, mut value) = (self.get)(config);
+
+        let mut updated = false;
+        let mut hovered = false;
+
+        let checkbox_width = ui.frame_height();
+        let input_width = width - checkbox_width - style!(ui, item_spacing)[0];
+
+        if ui.checkbox("##active", &mut active) {
+            updated = true;
+        }
+        hovered |= ui.is_item_hovered();
+
+        if active {
+            ui.same_line();
+            ui.set_next_item_width(input_width);
+            if ui
+                .slider_config("##value", self.min, self.max)
+                .display_format(self.display_format)
+                .build(&mut value)
+            {
+                updated = true;
+            }
+            hovered |= ui.is_item_hovered();
+        }
+
+        if updated {
+            (self.set)(config, (active, value));
+        }
+
+        if !tooltip.is_empty() && hovered {
+            ui.tooltip_text(tooltip);
+        }
+    }
+}
+
 pub struct Slider<T: DataTypeKind> {
     pub get: fn(&Config) -> T,
     pub set: fn(&mut Config, T),
@@ -408,6 +472,52 @@ impl<T: DataTypeKind> RawSetting for Slider<T> {
         if ui
             .slider_config("", self.min, self.max)
             .display_format(self.display_format)
+            .flags(SliderFlags::ALWAYS_CLAMP)
+            .build(&mut value)
+        {
+            (self.set)(config, value);
+        }
+
+        if !tooltip.is_empty() && ui.is_item_hovered() {
+            ui.tooltip_text(tooltip);
+        }
+    }
+}
+
+pub struct StringFormatSlider<T: DataTypeKind> {
+    pub get: fn(&Config) -> T,
+    pub set: fn(&mut Config, T),
+    pub min: T,
+    pub max: T,
+    pub display_format: fn(T) -> StdString,
+}
+
+impl<T: DataTypeKind> StringFormatSlider<T> {
+    pub const fn new(
+        get: fn(&Config) -> T,
+        set: fn(&mut Config, T),
+        min: T,
+        max: T,
+        display_format: fn(T) -> StdString,
+    ) -> Self {
+        StringFormatSlider {
+            get,
+            set,
+            min,
+            max,
+            display_format,
+        }
+    }
+}
+
+impl<T: DataTypeKind> RawSetting for StringFormatSlider<T> {
+    fn draw(&mut self, ui: &Ui, config: &mut Config, tooltip: &str, width: f32) {
+        let mut value = (self.get)(config);
+
+        ui.set_next_item_width(width);
+        if ui
+            .slider_config("", self.min, self.max)
+            .display_format(&(self.display_format)(value))
             .flags(SliderFlags::ALWAYS_CLAMP)
             .build(&mut value)
         {

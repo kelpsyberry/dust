@@ -206,17 +206,16 @@ impl Vram {
     }
 
     #[inline]
-    pub(super) fn set_vram_tracking<E: Engine>(
+    pub(super) fn renderer_2d_updated<E: Engine>(
         &mut self,
         bg_obj_vram_tracking: bool,
         arm9: &mut arm9::Arm9<E>,
     ) {
-        if bg_obj_vram_tracking == self.bg_obj_updates.is_some() {
-            return;
+        if bg_obj_vram_tracking != self.bg_obj_updates.is_some() {
+            self.bg_obj_updates = bg_obj_vram_tracking.then(UnsafeCell::default);
+            self.restore_cpu_bg_obj_mappings(arm9);
         }
-        self.bg_obj_updates = bg_obj_vram_tracking.then(UnsafeCell::default);
         self.mark_all_vram_updated();
-        self.restore_cpu_bg_obj_mappings(arm9);
     }
 
     #[inline]

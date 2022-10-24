@@ -339,8 +339,16 @@ pub enum ModelConfig {
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Renderer2dKind {
-    Sync,
-    LockstepScanlines,
+    SoftSync,
+    SoftLockstepScanlines,
+    WgpuLockstepScanlines,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Renderer3dKind {
+    Soft,
+    Wgpu,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -436,7 +444,9 @@ def_config! {
                 resolve resolve_option, set set_option,
             discord_presence_enabled: bool = true, None,
                 resolve resolve_option, set set_option,
-            limit_framerate: bool = true, None,
+            framerate_ratio_limit: (bool, f32) = (true, 1.0), None,
+                resolve resolve_option, set set_option,
+            paused_framerate_limit: f32 = 10.0, None,
                 resolve resolve_option, set set_option,
             sync_to_audio: bool = true, None,
                 resolve resolve_option, set set_option,
@@ -460,7 +470,11 @@ def_config! {
                 resolve resolve_option, set set_option,
             rtc_time_offset_seconds: i64 = 0, None,
                 resolve resolve_option, set set_option,
-            renderer_2d_kind: Renderer2dKind = Renderer2dKind::Sync, None,
+            renderer_2d_kind: Renderer2dKind = Renderer2dKind::SoftLockstepScanlines, None,
+                resolve resolve_option, set set_option,
+            renderer_3d_kind: Renderer3dKind = Renderer3dKind::Soft, None,
+                resolve resolve_option, set set_option,
+            resolution_scale_shift: u8 = 0, None,
                 resolve resolve_option, set set_option,
         }
         game {

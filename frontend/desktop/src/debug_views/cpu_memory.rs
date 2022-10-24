@@ -120,7 +120,7 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
         _emu_running: bool,
         mut messages: impl Messages<Self>,
     ) -> Option<Self::EmuState> {
-        let _mono_font = ui.push_font(window.mono_font);
+        let _mono_font = ui.push_font(window.imgui.mono_font);
 
         self.editor.handle_options_right_click(ui);
         self.editor.draw_callbacks(

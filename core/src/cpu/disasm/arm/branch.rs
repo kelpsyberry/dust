@@ -12,12 +12,12 @@ pub(super) fn b<const LINK: bool>(ctx: &mut Context, instr: u32, cond: &'static 
 
 pub(super) fn bx<const LINK: bool>(ctx: &mut Context, instr: u32, cond: &'static str) {
     let addr_reg = instr & 0xF;
-    ctx.next_instr.opcode = format!("b{}x{} r{}", if LINK { "l" } else { "" }, cond, addr_reg);
+    ctx.next_instr.opcode = format!("b{}x{cond} r{addr_reg}", if LINK { "l" } else { "" });
 }
 
 pub(super) fn blx_imm(ctx: &mut Context, instr: u32) {
     let branch_addr = ctx
         .pc
         .wrapping_add(((instr as i32) << 8 >> 6) as u32 | (instr >> 23 & 2));
-    ctx.next_instr.opcode = format!("blx #{:#010X}", branch_addr);
+    ctx.next_instr.opcode = format!("blx #{branch_addr:#010X}");
 }

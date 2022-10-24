@@ -91,6 +91,8 @@ pub fn culled(
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 pub struct ScreenVertex {
     pub coords: ScreenCoords,
+    #[cfg(feature = "3d-hi-res-coords")]
+    pub hi_res_coords: ScreenCoords,
     pub uv: TexCoords,
     pub color: InterpColor,
 }
@@ -99,6 +101,8 @@ impl ScreenVertex {
     pub fn new() -> Self {
         ScreenVertex {
             coords: ScreenCoords::splat(0),
+            #[cfg(feature = "3d-hi-res-coords")]
+            hi_res_coords: ScreenCoords::splat(0),
             uv: TexCoords::splat(0),
             color: InterpColor::splat(0),
         }

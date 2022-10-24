@@ -3,7 +3,7 @@ mod matrix;
 mod vertex;
 pub use vertex::{Color, InterpColor, ScreenCoords, ScreenVertex, TexCoords};
 mod renderer;
-pub use renderer::{RendererRx, RendererTx};
+pub use renderer::{AccelRendererRx, RendererTx, SoftRendererRx};
 
 use crate::{
     cpu::{
@@ -82,33 +82,35 @@ struct Light {
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct PolygonAttrs(pub u32): Debug {
-        pub lights_mask: u8 @ 0..=3,
-        pub mode: u8 @ 4..=5,
-        pub show_back: bool @ 6,
-        pub show_front: bool @ 7,
-        pub update_depth_for_translucent: bool @ 11,
-        pub clip_far_plane: bool @ 12,
-        pub always_render_1_dot: bool @ 13,
-        pub depth_test_equal: bool @ 14,
-        pub fog_enabled: bool @ 15,
-        pub alpha: u8 @ 16..=20,
-        pub id: u8 @ 24..=29,
+        // G = GX engine, R = Rendering engine
+        pub lights_mask: u8 @ 0..=3,                 // G
+        pub mode: u8 @ 4..=5,                        // R
+        pub show_back: bool @ 6,                     // G
+        pub show_front: bool @ 7,                    // G
+        pub update_depth_for_translucent: bool @ 11, // R
+        pub clip_far_plane: bool @ 12,               // G
+        pub always_render_1_dot: bool @ 13,          // G
+        pub depth_test_equal: bool @ 14,             // R
+        pub fog_enabled: bool @ 15,                  // R
+        pub alpha: u8 @ 16..=20,                     // R
+        pub id: u8 @ 24..=29,                        // R
     }
 }
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct TextureParams(pub u32): Debug {
-        pub vram_off: u16 @ 0..=15,
-        pub repeat_s: bool @ 16,
-        pub repeat_t: bool @ 17,
-        pub flip_s: bool @ 18,
-        pub flip_t: bool @ 19,
-        pub size_shift_s: u8 @ 20..=22,
-        pub size_shift_t: u8 @ 23..=25,
-        pub format: u8 @ 26..=28,
-        pub use_color_0_as_transparent: bool @ 29,
-        pub coord_transform_mode: u8 @ 30..=31,
+        // G = GX engine, R = Rendering engine
+        pub vram_off: u16 @ 0..=15,                // R
+        pub repeat_s: bool @ 16,                   // R
+        pub repeat_t: bool @ 17,                   // R
+        pub flip_s: bool @ 18,                     // R
+        pub flip_t: bool @ 19,                     // R
+        pub size_shift_s: u8 @ 20..=22,            // R
+        pub size_shift_t: u8 @ 23..=25,            // R
+        pub format: u8 @ 26..=28,                  // R
+        pub use_color_0_as_transparent: bool @ 29, // R
+        pub coord_transform_mode: u8 @ 30..=31,    // G
     }
 }
 
@@ -159,18 +161,19 @@ pub struct Polygon {
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
     pub const struct RenderingControl(pub u16): Debug {
-        pub texture_mapping_enabled: bool @ 0,
-        pub highlight_shading_enabled: bool @ 1,
-        pub alpha_test_enabled: bool @ 2,
-        pub alpha_blending_enabled: bool @ 3,
-        pub antialiasing_enabled: bool @ 4,
-        pub edge_marking_enabled: bool @ 5,
-        pub fog_only_alpha: bool @ 6,
-        pub fog_enabled: bool @ 7,
-        pub fog_depth_shift: u8 @ 8..=11,
-        pub color_buffer_underflow: bool @ 12,
-        pub poly_vert_ram_overflow: bool @ 13,
-        pub rear_plane_bitmap_enabled: bool @ 14,
+        // G = GX engine, R = Rendering engine
+        pub texture_mapping_enabled: bool @ 0,    // R
+        pub highlight_shading_enabled: bool @ 1,  // R
+        pub alpha_test_enabled: bool @ 2,         // R
+        pub alpha_blending_enabled: bool @ 3,     // R
+        pub antialiasing_enabled: bool @ 4,       // R
+        pub edge_marking_enabled: bool @ 5,       // R
+        pub fog_only_alpha: bool @ 6,             // R
+        pub fog_enabled: bool @ 7,                // R
+        pub fog_depth_shift: u8 @ 8..=11,         // R
+        pub color_buffer_underflow: bool @ 12,    // G
+        pub poly_vert_ram_overflow: bool @ 13,    // G
+        pub rear_plane_bitmap_enabled: bool @ 14, // R
     }
 }
 
@@ -217,7 +220,7 @@ pub struct Engine3d {
     #[savestate(skip)]
     logger: slog::Logger,
     #[savestate(skip)]
-    pub renderer_tx: Box<dyn RendererTx>,
+    pub(super) renderer_tx: Box<dyn RendererTx>,
 
     pub(super) gx_enabled: bool,
     pub(super) rendering_enabled: bool,
@@ -441,8 +444,8 @@ impl Engine3d {
 
                 clear_depth: 0,
                 clear_image_offset: [0; 2],
-                toon_colors: [Color::splat(0); 0x20],
-                edge_colors: [Color::splat(0); 8],
+                toon_colors: [Color::from_array([0, 0, 0, 0x1F]); 0x20],
+                edge_colors: [Color::from_array([0, 0, 0, 0x1F]); 8],
 
                 fog_color: Color::splat(0),
 
@@ -455,6 +458,13 @@ impl Engine3d {
                 tex_pal_dirty: 0x3F,
             },
         }
+    }
+
+    #[inline]
+    pub fn set_renderer_tx(&mut self, renderer_tx: Box<dyn RendererTx>) {
+        self.renderer_tx = renderer_tx;
+        self.rendering_state.texture_dirty = 0x3F;
+        self.rendering_state.tex_pal_dirty = 0xF;
     }
 
     #[inline]
@@ -1027,12 +1037,12 @@ impl Engine3d {
         {
             let vert = unsafe { vert.assume_init_mut() };
             vert.coords[3] &= 0x00FF_FFFF;
-            let w = vert.coords[3];
+            let w = vert.coords[3] as u32;
             let coords = if w == 0 {
                 // TODO: What should actually happen for W == 0?
                 ScreenCoords::splat(0)
             } else {
-                let mut w = w as u32;
+                let mut w = w;
                 let mut coords = u32x2::from_array([
                     (vert.coords[0] + w as i32) as u32,
                     (-vert.coords[1] + w as i32) as u32,
@@ -1052,6 +1062,27 @@ impl Engine3d {
             bot_y = bot_y.max(y);
             self.vert_ram[self.vert_ram_level as usize] = ScreenVertex {
                 coords,
+                #[cfg(feature = "3d-hi-res-coords")]
+                hi_res_coords: if w == 0 {
+                    // TODO: What should actually happen for W == 0?
+                    ScreenCoords::splat(0)
+                } else {
+                    let mut w = w;
+                    let mut coords = u32x2::from_array([
+                        (vert.coords[0] + w as i32) as u32,
+                        (-vert.coords[1] + w as i32) as u32,
+                    ]);
+                    if w > 0xFFFF {
+                        w >>= 1;
+                        coords >>= u32x2::splat(1);
+                    }
+                    ((((coords.cast::<u64>() << u64x2::splat(4)) * viewport_size
+                        / u64x2::splat((w << 1) as u64))
+                    .cast::<u32>()
+                        + (viewport_origin << u32x2::splat(4)))
+                        & u32x2::from_array([0x1FFF, 0xFFF]))
+                    .cast::<u16>()
+                },
                 uv: vert.uv,
                 color: vert.color.cast() << InterpColor::splat(3)
                     | vert.color.cast() >> InterpColor::splat(3),
@@ -1185,6 +1216,8 @@ impl Engine3d {
             }
             self.rendering_state.texture_dirty = 0;
             self.rendering_state.tex_pal_dirty = 0;
+        } else {
+            self.renderer_tx.skip_rendering();
         }
     }
 

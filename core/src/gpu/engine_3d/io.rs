@@ -311,7 +311,7 @@ impl Engine3d {
             0x330..=0x33E => {
                 if emu.gpu.engine_3d.rendering_enabled {
                     emu.gpu.engine_3d.rendering_state.edge_colors[(addr >> 1) as usize & 7] =
-                        decode_rgb5(value, 0);
+                        decode_rgb5(value, 0x1F);
                 }
             }
 
@@ -381,7 +381,7 @@ impl Engine3d {
             0x380..=0x3BE => {
                 if emu.gpu.engine_3d.rendering_enabled {
                     emu.gpu.engine_3d.rendering_state.toon_colors[(addr >> 1) as usize & 0x1F] =
-                        decode_rgb5(value, 0);
+                        decode_rgb5(value, 0x1F);
                 }
             }
 
@@ -428,9 +428,10 @@ impl Engine3d {
             0x330..=0x33C => {
                 if emu.gpu.engine_3d.rendering_enabled {
                     let i = (addr >> 1) as usize & 6;
-                    emu.gpu.engine_3d.rendering_state.edge_colors[i] = decode_rgb5(value as u16, 0);
+                    emu.gpu.engine_3d.rendering_state.edge_colors[i] =
+                        decode_rgb5(value as u16, 0x1F);
                     emu.gpu.engine_3d.rendering_state.edge_colors[i | 1] =
-                        decode_rgb5((value >> 16) as u16, 0);
+                        decode_rgb5((value >> 16) as u16, 0x1F);
                 }
             }
 
@@ -484,9 +485,10 @@ impl Engine3d {
             0x380..=0x3BC => {
                 if emu.gpu.engine_3d.rendering_enabled {
                     let i = (addr >> 1) as usize & 0x1E;
-                    emu.gpu.engine_3d.rendering_state.toon_colors[i] = decode_rgb5(value as u16, 0);
+                    emu.gpu.engine_3d.rendering_state.toon_colors[i] =
+                        decode_rgb5(value as u16, 0x1F);
                     emu.gpu.engine_3d.rendering_state.toon_colors[i | 1] =
-                        decode_rgb5((value >> 16) as u16, 0);
+                        decode_rgb5((value >> 16) as u16, 0x1F);
                 }
             }
 

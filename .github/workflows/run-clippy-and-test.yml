@@ -7,8 +7,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # `compile-shaders` shouldn't be enabled, as it requires building the entirety of shaderc from
-  # source.
   FEATURES: xq-audio,discord-presence,debug-views,log,pu-checks,gdb-server
   MACOSX_DEPLOYMENT_TARGET: 10.11
 

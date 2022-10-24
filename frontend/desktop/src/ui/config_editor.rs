@@ -117,7 +117,9 @@ use super::{utils::heading, Config, EmuState};
 use crate::config::LoggingKind;
 use crate::{
     audio,
-    config::{self, saves, ModelConfig, Renderer2dKind, Setting as _, TitleBarMode},
+    config::{
+        self, saves, ModelConfig, Renderer2dKind, Renderer3dKind, Setting as _, TitleBarMode,
+    },
     ui::utils::combo_value,
     utils::HomePathBuf,
 };
@@ -189,7 +191,7 @@ macro_rules! scalar {
 
 #[cfg(feature = "xq-audio")]
 macro_rules! opt_nonzero_u32_slider {
-    (overridable $id: ident, $default: expr, $min: expr, $max: expr, $display_format: literal) => {
+    (overridable $id: ident, $default: expr, $min: expr, $max: expr, $display_format: expr) => {
         (
             setting::OptNonZeroU32Slider::new(
                 |config| NonZeroU32::new(*config.$id.inner().global()),
@@ -219,10 +221,41 @@ macro_rules! opt_nonzero_u32_slider {
     };
 }
 
+macro_rules! bool_and_value_slider {
+    (overridable $id: ident, $min: expr, $max: expr, $display_format: expr$(, $scale: expr)?) => {
+        (
+            setting::BoolAndValueSlider::new(
+                |config| {
+                    let (active, value) = *config.$id.inner().global();
+                    (active, value$(* $scale)*)
+                },
+                |config, (active, value)| config.$id.update(
+                    |inner| inner.set_global((active, value$(/ $scale)*)),
+                ),
+                $min,
+                $max,
+                $display_format,
+            ),
+            setting::BoolAndValueSlider::new(
+                |config| {
+                    let (active, value) = config.$id.inner().game().unwrap();
+                    (active, value$(* $scale)*)
+                },
+                |config, (active, value)| config.$id.update(
+                    |inner| inner.set_game(Some((active, value$(/ $scale)*))),
+                ),
+                $min,
+                $max,
+                $display_format,
+            ),
+        )
+    };
+}
+
 macro_rules! slider {
     (
         nonoverridable
-        $id: ident, $min: expr, $max: expr, $display_format: literal$(, $scale: expr)?
+        $id: ident, $min: expr, $max: expr, $display_format: expr$(, $scale: expr)?
     ) => {
         setting::Slider::new(
             |config| config!(config, $id) $(* $scale)*,
@@ -234,7 +267,7 @@ macro_rules! slider {
     };
     (
         overridable
-        $id: ident, $min: expr, $max: expr, $display_format: literal$(, $scale: expr)?
+        $id: ident, $min: expr, $max: expr, $display_format: expr$(, $scale: expr)?
     ) => {
         (
             setting::Slider::new(
@@ -245,6 +278,42 @@ macro_rules! slider {
                 $display_format,
             ),
             setting::Slider::new(
+                |config| config.$id.inner().game().unwrap() $(* $scale)*,
+                |config, value| config.$id.update(|inner| inner.set_game(Some(value $(/ $scale)*))),
+                $min,
+                $max,
+                $display_format,
+            ),
+        )
+    };
+}
+
+macro_rules! string_format_slider {
+    (
+        nonoverridable
+        $id: ident, $min: expr, $max: expr, $display_format: expr$(, $scale: expr)?
+    ) => {
+        setting::StringFormatSlider::new(
+            |config| config!(config, $id) $(* $scale)*,
+            |config, value| set_config!(config, $id, value $(/ $scale)*),
+            $min,
+            $max,
+            $display_format,
+        )
+    };
+    (
+        overridable
+        $id: ident, $min: expr, $max: expr, $display_format: expr$(, $scale: expr)?
+    ) => {
+        (
+            setting::StringFormatSlider::new(
+                |config| *config.$id.inner().global() $(* $scale)*,
+                |config, value| config.$id.update(|inner| inner.set_global(value $(/ $scale)*)),
+                $min,
+                $max,
+                $display_format,
+            ),
+            setting::StringFormatSlider::new(
                 |config| config.$id.inner().game().unwrap() $(* $scale)*,
                 |config, value| config.$id.update(|inner| inner.set_game(Some(value $(/ $scale)*))),
                 $min,
@@ -593,7 +662,8 @@ impl SavesSettings {
 }
 
 struct EmulationSettings {
-    limit_framerate: setting::Overridable<setting::Bool>,
+    framerate_ratio_limit: setting::Overridable<setting::BoolAndValueSlider<f32>>,
+    paused_framerate_limit: setting::Overridable<setting::Slider<f32>>,
     sync_to_audio: setting::Overridable<setting::Bool>,
     pause_on_launch: setting::Overridable<setting::Bool>,
     skip_firmware: setting::Overridable<setting::Bool>,
@@ -602,12 +672,30 @@ struct EmulationSettings {
     ds_slot_rom_in_memory_max_size: setting::Overridable<setting::Scalar<u32>>,
     rtc_time_offset_seconds: setting::Overridable<setting::Scalar<i64>>,
     renderer_2d_kind: setting::Overridable<setting::Combo<Renderer2dKind>>,
+    renderer_3d_kind: setting::Overridable<setting::Combo<Renderer3dKind>>,
+    resolution_scale_shift: setting::Overridable<setting::StringFormatSlider<u8>>,
 }
 
 impl EmulationSettings {
     fn new() -> Self {
         EmulationSettings {
-            limit_framerate: overridable!("Limit framerate", limit_framerate, bool),
+            framerate_ratio_limit: overridable!(
+                "Framerate limit",
+                framerate_ratio_limit,
+                bool_and_value_slider,
+                12.5,
+                800.0,
+                "%.02f%%",
+                100.0
+            ),
+            paused_framerate_limit: overridable!(
+                "Paused framerate limit",
+                paused_framerate_limit,
+                slider,
+                1.0,
+                480.0,
+                "%.02f FPS"
+            ),
             sync_to_audio: overridable!("Sync to audio", sync_to_audio, bool),
             pause_on_launch: overridable!("Pause on launch", pause_on_launch, bool),
             skip_firmware: overridable!("Skip firmware", skip_firmware, bool),
@@ -650,12 +738,36 @@ impl EmulationSettings {
                 "2D renderer kind",
                 renderer_2d_kind,
                 combo,
-                &[Renderer2dKind::Sync, Renderer2dKind::LockstepScanlines,],
+                &[
+                    Renderer2dKind::SoftSync,
+                    Renderer2dKind::SoftLockstepScanlines,
+                    Renderer2dKind::WgpuLockstepScanlines
+                ],
                 |kind| match kind {
-                    Renderer2dKind::Sync => "Sync",
-                    Renderer2dKind::LockstepScanlines => "Async, per-scanline",
+                    Renderer2dKind::SoftSync => "Sync (software)",
+                    Renderer2dKind::SoftLockstepScanlines => "Async, per-scanline (software)",
+                    Renderer2dKind::WgpuLockstepScanlines => "Async, per-scanline (hardware)",
                 }
                 .into()
+            ),
+            renderer_3d_kind: overridable!(
+                "3D renderer kind",
+                renderer_3d_kind,
+                combo,
+                &[Renderer3dKind::Soft, Renderer3dKind::Wgpu],
+                |kind| match kind {
+                    Renderer3dKind::Soft => "Software",
+                    Renderer3dKind::Wgpu => "Hardware",
+                }
+                .into()
+            ),
+            resolution_scale_shift: overridable!(
+                "Resolution scale",
+                resolution_scale_shift,
+                string_format_slider,
+                0,
+                3,
+                |value| format!("{}x", 1 << value)
             ),
         }
     }
@@ -1313,7 +1425,8 @@ impl Editor {
                             }
 
                             Section::Emulation => {
-                                // limit_framerate
+                                // framerate_ratio_limit
+                                // paused_framerate_limit
                                 // sync_to_audio
                                 // pause_on_launch
                                 // skip_firmware
@@ -1321,12 +1434,16 @@ impl Editor {
                                 // model
                                 // ds_slot_rom_in_memory_max_size
                                 // rtc_time_offset_seconds
+                                // renderer_2d_kind
+                                // renderer_3d_kind
+                                // resolution_scale_shift
 
                                 draw!(
                                     "general",
                                     emulation,
                                     [
-                                        limit_framerate,
+                                        framerate_ratio_limit,
+                                        paused_framerate_limit,
                                         sync_to_audio,
                                         pause_on_launch,
                                         skip_firmware,
@@ -1334,7 +1451,9 @@ impl Editor {
                                         model,
                                         ds_slot_rom_in_memory_max_size,
                                         rtc_time_offset_seconds,
-                                        renderer_2d_kind
+                                        renderer_2d_kind,
+                                        renderer_3d_kind,
+                                        resolution_scale_shift
                                     ]
                                 );
                             }

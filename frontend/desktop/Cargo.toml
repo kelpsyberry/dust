@@ -28,19 +28,21 @@ interp-r15-write-checks = ["dust-core/interp-r15-write-checks"]
 
 xq-audio = ["dust-core/xq-audio"]
 
-compile-shaders = ["shaderc"]
-
 [dependencies]
 dust-core = { path = "../../core" }
-dust-soft-2d = { path = "../../soft-2d", features = ["threaded"] }
-dust-soft-3d = { path = "../../soft-3d" }
+emu-utils = { git = "https://github.com/Kelpsy/emu-utils", features = ["std"] }
+dust-soft-2d = { path = "../../render/soft-2d", features = ["threaded"] }
+dust-soft-3d = { path = "../../render/soft-3d" }
+dust-wgpu-2d = { path = "../../render/wgpu-2d" }
+dust-wgpu-3d = { path = "../../render/wgpu-3d", features = ["threaded"] }
 
 # UI
 winit = { version = "0.27", features = ["serde"] }
-wgpu = { version = "0.13", features = ["spirv"] }
+wgpu = "0.14"
 # TODO: Switch to imgui 0.9 when it's released with the docking API
 imgui = { git = "https://github.com/imgui-rs/imgui-rs", features = ["docking", "tables-api"] }
 imgui-winit-support = { git = "https://github.com/imgui-rs/imgui-rs" }
+imgui-wgpu = { git = "https://github.com/Kelpsy/imgui-wgpu" }
 opener = "0.5"
 
 # System resources
@@ -80,6 +82,3 @@ gdb-protocol = { version = "0.1", optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.24"
 objc = "0.2"
-
-[build-dependencies]
-shaderc = { version = "0.8", optional = true }

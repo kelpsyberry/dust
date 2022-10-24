@@ -1,4 +1,4 @@
-use super::{imgui_wgpu, window::Window, EmuState};
+use super::{window::Window, EmuState};
 use crate::{config::Config, emu};
 use chrono::DateTime;
 use dust_core::{
@@ -37,39 +37,32 @@ struct Entry {
 
 impl Savestate {
     unsafe fn create_texture(window: &mut Window, framebuffer: &Framebuffer) -> TextureId {
-        let texture = window.gfx.imgui.create_texture(
-            &window.gfx.device_state.device,
-            &wgpu::SamplerDescriptor {
-                label: Some("Savestate framebuffer sampler"),
-                min_filter: wgpu::FilterMode::Linear,
+        let texture = window.imgui.gfx.create_owned_texture(
+            Some("Savestate framebuffer".into()),
+            imgui_wgpu::TextureDescriptor {
+                width: SCREEN_WIDTH as u32,
+                height: SCREEN_HEIGHT as u32 * 2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
                 ..Default::default()
             },
-            imgui_wgpu::TextureDescriptor {
-                label: Some("Savestate framebuffer texture".to_string()),
-                size: wgpu::Extent3d {
-                    width: SCREEN_WIDTH as u32,
-                    height: SCREEN_HEIGHT as u32 * 2,
-                    depth_or_array_layers: 1,
-                },
-                format: Some(
-                    if window.gfx.device_state.surf_config.format.describe().srgb {
-                        wgpu::TextureFormat::Rgba8UnormSrgb
-                    } else {
-                        wgpu::TextureFormat::Rgba8Unorm
-                    },
-                ),
+            imgui_wgpu::SamplerDescriptor {
+                min_filter: wgpu::FilterMode::Linear,
                 ..Default::default()
             },
         );
         texture.set_data(
-            &window.gfx.device_state.queue,
+            window.gfx().device(),
+            window.gfx().queue(),
             slice::from_raw_parts(
                 framebuffer.as_ptr() as *const u8,
                 2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT,
             ),
             imgui_wgpu::TextureSetRange::default(),
         );
-        window.gfx.imgui.add_texture(texture)
+        window
+            .imgui
+            .gfx
+            .add_texture(imgui_wgpu::Texture::Owned(texture))
     }
 
     fn load(path: &Path, window: &mut Window) -> io::Result<Self> {
@@ -187,7 +180,7 @@ impl Savestate {
     }
 
     fn delete(self, name: &str, savestate_dir: &Path, window: &mut Window) -> io::Result<()> {
-        window.gfx.imgui.remove_texture(self.texture_id);
+        window.imgui.gfx.remove_texture(self.texture_id);
         fs::remove_file(&savestate_dir.join(&format!("{name}.state")))
     }
 
@@ -225,7 +218,7 @@ impl Editor {
 
         for entry in self.entries.drain(..) {
             if let EntryKind::Savestate(savestate) = entry.kind {
-                window.gfx.imgui.remove_texture(savestate.texture_id);
+                window.imgui.gfx.remove_texture(savestate.texture_id);
             }
         }
 
@@ -307,9 +300,9 @@ impl Editor {
             let text_line_height = ui.text_line_height();
             let frame_height = ui.frame_height();
             let image_width = (window
-                .window
+                .window()
                 .inner_size()
-                .to_logical::<f32>(window.scale_factor)
+                .to_logical::<f32>(window.scale_factor())
                 .width
                 * 0.25
                 - cell_padding[0]
@@ -422,7 +415,7 @@ impl Editor {
 
                     macro_rules! entry_icon {
                         ($upper_left: ident, $cell_height: ident, $icon: expr) => {{
-                            let _font = ui.push_font(window.large_icon_font);
+                            let _font = ui.push_font(window.imgui.large_icon_font);
                             let icon = $icon;
                             let icon_size = ui.calc_text_size(icon);
                             ui.set_cursor_screen_pos([

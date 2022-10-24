@@ -25,7 +25,8 @@ pub fn rgb5_to_rgba8(value: u16) -> u32 {
 }
 
 pub fn rgb5_to_rgba32f(value: u16) -> [f32; 4] {
-    let [r, g, b] = [value & 0x1F, value >> 5 & 0x1F, value >> 10 & 0x1F].map(|v| v as f32 / 31.0);
+    let [r, g, b] =
+        [value & 0x1F, value >> 5 & 0x1F, value >> 10 & 0x1F].map(|v| v as f32 * (1.0 / 31.0));
     [r, g, b, 1.0]
 }
 
