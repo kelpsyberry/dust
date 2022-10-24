@@ -1,4 +1,4 @@
-use crate::common::{Buffers, RenderingData};
+use crate::{Buffers, RenderingData};
 use core::{
     arch::x86_64::*,
     mem::transmute,

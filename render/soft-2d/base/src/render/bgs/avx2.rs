@@ -1,7 +1,7 @@
 // TODO: Possibly migrate to core::simd when masked loads/stores are supported
 
 use super::common::{read_bg_text_tiles, TextTiles};
-use crate::common::{BgObjPixel, Buffers, RenderingData, Vram};
+use crate::{BgObjPixel, Buffers, RenderingData, Vram};
 use core::{arch::x86_64::*, mem::transmute, simd::u64x4};
 use dust_core::gpu::{
     engine_2d::{AffineBgIndex, BgIndex, Role},

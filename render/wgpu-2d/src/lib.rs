@@ -1,4 +1,10 @@
-#![feature(new_uninit, generic_const_exprs, const_mut_refs, const_trait_impl)]
+#![feature(
+    new_uninit,
+    generic_const_exprs,
+    const_mut_refs,
+    const_trait_impl,
+    portable_simd
+)]
 #![allow(incomplete_features)]
 
 mod common;
