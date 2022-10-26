@@ -51,6 +51,8 @@ impl Tx {
 }
 
 impl RendererTx for Tx {
+    fn set_capture_enabled(&mut self, _capture_enabled: bool) {}
+
     fn swap_buffers(
         &mut self,
         vert_ram: &[ScreenVertex],

@@ -744,9 +744,10 @@ impl EmulationSettings {
                     Renderer2dKind::WgpuLockstepScanlines
                 ],
                 |kind| match kind {
-                    Renderer2dKind::SoftSync => "Sync (software)",
-                    Renderer2dKind::SoftLockstepScanlines => "Async, per-scanline (software)",
-                    Renderer2dKind::WgpuLockstepScanlines => "Async, per-scanline (hardware)",
+                    Renderer2dKind::SoftSync => "Software, sync",
+                    Renderer2dKind::SoftLockstepScanlines => "Software, async, per-scanline",
+                    Renderer2dKind::WgpuLockstepScanlines =>
+                        "EXPERIMENTAL: Hardware, async, per-scanline",
                 }
                 .into()
             ),
@@ -757,7 +758,7 @@ impl EmulationSettings {
                 &[Renderer3dKind::Soft, Renderer3dKind::Wgpu],
                 |kind| match kind {
                     Renderer3dKind::Soft => "Software",
-                    Renderer3dKind::Wgpu => "Hardware",
+                    Renderer3dKind::Wgpu => "EXPERIMENTAL: Hardware",
                 }
                 .into()
             ),

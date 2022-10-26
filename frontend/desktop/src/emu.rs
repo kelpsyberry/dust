@@ -510,12 +510,17 @@ pub(super) fn run(
                                     None
                                 },
                                 framebuffer: unsafe {
-                                    let mut framebuffer = Box::<Framebuffer>::new_uninit();
-                                    framebuffer.as_mut_ptr().copy_from_nonoverlapping(
-                                        emu.gpu.renderer_2d().framebuffer(),
-                                        1,
-                                    );
-                                    framebuffer.assume_init()
+                                    if renderer_2d_is_accel {
+                                        // TODO: Capture the framebuffer on the UI thread
+                                        Box::new_zeroed().assume_init()
+                                    } else {
+                                        let mut framebuffer = Box::<Framebuffer>::new_uninit();
+                                        framebuffer.as_mut_ptr().copy_from_nonoverlapping(
+                                            emu.gpu.renderer_2d().framebuffer(),
+                                            1,
+                                        );
+                                        framebuffer.assume_init()
+                                    }
                                 },
                             }
                         ));

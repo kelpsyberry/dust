@@ -9,6 +9,7 @@ threaded = ["emu-utils", "crossbeam-channel", "parking_lot"]
 
 [dependencies]
 dust-core = { path = "../../core", features = ["3d-hi-res-coords"] }
+dust-soft-3d = { path = "../soft-3d" }
 emu-utils = { git = "https://github.com/Kelpsy/emu-utils", features = ["std"], optional = true}
 proc-bitfield = { git = "https://github.com/Kelpsy/proc-bitfield", features = ["nightly"] }
 ahash = "0.8"

@@ -113,7 +113,9 @@ pub fn render_scanline_bgs_and_objs<
 
         if data.bg_priority(BgIndex::new(0)) == priority {
             if R::IS_A && data.control().bg0_3d() {
-                render_scanline_bg_3d(buffers);
+                if data.engine_3d_enabled_in_frame() {
+                    render_scanline_bg_3d(buffers);
+                }
             } else if BG_MODE != 6 {
                 render_scanline_bg_text(buffers, BgIndex::new(0), vcount, data, vram);
             }

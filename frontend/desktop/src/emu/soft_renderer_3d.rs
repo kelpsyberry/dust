@@ -44,6 +44,8 @@ impl Tx {
 }
 
 impl RendererTx for Tx {
+    fn set_capture_enabled(&mut self, _capture_enabled: bool) {}
+
     fn swap_buffers(
         &mut self,
         vert_ram: &[ScreenVertex],
@@ -82,6 +84,9 @@ impl Drop for Tx {
             self.shared_data.stopped.store(true, Ordering::Relaxed);
             thread.thread().unpark();
             let _ = thread.join();
+            self.shared_data
+                .processing_scanline
+                .store(SCREEN_HEIGHT as u8, Ordering::Relaxed);
         }
     }
 }
@@ -143,44 +148,30 @@ pub fn init() -> (Tx, Rx) {
                     .spawn(move || {
                         let mut raw_renderer = Renderer::new();
                         loop {
-                            loop {
-                                if shared_data.stopped.load(Ordering::Relaxed) {
-                                    return;
-                                }
-                                if shared_data
-                                    .processing_scanline
-                                    .compare_exchange(
-                                        u8::MAX,
-                                        0,
-                                        Ordering::Acquire,
-                                        Ordering::Acquire,
-                                    )
-                                    .is_ok()
-                                {
-                                    break;
-                                } else {
-                                    thread::park();
-                                }
+                            if shared_data.stopped.load(Ordering::Relaxed) {
+                                return;
                             }
-                            let rendering_data = unsafe { &*shared_data.rendering_data.get() };
-                            raw_renderer.start_frame(rendering_data);
-                            for y in 0..192 {
-                                let scanline =
-                                    &mut unsafe { &mut *shared_data.scanline_buffer.get() }
-                                        [y as usize];
-                                raw_renderer.render_line(y, scanline, rendering_data);
-                                if shared_data
-                                    .processing_scanline
-                                    .compare_exchange(
+                            if shared_data
+                                .processing_scanline
+                                .compare_exchange(u8::MAX, 0, Ordering::Acquire, Ordering::Acquire)
+                                .is_ok()
+                            {
+                                let rendering_data = unsafe { &*shared_data.rendering_data.get() };
+                                raw_renderer.start_frame(rendering_data);
+                                for y in 0..192 {
+                                    let scanline =
+                                        &mut unsafe { &mut *shared_data.scanline_buffer.get() }
+                                            [y as usize];
+                                    raw_renderer.render_line(y, scanline, rendering_data);
+                                    let _ = shared_data.processing_scanline.compare_exchange(
                                         y,
                                         y + 1,
                                         Ordering::Release,
                                         Ordering::Relaxed,
-                                    )
-                                    .is_err()
-                                {
-                                    return;
+                                    );
                                 }
+                            } else {
+                                thread::park();
                             }
                         }
                     })

@@ -195,7 +195,7 @@ impl<'a> CompactFormatSerializer<'a> {
                 HistoryAction::Push => {
                     self.history.push(buf);
                     let (k, v) = &self.history[indent];
-                    let group_str = format!("{}: {}", k, v);
+                    let group_str = format!("{k}: {v}");
                     console::group_1(&group_str.as_str().into());
                 }
                 HistoryAction::Change => {
@@ -205,7 +205,7 @@ impl<'a> CompactFormatSerializer<'a> {
                     self.history.truncate(indent);
                     self.history.push(buf);
                     let (k, v) = &self.history[indent];
-                    let group_str = format!("{}: {}", k, v);
+                    let group_str = format!("{k}: {v}");
                     console::group_1(&group_str.as_str().into());
                 }
             }

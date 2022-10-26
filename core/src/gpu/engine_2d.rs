@@ -510,6 +510,15 @@ impl<R: Role> Engine2d<R> {
     }
 
     #[inline]
+    pub fn is_capturing_3d_output(&self) -> bool {
+        R::IS_A
+            && self.engine_3d_enabled_in_frame
+            && self.capture_enabled_in_frame
+            && (self.capture_control.src_a_3d_only()
+                || (self.bgs[0].priority != 4 && self.control.bg0_3d()))
+    }
+
+    #[inline]
     pub fn capture_height(&self) -> u8 {
         self.capture_height
     }

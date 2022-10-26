@@ -310,6 +310,10 @@ impl Gpu {
             emu.gpu.cur_scanline = 0;
             emu.gpu.engine_2d_a.end_vblank();
             emu.gpu.engine_2d_b.end_vblank();
+            emu.gpu
+                .engine_3d
+                .renderer_tx
+                .set_capture_enabled(emu.gpu.engine_2d_a.is_capturing_3d_output());
         }
 
         emu.gpu.engine_2d_a.update_windows(emu.gpu.vcount as u8);

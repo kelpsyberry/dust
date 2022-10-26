@@ -9,7 +9,7 @@ use crate::common::{
 use core::{
     cell::UnsafeCell,
     hint,
-    sync::atomic::{AtomicU8, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 use dust_core::{
     gpu::{
@@ -37,16 +37,11 @@ where
     oam: Bytes<0x400>,
 }
 
-mod state {
-    pub const STARTING_LINE: u8 = 0;
-    pub const FINISHED_LINE: u8 = 1;
-    pub const STOPPING: u8 = 2;
-}
-
 #[repr(C)]
 #[allow(clippy::type_complexity)]
 struct SharedData {
-    state: AtomicU8,
+    stopped: AtomicBool,
+    processing_line: AtomicBool,
     vcount: AtomicU8,
 
     vram: UnsafeCell<(Box<Vram<EngineA>>, Box<Vram<EngineB>>)>,
@@ -90,6 +85,7 @@ struct RenderingData {
     brightness_coeff: u8,
     capture_control: CaptureControl,
     capture_enabled_in_frame: bool,
+    is_capturing_3d_output: bool,
     capture_height: u8,
 }
 
@@ -140,6 +136,7 @@ impl<R: Role> From<&Engine2d<R>> for RenderingData {
             brightness_coeff: other.brightness_coeff(),
             capture_control: other.capture_control(),
             capture_enabled_in_frame: other.capture_enabled_in_frame(),
+            is_capturing_3d_output: other.is_capturing_3d_output(),
             capture_height: other.capture_height(),
         }
     }
@@ -205,6 +202,7 @@ impl Renderer {
             brightness_coeff: 0,
             capture_control: CaptureControl(0),
             capture_enabled_in_frame: false,
+            is_capturing_3d_output: false,
             capture_height: 128,
         };
 
@@ -212,7 +210,8 @@ impl Renderer {
 
         let shared_data = Arc::new(unsafe {
             SharedData {
-                state: AtomicU8::new(state::FINISHED_LINE),
+                stopped: AtomicBool::new(false),
+                processing_line: AtomicBool::new(false),
                 vcount: AtomicU8::new(0),
 
                 vram: UnsafeCell::new((
@@ -387,12 +386,12 @@ impl Renderer {
 
     fn start_scanline(&mut self) {
         self.shared_data
-            .state
-            .store(state::STARTING_LINE, Ordering::Release);
+            .processing_line
+            .store(true, Ordering::Release);
     }
 
     fn wait_for_scanline_finish(&self) {
-        while self.shared_data.state.load(Ordering::Acquire) != state::FINISHED_LINE {
+        while self.shared_data.processing_line.load(Ordering::Acquire) {
             hint::spin_loop();
         }
     }
@@ -408,12 +407,7 @@ impl RendererTrait for Renderer {
     }
 
     fn framebuffer(&self) -> &Framebuffer {
-        // TODO: Actual framebuffer data for capture
-        self.wait_for_scanline_finish();
-        unsafe {
-            &*((*self.shared_data.framebuffer.get()).as_ptr() as *const _ as *const ()
-                as *const Framebuffer)
-        }
+        unimplemented!();
     }
 
     fn start_prerendering_objs(
@@ -448,21 +442,24 @@ impl RendererTrait for Renderer {
 
         {
             let display_mode = engines.0.control().display_mode_a();
-            if display_mode == 1 || engines.0.capture_enabled_in_frame() {
+            if display_mode == 1
+                || (engines.0.capture_enabled_in_frame()
+                    && !engines.0.capture_control().src_a_3d_only())
+            {
                 self.flush_vram_updates::<EngineA>(vram);
             }
             #[allow(clippy::match_same_arms)]
             match display_mode {
-                2 => unsafe {
-                    render::render_scanline_vram_display(
+                2 => render::render_scanline_vram_display(
+                    unsafe {
                         (&mut *self.shared_data.framebuffer.get())
                             [engines.0.is_on_lower_screen() as usize]
-                            .get_unchecked_mut(line as usize),
-                        vcount,
-                        engines.0,
-                        vram,
-                    );
-                },
+                            .get_unchecked_mut(line as usize)
+                    },
+                    vcount,
+                    engines.0,
+                    vram,
+                ),
                 3 => {
                     // TODO: Main memory display mode
                 }
@@ -527,9 +524,7 @@ impl RendererTrait for Renderer {
 impl Drop for Renderer {
     fn drop(&mut self) {
         if let Some(thread) = self.thread.take() {
-            self.shared_data
-                .state
-                .store(state::STOPPING, Ordering::Relaxed);
+            self.shared_data.stopped.store(true, Ordering::Relaxed);
             thread.thread().unpark();
             let _ = thread.join();
         }
@@ -646,7 +641,7 @@ impl ThreadData {
                 if R::IS_A && data.engine_3d_enabled_in_frame {
                     self.gfx_data.skip_3d_scanline();
                 }
-                scanline_buffer.0.fill(BgObjPixel(0xFFFF_FFFF));
+                scanline_buffer.0.fill(BgObjPixel(0x3_FFFF));
                 *scanline_flags = ScanlineFlags::default();
             } else {
                 if R::IS_A && data.engine_3d_enabled_in_frame {
@@ -714,7 +709,7 @@ impl ThreadData {
 
                 match display_mode {
                     0 => {
-                        scanline_buffer.0.fill(BgObjPixel(0xFFFF_FFFF));
+                        scanline_buffer.0.fill(BgObjPixel(0x3_FFFF));
                         *scanline_flags =
                             ScanlineFlags::master_brightness_only(data.master_brightness_control);
                     }
@@ -750,12 +745,30 @@ impl ThreadData {
                 {
                     let (capture_bg_obj_scanline, capture_scanline_3d) =
                         unsafe { &mut *self.shared_data.capture_scanlines.get() };
-                    capture_bg_obj_scanline
-                        .0
-                        .copy_from_slice(&buffers.bg_obj_scanline.get_mut().0);
-                    capture_scanline_3d.0.fill(0);
-                    // TODO: Copy real data to both capture_bg_obj_scanline and capture_scanline_3d
-                    //       somehow; right now, both are missing any 3D content.
+                    if data.is_capturing_3d_output {
+                        let scanline_3d = self
+                            .gfx_data
+                            .capture_3d_scanline(self.cur_scanline as usize);
+                        if data.capture_control.src_a_3d_only() {
+                            capture_scanline_3d.0.copy_from_slice(&scanline_3d.0);
+                        } else {
+                            render::bgs::patch_scanline_bg_3d(
+                                buffers.bg_obj_scanline.get_mut(),
+                                scanline_3d,
+                            );
+                        }
+                    }
+                    if !data.capture_control.src_a_3d_only() {
+                        unsafe {
+                            fns.apply_color_effects
+                                [data.color_effects_control.color_effect() as usize](
+                                buffers, data
+                            );
+                        }
+                        capture_bg_obj_scanline
+                            .0
+                            .copy_from_slice(&buffers.bg_obj_scanline.get_mut().0);
+                    }
                 }
             }
 
@@ -775,25 +788,21 @@ impl ThreadData {
     }
 
     fn run(mut self) {
-        std::hint::spin_loop();
-        // thread::park();
+        thread::park();
         loop {
-            match self.shared_data.state.load(Ordering::Relaxed) {
-                state::STARTING_LINE => {}
-                state::STOPPING => {
-                    return;
-                }
-                _ => {
-                    hint::spin_loop();
-                    continue;
-                }
+            if self.shared_data.stopped.load(Ordering::Relaxed) {
+                return;
+            }
+
+            if !self.shared_data.processing_line.load(Ordering::Relaxed) {
+                hint::spin_loop();
+                continue;
             }
 
             if self.cur_scanline == 0 {
-                self.gfx_data.start_frame(
-                    unsafe { &*self.shared_data.rendering_data.get() }[0]
-                        .engine_3d_enabled_in_frame,
-                );
+                let data = &unsafe { &*self.shared_data.rendering_data.get() }[0];
+                self.gfx_data
+                    .start_frame(data.engine_3d_enabled_in_frame, data.is_capturing_3d_output);
             }
 
             let vcount = self.shared_data.vcount.load(Ordering::Acquire);
@@ -803,8 +812,8 @@ impl ThreadData {
             self.render_scanline::<EngineB>(vcount, &vram.1);
 
             self.shared_data
-                .state
-                .store(state::FINISHED_LINE, Ordering::Release);
+                .processing_line
+                .store(false, Ordering::Release);
 
             self.cur_scanline += 1;
             if self.cur_scanline == SCREEN_HEIGHT as i16 {
@@ -818,8 +827,7 @@ impl ThreadData {
                     )
                 }
 
-                std::hint::spin_loop();
-                // thread::park();
+                thread::park();
             }
         }
     }

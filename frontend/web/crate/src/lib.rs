@@ -250,7 +250,7 @@ pub fn create_emu_state(
                         logger,
                         "Unexpected save file size: expected {}, got {} B; respecting {}.",
                         if let Some(expected_len) = expected_len {
-                            format!("{} B", expected_len)
+                            format!("{expected_len} B")
                         } else {
                             "no file".to_string()
                         },

@@ -82,15 +82,15 @@ fn fs_main(
     }
 
     let color_effect = (scanline_flags.color_effects_control >> 6u) & 3u;
-    let top_mask = (pixel.r >> 26u) & 0x3Fu;
-    let bot_mask = (pixel.g >> 26u) & 0x3Fu;
+    let top_mask = pixel.r >> 26u;
+    let bot_mask = pixel.g >> 26u;
     let target_1_mask = scanline_flags.color_effects_control & 0x3Fu;
-    let target_2_mask = (scanline_flags.color_effects_control >> 8u) & 0x3Fu;
+    let target_2_mask = scanline_flags.color_effects_control >> 8u;
     let top_matches = (top_mask & target_1_mask) != 0u;
     let bot_matches = (bot_mask & target_2_mask) != 0u;
     let blend_coeff_a = f32(scanline_flags.blend_coeffs & 0x1Fu) * (1.0 / 16.0);
-    let blend_coeff_b = f32((scanline_flags.blend_coeffs >> 16u) & 0x1Fu) * (1.0 / 16.0);
-    let brightness_coeff = f32(scanline_flags.master_brightness_control & 0x1Fu) * (1.0 / 16.0);
+    let blend_coeff_b = f32(scanline_flags.blend_coeffs >> 16u) * (1.0 / 16.0);
+    let brightness_coeff = f32(scanline_flags.brightness_coeff) * (1.0 / 16.0);
 
     var blended_rgb = top_rgb;
     if (pixel.r & (1u << 23u)) != 0u && bot_matches {
@@ -134,7 +134,7 @@ fn fs_main(
     }
 
     let brightness_factor = f32(scanline_flags.master_brightness_control & 0x1Fu) * (1.0 / 16.0);
-    let brightness_mode = (scanline_flags.master_brightness_control >> 14u) & 3u;
+    let brightness_mode = scanline_flags.master_brightness_control >> 14u;
     switch brightness_mode {
         case 1u: {
             return vec4(

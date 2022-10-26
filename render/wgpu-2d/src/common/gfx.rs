@@ -9,8 +9,8 @@ use std::{
         atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         Arc,
     },
-    time::Duration,
     thread,
+    time::Duration,
 };
 
 pub enum Renderer3dRx {
@@ -50,7 +50,11 @@ enum Renderer3dGfxThreadData {
 impl Drop for Renderer3dGfxThreadData {
     fn drop(&mut self) {
         if !thread::panicking() {
-            if let Renderer3dGfxThreadData::Accel { last_submitted_frame, .. } = self {
+            if let Renderer3dGfxThreadData::Accel {
+                last_submitted_frame,
+                ..
+            } = self
+            {
                 *last_submitted_frame.1.write() = None;
             }
         }
@@ -264,7 +268,11 @@ impl GfxData {
         )
     }
 
-    pub fn start_frame(&mut self, engine_3d_enabled_in_frame: bool) {
+    pub fn start_frame(
+        &mut self,
+        engine_3d_enabled_in_frame: bool,
+        capture_enabled_in_frame: bool,
+    ) {
         if let Some(renderer_3d_rx) = self.channels.new_renderer_3d_rx() {
             let (renderer_3d_render_data, renderer_3d_gfx_data) =
                 Self::create_renderer_3d_update_data(renderer_3d_rx);
@@ -279,7 +287,7 @@ impl GfxData {
             match &mut self.renderer_3d_data {
                 Renderer3dRenderThreadData::Soft(rx) => rx.start_frame(),
                 Renderer3dRenderThreadData::Accel(rx) => {
-                    rx.start_frame();
+                    rx.start_frame(capture_enabled_in_frame);
                 }
             }
         }
@@ -301,6 +309,18 @@ impl GfxData {
                     .0
                     .copy_from_slice(&rx.read_scanline().0);
             }
+        }
+    }
+
+    pub fn capture_3d_scanline(&mut self, cur_scanline: usize) -> &Scanline<u32> {
+        match &mut self.renderer_3d_data {
+            Renderer3dRenderThreadData::Soft(_) => unsafe {
+                self.frame_data_tx
+                    .current()
+                    .output_3d
+                    .get_unchecked(cur_scanline)
+            },
+            Renderer3dRenderThreadData::Accel(rx) => rx.read_capture_scanline(),
         }
     }
 

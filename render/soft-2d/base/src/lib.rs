@@ -120,4 +120,6 @@ pub trait RenderingData {
     fn color_effects_control(&self) -> ColorEffectsControl;
     fn blend_coeffs(&self) -> (u8, u8);
     fn brightness_coeff(&self) -> u8;
+
+    fn engine_3d_enabled_in_frame(&self) -> bool;
 }

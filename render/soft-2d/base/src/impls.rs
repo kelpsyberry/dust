@@ -62,6 +62,10 @@ impl<R: Role> RenderingData for Engine2d<R> {
     fn brightness_coeff(&self) -> u8 {
         self.brightness_coeff()
     }
+
+    fn engine_3d_enabled_in_frame(&self) -> bool {
+        self.engine_3d_enabled_in_frame()
+    }
 }
 
 impl<R: Role> VramTrait<R> for Vram {

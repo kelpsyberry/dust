@@ -2,6 +2,7 @@ use super::{Polygon, RenderingState, ScreenVertex};
 use crate::{gpu::Scanline, utils::Bytes};
 
 pub trait RendererTx {
+    fn set_capture_enabled(&mut self, capture_enabled: bool);
     fn swap_buffers(
         &mut self,
         vert_ram: &[ScreenVertex],
@@ -28,6 +29,6 @@ pub trait SoftRendererRx {
 }
 
 pub trait AccelRendererRx {
-    fn start_frame(&mut self);
-    fn read_frame(&mut self) -> Box<[Scanline<u32>; 192]>;
+    fn start_frame(&mut self, capture_enabled: bool);
+    fn read_capture_scanline(&mut self) -> &Scanline<u32>;
 }

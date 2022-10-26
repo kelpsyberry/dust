@@ -8,7 +8,7 @@ use crate::common::{
 use core::{
     cell::UnsafeCell,
     hint,
-    sync::atomic::{AtomicU8, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 use dust_core::{
     gpu::{
@@ -36,16 +36,11 @@ where
     oam: Bytes<0x400>,
 }
 
-mod state {
-    pub const STARTING_LINE: u8 = 0;
-    pub const FINISHED_LINE: u8 = 1;
-    pub const STOPPING: u8 = 2;
-}
-
 #[repr(C)]
 #[allow(clippy::type_complexity)]
 struct SharedData {
-    state: AtomicU8,
+    stopped: AtomicBool,
+    processing_line: AtomicBool,
     vcount: AtomicU8,
 
     vram: UnsafeCell<(Box<Vram<EngineA>>, Box<Vram<EngineB>>)>,
@@ -196,7 +191,8 @@ impl Renderer {
 
         let shared_data = Arc::new(unsafe {
             SharedData {
-                state: AtomicU8::new(state::FINISHED_LINE),
+                stopped: AtomicBool::new(false),
+                processing_line: AtomicBool::new(false),
                 vcount: AtomicU8::new(0),
 
                 vram: UnsafeCell::new((
@@ -355,12 +351,12 @@ impl Renderer {
 
     fn start_scanline(&mut self) {
         self.shared_data
-            .state
-            .store(state::STARTING_LINE, Ordering::Release);
+            .processing_line
+            .store(true, Ordering::Release);
     }
 
     fn wait_for_scanline_finish(&self) {
-        while self.shared_data.state.load(Ordering::Acquire) != state::FINISHED_LINE {
+        while self.shared_data.processing_line.load(Ordering::Acquire) {
             hint::spin_loop();
         }
     }
@@ -415,23 +411,24 @@ impl RendererTrait for Renderer {
 
         {
             let display_mode = engines.0.control().display_mode_a();
-            if display_mode == 1 || engines.0.capture_enabled_in_frame() {
+            if display_mode == 1
+                || (engines.0.capture_enabled_in_frame()
+                    && !engines.0.capture_control().src_a_3d_only())
+            {
                 self.flush_vram_updates::<EngineA>(vram);
             }
             #[allow(clippy::match_same_arms)]
             match display_mode {
-                2 => {
-                    render::render_scanline_vram_display(
-                        unsafe {
-                            (&mut *self.shared_data.framebuffer.get())
-                                [engines.0.is_on_lower_screen() as usize]
-                                .get_unchecked_mut(line as usize)
-                        },
-                        vcount,
-                        engines.0,
-                        vram,
-                    );
-                }
+                2 => render::render_scanline_vram_display(
+                    unsafe {
+                        (&mut *self.shared_data.framebuffer.get())
+                            [engines.0.is_on_lower_screen() as usize]
+                            .get_unchecked_mut(line as usize)
+                    },
+                    vcount,
+                    engines.0,
+                    vram,
+                ),
                 3 => {
                     // TODO: Main memory display mode
                 }
@@ -496,9 +493,7 @@ impl RendererTrait for Renderer {
 impl Drop for Renderer {
     fn drop(&mut self) {
         if let Some(thread) = self.thread.take() {
-            self.shared_data
-                .state
-                .store(state::STOPPING, Ordering::Relaxed);
+            self.shared_data.stopped.store(true, Ordering::Relaxed);
             thread.thread().unpark();
             let _ = thread.join();
         }
@@ -557,17 +552,14 @@ impl ThreadData {
                     && data.capture_enabled_in_frame
                     && !data.capture_control.src_a_3d_only());
 
-            'render_line: {
-                // According to melonDS, if vcount falls outside the drawing range or 2D engine B is
-                // disabled, the scanline is filled with pure white.
-                if vcount >= SCREEN_HEIGHT as u8 || (!R::IS_A && !data.is_enabled) {
-                    if R::IS_A && data.engine_3d_enabled_in_frame {
-                        self.renderer_3d_rx.skip_scanline();
-                    }
-                    scanline_buffer.0.fill(0xFFFF_FFFF);
-                    break 'render_line;
+            // According to melonDS, if vcount falls outside the drawing range or 2D engine B is
+            // disabled, the scanline is filled with pure white.
+            if vcount >= SCREEN_HEIGHT as u8 || (!R::IS_A && !data.is_enabled) {
+                if R::IS_A && data.engine_3d_enabled_in_frame {
+                    self.renderer_3d_rx.skip_scanline();
                 }
-
+                scanline_buffer.0.fill(0xFFFF_FFFF);
+            } else {
                 let scanline_3d = if R::IS_A && data.engine_3d_enabled_in_frame {
                     let enabled_in_bg_obj = data.bgs[0].priority != 4 && data.control.bg0_3d();
                     if (data.capture_enabled_in_frame
@@ -695,15 +687,13 @@ impl ThreadData {
     fn run(mut self) {
         thread::park();
         loop {
-            match self.shared_data.state.load(Ordering::Relaxed) {
-                state::STARTING_LINE => {}
-                state::STOPPING => {
-                    return;
-                }
-                _ => {
-                    hint::spin_loop();
-                    continue;
-                }
+            if self.shared_data.stopped.load(Ordering::Relaxed) {
+                return;
+            }
+
+            if !self.shared_data.processing_line.load(Ordering::Relaxed) {
+                hint::spin_loop();
+                continue;
             }
 
             if self.cur_scanline == 0
@@ -719,8 +709,8 @@ impl ThreadData {
             self.render_scanline::<EngineB>(vcount, &vram.1);
 
             self.shared_data
-                .state
-                .store(state::FINISHED_LINE, Ordering::Release);
+                .processing_line
+                .store(false, Ordering::Release);
 
             self.cur_scanline += 1;
             if self.cur_scanline == SCREEN_HEIGHT as i16 {
