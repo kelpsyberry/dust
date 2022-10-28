@@ -66,7 +66,7 @@ pub fn bitfield(
                 BitfieldCommand::Field(name, bits) => {
                     let name_width = ui.calc_text_size(name)[0];
                     let bit_value_width =
-                        ui.calc_text_size(&format!("{:0bits$}", 0, bits = *bits as usize))[0];
+                        ui.calc_text_size(format!("{:0bits$}", 0, bits = *bits as usize))[0];
                     field_widths.push(if exact_sizing {
                         (name_width + frame_padding).max(
                             bit_value_width
@@ -80,7 +80,7 @@ pub fn bitfield(
                 }
                 BitfieldCommand::Skip(bits) => {
                     let bit_value_width =
-                        ui.calc_text_size(&format!("{:0bits$}", 0, bits = *bits as usize))[0];
+                        ui.calc_text_size(format!("{:0bits$}", 0, bits = *bits as usize))[0];
                     field_widths.push(if exact_sizing {
                         bit_value_width
                             + *bits as f32 * frame_padding

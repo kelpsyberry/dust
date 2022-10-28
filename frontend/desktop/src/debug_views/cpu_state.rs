@@ -206,7 +206,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                 bitfield(ui, 2.0, false, true, cpsr.raw(), psr_fields);
             }
 
-            ui.text(&format!("Mode: {}", psr_mode_to_str(mode)));
+            ui.text(format!("Mode: {}", psr_mode_to_str(mode)));
 
             ui.separator();
 
@@ -217,7 +217,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                     bitfield(ui, 2.0, false, true, reg_values.spsr.raw(), psr_fields);
                 }
 
-                ui.text(&format!(
+                ui.text(format!(
                     "Mode: {}",
                     psr_mode_to_str(reg_values.spsr.mode()),
                 ));
@@ -354,7 +354,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                                     ui.table_next_column();
                                 }
                                 ui.align_text_to_frame_padding();
-                                ui.text(&format!(
+                                ui.text(format!(
                                     "r{i}_{bank_str}: {}",
                                     if i < 10 { " " } else { "" }
                                 ));
@@ -381,7 +381,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                         if reg_bank == cpu_reg_bank {
                             for i in 13..15 {
                                 ui.align_text_to_frame_padding();
-                                ui.text(&format!("r{i}_{bank_str}: {:<1}", ""));
+                                ui.text(format!("r{i}_{bank_str}: {:<1}", ""));
                                 ui.same_line();
                                 ui.text("<cur>");
                                 ui.same_line();
@@ -411,7 +411,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                     if let Some(spsr) = spsr {
                         separator_with_width(ui, -window_padding_x);
 
-                        ui.text(&format!("SPSR_{bank_str}:"));
+                        ui.text(format!("SPSR_{bank_str}:"));
                         if reg_bank == cpu_spsr_bank {
                             ui.same_line();
                             ui.text("<current>");
@@ -422,7 +422,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                                 bitfield(ui, 2.0, false, true, spsr.raw(), psr_fields);
                             }
 
-                            ui.text(&format!("Mode: {}", psr_mode_to_str(spsr.mode())));
+                            ui.text(format!("Mode: {}", psr_mode_to_str(spsr.mode())));
                         }
                     }
                 });

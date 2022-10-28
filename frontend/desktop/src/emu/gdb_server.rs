@@ -74,7 +74,7 @@ enum Core {
 #[derive(Clone, Copy)]
 enum StopCause {
     Break,                                        // Signal 0x00 (None)
-    Syscall(u8, u8),                              // Signal 0x05 (SIGTRAP), syscall_entry
+    Syscall(u8, Core),                            // Signal 0x05 (SIGTRAP), syscall_entry
     Undefined(Core),                              // Signal 0x04 (SIGILL)
     PrefetchAbort,                                // Signal 0x0B (SIGSEGV)
     DataAbort,                                    // Signal 0x0B (SIGSEGV)
@@ -268,7 +268,7 @@ impl GdbServer {
                     buf,
                     "T05syscall_entry:{number:X};thread:{};core:{};",
                     core as u8 + 1,
-                    core as u8
+                    core as u8,
                 );
             }
             StopCause::Undefined(core) => {
@@ -282,7 +282,7 @@ impl GdbServer {
                     buf,
                     "T05hwbreak:;thread:{};core:{};",
                     core as u8 + 1,
-                    core as u8
+                    core as u8,
                 );
             }
             StopCause::MemWatchpoint(core, addr, cause) => {
@@ -295,7 +295,7 @@ impl GdbServer {
                         "watch"
                     },
                     core as u8 + 1,
-                    core as u8
+                    core as u8,
                 );
             }
             StopCause::Shutdown => buf.extend_from_slice(b"X0F"),
@@ -520,7 +520,7 @@ impl GdbServer {
             };
         }
 
-        let prefix = *unwrap_opt!(packet.get(0), ("Received empty packet"));
+        let prefix = *unwrap_opt!(packet.first(), ("Received empty packet"));
         let data = &packet[1..];
 
         match prefix {
@@ -586,7 +586,7 @@ impl GdbServer {
             }
 
             b'H' => {
-                let op = *unwrap_opt!(data.get(0), ("Received invalid H packet"));
+                let op = *unwrap_opt!(data.first(), ("Received invalid H packet"));
                 let thread_id = parse_thread_id!(&data[1..], "H");
                 match op {
                     b'c' => {
@@ -637,7 +637,7 @@ impl GdbServer {
                     } else {
                         arm7::bus::read_8::<DebugCpuAccess, _>(emu, addr)
                     };
-                    let _ = write!(reply, "{:02X}", byte);
+                    let _ = write!(reply, "{byte:02X}");
                     addr = addr.wrapping_add(1);
                 }
                 reply!(reply);
@@ -716,7 +716,7 @@ impl GdbServer {
                             addr = addr.wrapping_add(1);
                         }
                         let mut reply = Vec::with_capacity(8);
-                        let _ = write!(reply, "{:08X}", crc);
+                        let _ = write!(reply, "{crc:08X}");
                         reply!(reply);
                     }
 

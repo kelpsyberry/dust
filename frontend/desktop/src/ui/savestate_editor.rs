@@ -150,7 +150,7 @@ impl Savestate {
             }
 
             fs::write(
-                &savestate_dir.join(&format!("{name}.state")),
+                savestate_dir.join(format!("{name}.state")),
                 compress_to_vec(&contents, CompressionLevel::BestSpeed as u8),
             )?;
         }
@@ -174,14 +174,14 @@ impl Savestate {
         let mut prev_file_name = prev_name;
         prev_file_name.push_str(".state");
         fs::rename(
-            &savestate_dir.join(&prev_file_name),
-            &savestate_dir.join(&format!("{}.state", new_name)),
+            savestate_dir.join(&prev_file_name),
+            savestate_dir.join(format!("{new_name}.state")),
         )
     }
 
     fn delete(self, name: &str, savestate_dir: &Path, window: &mut Window) -> io::Result<()> {
         window.imgui.gfx.remove_texture(self.texture_id);
-        fs::remove_file(&savestate_dir.join(&format!("{name}.state")))
+        fs::remove_file(savestate_dir.join(format!("{name}.state")))
     }
 
     fn emu_savestate(&self) -> emu::Savestate {

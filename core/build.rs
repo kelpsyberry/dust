@@ -36,27 +36,27 @@ mod interpreter {
         for chunk in table.chunks(8) {
             for instr in chunk.iter() {
                 match *instr {
-                    Instr::Mrs { spsr } => write!(file, "mrs::<{}>", spsr),
+                    Instr::Mrs { spsr } => write!(file, "mrs::<{spsr}>"),
                     Instr::Msr { ty, spsr } => {
-                        write!(file, "msr::<{}, {}>", ty != arm::MsrTy::Reg, spsr)
+                        write!(file, "msr::<{}, {spsr}>", ty != arm::MsrTy::Reg)
                     }
                     Instr::Bx { link } => {
                         if is_arm9 {
-                            write!(file, "bx::<{}>", link)
+                            write!(file, "bx::<{link}>")
                         } else {
                             write!(file, "bx")
                         }
                     }
                     Instr::Clz => write!(file, "clz"),
                     Instr::SatAddSub { sub, doubled } => {
-                        write!(file, "qaddsub::<{}, {}>", sub, doubled)
+                        write!(file, "qaddsub::<{sub}, {doubled}>")
                     }
                     Instr::Bkpt => write!(file, "bkpt"),
                     Instr::DspMul(ty) => {
                         if is_arm9 {
                             match ty {
-                                DspMulTy::Smulxy { acc } => write!(file, "smulxy::<{}>", acc),
-                                DspMulTy::Smulwy { acc } => write!(file, "smulwy::<{}>", acc),
+                                DspMulTy::Smulxy { acc } => write!(file, "smulxy::<{acc}>"),
+                                DspMulTy::Smulwy { acc } => write!(file, "smulwy::<{acc}>"),
                                 DspMulTy::Smlalxy => write!(file, "smlalxy"),
                             }
                         } else {
@@ -84,10 +84,10 @@ mod interpreter {
                                 shift_imm
                             ),
                         }?;
-                        write!(file, ", {}>", set_flags)
+                        write!(file, ", {set_flags}>")
                     }
                     Instr::Mul { acc, set_flags } => {
-                        write!(file, "mul::<{}, {}>", acc, set_flags)
+                        write!(file, "mul::<{acc}, {set_flags}>")
                     }
                     Instr::MulLong {
                         acc,
@@ -179,7 +179,7 @@ mod interpreter {
                             s_bit
                         )
                     }
-                    Instr::Branch { link } => write!(file, "b::<{}>", link),
+                    Instr::Branch { link } => write!(file, "b::<{link}>"),
                     Instr::Mcrr => write!(file, "mcrr"),
                     Instr::Mrrc => write!(file, "mrrc"),
                     Instr::Stc => write!(file, "stc"),
@@ -289,7 +289,7 @@ mod interpreter {
                         addr_high_reg: _,
                     } => {
                         if is_arm9 {
-                            write!(file, "bx::<{}>", link)
+                            write!(file, "bx::<{link}>")
                         } else {
                             write!(file, "bx")
                         }
@@ -331,10 +331,10 @@ mod interpreter {
                         write!(file, "{}_sp_rel", if load { "ldr" } else { "str" })
                     }
                     Instr::AddSpPcImm { sp, dst_reg: _ } => {
-                        write!(file, "add_pc_sp_imm8::<{}>", sp)
+                        write!(file, "add_pc_sp_imm8::<{sp}>")
                     }
                     Instr::AddSubSpImm7 { sub } => {
-                        write!(file, "add_sub_sp_imm7::<{}>", sub)
+                        write!(file, "add_sub_sp_imm7::<{sub}>")
                     }
                     Instr::PushPop {
                         pop,
@@ -354,12 +354,12 @@ mod interpreter {
                         write!(file, "{}ia", if load { "ldm" } else { "stm" })
                     }
                     Instr::Swi => write!(file, "swi"),
-                    Instr::CondBranch { cond } => write!(file, "b_cond::<{}>", cond),
+                    Instr::CondBranch { cond } => write!(file, "b_cond::<{cond}>"),
                     Instr::Branch => write!(file, "b"),
                     Instr::BlPrefix => write!(file, "bl_prefix"),
                     Instr::BlSuffix { exchange } => {
                         if is_arm9 {
-                            write!(file, "bl_suffix::<{}>", exchange)
+                            write!(file, "bl_suffix::<{exchange}>")
                         } else {
                             write!(file, "bl_suffix")
                         }
@@ -422,21 +422,21 @@ mod jit {
         for chunk in table.chunks(8) {
             for instr in chunk.iter() {
                 match *instr {
-                    Instr::Mrs { spsr } => write!(file, "mrs::<_, {}>", spsr),
+                    Instr::Mrs { spsr } => write!(file, "mrs::<_, {spsr}>"),
                     Instr::Msr { ty, spsr } => {
-                        write!(file, "msr::<_, {}, {}>", ty != arm::MsrTy::Reg, spsr)
+                        write!(file, "msr::<_, {}, {spsr}>", ty != arm::MsrTy::Reg)
                     }
-                    Instr::Bx { link } => write!(file, "bx::<_, {}>", link),
+                    Instr::Bx { link } => write!(file, "bx::<_, {link}>"),
                     Instr::Clz => write!(file, "clz"),
                     Instr::SatAddSub { sub, doubled } => {
-                        write!(file, "qaddsub::<_, {}, {}>", sub, doubled)
+                        write!(file, "qaddsub::<_, {sub}, {doubled}>")
                     }
                     Instr::Bkpt => write!(file, "bkpt"),
                     Instr::DspMul(ty) => {
                         if is_arm9 {
                             match ty {
-                                DspMulTy::Smulxy { acc } => write!(file, "smulxy::<_, {}>", acc),
-                                DspMulTy::Smulwy { acc } => write!(file, "smulwy::<_, {}>", acc),
+                                DspMulTy::Smulxy { acc } => write!(file, "smulxy::<_, {acc}>"),
+                                DspMulTy::Smulwy { acc } => write!(file, "smulwy::<_, {acc}>"),
                                 DspMulTy::Smlalxy => write!(file, "smlalxy"),
                             }
                         } else {
@@ -464,10 +464,10 @@ mod jit {
                                 shift_imm
                             ),
                         }?;
-                        write!(file, ", {}>", set_flags)
+                        write!(file, ", {set_flags}>")
                     }
                     Instr::Mul { acc, set_flags } => {
-                        write!(file, "mul::<_, {}, {}>", acc, set_flags)
+                        write!(file, "mul::<_, {acc}, {set_flags}>")
                     }
                     Instr::MulLong {
                         acc,
@@ -557,7 +557,7 @@ mod jit {
                             s_bit
                         )
                     }
-                    Instr::Branch { link } => write!(file, "b::<_, {}>", link),
+                    Instr::Branch { link } => write!(file, "b::<_, {link}>"),
                     Instr::Mcrr => write!(file, "mcrr"),
                     Instr::Mrrc => write!(file, "mrrc"),
                     Instr::Stc => write!(file, "stc"),
@@ -656,7 +656,7 @@ mod jit {
                     Instr::Bx {
                         link,
                         addr_high_reg: _,
-                    } => write!(file, "bx::<_, {}>", link),
+                    } => write!(file, "bx::<_, {link}>"),
                     Instr::DpOpSpecial { ty, h1: _, h2: _ } => {
                         write!(file, "{}_special", ["add", "cmp", "mov"][ty as usize])
                     }
@@ -694,10 +694,10 @@ mod jit {
                         write!(file, "{}_sp_rel", if load { "ldr" } else { "str" })
                     }
                     Instr::AddSpPcImm { sp, dst_reg: _ } => {
-                        write!(file, "add_pc_sp_imm8::<_, {}>", sp)
+                        write!(file, "add_pc_sp_imm8::<_, {sp}>")
                     }
                     Instr::AddSubSpImm7 { sub } => {
-                        write!(file, "add_sub_sp_imm7::<_, {}>", sub)
+                        write!(file, "add_sub_sp_imm7::<_, {sub}>")
                     }
                     Instr::PushPop {
                         pop,
@@ -717,10 +717,10 @@ mod jit {
                         write!(file, "{}ia", if load { "ldm" } else { "stm" })
                     }
                     Instr::Swi => write!(file, "swi"),
-                    Instr::CondBranch { cond } => write!(file, "b_cond::<_, {}>", cond),
+                    Instr::CondBranch { cond } => write!(file, "b_cond::<_, {cond}>"),
                     Instr::Branch => write!(file, "b"),
                     Instr::BlPrefix => write!(file, "bl_prefix"),
-                    Instr::BlSuffix { exchange } => write!(file, "bl_suffix::<_, {}>", exchange),
+                    Instr::BlSuffix { exchange } => write!(file, "bl_suffix::<_, {exchange}>"),
                     Instr::Undefined { .. } => write!(file, "undefined"),
                     _ => unreachable!(),
                 }?;
@@ -773,23 +773,23 @@ mod disasm {
         for chunk in table.chunks(8) {
             for instr in chunk.iter() {
                 match *instr {
-                    Instr::Mrs { spsr } => write!(file, "mrs::<{}>", spsr),
+                    Instr::Mrs { spsr } => write!(file, "mrs::<{spsr}>"),
                     Instr::Msr { ty, spsr } => {
-                        write!(file, "msr::<{}, {}>", ty != arm::MsrTy::Reg, spsr)
+                        write!(file, "msr::<{}, {spsr}>", ty != arm::MsrTy::Reg)
                     }
                     Instr::Bx { link } => {
-                        write!(file, "bx::<{}>", link)
+                        write!(file, "bx::<{link}>")
                     }
                     Instr::Clz => write!(file, "clz"),
                     Instr::SatAddSub { sub, doubled } => {
-                        write!(file, "qaddsub::<{}, {}>", sub, doubled)
+                        write!(file, "qaddsub::<{sub}, {doubled}>")
                     }
                     Instr::Bkpt => write!(file, "bkpt"),
                     Instr::DspMul(ty) => {
                         if is_arm9 {
                             match ty {
-                                DspMulTy::Smulxy { acc } => write!(file, "smulxy::<{}>", acc),
-                                DspMulTy::Smulwy { acc } => write!(file, "smulwy::<{}>", acc),
+                                DspMulTy::Smulxy { acc } => write!(file, "smulxy::<{acc}>"),
+                                DspMulTy::Smulwy { acc } => write!(file, "smulwy::<{acc}>"),
                                 DspMulTy::Smlalxy => write!(file, "smlalxy"),
                             }
                         } else {
@@ -817,17 +817,17 @@ mod disasm {
                                 shift_imm
                             ),
                         }?;
-                        write!(file, ", {}>", set_flags)
+                        write!(file, ", {set_flags}>")
                     }
                     Instr::Mul { acc, set_flags } => {
-                        write!(file, "mul::<{}, {}>", acc, set_flags)
+                        write!(file, "mul::<{acc}, {set_flags}>")
                     }
                     Instr::MulLong {
                         acc,
                         set_flags,
                         signed,
-                    } => write!(file, "umull_smull::<{}, {}, {}>", signed, acc, set_flags),
-                    Instr::Swp { byte } => write!(file, "swp_swpb::<{}>", byte),
+                    } => write!(file, "umull_smull::<{signed}, {acc}, {set_flags}>"),
+                    Instr::Swp { byte } => write!(file, "swp_swpb::<{byte}>"),
                     Instr::MiscTransfer {
                         ty,
                         addressing,
@@ -900,7 +900,7 @@ mod disasm {
                             load, increment, base_excluded, writeback, s_bit
                         )
                     }
-                    Instr::Branch { link } => write!(file, "b::<{}>", link),
+                    Instr::Branch { link } => write!(file, "b::<{link}>"),
                     Instr::Mcrr => write!(file, "mrrc_mcrr::<false>"),
                     Instr::Mrrc => write!(file, "mrrc_mcrr::<true>"),
                     Instr::Stc => write!(file, "ldc_stc::<false>"),
@@ -962,7 +962,7 @@ mod disasm {
             for instr in chunk.iter() {
                 match *instr {
                     Instr::AddSubRegImm3 { sub, imm3, .. } => {
-                        write!(file, "add_sub_reg_imm3::<{}, {}>", sub, imm3)
+                        write!(file, "add_sub_reg_imm3::<{sub}, {imm3}>")
                     }
                     Instr::ShiftImm { ty, shift: _ } => {
                         write!(
@@ -992,7 +992,7 @@ mod disasm {
                         link,
                         addr_high_reg: _,
                     } => {
-                        write!(file, "bx::<{}>", link)
+                        write!(file, "bx::<{link}>")
                     }
                     Instr::DpOpSpecial { ty, h1: _, h2: _ } => {
                         write!(
@@ -1008,7 +1008,7 @@ mod disasm {
                         let name = [
                             "str", "strh", "strb", "ldrsb", "ldr", "ldrh", "ldrb", "ldrsh",
                         ][ty as usize];
-                        write!(file, "ldr_str::<\"{}\", 0, false>", name)
+                        write!(file, "ldr_str::<\"{name}\", 0, false>")
                     }
                     Instr::LoadStoreWbImm {
                         byte,
@@ -1031,29 +1031,29 @@ mod disasm {
                         )
                     }
                     Instr::LoadStoreStack { load, reg: _ } => {
-                        write!(file, "ldr_str_sp_rel::<{}>", load)
+                        write!(file, "ldr_str_sp_rel::<{load}>")
                     }
                     Instr::AddSpPcImm { sp, dst_reg: _ } => {
-                        write!(file, "add_pc_sp_imm8::<{}>", sp)
+                        write!(file, "add_pc_sp_imm8::<{sp}>")
                     }
                     Instr::AddSubSpImm7 { sub } => {
-                        write!(file, "add_sub_sp_imm7::<{}>", sub)
+                        write!(file, "add_sub_sp_imm7::<{sub}>")
                     }
                     Instr::PushPop { pop, .. } => {
-                        write!(file, "push_pop::<{}>", pop)
+                        write!(file, "push_pop::<{pop}>")
                     }
                     Instr::Bkpt => {
                         write!(file, "bkpt")
                     }
                     Instr::LoadStoreMultiple { load, base_reg: _ } => {
-                        write!(file, "ldmia_stmia::<{}>", load)
+                        write!(file, "ldmia_stmia::<{load}>")
                     }
                     Instr::Swi => write!(file, "swi"),
-                    Instr::CondBranch { cond } => write!(file, "b_cond::<{}>", cond),
+                    Instr::CondBranch { cond } => write!(file, "b_cond::<{cond}>"),
                     Instr::Branch => write!(file, "b"),
                     Instr::BlPrefix => write!(file, "bl_prefix"),
                     Instr::BlSuffix { exchange } => {
-                        write!(file, "bl_suffix::<{}>", exchange)
+                        write!(file, "bl_suffix::<{exchange}>")
                     }
                     Instr::Undefined { .. } => write!(file, "undefined"),
                     _ => unreachable!(),

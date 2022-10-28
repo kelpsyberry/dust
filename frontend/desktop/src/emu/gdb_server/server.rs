@@ -46,7 +46,7 @@ impl RunningState {
                     self.reader.consume(len);
                     self.queued_breaks += 1;
                     continue;
-                } else if buf.get(0) == Some(&0x03) {
+                } else if buf.first() == Some(&0x03) {
                     // Process Ctrl-C
                     self.reader.consume(1);
                     self.queued_breaks += 1;

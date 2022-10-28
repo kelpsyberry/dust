@@ -185,7 +185,7 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
 
                     ui.text_colored(
                         disabled_color,
-                        &if self.disasm_results.thumb {
+                        if self.disasm_results.thumb {
                             format!("{:04X} ", instr.raw)
                         } else {
                             format!("{:08X} ", instr.raw)
@@ -197,7 +197,7 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
 
                     if !instr.comment.is_empty() {
                         ui.same_line_with_spacing(0.0, 0.0);
-                        ui.text_colored(disabled_color, &format!(" ; {}", instr.comment));
+                        ui.text_colored(disabled_color, format!(" ; {}", instr.comment));
                     }
                 }
             }

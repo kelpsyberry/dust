@@ -313,7 +313,7 @@ impl View for AudioChannels {
             );
 
             ui.align_text_to_frame_padding();
-            ui.text(&format!(
+            ui.text(format!(
                 "Repeat mode: {}",
                 match self.data.control.repeat_mode() {
                     RepeatMode::Manual => "Manual",
@@ -324,7 +324,7 @@ impl View for AudioChannels {
 
             let format = self.data.control.format(self.cur_channel);
             ui.align_text_to_frame_padding();
-            ui.text(&if format == Format::Silence {
+            ui.text(if format == Format::Silence {
                 format!("Format: Invalid ({})", self.data.control.format_raw())
             } else {
                 format!(

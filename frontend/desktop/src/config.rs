@@ -534,7 +534,7 @@ impl<T: Default + Serialize + for<'de> Deserialize<'de>> File<T> {
         if let Some(path) = &self.path {
             fs::write(
                 path,
-                &serde_json::to_vec_pretty(&self.contents).map_err(FileError::Json)?,
+                serde_json::to_vec_pretty(&self.contents).map_err(FileError::Json)?,
             )
             .map_err(FileError::Io)
         } else {

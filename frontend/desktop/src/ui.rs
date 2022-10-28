@@ -9,6 +9,7 @@ use savestate_editor::Editor as SavestateEditor;
 
 #[cfg(feature = "log")]
 mod log;
+#[allow(dead_code)]
 pub mod window;
 
 #[cfg(feature = "debug-views")]

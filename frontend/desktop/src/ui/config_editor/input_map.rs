@@ -192,7 +192,7 @@ impl Editor {
         } else {
             let trigger_string = trigger.map(|trigger| trigger.to_string());
             if ui.button_with_size(
-                &format!("{}###", trigger_string.as_deref().unwrap_or("\u{f00d}")),
+                format!("{}###", trigger_string.as_deref().unwrap_or("\u{f00d}")),
                 [width, 0.0],
             ) {
                 self.finalize(config);
@@ -242,7 +242,7 @@ impl Editor {
 
         ui.table_next_column();
         ui.align_text_to_frame_padding();
-        ui.text(&format!("{name}:"));
+        ui.text(format!("{name}:"));
 
         ui.table_next_column();
         {

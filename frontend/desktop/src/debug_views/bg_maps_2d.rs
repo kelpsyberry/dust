@@ -585,7 +585,7 @@ impl View for BgMaps2d {
 
         if self.data.selection == Some(self.cur_selection) {
             ui.align_text_to_frame_padding();
-            ui.text(&format!(
+            ui.text(format!(
                 "Size: {}x{}",
                 self.data.cur_bg.size[0], self.data.cur_bg.size[1]
             ));
@@ -675,11 +675,11 @@ impl View for BgMaps2d {
                         .uv1([0, 1].map(|i| (tile_pos[i] + 1) as f32 / 128.0));
                     let map_entry_index = tile_pos[1] * tiles[0] + tile_pos[0];
                     if self.data.cur_bg.display_mode == BgDisplayMode::Affine {
-                        ui.text(&format!("Tile {:#04X}", self.data.tiles[map_entry_index]));
+                        ui.text(format!("Tile {:#04X}", self.data.tiles[map_entry_index]));
                         image.build(ui);
                     } else {
                         let tile = self.data.tiles.read_le::<u16>(map_entry_index << 1);
-                        ui.text(&format!("Tile {:#05X}", tile & 0x3FF));
+                        ui.text(format!("Tile {:#05X}", tile & 0x3FF));
                         image.build(ui);
                         ui.align_text_to_frame_padding();
                         ui.text("Flip: ");
@@ -690,10 +690,10 @@ impl View for BgMaps2d {
                         if self.data.cur_bg.display_mode == BgDisplayMode::Text16
                             || self.data.cur_bg.uses_ext_palettes
                         {
-                            ui.text(&format!("Palette number: {:#03X}", tile >> 12));
+                            ui.text(format!("Palette number: {:#03X}", tile >> 12));
                         }
                     }
-                    ui.text(&format!("X: {}, Y: {}", tile_pos[0] * 8, tile_pos[1] * 8));
+                    ui.text(format!("X: {}, Y: {}", tile_pos[0] * 8, tile_pos[1] * 8));
                 });
             }
         }
