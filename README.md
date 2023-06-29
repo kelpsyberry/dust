@@ -2,22 +2,22 @@
 
 ![Screenshot](screenshot.png)
 
-[![Build and test status](https://github.com/Kelpsy/dust/actions/workflows/.github/workflows/run-clippy-and-test.yml/badge.svg?branch=main&event=push)](https://github.com/Kelpsy/dust/actions/workflows/run-clippy-and-test.yml?query=branch%3Amain+event%3Apush)
+[![Build and test status](https://github.com/kelpsyberry/dust/actions/workflows/.github/workflows/run-clippy-and-test.yml/badge.svg?branch=main&event=push)](https://github.com/kelpsyberry/dust/actions/workflows/run-clippy-and-test.yml?query=branch%3Amain+event%3Apush)
 
 ## Prebuilt binaries and web version
 
-[![Web deploy status](https://github.com/Kelpsy/dust/actions/workflows/.github/workflows/deploy-web.yml/badge.svg?branch=main&event=push)](https://github.com/Kelpsy/dust/actions/workflows/deploy-web.yml?query=branch%3Amain+event%3Apush)
+[![Web deploy status](https://github.com/kelpsyberry/dust/actions/workflows/.github/workflows/deploy-web.yml/badge.svg?branch=main&event=push)](https://github.com/kelpsyberry/dust/actions/workflows/deploy-web.yml?query=branch%3Amain+event%3Apush)
 
 [Web frontend](https://dust-emu.netlify.app)
 
 
-[![Release build status](https://github.com/Kelpsy/dust/actions/workflows/.github/workflows/build-release.yml/badge.svg?branch=main&event=push)](https://github.com/Kelpsy/dust/actions/workflows/build-release.yml?query=branch%3Amain+event%3Apush)
+[![Release build status](https://github.com/kelpsyberry/dust/actions/workflows/.github/workflows/build-release.yml/badge.svg?branch=main&event=push)](https://github.com/kelpsyberry/dust/actions/workflows/build-release.yml?query=branch%3Amain+event%3Apush)
 
 | Release | Debug (includes logging and debugging views) | Debug + GDB server |
 | ------- | -------------------------------------------- | ------------------ |
-| [Windows (release)](https://nightly.link/Kelpsy/dust/workflows/build-release/main/Windows.zip) | [Windows (debug)](https://nightly.link/Kelpsy/dust/workflows/build-release/main/Windows-debug.zip) | [Windows (debug + GDB)](https://nightly.link/Kelpsy/dust/workflows/build-release/main/Windows-debug-gdb.zip) |
-| [Linux (release)](https://nightly.link/Kelpsy/dust/workflows/build-release/main/Linux.zip) | [Linux (debug)](https://nightly.link/Kelpsy/dust/workflows/build-release/main/Linux-debug.zip) | [Linux (debug + GDB)](https://nightly.link/Kelpsy/dust/workflows/build-release/main/Linux-debug-gdb.zip) |
-| [macOS (release)](https://nightly.link/Kelpsy/dust/workflows/build-release/main/macOS.zip) | [macOS (debug)](https://nightly.link/Kelpsy/dust/workflows/build-release/main/macOS-debug.zip) | [macOS (debug + GDB)](https://nightly.link/Kelpsy/dust/workflows/build-release/main/macOS-debug-gdb.zip) |
+| [Windows (release)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/Windows.zip) | [Windows (debug)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/Windows-debug.zip) | [Windows (debug + GDB)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/Windows-debug-gdb.zip) |
+| [Linux (release)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/Linux.zip) | [Linux (debug)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/Linux-debug.zip) | [Linux (debug + GDB)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/Linux-debug-gdb.zip) |
+| [macOS (release)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/macOS.zip) | [macOS (debug)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/macOS-debug.zip) | [macOS (debug + GDB)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/macOS-debug-gdb.zip) |
 
 # Credits
 - Martin Korth, for summarizing resources on the DS on [GBATEK](https://problemkaputt.de/gbatek.htm)

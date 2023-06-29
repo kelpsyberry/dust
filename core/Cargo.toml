@@ -30,12 +30,12 @@ channel-audio-capture = []
 debugger-hooks = ["bft-r", "bft-w"]
 
 [dependencies]
-emu-utils = { git = "https://github.com/Kelpsy/emu-utils" }
-proc-bitfield = { git = "https://github.com/Kelpsy/proc-bitfield", features = ["nightly"] }
+emu-utils = { git = "https://github.com/kelpsyberry/emu-utils" }
+proc-bitfield = { git = "https://github.com/kelpsyberry/proc-bitfield", features = ["nightly"] }
 bitflags = "1.2"
 cfg-if = "1.0"
 slog = { version = "2.7", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 
 [build-dependencies]
-arm-decoder = { git = "https://github.com/Kelpsy/arm-decoder" }
+arm-decoder = { git = "https://github.com/kelpsyberry/arm-decoder" }

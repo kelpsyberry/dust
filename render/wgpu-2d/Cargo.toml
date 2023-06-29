@@ -6,9 +6,9 @@ publish = false
 
 [dependencies]
 dust-core = { path = "../../core" }
-emu-utils = { git = "https://github.com/Kelpsy/emu-utils", features = ["std"] }
+emu-utils = { git = "https://github.com/kelpsyberry/emu-utils", features = ["std"] }
 dust-soft-2d-base = { path = "../soft-2d/base" }
-proc-bitfield = { git = "https://github.com/Kelpsy/proc-bitfield", features = ["nightly"] }
+proc-bitfield = { git = "https://github.com/kelpsyberry/proc-bitfield", features = ["nightly"] }
 wgpu = "0.14"
 crossbeam-channel = "0.5"
 parking_lot = "0.12"
