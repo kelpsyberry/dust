@@ -511,7 +511,7 @@ macro_rules! declare_structs {
                     }
                 )*
                 $(
-                    let closed_views: Vec<_> = self.$i_view_ident.drain_filter(
+                    let closed_views: Vec<_> = self.$i_view_ident.extract_if(
                         |key, (view, visible)| {
                             let mut opened = true;
                             let was_visible = *visible;

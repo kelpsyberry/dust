@@ -11,7 +11,8 @@
     const_mut_refs,
     slice_as_chunks,
     duration_constants,
-    lazy_cell
+    lazy_cell,
+    hash_extract_if
 )]
 
 #[cfg(target_os = "macos")]
