@@ -1012,7 +1012,7 @@ impl Engine3d {
             return;
         }
 
-        let mut poly = &mut self.poly_ram[self.poly_ram_level as usize];
+        let poly = &mut self.poly_ram[self.poly_ram_level as usize];
         self.poly_ram_level += 1;
         poly.vertices_len = PolyVertsLen::new(clipped_verts_len as u8);
         poly.tex_palette_base = self.tex_palette_base;

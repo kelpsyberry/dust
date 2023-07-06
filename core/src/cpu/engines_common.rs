@@ -1,4 +1,6 @@
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+use core::marker::ConstParamTy;
+
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy, Debug)]
 pub enum ShiftTy {
     Lsl,
     Lsr,
@@ -6,14 +8,14 @@ pub enum ShiftTy {
     Ror,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy, Debug)]
 pub enum ShiftImmTy {
     Lsl,
     Lsr,
     Asr,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy, Debug)]
 pub enum DpOpImm8Ty {
     Mov,
     Cmp,
@@ -21,7 +23,7 @@ pub enum DpOpImm8Ty {
     Sub,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy, Debug)]
 pub enum DpOpRegTy {
     And,
     Eor,
@@ -51,7 +53,7 @@ impl DpOpRegTy {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy, Debug)]
 pub enum DpOpTy {
     And,
     Eor,
@@ -102,13 +104,13 @@ impl DpOpTy {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy, Debug)]
 pub enum DpOperand {
     Imm,
     Reg { shift_ty: ShiftTy, shift_imm: bool },
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy, Debug)]
 pub enum WbAddressing {
     Post,
     PostUser,
@@ -126,13 +128,13 @@ impl WbAddressing {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy, Debug)]
 pub enum WbOffTy {
     Imm,
     Reg(ShiftTy),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy, Debug)]
 pub enum MiscAddressing {
     Post,
     PreNoWb,

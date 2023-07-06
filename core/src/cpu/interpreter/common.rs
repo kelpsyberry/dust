@@ -1,6 +1,7 @@
 pub use super::super::engines_common::*;
 
 use crate::cpu::psr::Psr;
+use core::marker::ConstParamTy;
 
 static COND_TABLE: [u16; 0x10] = [
     0xF0F0, // EQ    (z)
@@ -32,7 +33,7 @@ impl Psr {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy, Debug)]
 pub enum StateSource {
     Arm,
     Thumb,

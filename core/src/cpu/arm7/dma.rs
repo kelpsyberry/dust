@@ -1,3 +1,4 @@
+use core::marker::ConstParamTy;
 use super::{bus::timings::Timings, Arm7};
 use crate::{
     cpu::{
@@ -10,7 +11,7 @@ use crate::{
     utils::{schedule::RawTimestamp, Savestate},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ConstParamTy, Savestate)]
 pub enum Timing {
     Immediate, // x
     VBlank,    // x

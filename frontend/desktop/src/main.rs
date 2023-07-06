@@ -1,10 +1,7 @@
 #![feature(
     step_trait,
-    once_cell,
-    hash_drain_filter,
     new_uninit,
     slice_ptr_get,
-    int_log,
     try_blocks,
     slice_ptr_len,
     array_chunks,
@@ -13,7 +10,8 @@
     const_trait_impl,
     const_mut_refs,
     slice_as_chunks,
-    duration_constants
+    duration_constants,
+    lazy_cell
 )]
 
 #[cfg(target_os = "macos")]
