@@ -58,3 +58,4 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: frontend/web/dist
         force_orphan: true
+        publish_branch: web-deploy
