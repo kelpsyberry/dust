@@ -14,7 +14,7 @@ use core::num::NonZeroU32;
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Control(pub u16): Debug {
+    pub struct Control(pub u16): Debug {
         pub master_volume_raw: u8 @ 0..=6,
         pub l_output_src: u8 @ 8..=9,
         pub r_output_src: u8 @ 10..=11,

@@ -26,7 +26,7 @@ use dust_core::{
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub const struct ObjPixel(pub u32): Debug {
+    pub struct ObjPixel(pub u32): Debug {
         pub pal_color: u16 @ 0..=11,
         pub raw_color: u16 @ 0..=15,
         pub use_raw_color: bool @ 16,
@@ -42,7 +42,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub const struct BgObjPixel(pub u64): Debug {
+    pub struct BgObjPixel(pub u64): Debug {
         pub rgb: u32 @ 0..=17,
 
         pub alpha: u8 @ 18..=22,
@@ -65,7 +65,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub const struct WindowPixel(pub u8): Debug {
+    pub struct WindowPixel(pub u8): Debug {
         pub bg_obj_mask: u8 @ 0..=4,
         pub color_effects_enabled: bool @ 5,
     }

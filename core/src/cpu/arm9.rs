@@ -24,7 +24,7 @@ use sqrt_engine::SqrtEngine;
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct PostBootFlag(pub u8): Debug {
+    pub struct PostBootFlag(pub u8): Debug {
         pub booted: bool @ 0,
         pub extra_bit: bool @ 1,
     }

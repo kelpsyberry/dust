@@ -26,7 +26,7 @@ use core::mem;
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Control(pub u32): Debug {
+    pub struct Control(pub u32): Debug {
         pub volume_raw: u8 @ 0..=6,
         pub volume_shift_raw: u8 @ 8..=9,
         pub hold: bool @ 15,

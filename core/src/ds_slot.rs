@@ -32,7 +32,7 @@ use crate::{
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct AuxSpiControl(pub u16): Debug {
+    pub struct AuxSpiControl(pub u16): Debug {
         pub spi_baud_rate: u8 @ 0..=1,
         pub spi_hold: bool @ 6,
         pub spi_busy: bool @ 7,
@@ -46,7 +46,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct RomControl(pub u32): Debug {
+    pub struct RomControl(pub u32): Debug {
         // Applied after the command is sent (unless bit 30 is set)
         pub leading_gap_length: u16 @ 0..=12,
         pub data_key2_enabled: bool @ 13,

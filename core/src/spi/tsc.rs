@@ -6,7 +6,7 @@ use crate::{
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct ControlByte(pub u8): Debug {
+    pub struct ControlByte(pub u8): Debug {
         pub power_down_mode: u8 @ 0..=1,
         pub single_ended_mode: bool @ 2,
         pub res_8_bit: bool @ 3,

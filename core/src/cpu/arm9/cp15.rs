@@ -25,7 +25,7 @@ mod map_mask {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Control(pub u32): Debug {
+    pub struct Control(pub u32): Debug {
         pub pu_enabled: bool @ 0,                     // x
         pub data_cache_enabled: bool @ 2,             // x
         pub big_endian: bool @ 7,                     // -
@@ -42,7 +42,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct PuRegionControl(pub u32): Debug {
+    pub struct PuRegionControl(pub u32): Debug {
         pub enabled: bool @ 0,
         pub size_shift: u8 @ 1..=5,
         pub raw_base_addr: u32 @ 12..=31,
@@ -69,7 +69,7 @@ impl PuRegionControl {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct PuRegionRawAccessPerms(pub u8): Debug {
+    pub struct PuRegionRawAccessPerms(pub u8): Debug {
         pub data_2: u8 [read_only] @ 4..=5,
         pub data: u8 @ 4..=7,
         pub code_2: u8 [read_only] @ 0..=1,
@@ -79,7 +79,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct PuRegionCacheAttrs(pub u8): Debug {
+    pub struct PuRegionCacheAttrs(pub u8): Debug {
         pub write_bufferable: bool @ 0,
         pub code_cachable: bool @ 1,
         pub data_cachable: bool @ 2,
@@ -101,7 +101,7 @@ pub struct PuRegion {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct TcmControl(pub u32): Debug {
+    pub struct TcmControl(pub u32): Debug {
         pub size_shift: u8 @ 1..=5,
         pub raw_base_addr: u32 @ 12..=31,
     }
@@ -162,7 +162,7 @@ impl TcmMode {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct CacheLockdownControl(pub u32): Debug {
+    pub struct CacheLockdownControl(pub u32): Debug {
         pub segment: u8 @ 0..=1,
         pub load: bool @ 31,
     }

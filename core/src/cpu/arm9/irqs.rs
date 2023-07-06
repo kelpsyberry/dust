@@ -20,7 +20,7 @@ impl ScheduleUpdate for &mut Schedule {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct IrqFlags(pub u32): Debug {
+    pub struct IrqFlags(pub u32): Debug {
         pub vblank: bool @ 0,                       // x
         pub hblank: bool @ 1,                       // x
         pub vcount_match: bool @ 2,                 // x

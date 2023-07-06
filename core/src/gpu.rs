@@ -20,7 +20,7 @@ pub enum Event {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct PowerControl(pub u16): Debug {
+    pub struct PowerControl(pub u16): Debug {
         pub display_enabled: bool @ 0,
         pub engine_2d_a_enabled: bool @ 1,
         pub engine_3d_rendering_enabled: bool @ 2,
@@ -32,7 +32,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct DispStatus(pub u16): Debug {
+    pub struct DispStatus(pub u16): Debug {
         pub vblank: bool @ 0,
         pub hblank: bool @ 1,
         pub vcount_match: bool @ 2,

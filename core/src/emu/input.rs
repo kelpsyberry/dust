@@ -22,7 +22,7 @@ bitflags! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Status(pub u32): Debug {
+    pub struct Status(pub u32): Debug {
         pub a: bool @ 0,
         pub b: bool @ 1,
         pub select: bool @ 2,
@@ -43,7 +43,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct KeyIrqControl(pub u16): Debug {
+    pub struct KeyIrqControl(pub u16): Debug {
         pub a: bool @ 0,
         pub b: bool @ 1,
         pub select: bool @ 2,

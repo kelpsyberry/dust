@@ -14,7 +14,7 @@ use tsc::Tsc;
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Control(pub u16): Debug {
+    pub struct Control(pub u16): Debug {
         pub baud_rate: u8 @ 0..=1,
         pub busy: bool @ 7,
         pub device: u8 @ 8..=9,

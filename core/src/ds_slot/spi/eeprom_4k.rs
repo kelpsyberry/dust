@@ -5,14 +5,14 @@ use crate::{
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub const struct SavedStatus(pub u8): Debug {
+    pub struct SavedStatus(pub u8): Debug {
         pub write_protect: u8 @ 2..=3,
     }
 }
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Status(pub u8): Debug {
+    pub struct Status(pub u8): Debug {
         pub write_in_progress: bool @ 0,
         pub write_enabled: bool @ 1,
         pub write_protect: u8 @ 2..=3,

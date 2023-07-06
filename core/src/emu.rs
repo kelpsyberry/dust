@@ -36,7 +36,7 @@ use swram::Swram;
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct LocalExMemControl(pub u8): Debug {
+    pub struct LocalExMemControl(pub u8): Debug {
         pub gba_slot_sram_access_time: u8 @ 0..=1,
         pub gba_slot_rom_1st_access_time: u8 @ 2..=3,
         pub gba_slot_rom_2nd_access_time: bool @ 4,
@@ -66,7 +66,7 @@ impl LocalExMemControl {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct GlobalExMemControl(pub u16): Debug {
+    pub struct GlobalExMemControl(pub u16): Debug {
         pub arm7_gba_slot_access: bool @ 7,
         pub arm7_ds_slot_access: bool @ 11,
         pub sync_main_mem: bool @ 14,
@@ -76,7 +76,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct AudioWifiPowerControl(pub u8): Debug {
+    pub struct AudioWifiPowerControl(pub u8): Debug {
         pub speaker_enabled: bool @ 0,
         pub wifi_enabled: bool @ 1,
     }

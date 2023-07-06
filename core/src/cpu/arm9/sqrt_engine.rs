@@ -3,7 +3,7 @@ use crate::{cpu::Schedule as _, utils::Savestate};
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Control(pub u16): Debug {
+    pub struct Control(pub u16): Debug {
         pub input_64_bit: bool @ 0,
         pub busy: bool @ 15,
     }

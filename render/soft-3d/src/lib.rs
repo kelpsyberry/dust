@@ -42,7 +42,7 @@ struct RenderingPolygon {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    const struct PixelAttrs(pub u32): Debug {
+    struct PixelAttrs(pub u32): Debug {
         pub edge_mask: u8 @ 0..=3,
         pub top_edge: bool @ 0,
         pub bottom_edge: bool @ 1,
@@ -364,15 +364,15 @@ fn depth_test_equal_z(a: u32, b: u32, _: PixelAttrs) -> bool {
 }
 
 fn depth_test_less_front_facing(a: u32, b: u32, b_attrs: PixelAttrs) -> bool {
-    const MASK: u32 = PixelAttrs(0)
+    let mask = PixelAttrs(0)
         .with_translucent(true)
         .with_back_facing(true)
         .0;
-    const VALUE: u32 = PixelAttrs(0)
+    let value = PixelAttrs(0)
         .with_translucent(false)
         .with_back_facing(true)
         .0;
-    if b_attrs.0 & MASK == VALUE {
+    if b_attrs.0 & mask == value {
         a <= b
     } else {
         a < b

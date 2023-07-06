@@ -10,7 +10,7 @@ use crate::{
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Control(pub u8): Debug {
+    pub struct Control(pub u8): Debug {
         pub addition: bool @ 0,
         pub capture_channel: bool @ 1,
         pub one_shot: bool @ 2,

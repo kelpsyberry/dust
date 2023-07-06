@@ -5,7 +5,7 @@ use crate::{
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Sync(pub u16): Debug {
+    pub struct Sync(pub u16): Debug {
         pub recv: u8 @ 0..=3,
         pub send: u8 @ 8..=11,
         pub send_irq: bool @ 13,
@@ -15,7 +15,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct FifoControl(pub u16): Debug {
+    pub struct FifoControl(pub u16): Debug {
         pub send_fifo_empty: bool @ 0,
         pub send_fifo_full: bool @ 1,
         pub send_fifo_empty_irq_enabled: bool @ 2,

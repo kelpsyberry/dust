@@ -24,7 +24,7 @@ use vertex::Vertex;
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct GxStatus(pub u32): Debug {
+    pub struct GxStatus(pub u32): Debug {
         pub test_busy: bool @ 0,
         pub box_test_result: bool @ 1,
         pub pos_vec_matrix_stack_level: u8 @ 8..12,
@@ -41,7 +41,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct PolyVertRamLevel(pub u32): Debug {
+    pub struct PolyVertRamLevel(pub u32): Debug {
         pub poly_ram_level: u16 @ 0..=11,
         pub vert_ram_level: u16 @ 16..=28,
     }
@@ -56,7 +56,7 @@ struct FifoEntry {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct SwapBuffersAttrs(pub u8): Debug {
+    pub struct SwapBuffersAttrs(pub u8): Debug {
         pub translucent_auto_sort_disabled: bool @ 0,
         pub w_buffering: bool @ 1,
     }
@@ -81,7 +81,7 @@ struct Light {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct PolygonAttrs(pub u32): Debug {
+    pub struct PolygonAttrs(pub u32): Debug {
         // G = GX engine, R = Rendering engine
         pub lights_mask: u8 @ 0..=3,                 // G
         pub mode: u8 @ 4..=5,                        // R
@@ -99,7 +99,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct TextureParams(pub u32): Debug {
+    pub struct TextureParams(pub u32): Debug {
         // G = GX engine, R = Rendering engine
         pub vram_off: u16 @ 0..=15,                // R
         pub repeat_s: bool @ 16,                   // R
@@ -160,7 +160,7 @@ pub struct Polygon {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct RenderingControl(pub u16): Debug {
+    pub struct RenderingControl(pub u16): Debug {
         // G = GX engine, R = Rendering engine
         pub texture_mapping_enabled: bool @ 0,    // R
         pub highlight_shading_enabled: bool @ 1,  // R
@@ -179,7 +179,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
-    pub const struct ClearControl(pub u16): Debug {
+    pub struct ClearControl(pub u16): Debug {
         pub alpha: u8 @ 0..=4,
         pub poly_id: u8 @ 8..=13,
     }

@@ -18,7 +18,7 @@ impl Add for Timestamp {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Control(pub u8): Debug {
+    pub struct Control(pub u8): Debug {
         pub prescaler: u8 @ 0..=1,
         pub count_up_timing: bool @ 2,
         pub irq_enabled: bool @ 6,

@@ -96,7 +96,7 @@ const fn apply_psr_mask<const ARM9: bool>(value: u32) -> u32 {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Psr(u32): Debug {
+    pub struct Psr(u32): Debug {
         pub raw: u32 [read_only] @ ..,
         pub mode: u8 [Mode] @ 0..=3,
         pub thumb_state: bool @ 5,

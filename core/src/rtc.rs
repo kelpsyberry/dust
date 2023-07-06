@@ -5,7 +5,7 @@ use core::any::Any;
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Control(pub u16): Debug {
+    pub struct Control(pub u16): Debug {
         pub data: u8 @ 0..=0,
         pub clock: bool @ 1,
         pub chipselect: bool @ 2,
@@ -35,7 +35,7 @@ impl RegIndex {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Status1(pub u8): Debug {
+    pub struct Status1(pub u8): Debug {
         pub reset: bool @ 0,
         pub is_in_24_hour_mode: bool @ 1,
         pub int1_flag: bool @ 4,
@@ -47,7 +47,7 @@ proc_bitfield::bitfield! {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
-    pub const struct Status2(pub u8): Debug {
+    pub struct Status2(pub u8): Debug {
         pub int1_mode: u8 @ 0..=3,
         pub int2_enabled: bool @ 6,
         pub test_mode: bool @ 7,

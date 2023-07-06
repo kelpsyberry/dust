@@ -29,7 +29,7 @@ use wgpu::util::DeviceExt;
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-    const struct ControlFlags(pub u8): Debug {
+    struct ControlFlags(pub u8): Debug {
         pub texture_mapping_enabled: bool @ 0,
         pub highlight_shading_enabled: bool @ 1,
         pub alpha_blending_enabled: bool @ 3,
@@ -50,7 +50,7 @@ impl From<RenderingControl> for ControlFlags {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-    const struct TextureKey(pub u64): Debug {
+    struct TextureKey(pub u64): Debug {
         pub vram_offset: u16 @ 0..=15,
         pub width_shift: u8 @ 16..=18,
         pub height_shift: u8 @ 19..=21,
@@ -72,7 +72,7 @@ impl TextureKey {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-    const struct SamplerKey(pub u8): Debug {
+    struct SamplerKey(pub u8): Debug {
         pub repeat_s: bool @ 0,
         pub repeat_t: bool @ 1,
         pub flip_s: bool @ 2,
@@ -88,7 +88,7 @@ impl From<TextureParams> for SamplerKey {
 
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-    const struct PipelineKey(pub u16): Debug {
+    struct PipelineKey(pub u16): Debug {
         pub texture_mapping_enabled: bool @ 0,
         pub alpha_blending_enabled: bool @ 1,
         pub depth_test_equal: bool @ 2,
