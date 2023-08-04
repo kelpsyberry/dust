@@ -19,6 +19,7 @@ use ahash::AHashMap as HashMap;
 use core::{
     mem::{self, MaybeUninit},
     num::NonZeroU32,
+    simd::SimdUint,
     // simd::u16x2,
     slice,
 };
@@ -799,8 +800,7 @@ impl Renderer {
         let id_bg_elem_size =
             round_up_to_alignment(4, min_uniform_buffer_offset_alignment as usize);
         let (id_bg_layout, id_bg) = uniform_bind_group!("ID", wgpu::ShaderStages::FRAGMENT, 4, {
-            let mut buffer_contents = Vec::new();
-            buffer_contents.resize(id_bg_elem_size * 0x40, 0);
+            let mut buffer_contents = vec![0; id_bg_elem_size * 0x40];
             let mut addr = 0;
             for i in 0..0x40 {
                 buffer_contents[addr..addr + 4].copy_from_slice(&(i as u32).to_ne_bytes());
@@ -816,8 +816,7 @@ impl Renderer {
             wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
             8,
             {
-                let mut buffer_contents = Vec::new();
-                buffer_contents.resize(alpha_and_ref_bg_elem_size * (31 * 0x20), 0);
+                let mut buffer_contents = vec![0; alpha_and_ref_bg_elem_size * (31 * 0x20)];
                 let mut addr = 0;
                 for alpha in 1_u32..0x20 {
                     for alpha_ref in 0_u32..0x20 {

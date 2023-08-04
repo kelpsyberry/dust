@@ -4,7 +4,7 @@ mod data;
 pub use data::RenderingData;
 mod utils;
 
-use core::simd::SimdOrd;
+use core::simd::{SimdOrd, SimdUint};
 use dust_core::gpu::{
     engine_3d::{
         Color, InterpColor, PolyAddr, PolyVertIndex, PolygonAttrs, TexCoords, TextureParams,

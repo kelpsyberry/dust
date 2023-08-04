@@ -153,7 +153,7 @@ pub fn render_scanline_bgs_and_objs<
     }
 }
 
-pub fn render_scanline_bg_3d<B: Buffers>(buffers: &mut B) {
+pub fn render_scanline_bg_3d<B: Buffers>(buffers: &B) {
     // TODO: 3D layer scrolling
 
     let pixel_attrs = BgObjPixel(0).with_color_effects_mask(1).with_is_3d(true);

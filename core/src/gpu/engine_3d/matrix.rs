@@ -1,6 +1,6 @@
 use crate::utils::Savestate;
 use core::ops::Mul;
-use core::simd::{i32x4, i64x4, Simd, SimdElement, SimdCast};
+use core::simd::{i32x4, i64x4, Simd, SimdCast, SimdElement, SimdInt};
 
 #[derive(Clone, Copy, Debug)]
 #[repr(align(16))]
@@ -100,7 +100,10 @@ impl Matrix {
         self.0 = [row!(0), row!(1), row!(2), self.0[3]];
     }
 
-    pub fn mul_left_vec3<T: Into<i64> + Copy, U: SimdElement + SimdCast>(&self, vec: [T; 3]) -> Simd<U, 4> {
+    pub fn mul_left_vec3<T: Into<i64> + Copy, U: SimdElement + SimdCast>(
+        &self,
+        vec: [T; 3],
+    ) -> Simd<U, 4> {
         ((self.0[0].cast::<i64>() * i64x4::splat(vec[0].into())
             + self.0[1].cast::<i64>() * i64x4::splat(vec[1].into())
             + self.0[2].cast::<i64>() * i64x4::splat(vec[2].into())
@@ -109,7 +112,10 @@ impl Matrix {
         .cast()
     }
 
-    pub fn mul_left_vec2_one_one<T: Into<i64> + SimdElement + SimdCast, U: SimdElement + SimdCast>(
+    pub fn mul_left_vec2_one_one<
+        T: Into<i64> + SimdElement + SimdCast,
+        U: SimdElement + SimdCast,
+    >(
         &self,
         vec: Simd<T, 2>,
     ) -> Simd<U, 4> {

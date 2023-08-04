@@ -17,7 +17,7 @@ use crate::{
 };
 use core::{
     mem::{replace, transmute, MaybeUninit},
-    simd::{i32x4, u32x2, u64x2, SimdOrd},
+    simd::{i32x4, u32x2, u64x2, SimdInt, SimdOrd, SimdUint},
 };
 use matrix::{Matrix, MatrixBuffer};
 use vertex::Vertex;

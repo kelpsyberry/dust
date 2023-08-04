@@ -1,4 +1,4 @@
-use core::simd::{i32x2, i64x2, u32x4, u64x4, SimdPartialEq, SimdPartialOrd};
+use core::simd::{i32x2, i64x2, u32x4, u64x4, SimdInt, SimdPartialEq, SimdPartialOrd, SimdUint};
 use dust_core::gpu::engine_3d::{
     InterpColor, PolyVertIndex, PolyVertsLen, Polygon, ScreenVertex, TexCoords, VertexAddr,
 };
