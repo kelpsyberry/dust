@@ -1,5 +1,5 @@
 #![allow(clippy::unused_unit)]
-#![feature(once_cell, new_uninit)]
+#![feature(new_uninit)]
 
 mod audio;
 #[cfg(feature = "log")]

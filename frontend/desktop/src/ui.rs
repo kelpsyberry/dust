@@ -298,7 +298,7 @@ impl UiState {
                     launch_config,
                     config.config.save_path(game_title),
                     game_title.to_string(),
-                    Some(ds_slot_rom),
+                    Some((ds_slot_rom, path)),
                     window,
                 );
                 config.game_path = game_config.path;
@@ -461,7 +461,7 @@ impl UiState {
         launch_config: Launch,
         save_path: Option<PathBuf>,
         title: String,
-        ds_slot_rom: Option<DsSlotRom>,
+        ds_slot_rom: Option<(DsSlotRom, &Path)>,
         window: &mut window::Window,
     ) {
         self.show_menu_bar = !config!(config.config, full_window_screen);
@@ -483,6 +483,7 @@ impl UiState {
         #[cfg(feature = "log")]
         let logger = self.log.logger().clone();
 
+        let (ds_slot_rom, ds_slot_rom_path) = ds_slot_rom.unzip();
         #[allow(unused_mut, clippy::bind_instead_of_map)]
         let ds_slot = ds_slot_rom.and_then(|mut rom| {
             #[cfg(target_os = "windows")]
@@ -585,6 +586,13 @@ impl UiState {
         let launch_data = emu::LaunchData {
             sys_files: launch_config.sys_files,
             ds_slot,
+            #[cfg(feature = "dldi")]
+            dldi: ds_slot_rom_path.and_then(|rom_path| {
+                Some(emu::Dldi {
+                    root_path: rom_path.parent()?.to_path_buf(),
+                    skip_path: rom_path.to_path_buf(),
+                })
+            }),
 
             model: launch_config.model,
             skip_firmware: launch_config.skip_firmware,

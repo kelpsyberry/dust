@@ -49,6 +49,7 @@ pub mod ipc;
 pub mod rtc;
 pub mod spi;
 pub mod wifi;
+pub mod dldi;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]

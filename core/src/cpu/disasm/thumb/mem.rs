@@ -10,10 +10,7 @@ pub(super) fn ldr_str<const OPCODE: &'static str, const IMM_OFFSET_SHIFT: u8, co
     let base_reg = instr >> 3 & 7;
     ctx.next_instr.opcode = if IMM {
         let offset = (instr >> 6 & 0x1F) << IMM_OFFSET_SHIFT;
-        format!(
-            "{} r{}, [r{}, #{:#04X}]",
-            OPCODE, src_dst_reg, base_reg, offset
-        )
+        format!("{OPCODE} r{src_dst_reg}, [r{base_reg}, #{offset:#04X}]")
     } else {
         let off_reg = instr >> 6 & 7;
         format!("{OPCODE} r{src_dst_reg}, [r{base_reg}, r{off_reg}]")

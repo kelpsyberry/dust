@@ -128,8 +128,8 @@ pub(super) fn cdp(ctx: &mut Context, instr: u32, cond: &'static str) {
     let opcode_2 = instr >> 5 & 7;
     let coproc_rm = instr & 0xF;
     ctx.next_instr.opcode = format!(
-        "cdp{} p{}, {:#03X}, r{}, cr{}, cr{}, {:#03X}",
-        cond, coproc_index, opcode_1, coproc_rd, coproc_rn, coproc_rm, opcode_2
+        "cdp{cond} p{coproc_index}, {opcode_1:#03X}, r{coproc_rd}, cr{coproc_rn}, cr{coproc_rm}, \
+         {opcode_2:#03X}"
     );
 }
 

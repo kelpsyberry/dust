@@ -29,6 +29,16 @@ pub enum Spi {
 }
 
 impl Spi {
+    #[must_use]
+    pub fn reset(self) -> Self {
+        match self {
+            Spi::Empty(device) => Spi::Empty(device.reset()),
+            Spi::Eeprom4k(device) => Spi::Eeprom4k(device.reset()),
+            Spi::EepromFram(device) => Spi::EepromFram(device.reset()),
+            Spi::Flash(device) => Spi::Flash(device.reset()),
+        }
+    }
+
     pub fn contents(&self) -> ByteSlice {
         forward_to_variants!(
             Spi;

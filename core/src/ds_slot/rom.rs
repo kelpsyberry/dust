@@ -15,6 +15,7 @@ pub trait Contents {
     fn game_code(&self) -> u32;
 
     fn secure_area_mut(&mut self) -> Option<ByteMutSlice>;
+    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<ByteMutSlice>;
 
     fn read_header(&mut self, buf: &mut Bytes<0x170>);
     fn read_slice(&mut self, addr: usize, output: ByteMutSlice);
@@ -35,6 +36,10 @@ impl Contents for BoxedByteSlice {
             .map(ByteMutSlice::new)
     }
 
+    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<ByteMutSlice> {
+        self.get_mut(addr..addr + len).map(ByteMutSlice::new)
+    }
+
     fn read_header(&mut self, buf: &mut Bytes<0x170>) {
         buf.copy_from_slice(&self[..0x170]);
     }
@@ -49,7 +54,7 @@ trait RomDevice {
     fn read(&mut self, addr: u32, output: ByteMutSlice);
     fn read_header(&mut self, buf: &mut Bytes<0x170>);
     fn chip_id(&self) -> u32;
-    fn setup(&mut self, direct_boot: bool);
+    fn setup(&mut self, direct_boot: bool) -> Result<(), ()>;
     fn handle_rom_command(
         &mut self,
         cmd: Bytes<8>,
@@ -78,8 +83,8 @@ impl Rom {
         forward_to_variants!(Rom; Normal, Empty; self, chip_id())
     }
 
-    pub(crate) fn setup(&mut self, direct_boot: bool) {
-        forward_to_variants!(Rom; Normal, Empty; self, setup(direct_boot));
+    pub(crate) fn setup(&mut self, direct_boot: bool) -> Result<(), ()> {
+        forward_to_variants!(Rom; Normal, Empty; self, setup(direct_boot))
     }
 
     pub fn handle_rom_command(
@@ -89,6 +94,20 @@ impl Rom {
         output_len: RomOutputLen,
     ) {
         forward_to_variants!(Rom; Normal, Empty; self, handle_rom_command(cmd, output, output_len));
+    }
+
+    pub fn into_contents(self) -> Option<Box<dyn Contents>> {
+        match self {
+            Rom::Normal(rom) => Some(rom.into_contents()),
+            Rom::Empty(_) => None,
+        }
+    }
+
+    pub fn contents(&mut self) -> Option<&mut dyn Contents> {
+        match self {
+            Rom::Normal(rom) => Some(rom.contents()),
+            Rom::Empty(_) => None,
+        }
     }
 }
 

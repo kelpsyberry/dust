@@ -1,7 +1,8 @@
 use super::super::{
     add_bus_cycles, add_cycles, apply_reg_interlock_1, enter_hle_irq, enter_hle_swi,
-    handle_prefetch_abort, handle_swi, handle_undefined, prefetch_arm, return_from_hle_irq,
-    set_cpsr_update_control, write_reg_clear_interlock_ab, write_reg_interlock,
+    handle_prefetch_abort, handle_swi, handle_undefined, prefetch_arm, reload_pipeline,
+    return_from_hle_irq, set_cpsr_update_control, write_reg_clear_interlock_ab,
+    write_reg_interlock, StateSource,
 };
 use crate::{
     cpu::{
@@ -11,6 +12,7 @@ use crate::{
         interpreter::Interpreter,
         psr::Psr,
     },
+    dldi,
     emu::Emu,
 };
 use core::intrinsics::{likely, unlikely};
@@ -69,7 +71,10 @@ pub fn swi(emu: &mut Emu<Interpreter>, instr: u32) {
     handle_swi::<false>(emu, (instr >> 16) as u8);
 }
 
-pub fn undefined<const MAYBE_HLE_BIOS_SWI: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
+pub fn undefined<const MAYBE_HLE_BIOS_SWI: bool, const MAYBE_DLDI_CALL: bool>(
+    emu: &mut Emu<Interpreter>,
+    instr: u32,
+) {
     if MAYBE_HLE_BIOS_SWI
         && instr & hle_bios::arm9::BIOS_CALL_INSTR_MASK == hle_bios::arm9::BIOS_CALL_INSTR
         && emu.arm9.hle_bios_enabled()
@@ -92,13 +97,28 @@ pub fn undefined<const MAYBE_HLE_BIOS_SWI: bool>(emu: &mut Emu<Interpreter>, ins
                 hle_bios::arm9::handle_undefined_instr(emu);
                 return;
             }
-            5 => {
+            4 => {
                 let return_addr = reg!(emu.arm9, 14);
                 let number = bus::read_8::<CpuAccess, _>(emu, return_addr.wrapping_sub(2));
                 enter_hle_swi::<false>(emu, number, return_addr);
                 return;
             }
             _ => {}
+        }
+    } else if MAYBE_DLDI_CALL
+        && instr & dldi::CALL_INSTR_MASK == dldi::CALL_INSTR
+        && emu.dldi.is_some()
+    {
+        let function = instr as u8 & 0xF;
+        if function < dldi::CALL_INSTR_FUNCTIONS {
+            reg!(emu.arm9, 0) = dldi::handle_call_instr_function::<Interpreter, true>(
+                emu,
+                function,
+                [reg!(emu.arm9, 0), reg!(emu.arm9, 1), reg!(emu.arm9, 2)],
+            ) as u32;
+            reg!(emu.arm9, 15) = reg!(emu.arm9, 14);
+            reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
+            return;
         }
     }
     handle_undefined::<false>(emu);

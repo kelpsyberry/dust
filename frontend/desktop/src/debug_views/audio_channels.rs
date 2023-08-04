@@ -135,7 +135,7 @@ impl View for AudioChannels {
         emu: &mut Emu<E>,
         frame_data: S,
     ) {
-        let mut frame_data = frame_data.get_or_insert_with(|| (ChannelData::default(), Vec::new()));
+        let frame_data = frame_data.get_or_insert_with(|| (ChannelData::default(), Vec::new()));
         frame_data.0.channel = Some(*channel_index);
         frame_data.1.clear();
         frame_data.1.extend_from_slice(

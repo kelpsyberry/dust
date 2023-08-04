@@ -1,6 +1,7 @@
 use super::WiFi;
 use crate::cpu::bus::AccessType;
 
+#[allow(clippy::extra_unused_type_parameters)]
 impl WiFi {
     fn read_io<A: AccessType>(&mut self, addr: u16) -> u8 {
         self.mmio[(addr & 0xFFF) as usize]

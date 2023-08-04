@@ -15,6 +15,9 @@ pub struct File {
     secure_area_start: usize,
     secure_area_end: usize,
     secure_area: Option<Option<Box<Bytes<0x800>>>>,
+    dldi_area_start: usize,
+    dldi_area_end: usize,
+    dldi_area: Option<Option<BoxedByteSlice>>,
 }
 
 impl Contents for File {
@@ -40,6 +43,22 @@ impl Contents for File {
             .map(|secure_area| ByteMutSlice::new(&mut secure_area[..]))
     }
 
+    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<ByteMutSlice> {
+        self.dldi_area
+            .get_or_insert_with(|| {
+                self.dldi_area_start = addr;
+                self.dldi_area_end = addr + len;
+                let mut buf = BoxedByteSlice::new_zeroed(len);
+                self.file
+                    .seek(SeekFrom::Start(self.dldi_area_start as u64))
+                    .and_then(|_| self.file.read_exact(&mut buf[..]))
+                    .ok()
+                    .map(|_| buf)
+            })
+            .as_mut()
+            .map(|dldi_area| ByteMutSlice::new(&mut dldi_area[..]))
+    }
+
     fn read_header(&mut self, buf: &mut Bytes<0x170>) {
         self.file
             .seek(SeekFrom::Start(0))
@@ -56,18 +75,24 @@ impl Contents for File {
                 self.file.read_exact(&mut output[..read_len])
             })
             .expect("couldn't read DS slot ROM data");
-        if let Some(Some(secure_area)) = &self.secure_area {
-            if addr < self.secure_area_end && addr + output.len() > self.secure_area_start {
-                let (start_src_i, start_dst_i) = if addr < self.secure_area_start {
-                    (0, self.secure_area_start - addr)
-                } else {
-                    (addr - self.secure_area_start, 0)
-                };
-                let len = output.len().min(0x800 - start_src_i);
-                output[start_dst_i..start_dst_i + len]
-                    .copy_from_slice(&secure_area[start_src_i..start_src_i + len]);
-            }
+        macro_rules! apply_overlay {
+            ($bytes: expr, $start: expr, $end: expr) => {
+                if let Some(Some(bytes)) = $bytes {
+                    if addr < $end && addr + output.len() > $start {
+                        let (start_src_i, start_dst_i) = if addr < $start {
+                            (0, $start - addr)
+                        } else {
+                            (addr - $start, 0)
+                        };
+                        let len = output.len().min(0x800 - start_src_i);
+                        output[start_dst_i..start_dst_i + len]
+                            .copy_from_slice(&bytes[start_src_i..start_src_i + len]);
+                    }
+                }
+            };
         }
+        apply_overlay!(&self.secure_area, self.secure_area_start, self.secure_area_end);
+        apply_overlay!(&self.dldi_area, self.dldi_area_start, self.dldi_area_end);
     }
 }
 
@@ -101,6 +126,9 @@ impl DsSlotRom {
                 secure_area_start,
                 secure_area_end: secure_area_start + 0x800,
                 secure_area: None,
+                dldi_area_start: 0,
+                dldi_area_end: 0,
+                dldi_area: None,
             })
         })
     }
@@ -127,6 +155,10 @@ impl Contents for DsSlotRom {
 
     fn secure_area_mut(&mut self) -> Option<ByteMutSlice> {
         forward_to_variants!(DsSlotRom; File, Memory; self, secure_area_mut())
+    }
+
+    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<ByteMutSlice> {
+        forward_to_variants!(DsSlotRom; File, Memory; self, dldi_area_mut(addr, len))
     }
 
     fn read_header(&mut self, buf: &mut Bytes<0x170>) {

@@ -37,7 +37,9 @@ impl super::RomDevice for Empty {
         0
     }
 
-    fn setup(&mut self, _direct_boot: bool) {}
+    fn setup(&mut self, _direct_boot: bool) -> Result<(), ()> {
+        Ok(())
+    }
 
     #[allow(clippy::needless_pass_by_value)]
     fn handle_rom_command(

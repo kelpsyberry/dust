@@ -826,22 +826,19 @@ impl Cp15 {
         let size_shift = self.dtcm_control.size_shift();
         assert!(
             (3..=23).contains(&size_shift),
-            "Unpredictable DTCM size shift specified: {}",
-            size_shift
+            "Unpredictable DTCM size shift specified: {size_shift}"
         );
         let base_addr = self.dtcm_control.base_addr();
         let size = self.dtcm_control.size();
         assert!(
             base_addr & (size - 1) as u32 == 0,
-            "Unpredictable misaligned DTCM base address specified: {:#010X} (size is {:#X})",
-            base_addr,
-            size,
+            "Unpredictable misaligned DTCM base address specified: {base_addr:#010X} (size is \
+             {size:#X})",
         );
         assert!(
             size >= Ptrs::PAGE_SIZE.max(Timings::PAGE_SIZE) as u64,
             "Specified a DTCM size that can't be handled by the emulator: {:#X} (the minimum TCM \
-             size is defined as {:#X})",
-            size,
+             size is defined as {size:#X})",
             Ptrs::PAGE_SIZE.max(Timings::PAGE_SIZE),
         );
     }
@@ -928,8 +925,7 @@ impl Cp15 {
         let size_shift = self.itcm_control.size_shift();
         assert!(
             (3..=23).contains(&size_shift),
-            "Unpredictable ITCM size shift specified: {}",
-            size_shift
+            "Unpredictable ITCM size shift specified: {size_shift}"
         );
         let size = self.itcm_control.size();
         assert!(
@@ -1390,19 +1386,14 @@ impl Cp15 {
                     let size_shift = new_setting.size_shift();
                     assert!(
                         size_shift >= 11,
-                        "Unpredictable PU region {} size shift specified: {}",
-                        region_i,
-                        size_shift,
+                        "Unpredictable PU region {region_i} size shift specified: {size_shift}",
                     );
                     let base_addr = new_setting.base_addr();
                     let size = new_setting.size();
                     assert!(
                         base_addr & (size - 1) as u32 == 0,
-                        "Unpredictable misaligned PU region {} base address specified: {:#010X} \
-                         (size is {:#X})",
-                        region_i,
-                        base_addr,
-                        size,
+                        "Unpredictable misaligned PU region {region_i} base address specified: \
+                         {base_addr:#010X} (size is {size:#X})",
                     );
                     #[cfg(feature = "pu-checks")]
                     assert!(

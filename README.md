@@ -21,7 +21,7 @@
 
 # Credits
 - Martin Korth, for summarizing resources on the DS on [GBATEK](https://problemkaputt.de/gbatek.htm)
-- [Arisotura](https://github.com/Arisotura), for her research on the system in melonDS, [test ROMs](https://github.com/Arisotura/arm7wrestler) and [corrections and additions to the info on GBATEK](http://melonds.kuribo64.net/board/thread.php?id=13), and for the game database used in this emulator
+- [Arisotura](https://github.com/Arisotura), for her research on the system in melonDS, [test ROMs](https://github.com/Arisotura/arm7wrestler) and [corrections and additions to the info on GBATEK](https://melonds.kuribo64.net/board/thread.php?id=13), and for the game database used in this emulator
 - [StrikerX3](https://github.com/StrikerX3), for his research on 3D rendering on the DS
 - [Simone Coco](https://github.com/CocoSimone), [Fleroviux](https://github.com/fleroviux), [Lady Starbreeze](https://github.com/LadyStarbreeze), [Merry](https://github.com/merryhime), [Powerlated](https://github.com/Powerlated) and [Peach](https://github.com/wheremyfoodat) for help throughout development
 - The Emulation Development server on Discord as a whole, for providing several invaluable resources

@@ -1,3 +1,5 @@
+#[cfg(feature = "dldi")]
+mod dldi;
 #[cfg(feature = "gdb-server")]
 mod gdb_server;
 mod rtc;
@@ -10,14 +12,14 @@ use crate::{audio, config::SysFiles, game_db::SaveType, input, DsSlotRom, FrameD
 use dust_core::audio::{Audio, ChannelInterpMethod as AudioChannelInterpMethod};
 use dust_core::{
     audio::DummyBackend as DummyAudioBackend,
-    cpu::{arm7, interpreter::Interpreter},
-    ds_slot::{self, spi::Spi as DsSlotSpi},
+    cpu::interpreter::Interpreter,
+    ds_slot,
     emu::{self, RunOutput},
     flash::Flash,
     gpu::{engine_2d, engine_3d, Framebuffer},
     spi::{self, firmware},
     utils::{
-        BoxedByteSlice, Bytes, PersistentReadSavestate, PersistentWriteSavestate, ReadSavestate,
+        BoxedByteSlice, PersistentReadSavestate, PersistentWriteSavestate, ReadSavestate,
         WriteSavestate,
     },
     Model, SaveContents, SaveReloadContents,
@@ -117,21 +119,18 @@ pub struct DsSlot {
     pub has_ir: bool,
 }
 
+pub struct Dldi {
+    pub root_path: PathBuf,
+    pub skip_path: PathBuf,
+}
+
 fn setup_ds_slot(
     ds_slot: Option<DsSlot>,
-    arm7_bios: &Option<Box<Bytes<{ arm7::BIOS_SIZE }>>>,
     save_path: &Option<PathBuf>,
     #[cfg(feature = "log")] logger: &slog::Logger,
-) -> (ds_slot::rom::Rom, ds_slot::spi::Spi) {
+) -> (Option<Box<dyn ds_slot::rom::Contents>>, ds_slot::spi::Spi) {
     if let Some(ds_slot) = ds_slot {
-        let rom = ds_slot::rom::normal::Normal::new(
-            ds_slot.rom.into(),
-            arm7_bios.as_deref(),
-            #[cfg(feature = "log")]
-            logger.new(slog::o!("ds_rom" => "normal")),
-        )
-        .unwrap()
-        .into();
+        let rom: Box<dyn ds_slot::rom::Contents> = ds_slot.rom.into();
 
         let save_contents = save_path
             .as_deref()
@@ -275,14 +274,10 @@ fn setup_ds_slot(
             }
         };
 
-        (rom, spi)
+        (Some(rom), spi)
     } else {
         (
-            ds_slot::rom::Empty::new(
-                #[cfg(feature = "log")]
-                logger.new(slog::o!("ds_rom" => "empty")),
-            )
-            .into(),
+            None,
             ds_slot::spi::Empty::new(
                 #[cfg(feature = "log")]
                 logger.new(slog::o!("ds_spi" => "empty")),
@@ -295,6 +290,8 @@ fn setup_ds_slot(
 pub struct LaunchData {
     pub sys_files: SysFiles,
     pub ds_slot: Option<DsSlot>,
+    #[cfg(feature = "dldi")]
+    pub dldi: Option<Dldi>,
 
     pub model: Model,
     pub skip_firmware: bool,
@@ -335,6 +332,8 @@ pub(super) fn run(
     LaunchData {
         sys_files,
         ds_slot,
+        #[cfg(feature = "dldi")]
+        dldi,
 
         model,
         skip_firmware,
@@ -380,7 +379,6 @@ pub(super) fn run(
 
     let (ds_slot_rom, ds_slot_spi) = setup_ds_slot(
         ds_slot,
-        &sys_files.arm7_bios,
         &save_path,
         #[cfg(feature = "log")]
         &logger,
@@ -408,6 +406,15 @@ pub(super) fn run(
         Box::new(rtc::Backend::new(rtc_time_offset_seconds)),
         renderer_2d,
         renderer_3d_tx,
+        #[cfg(feature = "dldi")]
+        dldi.map(|dldi| {
+            Box::new(
+                dldi::FsProvider::new(&dldi.root_path, &dldi.skip_path)
+                    .expect("Couldn't create DLDI"),
+            ) as Box<dyn dust_core::dldi::Provider>
+        }),
+        #[cfg(not(feature = "dldi"))]
+        None,
         #[cfg(feature = "log")]
         logger.clone(),
     );
@@ -698,21 +705,14 @@ pub(super) fn run(
 
             let mut emu_builder = emu::Builder::new(
                 emu.spi.firmware.reset(),
-                match emu.ds_slot.rom {
-                    ds_slot::rom::Rom::Empty(device) => ds_slot::rom::Rom::Empty(device.reset()),
-                    ds_slot::rom::Rom::Normal(device) => ds_slot::rom::Rom::Normal(device.reset()),
-                },
-                match emu.ds_slot.spi {
-                    DsSlotSpi::Empty(device) => DsSlotSpi::Empty(device.reset()),
-                    DsSlotSpi::Eeprom4k(device) => DsSlotSpi::Eeprom4k(device.reset()),
-                    DsSlotSpi::EepromFram(device) => DsSlotSpi::EepromFram(device.reset()),
-                    DsSlotSpi::Flash(device) => DsSlotSpi::Flash(device.reset()),
-                },
+                emu.ds_slot.rom.into_contents(),
+                emu.ds_slot.spi.reset(),
                 emu.audio.backend,
                 emu.spi.tsc.mic_data.map(|mic_data| mic_data.backend),
                 emu.rtc.backend,
                 renderer_2d,
                 renderer_3d_tx,
+                emu.dldi.map(|dldi| dldi.into_provider()),
                 #[cfg(feature = "log")]
                 logger.clone(),
             );

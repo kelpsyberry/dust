@@ -29,6 +29,7 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
             inc_r15!(emu.arm7, 4);
             (src, op)
         }
+        
         DpOperand::Reg {
             shift_ty,
             shift_imm,

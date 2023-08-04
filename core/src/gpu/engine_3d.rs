@@ -1101,7 +1101,7 @@ impl Engine3d {
         poly.bot_y = bot_y;
 
         let mut w_leading_zeros = 32;
-        for vert in buffer_0[..clipped_verts_len].iter() {
+        for vert in &buffer_0[..clipped_verts_len] {
             w_leading_zeros =
                 w_leading_zeros.min(unsafe { vert.assume_init_ref() }.coords[3].leading_zeros());
         }

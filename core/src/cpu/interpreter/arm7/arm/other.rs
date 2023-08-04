@@ -1,9 +1,10 @@
 use super::super::{
     super::Interpreter, enter_hle_irq, enter_hle_swi, handle_swi, handle_undefined,
-    return_from_hle_irq, set_cpsr_update_control,
+    reload_pipeline, return_from_hle_irq, set_cpsr_update_control, StateSource,
 };
 use crate::{
     cpu::{arm7::bus, bus::CpuAccess, hle_bios, psr::Psr},
+    dldi,
     emu::Emu,
 };
 use core::intrinsics::unlikely;
@@ -59,7 +60,10 @@ pub fn swi(emu: &mut Emu<Interpreter>, instr: u32) {
     handle_swi::<false>(emu, (instr >> 16) as u8);
 }
 
-pub fn undefined<const MAYBE_HLE_BIOS_CALL: bool>(emu: &mut Emu<Interpreter>, instr: u32) {
+pub fn undefined<const MAYBE_HLE_BIOS_CALL: bool, const MAYBE_DLDI_CALL: bool>(
+    emu: &mut Emu<Interpreter>,
+    instr: u32,
+) {
     if MAYBE_HLE_BIOS_CALL
         && instr & hle_bios::arm7::BIOS_CALL_INSTR_MASK == hle_bios::arm7::BIOS_CALL_INSTR
         && emu.arm7.hle_bios_enabled()
@@ -82,13 +86,28 @@ pub fn undefined<const MAYBE_HLE_BIOS_CALL: bool>(emu: &mut Emu<Interpreter>, in
                 hle_bios::arm7::handle_undefined_instr(emu);
                 return;
             }
-            5 => {
+            4 => {
                 let return_addr = reg!(emu.arm7, 14);
                 let number = bus::read_8::<CpuAccess, _>(emu, return_addr.wrapping_sub(2));
                 enter_hle_swi::<false>(emu, number, return_addr);
                 return;
             }
             _ => {}
+        }
+    } else if MAYBE_DLDI_CALL
+        && instr & dldi::CALL_INSTR_MASK == dldi::CALL_INSTR
+        && emu.dldi.is_some()
+    {
+        let function = instr as u8 & 0xF;
+        if function < dldi::CALL_INSTR_FUNCTIONS {
+            reg!(emu.arm7, 0) = dldi::handle_call_instr_function::<Interpreter, false>(
+                emu,
+                function,
+                [reg!(emu.arm7, 0), reg!(emu.arm7, 1), reg!(emu.arm7, 2)],
+            ) as u32;
+            reg!(emu.arm7, 15) = reg!(emu.arm7, 14);
+            reload_pipeline::<{ StateSource::R15Bit0 }>(emu);
+            return;
         }
     }
     // TODO: Check timing, the ARM7TDMI manual is unclear

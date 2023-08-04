@@ -41,6 +41,7 @@ pub fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLAGS: boo
             prefetch_arm::<true, true>(emu);
             (src, op)
         }
+        
         DpOperand::Reg {
             shift_ty,
             shift_imm,

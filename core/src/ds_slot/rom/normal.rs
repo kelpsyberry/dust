@@ -1,13 +1,23 @@
 use super::{super::RomOutputLen, key1, Contents};
 use crate::{
     cpu::arm7,
-    utils::{make_zero, ByteMutSlice, Bytes, Savestate},
+    utils::{make_zero, zero, ByteMutSlice, Bytes, Savestate},
 };
+use core::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CreationError {
     SizeNotPowerOfTwo,
     SizeTooSmall,
+}
+
+impl fmt::Display for CreationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CreationError::SizeNotPowerOfTwo => f.write_str("ROM size not power of 2"),
+            CreationError::SizeTooSmall => f.write_str("ROM size too small"),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
@@ -25,7 +35,7 @@ pub struct Normal {
     #[savestate(skip)]
     logger: slog::Logger,
     #[savestate(skip)]
-    rom: Box<dyn Contents>,
+    contents: Box<dyn Contents>,
     #[savestate(skip)]
     rom_mask: u32,
     #[savestate(skip)]
@@ -40,11 +50,11 @@ impl Normal {
     /// - [`CreationError::SizeNotPowerOfTwo`](CreationError::SizeNotPowerOfTwo): the ROM contents'
     ///   size is not a power of two.
     pub fn new(
-        rom: Box<dyn Contents>,
+        contents: Box<dyn Contents>,
         arm7_bios: Option<&Bytes<{ arm7::BIOS_SIZE }>>,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Result<Self, CreationError> {
-        let len = rom.len();
+        let len = contents.len();
         if !len.is_power_of_two() {
             return Err(CreationError::SizeNotPowerOfTwo);
         }
@@ -58,16 +68,24 @@ impl Normal {
                 len @ 0x10_0000..=0xFFF_FFFF => (len >> 20) - 1,
                 len @ 0x1000_0000..=0xFFFF_FFFF => 0x100 - (len >> 28),
             };
-        let game_code = rom.game_code();
+        let game_code = contents.game_code();
         Ok(Normal {
             #[cfg(feature = "log")]
             logger,
-            rom,
+            contents,
             rom_mask,
             chip_id,
             key_buf: arm7_bios.map(|bios| Box::new(key1::KeyBuffer::new::<2>(game_code, bios))),
             stage: Stage::Initial,
         })
+    }
+
+    pub fn into_contents(self) -> Box<dyn Contents> {
+        self.contents
+    }
+
+    pub fn contents(&mut self) -> &mut dyn Contents {
+        &mut *self.contents
     }
 
     #[must_use]
@@ -85,14 +103,14 @@ impl super::RomDevice for Normal {
         let rom_len = self.rom_mask as usize + 1;
         let first_read_max_len = rom_len - addr;
         if output.len() <= first_read_max_len {
-            self.rom.read_slice(addr, output);
+            self.contents.read_slice(addr, output);
         } else {
-            self.rom
+            self.contents
                 .read_slice(addr, ByteMutSlice::new(&mut output[..first_read_max_len]));
             let mut i = first_read_max_len;
             while i < output.len() {
                 let end_i = (i + rom_len).min(output.len());
-                self.rom
+                self.contents
                     .read_slice(0, ByteMutSlice::new(&mut output[i..end_i]));
                 i += rom_len;
             }
@@ -100,28 +118,55 @@ impl super::RomDevice for Normal {
     }
 
     fn read_header(&mut self, buf: &mut Bytes<0x170>) {
-        self.rom.read_header(buf);
+        self.contents.read_header(buf);
     }
 
     fn chip_id(&self) -> u32 {
         self.chip_id
     }
 
-    fn setup(&mut self, direct_boot: bool) {
+    fn setup(&mut self, direct_boot: bool) -> Result<(), ()> {
+        let mut buf = zero();
+        self.contents.read_header(&mut buf);
+        let secure_area_start = buf.read_le::<u32>(0x20);
+        let is_homebrew = !(0x4000..0x8000).contains(&secure_area_start);
+
         if direct_boot {
             self.stage = Stage::Key2;
+            if is_homebrew {
+                return Ok(());
+            }
+            let Some(mut secure_area) = self.contents.secure_area_mut() else {
+                return Ok(());
+            };
+            if secure_area.read_le::<u64>(0) != 0xE7FF_DEFF_E7FF_DEFF {
+                let Some(key_buf) = self.key_buf.as_ref() else {
+                    return Err(());
+                };
+
+                let res = key_buf.decrypt_64_bit([secure_area.read_le(0), secure_area.read_le(4)]);
+                secure_area.write_le(0, res[0]);
+                secure_area.write_le(4, res[1]);
+
+                let level_3_key_buf = key_buf.level_3::<2>();
+                for i in (0..0x800).step_by(8) {
+                    let res = level_3_key_buf
+                        .decrypt_64_bit([secure_area.read_le(i), secure_area.read_le(i + 4)]);
+                    secure_area.write_le(i, res[0]);
+                    secure_area.write_le(i + 4, res[1]);
+                }
+            }
         } else {
+            let Some(mut secure_area) = self.contents.secure_area_mut() else {
+                return Ok(());
+            };
             let key_buf = self.key_buf.as_ref().unwrap();
-            let mut secure_area = self
-                .rom
-                .secure_area_mut()
-                .expect("couldn't read DS slot ROM secure area");
-            if secure_area.read_le::<u32>(0) == 0xE7FF_DEFF {
+            if secure_area.read_le::<u64>(0) == 0xE7FF_DEFF_E7FF_DEFF {
                 secure_area[..8].copy_from_slice(b"encryObj");
                 let level_3_key_buf = key_buf.level_3::<2>();
                 for i in (0..0x800).step_by(8) {
                     let res = level_3_key_buf
-                        .encrypt_64_bit([secure_area.read_le(i), secure_area.read_le(4 + i)]);
+                        .encrypt_64_bit([secure_area.read_le(i), secure_area.read_le(i + 4)]);
                     secure_area.write_le(i, res[0]);
                     secure_area.write_le(i + 4, res[1]);
                 }
@@ -130,6 +175,7 @@ impl super::RomDevice for Normal {
                 secure_area.write_le(4, res[1]);
             }
         }
+        Ok(())
     }
 
     fn handle_rom_command(
@@ -154,7 +200,7 @@ impl super::RomDevice for Normal {
                         if cmd.read_be::<u64>(0) & 0x00FF_FFFF_FFFF_FFFF == 0 {
                             for start_i in (0..output_len.get() as usize).step_by(0x1000) {
                                 let len = 0x1000.min(output_len.get() as usize - start_i);
-                                self.rom.read_slice(
+                                self.contents.read_slice(
                                     0,
                                     ByteMutSlice::new(&mut output[start_i..start_i + len]),
                                 );
@@ -234,7 +280,7 @@ impl super::RomDevice for Normal {
                         let start_addr = 0x4000 | (cmd[2] as usize & 0x30) << 8;
                         for start_i in (0..output_len.get() as usize).step_by(0x1000) {
                             let len = (output_len.get() as usize - start_i).min(0x1000);
-                            self.rom.read_slice(
+                            self.contents.read_slice(
                                 start_addr,
                                 ByteMutSlice::new(&mut output[start_i..start_i + len]),
                             );
@@ -281,7 +327,7 @@ impl super::RomDevice for Normal {
                         let mut start_i = 0;
                         while start_i < output_len.get() as usize {
                             let len = (page_end - addr).min(output_len.get() as usize - start_i);
-                            self.rom.read_slice(
+                            self.contents.read_slice(
                                 addr,
                                 ByteMutSlice::new(&mut output[start_i..start_i + len]),
                             );

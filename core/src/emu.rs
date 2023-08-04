@@ -14,6 +14,7 @@ use crate::{
         bus::CpuAccess,
         Arm7Data, Arm9Data, CoreData, Schedule as _,
     },
+    dldi::{self, Dldi},
     ds_slot::{self, DsSlot},
     flash::Flash,
     gpu::{self, engine_3d::Engine3d, Gpu},
@@ -113,6 +114,8 @@ pub struct Emu<E: cpu::Engine> {
     pub audio_wifi_power_control: AudioWifiPowerControl,
     pub audio: Audio,
     pub wifi: WiFi,
+    #[savestate(skip)]
+    pub dldi: Option<Dldi>,
     rcnt: u16, // TODO: Move to SIO
     is_debugger: bool,
 }
@@ -158,13 +161,14 @@ pub struct Builder {
     pub logger: slog::Logger,
 
     pub firmware: Flash,
-    pub ds_rom: ds_slot::rom::Rom,
+    pub ds_rom: Option<Box<dyn ds_slot::rom::Contents>>,
     pub ds_spi: ds_slot::spi::Spi,
     pub audio_backend: Box<dyn audio::Backend>,
     pub mic_backend: Option<Box<dyn spi::tsc::MicBackend>>,
     pub rtc_backend: Box<dyn rtc::Backend>,
     pub renderer_2d: Box<dyn gpu::engine_2d::Renderer>,
     pub renderer_3d_tx: Box<dyn gpu::engine_3d::RendererTx>,
+    pub dldi_provider: Option<Box<dyn dldi::Provider>>,
 
     pub arm7_bios: Option<Box<Bytes<{ arm7::BIOS_SIZE }>>>,
     pub arm9_bios: Option<Box<Bytes<{ arm9::BIOS_SIZE }>>>,
@@ -182,6 +186,8 @@ pub struct Builder {
 
 pub enum BuildError {
     MissingSysFiles,
+    RomCreation(ds_slot::rom::normal::CreationError),
+    RomNeedsDecryptionButNoBiosProvided,
 }
 
 impl Error for BuildError {}
@@ -190,6 +196,10 @@ impl fmt::Display for BuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             BuildError::MissingSysFiles => f.write_str("missing system files"),
+            BuildError::RomCreation(e) => write!(f, "ROM creation error: {e}"),
+            BuildError::RomNeedsDecryptionButNoBiosProvided => {
+                f.write_str("ROM needs decryption, but no original ARM7 BIOS provided")
+            }
         }
     }
 }
@@ -205,13 +215,14 @@ impl Builder {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         firmware: Flash,
-        ds_rom: ds_slot::rom::Rom,
+        ds_rom: Option<Box<dyn ds_slot::rom::Contents>>,
         ds_spi: ds_slot::spi::Spi,
         audio_backend: Box<dyn audio::Backend>,
         mic_backend: Option<Box<dyn spi::tsc::MicBackend>>,
         rtc_backend: Box<dyn rtc::Backend>,
         renderer_2d: Box<dyn gpu::engine_2d::Renderer>,
         renderer_3d_tx: Box<dyn gpu::engine_3d::RendererTx>,
+        dldi_provider: Option<Box<dyn dldi::Provider>>,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Self {
         Builder {
@@ -226,6 +237,7 @@ impl Builder {
             rtc_backend,
             renderer_2d,
             renderer_3d_tx,
+            dldi_provider,
 
             arm7_bios: None,
             arm9_bios: None,
@@ -242,10 +254,36 @@ impl Builder {
         }
     }
 
-    pub fn build<E: cpu::Engine>(self, engine: E) -> Result<Emu<E>, BuildError> {
+    pub fn build<E: cpu::Engine>(mut self, engine: E) -> Result<Emu<E>, BuildError> {
         if (self.arm7_bios.is_none() || self.arm9_bios.is_none()) && !self.direct_boot {
             return Err(BuildError::MissingSysFiles);
         }
+
+        let dldi = self
+            .ds_rom
+            .as_mut()
+            .zip(self.dldi_provider)
+            .and_then(|(ds_rom, dldi_provider)| Dldi::new_if_supported(ds_rom, dldi_provider));
+
+        let mut ds_rom = match self.ds_rom {
+            Some(contents) => ds_slot::rom::Rom::Normal(
+                ds_slot::rom::normal::Normal::new(
+                    contents,
+                    self.arm7_bios.as_deref(),
+                    #[cfg(feature = "log")]
+                    self.logger.new(slog::o!("ds_rom" => "normal")),
+                )
+                .map_err(BuildError::RomCreation)?,
+            ),
+            None => ds_slot::rom::Rom::Empty(ds_slot::rom::Empty::new(
+                #[cfg(feature = "log")]
+                self.logger.new(slog::o!("ds_rom" => "empty")),
+            )),
+        };
+
+        ds_rom
+            .setup(self.direct_boot)
+            .map_err(|_| BuildError::RomNeedsDecryptionButNoBiosProvided)?;
 
         let (global_engine_data, arm7_engine_data, arm9_engine_data) = engine.into_data();
         let mut arm7 = Arm7::new(
@@ -276,12 +314,7 @@ impl Builder {
             swram: Swram::new(),
             global_ex_mem_control: GlobalExMemControl(0x6000),
             ipc: Ipc::new(),
-            ds_slot: DsSlot::new(
-                self.ds_rom,
-                self.ds_spi,
-                &mut arm7.schedule,
-                &mut arm9.schedule,
-            ),
+            ds_slot: DsSlot::new(ds_rom, self.ds_spi, &mut arm7.schedule, &mut arm9.schedule),
             spi: spi::Controller::new(
                 self.model,
                 self.firmware,
@@ -319,6 +352,7 @@ impl Builder {
                 self.logger.new(slog::o!("audio" => "")),
             ),
             wifi: WiFi::new(),
+            dldi,
             rcnt: 0,
             schedule: global_schedule,
             arm7,
@@ -327,7 +361,6 @@ impl Builder {
         };
         Arm7::setup(&mut emu);
         Arm9::setup(&mut emu);
-        emu.ds_slot.rom.setup(self.direct_boot);
         emu.swram.recalc(&mut emu.arm7, &mut emu.arm9);
         E::Arm7Data::setup(&mut emu);
         E::Arm9Data::setup(&mut emu);

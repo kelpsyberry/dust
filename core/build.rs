@@ -189,7 +189,12 @@ mod interpreter {
                     Instr::Mrc => write!(file, "mrc"),
                     Instr::Swi => write!(file, "swi"),
                     Instr::Undefined { .. } => {
-                        write!(file, "undefined::<{}>", !is_arm9 && key == 0x605)
+                        write!(
+                            file,
+                            "undefined::<{}, {}>",
+                            !is_arm9 && key == 0x605,
+                            key == 0x601,
+                        )
                     }
                     _ => unreachable!(),
                 }?;
@@ -225,7 +230,7 @@ mod interpreter {
                     UncondInstr::Cdp => write!(file, "cdp"),
                     UncondInstr::Mcr => write!(file, "mcr"),
                     UncondInstr::Mrc => write!(file, "mrc"),
-                    UncondInstr::Undefined => write!(file, "undefined::<{}>", key == 0xF05),
+                    UncondInstr::Undefined => write!(file, "undefined::<{}, false>", key == 0xF05),
                     _ => unreachable!(),
                 }?;
                 write!(file, ",")?;

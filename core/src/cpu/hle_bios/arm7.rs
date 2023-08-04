@@ -157,11 +157,11 @@ pub static BIOS: [u8; arm7::BIOS_SIZE] = {
     }
 
     write_32!(0x004, BIOS_CALL_INSTR | 3);
-    write_32!(0x0008, BIOS_CALL_INSTR | 5);
+    write_32!(0x0008, BIOS_CALL_INSTR | 4);
     write_32!(0x0018, BIOS_CALL_INSTR | 1);
     write_32!(0x0200, BIOS_CALL_INSTR);
     write_32!(0x0204, BIOS_CALL_INSTR | 2);
-    write_32!(0x2DDC, BIOS_CALL_INSTR | 5);
+    write_32!(0x2DDC, BIOS_CALL_INSTR | 4);
 
     bytes
 };
