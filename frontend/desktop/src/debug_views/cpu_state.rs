@@ -217,10 +217,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                     bitfield(ui, 2.0, false, true, reg_values.spsr.raw(), psr_fields);
                 }
 
-                ui.text(format!(
-                    "Mode: {}",
-                    psr_mode_to_str(reg_values.spsr.mode()),
-                ));
+                ui.text(format!("Mode: {}", psr_mode_to_str(reg_values.spsr.mode()),));
             } else {
                 ui.same_line();
                 ui.text("None");

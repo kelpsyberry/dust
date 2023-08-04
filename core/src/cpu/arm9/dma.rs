@@ -1,4 +1,3 @@
-use core::marker::ConstParamTy;
 use super::{bus::timings::Timings, Arm9};
 use crate::{
     cpu::{
@@ -11,6 +10,7 @@ use crate::{
     gpu::engine_3d::Engine3d,
     utils::{schedule::RawTimestamp, Savestate},
 };
+use core::marker::ConstParamTy;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ConstParamTy, Savestate)]

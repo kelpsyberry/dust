@@ -41,6 +41,7 @@ pub extern crate emu_utils as utils;
 
 pub mod audio;
 pub mod cpu;
+pub mod dldi;
 pub mod ds_slot;
 pub mod emu;
 pub mod flash;
@@ -49,7 +50,6 @@ pub mod ipc;
 pub mod rtc;
 pub mod spi;
 pub mod wifi;
-pub mod dldi;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]

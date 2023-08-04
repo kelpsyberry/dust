@@ -156,7 +156,9 @@ impl Drop for Tx {
             self.shared_data.stopped.store(true, Ordering::Relaxed);
             thread.thread().unpark();
             let _ = thread.join();
-            self.shared_data.capture_processing_scanline.store(SCREEN_HEIGHT as u8, Ordering::Relaxed);
+            self.shared_data
+                .capture_processing_scanline
+                .store(SCREEN_HEIGHT as u8, Ordering::Relaxed);
         }
     }
 }

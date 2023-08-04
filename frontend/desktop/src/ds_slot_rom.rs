@@ -91,7 +91,11 @@ impl Contents for File {
                 }
             };
         }
-        apply_overlay!(&self.secure_area, self.secure_area_start, self.secure_area_end);
+        apply_overlay!(
+            &self.secure_area,
+            self.secure_area_start,
+            self.secure_area_end
+        );
         apply_overlay!(&self.dldi_area, self.dldi_area_start, self.dldi_area_end);
     }
 }

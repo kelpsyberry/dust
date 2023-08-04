@@ -143,7 +143,7 @@ impl Read for ChunkManager {
             buf_offset += transfer_len;
             self.cur_addr += transfer_len as u64;
         }
-        
+
         Ok(max_read_len as usize)
     }
 }
