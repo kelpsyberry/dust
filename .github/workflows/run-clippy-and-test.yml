@@ -7,7 +7,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  FEATURES: xq-audio,discord-presence,debug-views,log,pu-checks,gdb-server
+  FEATURES: xq-audio,discord-presence,debug-views,log,pu-checks,gdb-server,dldi
   MACOSX_DEPLOYMENT_TARGET: 10.11
 
 jobs:

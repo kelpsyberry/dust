@@ -7,9 +7,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RELEASE_FEATURES: xq-audio,discord-presence
-  DEBUG_FEATURES: xq-audio,discord-presence,log,debug-views
-  DEBUG_GDB_FEATURES: xq-audio,discord-presence,log,debug-views,pu-checks,gdb-server
+  RELEASE_FEATURES: xq-audio,discord-presence,dldi
+  DEBUG_FEATURES: xq-audio,discord-presence,log,debug-views,dldi
+  DEBUG_GDB_FEATURES: xq-audio,discord-presence,log,debug-views,pu-checks,gdb-server,dldi
   MACOSX_DEPLOYMENT_TARGET: 10.11
 
 jobs:
