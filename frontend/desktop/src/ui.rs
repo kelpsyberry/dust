@@ -252,12 +252,7 @@ bitflags::bitflags! {
 }
 
 impl UiState {
-    fn load_from_rom_path(
-        &mut self,
-        path: &Path,
-        config: &mut Config,
-        window: &mut window::Window,
-    ) {
+    fn load_from_rom_path(&mut self, path: &Path, config: &mut Config, window: &window::Window) {
         if let Some(extension) = path.extension().and_then(|s| s.to_str()) {
             if !ALLOWED_ROM_EXTENSIONS.contains(&extension) {
                 return;
@@ -314,7 +309,7 @@ impl UiState {
         }
     }
 
-    fn load_firmware(&mut self, config: &mut Config, window: &mut window::Window) {
+    fn load_firmware(&mut self, config: &mut Config, window: &window::Window) {
         self.stop(config, window);
         match config::Launch::new(&config.config, true) {
             Ok((launch_config, warnings)) => {
@@ -457,12 +452,12 @@ impl UiState {
 
     fn start(
         &mut self,
-        config: &mut Config,
+        config: &Config,
         launch_config: Launch,
         save_path: Option<PathBuf>,
         title: String,
         ds_slot_rom: Option<(DsSlotRom, &Path)>,
-        window: &mut window::Window,
+        window: &window::Window,
     ) {
         self.show_menu_bar = !config!(config.config, full_window_screen);
 
@@ -677,7 +672,7 @@ impl UiState {
         }
     }
 
-    fn stop(&mut self, config: &mut Config, window: &mut window::Window) {
+    fn stop(&mut self, config: &mut Config, window: &window::Window) {
         self.stop_emu(config);
 
         self.savestate_editor
@@ -819,7 +814,7 @@ impl FbTexture {
         )
     }
 
-    fn new(window: &mut window::Window) -> Self {
+    fn new(window: &window::Window) -> Self {
         let result = FbTexture {
             id: Self::create_owned(window),
             is_view: false,
@@ -941,7 +936,7 @@ pub fn main() {
         FrameData::default(),
     ]);
 
-    let fb_texture = FbTexture::new(&mut window_builder.window);
+    let fb_texture = FbTexture::new(&window_builder.window);
 
     let mut state = UiState {
         game_db: Lazy::new(),
@@ -988,11 +983,7 @@ pub fn main() {
     }
 
     if let Some(rom_path) = env::args_os().nth(1) {
-        state.load_from_rom_path(
-            Path::new(&rom_path),
-            &mut config,
-            &mut window_builder.window,
-        );
+        state.load_from_rom_path(Path::new(&rom_path), &mut config, &window_builder.window);
     }
 
     window_builder.run(
@@ -1380,7 +1371,7 @@ pub fn main() {
 
                         state
                             .savestate_editor
-                            .draw(ui, window, &config.config, &mut state.emu);
+                            .draw(ui, window, &config.config, &state.emu);
                     });
 
                     ui.menu("Config", || {

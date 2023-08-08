@@ -77,7 +77,7 @@ unsafe fn blend_5bit_coeff(pixels: __m256i, coeffs_a: __m256i, coeffs_b: __m256i
 #[allow(clippy::similar_names)]
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
 pub unsafe fn apply_color_effects<B: Buffers, D: RenderingData, const EFFECT: u8>(
-    buffers: &mut B,
+    buffers: &B,
     data: &D,
 ) {
     let zero = _mm256_setzero_si256();

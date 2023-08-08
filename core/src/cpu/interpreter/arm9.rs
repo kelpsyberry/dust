@@ -160,7 +160,10 @@ fn prefetch_thumb<const RESET_DATA_CYCLES: bool, const INC_R15: bool>(emu: &mut 
     }
 }
 
-#[cfg_attr(not(feature = "interp-arm9-interlocks"), allow(unused_variables))]
+#[cfg_attr(
+    not(feature = "interp-arm9-interlocks"),
+    allow(unused_variables, clippy::needless_pass_by_ref_mut)
+)]
 #[inline]
 fn apply_reg_interlock_1<const PORT_C: bool>(emu: &mut Emu<Interpreter>, reg: u8) {
     #[cfg(feature = "interp-arm9-interlocks")]
@@ -183,7 +186,10 @@ fn apply_reg_interlock_1<const PORT_C: bool>(emu: &mut Emu<Interpreter>, reg: u8
     }
 }
 
-#[cfg_attr(not(feature = "interp-arm9-interlocks"), allow(unused_variables))]
+#[cfg_attr(
+    not(feature = "interp-arm9-interlocks"),
+    allow(unused_variables, clippy::needless_pass_by_ref_mut)
+)]
 #[inline]
 fn apply_reg_interlocks_2<const OFFSET_A: u8, const B_PORT_C: bool>(
     emu: &mut Emu<Interpreter>,
@@ -215,7 +221,10 @@ fn apply_reg_interlocks_2<const OFFSET_A: u8, const B_PORT_C: bool>(
     }
 }
 
-#[cfg_attr(not(feature = "interp-arm9-interlocks"), allow(unused_variables))]
+#[cfg_attr(
+    not(feature = "interp-arm9-interlocks"),
+    allow(unused_variables, clippy::needless_pass_by_ref_mut)
+)]
 #[inline]
 fn apply_reg_interlocks_3<const OFFSET_AB: u8, const C_PORT_C: bool>(
     emu: &mut Emu<Interpreter>,
@@ -293,7 +302,10 @@ fn write_reg_interlock(
     reg!(emu.arm9, reg) = value;
 }
 
-#[cfg_attr(not(feature = "interp-arm9-interlocks"), allow(unused_variables))]
+#[cfg_attr(
+    not(feature = "interp-arm9-interlocks"),
+    allow(unused_variables, clippy::needless_pass_by_ref_mut)
+)]
 #[inline]
 fn add_interlock(
     emu: &mut Emu<Interpreter>,
@@ -314,7 +326,10 @@ fn add_interlock(
 ///
 /// NOTE: only values <= 2 are needed for any single instruction, as interlocks will only ever last
 /// up to 2 cycles.
-#[cfg_attr(not(feature = "interp-arm9-interlocks"), allow(unused_variables))]
+#[cfg_attr(
+    not(feature = "interp-arm9-interlocks"),
+    allow(unused_variables, clippy::needless_pass_by_ref_mut)
+)]
 #[inline]
 fn add_bus_cycles(emu: &mut Emu<Interpreter>, cycles: RawTimestamp) {
     #[cfg(feature = "interp-arm9-interlocks")]

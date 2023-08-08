@@ -896,7 +896,7 @@ impl Editor {
         }
     }
 
-    fn draw_game_saves_config(&mut self, ui: &Ui, config: &mut Config, emu_state: &mut EmuState) {
+    fn draw_game_saves_config(&mut self, ui: &Ui, config: &mut Config, emu_state: &EmuState) {
         ui.text("Save path: ");
 
         ui.same_line();

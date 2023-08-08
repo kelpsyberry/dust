@@ -58,7 +58,7 @@ impl Renderer {
         line: u8,
         vcount: u8,
         engine: &mut Engine2d<R>,
-        vram: &mut Vram,
+        vram: &Vram,
     ) where
         [(); R::OBJ_VRAM_LEN]: Sized,
     {
@@ -234,8 +234,8 @@ impl RendererTrait for Renderer {
         engines: (&mut Engine2d<EngineA>, &mut Engine2d<EngineB>),
         vram: &mut Vram,
     ) {
-        prerender_objs::<EngineA, _, _, _>(&mut self.buffers[0], 0, engines.0, vram);
-        prerender_objs::<EngineB, _, _, _>(&mut self.buffers[1], 0, engines.1, vram);
+        prerender_objs::<EngineA, _, _, _>(&self.buffers[0], 0, engines.0, vram);
+        prerender_objs::<EngineB, _, _, _>(&self.buffers[1], 0, engines.1, vram);
     }
 
     fn start_scanline(

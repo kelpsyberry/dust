@@ -16,7 +16,7 @@ pub unsafe fn render_scanline_bgs_and_objs<
     V: Vram<R>,
     const BG_MODE: u8,
 >(
-    buffers: &mut B,
+    buffers: &B,
     vount: u8,
     data: &mut D,
     vram: &V,
@@ -179,7 +179,7 @@ unsafe fn rgb5_to_rgb6(values: __m256i) -> __m256i {
 
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
 pub unsafe fn render_scanline_bg_text<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
-    buffers: &mut B,
+    buffers: &B,
     bg_index: BgIndex,
     vount: u8,
     data: &D,
@@ -390,7 +390,7 @@ pub unsafe fn render_scanline_bg_affine<
     V: Vram<R>,
     const DISPLAY_AREA_OVERFLOW: bool,
 >(
-    buffers: &mut B,
+    buffers: &B,
     bg_index: AffineBgIndex,
     data: &D,
     vram: &V,
@@ -534,7 +534,7 @@ pub unsafe fn render_scanline_bg_large<
     V: Vram<R>,
     const DISPLAY_AREA_OVERFLOW: bool,
 >(
-    buffers: &mut B,
+    buffers: &B,
     data: &D,
     vram: &V,
 ) where
@@ -654,7 +654,7 @@ pub unsafe fn render_scanline_bg_extended<
     V: Vram<R>,
     const DISPLAY_AREA_OVERFLOW: bool,
 >(
-    buffers: &mut B,
+    buffers: &B,
     bg_index: AffineBgIndex,
     data: &D,
     vram: &V,
@@ -972,7 +972,7 @@ pub unsafe fn render_scanline_bg_extended<
 }
 
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
-pub unsafe fn render_scanline_bg_3d<B: Buffers>(buffers: &mut B, scanline_3d: &Scanline<u32>) {
+pub unsafe fn render_scanline_bg_3d<B: Buffers>(buffers: &B, scanline_3d: &Scanline<u32>) {
     // TODO: 3D layer scrolling
 
     let zero = _mm256_setzero_si256();

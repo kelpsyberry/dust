@@ -2,7 +2,7 @@ use crate::{Buffers, ObjPixel, RenderingData, Vram};
 use dust_core::gpu::engine_2d::{OamAttr0, OamAttr1, OamAttr2, Role};
 
 pub fn prerender_objs<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
-    buffers: &mut B,
+    buffers: &B,
     line: u8,
     data: &D,
     vram: &V,
@@ -112,7 +112,7 @@ pub fn prerender_objs<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
 
 #[allow(clippy::similar_names, clippy::too_many_arguments)]
 fn prerender_obj_rot_scale<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
-    buffers: &mut B,
+    buffers: &B,
     attrs: (OamAttr0, OamAttr1, OamAttr2),
     bounds_x_start: i32,
     rel_y_in_square_obj: i32,
@@ -358,7 +358,7 @@ fn prerender_obj_rot_scale<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
 }
 
 fn prerender_obj_normal<R: Role, B: Buffers, D: RenderingData, V: Vram<R>, const X_FLIP: bool>(
-    buffers: &mut B,
+    buffers: &B,
     attrs: (OamAttr0, (), OamAttr2),
     x_start: i32,
     y_in_obj: u32,

@@ -47,9 +47,11 @@ pub fn crc16(init: u32, len: u32, r3: u32, mut f: impl FnMut() -> u16) -> (u32, 
     (crc as u32, value)
 }
 
-pub fn is_debugger<E: Engine, const ADDR: usize>(emu: &mut Emu<E>) -> (u32, u32, u32) {
-    emu.main_mem()
-        .write_le::<u32>(ADDR & emu.main_mem_mask().get() as usize, 0);
+pub fn is_debugger<E: Engine, const ADDR: usize>(emu: &Emu<E>) -> (u32, u32, u32) {
+    emu.main_mem().write_le::<u16>(
+        ADDR & emu.main_mem_mask().get() as usize,
+        emu.is_debugger() as u16,
+    );
     (
         emu.is_debugger() as u32,
         (emu.is_debugger() as u32) << 2,

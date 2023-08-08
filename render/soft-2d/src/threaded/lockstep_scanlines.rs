@@ -676,7 +676,7 @@ impl ThreadData {
 
         if render_obj_line {
             prerender_objs::<R, _, _, _>(
-                &mut self.buffers[!R::IS_A as usize],
+                &self.buffers[!R::IS_A as usize],
                 (self.cur_scanline + 1) as u8,
                 data,
                 vram,

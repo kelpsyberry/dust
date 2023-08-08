@@ -1001,13 +1001,7 @@ impl Cp15 {
         Self::map_all_pu_region_subrange_cache_attrs(emu, itcm_map_mask, prev_bounds);
     }
 
-    pub fn read_reg<E: Engine>(
-        emu: &mut Emu<E>,
-        opcode_1: u8,
-        cn: u8,
-        cm: u8,
-        opcode_2: u8,
-    ) -> u32 {
+    pub fn read_reg<E: Engine>(emu: &Emu<E>, opcode_1: u8, cn: u8, cm: u8, opcode_2: u8) -> u32 {
         if opcode_1 != 0 {
             #[cfg(feature = "log")]
             slog::warn!(

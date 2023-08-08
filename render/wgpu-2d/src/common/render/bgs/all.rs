@@ -13,7 +13,7 @@ pub fn render_scanline_bgs_and_objs<
     V: Vram<R>,
     const BG_MODE: u8,
 >(
-    buffers: &mut B,
+    buffers: &B,
     vcount: u8,
     data: &mut D,
     vram: &V,

@@ -1320,7 +1320,7 @@ impl Renderer {
             let mut cur_idx_base = 0;
             for batch in &self.batches {
                 match batch.kind {
-                    PreparedBatchKind::ShadowMask { depth_test_equal } => {}
+                    PreparedBatchKind::ShadowMask { .. } => {}
 
                     PreparedBatchKind::Opaque { pipeline, texture } => {
                         if let Some(pipeline) = pipeline {
@@ -1447,7 +1447,7 @@ impl Renderer {
                         }
                     }
 
-                    PreparedBatchKind::Wireframe { pipeline, texture } => {}
+                    PreparedBatchKind::Wireframe { .. } => {}
                 }
 
                 cur_idx_base += batch.idxs as u32;

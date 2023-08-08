@@ -1,10 +1,7 @@
 use crate::{BgObjPixel, Buffers, RenderingData};
 use dust_core::gpu::{Scanline, SCREEN_WIDTH};
 
-pub fn apply_color_effects<B: Buffers, D: RenderingData, const EFFECT: u8>(
-    buffers: &mut B,
-    data: &D,
-) {
+pub fn apply_color_effects<B: Buffers, D: RenderingData, const EFFECT: u8>(buffers: &B, data: &D) {
     #[inline]
     fn blend(pixel: BgObjPixel, coeff_a: u32, coeff_b: u32) -> u64 {
         let top = pixel.0 as u32;

@@ -6,10 +6,10 @@ use render::{bgs, effects};
 
 #[allow(clippy::type_complexity)]
 pub struct FnPtrs<R: Role, B: Buffers, D: RenderingData, V: Vram<R>> {
-    pub apply_color_effects: [unsafe fn(&mut B, &D); 4],
+    pub apply_color_effects: [unsafe fn(&B, &D); 4],
     pub apply_brightness: unsafe fn(scanline_buffer: &mut Scanline<u32>, &D),
     pub render_scanline_bgs_and_objs:
-        [unsafe fn(&mut B, vcount: u8, &mut D, &V, scanline_3d: Option<&Scanline<u32>>); 8],
+        [unsafe fn(&B, vcount: u8, &mut D, &V, scanline_3d: Option<&Scanline<u32>>); 8],
     _marker: PhantomData<R>,
 }
 

@@ -12,7 +12,7 @@ pub fn render_scanline_bgs_and_objs<
     V: Vram<R>,
     const BG_MODE: u8,
 >(
-    buffers: &mut B,
+    buffers: &B,
     vcount: u8,
     data: &mut D,
     vram: &V,
@@ -154,7 +154,7 @@ pub fn render_scanline_bgs_and_objs<
 }
 
 pub fn render_scanline_bg_text<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
-    buffers: &mut B,
+    buffers: &B,
     bg_index: BgIndex,
     vcount: u8,
     data: &D,
@@ -306,7 +306,7 @@ pub fn render_scanline_bg_affine<
     V: Vram<R>,
     const DISPLAY_AREA_OVERFLOW: bool,
 >(
-    buffers: &mut B,
+    buffers: &B,
     bg_index: AffineBgIndex,
     data: &D,
     vram: &V,
@@ -382,7 +382,7 @@ pub fn render_scanline_bg_large<
     V: Vram<R>,
     const DISPLAY_AREA_OVERFLOW: bool,
 >(
-    buffers: &mut B,
+    buffers: &B,
     data: &D,
     vram: &V,
 ) where
@@ -448,7 +448,7 @@ pub fn render_scanline_bg_extended<
     V: Vram<R>,
     const DISPLAY_AREA_OVERFLOW: bool,
 >(
-    buffers: &mut B,
+    buffers: &B,
     bg_index: AffineBgIndex,
     data: &D,
     vram: &V,
@@ -613,7 +613,7 @@ pub fn render_scanline_bg_extended<
     }
 }
 
-pub fn render_scanline_bg_3d<B: Buffers>(buffers: &mut B, scanline_3d: &Scanline<u32>) {
+pub fn render_scanline_bg_3d<B: Buffers>(buffers: &B, scanline_3d: &Scanline<u32>) {
     // TODO: 3D layer scrolling
 
     let pixel_attrs = BgObjPixel(0).with_color_effects_mask(1).with_is_3d(true);

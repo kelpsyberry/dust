@@ -11,7 +11,7 @@ pub fn run(
     capture_control: CaptureControl,
     bg_obj_scanline: &Scanline<BgObjPixel>,
     scanline_3d: Option<&Scanline<u32>>,
-    vram: &mut Vram,
+    vram: &Vram,
 ) {
     let dst_bank_index = capture_control.dst_bank();
     let dst_bank_control = vram.bank_control()[dst_bank_index as usize];

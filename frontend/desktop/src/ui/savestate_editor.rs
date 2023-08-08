@@ -36,7 +36,7 @@ struct Entry {
 }
 
 impl Savestate {
-    unsafe fn create_texture(window: &mut Window, framebuffer: &Framebuffer) -> TextureId {
+    unsafe fn create_texture(window: &Window, framebuffer: &Framebuffer) -> TextureId {
         let texture = window.imgui.gfx.create_owned_texture(
             Some("Savestate framebuffer".into()),
             imgui_wgpu::TextureDescriptor {
@@ -65,7 +65,7 @@ impl Savestate {
             .add_texture(imgui_wgpu::Texture::Owned(texture))
     }
 
-    fn load(path: &Path, window: &mut Window) -> io::Result<Self> {
+    fn load(path: &Path, window: &Window) -> io::Result<Self> {
         let compressed_contents = fs::read(path)?;
         let mut contents = decompress_to_vec(&compressed_contents).map_err(|_err| {
             io::Error::new(io::ErrorKind::InvalidData, "couldn't decompress savestate")
@@ -127,7 +127,7 @@ impl Savestate {
         save: Option<Box<[u8]>>,
         framebuffer: Box<Framebuffer>,
         savestate_dir: &Path,
-        window: &mut Window,
+        window: &Window,
     ) -> io::Result<Self> {
         {
             let mut contents = contents.clone();
@@ -179,7 +179,7 @@ impl Savestate {
         )
     }
 
-    fn delete(self, name: &str, savestate_dir: &Path, window: &mut Window) -> io::Result<()> {
+    fn delete(self, name: &str, savestate_dir: &Path, window: &Window) -> io::Result<()> {
         window.imgui.gfx.remove_texture(self.texture_id);
         fs::remove_file(savestate_dir.join(format!("{name}.state")))
     }
@@ -208,7 +208,7 @@ impl Editor {
         }
     }
 
-    pub fn update_game(&mut self, window: &mut Window, config: &Config, game_title: Option<&str>) {
+    pub fn update_game(&mut self, window: &Window, config: &Config, game_title: Option<&str>) {
         let new_dir_path =
             game_title.map(|title| config!(config, savestate_dir_path).0.join(title));
         if new_dir_path == self.dir_path {
@@ -242,12 +242,7 @@ impl Editor {
         }
     }
 
-    pub fn savestate_created(
-        &mut self,
-        name: String,
-        savestate: emu::Savestate,
-        window: &mut Window,
-    ) {
+    pub fn savestate_created(&mut self, name: String, savestate: emu::Savestate, window: &Window) {
         if let Some(dir_path) = &self.dir_path {
             if let Ok(savestate) = Savestate::create(
                 &name,
@@ -285,9 +280,9 @@ impl Editor {
     pub fn draw(
         &mut self,
         ui: &Ui,
-        window: &mut Window,
+        window: &Window,
         config: &Config,
-        emu_state: &mut Option<EmuState>,
+        emu_state: &Option<EmuState>,
     ) {
         let mut shown = false;
         ui.menu_with_enabled("\u{f02e} Savestates", self.dir_path.is_some(), || {

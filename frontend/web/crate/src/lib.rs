@@ -8,7 +8,7 @@ pub mod renderer_3d;
 
 use dust_core::{
     cpu::{arm7, arm9, interpreter::Interpreter},
-    ds_slot::{self, spi::Spi as DsSlotSpi},
+    ds_slot,
     emu::{self, input::Keys, Emu},
     flash::Flash,
     gpu::{SCREEN_HEIGHT, SCREEN_WIDTH},
@@ -110,21 +110,14 @@ impl EmuState {
 
         let mut emu_builder = emu::Builder::new(
             emu.spi.firmware.reset(),
-            match emu.ds_slot.rom {
-                ds_slot::rom::Rom::Empty(device) => ds_slot::rom::Rom::Empty(device.reset()),
-                ds_slot::rom::Rom::Normal(device) => ds_slot::rom::Rom::Normal(device.reset()),
-            },
-            match emu.ds_slot.spi {
-                DsSlotSpi::Empty(device) => DsSlotSpi::Empty(device.reset()),
-                DsSlotSpi::Eeprom4k(device) => DsSlotSpi::Eeprom4k(device.reset()),
-                DsSlotSpi::EepromFram(device) => DsSlotSpi::EepromFram(device.reset()),
-                DsSlotSpi::Flash(device) => DsSlotSpi::Flash(device.reset()),
-            },
+            emu.ds_slot.rom.into_contents(),
+            emu.ds_slot.spi.reset(),
             emu.audio.backend,
             None,
             emu.rtc.backend,
             renderer_2d,
             renderer_3d_tx,
+            None,
             #[cfg(feature = "log")]
             self.logger.clone(),
         );
@@ -224,16 +217,7 @@ pub fn create_emu_state(
         save_contents
     });
 
-    let (ds_slot_rom, ds_slot_spi) = {
-        let rom = ds_slot::rom::normal::Normal::new(
-            Box::new(rom),
-            arm7_bios.as_deref(),
-            #[cfg(feature = "log")]
-            logger.new(slog::o!("ds_rom" => "normal")),
-        )
-        .unwrap()
-        .into();
-
+    let ds_slot_spi = {
         let save_type = if let Some(save_contents) = &save_contents {
             if let Some(save_type) = save_type {
                 let expected_len = save_type.expected_len();
@@ -287,7 +271,7 @@ pub fn create_emu_state(
             })
         };
 
-        let spi = if save_type == SaveType::None {
+        if save_type == SaveType::None {
             ds_slot::spi::Empty::new(
                 #[cfg(feature = "log")]
                 logger.new(slog::o!("ds_spi" => "empty")),
@@ -349,9 +333,7 @@ pub fn create_emu_state(
                     .into()
                 }
             }
-        };
-
-        (rom, spi)
+        }
     };
 
     let (tx_3d, rx_3d) = renderer_3d::init();
@@ -364,13 +346,14 @@ pub fn create_emu_state(
             logger.new(slog::o!("fw" => "")),
         )
         .expect("Couldn't build firmware"),
-        ds_slot_rom,
+        Some(Box::new(rom)),
         ds_slot_spi,
         Box::new(audio::Backend::new(audio_callback)),
         None,
         Box::new(rtc::DummyBackend),
         Box::new(dust_soft_2d::sync::Renderer::new(Box::new(rx_3d))),
         Box::new(tx_3d),
+        None,
         #[cfg(feature = "log")]
         logger.clone(),
     );
