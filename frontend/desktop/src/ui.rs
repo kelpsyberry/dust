@@ -18,7 +18,7 @@ use crate::{
     audio,
     config::{self, Launch, Renderer2dKind, Renderer3dKind, TitleBarMode},
     emu, game_db, input,
-    utils::{config_base, Lazy},
+    utils::{base_dirs, Lazy},
     DsSlotRom, FrameData,
 };
 use dust_core::{
@@ -104,7 +104,7 @@ struct Config {
 
 impl Config {
     fn new() -> Self {
-        let base_path = config_base();
+        let base_path = &base_dirs().config;
         let games_base_path = base_path.join("games");
         let (base_path, games_base_path) = if let Err(err) = fs::create_dir_all(&games_base_path) {
             config_error!(
@@ -478,7 +478,7 @@ impl UiState {
         #[cfg(feature = "log")]
         let logger = self.log.logger().clone();
 
-        let (ds_slot_rom, ds_slot_rom_path) = ds_slot_rom.unzip();
+        let (ds_slot_rom, _ds_slot_rom_path) = ds_slot_rom.unzip();
         #[allow(unused_mut, clippy::bind_instead_of_map)]
         let ds_slot = ds_slot_rom.and_then(|mut rom| {
             #[cfg(target_os = "windows")]
@@ -582,7 +582,7 @@ impl UiState {
             sys_files: launch_config.sys_files,
             ds_slot,
             #[cfg(feature = "dldi")]
-            dldi: ds_slot_rom_path.and_then(|rom_path| {
+            dldi: _ds_slot_rom_path.and_then(|rom_path| {
                 Some(emu::Dldi {
                     root_path: rom_path.parent()?.to_path_buf(),
                     skip_path: rom_path.to_path_buf(),

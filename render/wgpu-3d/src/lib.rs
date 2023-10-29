@@ -7,6 +7,7 @@
     maybe_uninit_uninit_array,
     new_uninit
 )]
+#![warn(clippy::all)]
 
 mod data;
 pub use data::{FrameData, GxData, RenderingData};

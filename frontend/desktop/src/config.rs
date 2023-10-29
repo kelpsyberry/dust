@@ -5,7 +5,7 @@ pub use setting::{Origin as SettingOrigin, Resolvable, Setting};
 
 use crate::{
     audio, input,
-    utils::{config_base, data_base, double_option, HomePathBuf},
+    utils::{base_dirs, double_option, HomePathBuf},
 };
 use dust_core::{
     audio::ChannelInterpMethod as AudioChannelInterpMethod,
@@ -399,7 +399,7 @@ def_config! {
     untracked {
         global {
             imgui_config_path: Option<HomePathBuf> = Some(
-                HomePathBuf(config_base().join("imgui.ini"))
+                HomePathBuf(base_dirs().config.join("imgui.ini"))
             ),
             screen_integer_scale: bool = false,
             reset_on_save_slot_switch: bool = true,
@@ -432,10 +432,12 @@ def_config! {
     tracked {
         global {
             title_bar_mode: TitleBarMode = TitleBarMode::System,
-            game_db_path: Option<HomePathBuf> = Some(HomePathBuf(data_base().join("game_db.json"))),
+            game_db_path: Option<HomePathBuf> = Some(
+                HomePathBuf(base_dirs().data.join("game_db.json"))
+            ),
             logging_kind: LoggingKind = LoggingKind::Imgui,
-            save_dir_path: HomePathBuf = HomePathBuf(data_base().join("saves")),
-            savestate_dir_path: HomePathBuf = HomePathBuf(data_base().join("states")),
+            save_dir_path: HomePathBuf = HomePathBuf(base_dirs().data.join("saves")),
+            savestate_dir_path: HomePathBuf = HomePathBuf(base_dirs().data.join("states")),
         }
         overridable {
             full_window_screen: bool = true, None,

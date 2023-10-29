@@ -5,7 +5,8 @@
     const_trait_impl,
     portable_simd
 )]
-#![allow(incomplete_features)]
+#![warn(clippy::all)]
+#![allow(incomplete_features, clippy::missing_safety_doc)]
 
 mod common;
 pub mod threaded;

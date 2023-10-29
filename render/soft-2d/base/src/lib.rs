@@ -7,7 +7,8 @@
     new_uninit,
     portable_simd
 )]
-#![allow(incomplete_features)]
+#![warn(clippy::all)]
+#![allow(incomplete_features, clippy::missing_safety_doc)]
 
 pub mod capture;
 mod impls;

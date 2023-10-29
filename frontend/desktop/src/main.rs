@@ -14,6 +14,7 @@
     lazy_cell,
     hash_extract_if
 )]
+#![warn(clippy::all)]
 
 #[cfg(target_os = "macos")]
 #[macro_use]

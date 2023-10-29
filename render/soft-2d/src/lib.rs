@@ -1,4 +1,5 @@
 #![feature(generic_const_exprs, new_uninit, portable_simd)]
+#![warn(clippy::all)]
 #![allow(incomplete_features)]
 
 mod common;

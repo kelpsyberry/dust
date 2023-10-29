@@ -1,9 +1,9 @@
 use std::{
     borrow::Cow,
-    env, fmt,
+    fmt,
     path::{Path, PathBuf},
     str,
-    sync::{LazyLock, OnceLock},
+    sync::LazyLock,
 };
 
 macro_rules! style {
@@ -12,26 +12,27 @@ macro_rules! style {
     };
 }
 
-pub fn config_base<'a>() -> &'a Path {
-    static CONFIG_BASE: OnceLock<PathBuf> = OnceLock::new();
-    CONFIG_BASE.get_or_init(|| match env::var_os("XDG_CONFIG_HOME") {
-        Some(config_dir) => Path::new(&config_dir).join("dust"),
-        None => HOME
-            .as_ref()
-            .map(|home| home.join(".config/dust"))
-            .unwrap_or_else(|| PathBuf::from("/.config/dust")),
-    })
+pub struct BaseDirs {
+    pub config: PathBuf,
+    pub data: PathBuf,
 }
 
-pub fn data_base<'a>() -> &'a Path {
-    static DATA_BASE: OnceLock<PathBuf> = OnceLock::new();
-    DATA_BASE.get_or_init(|| match env::var_os("XDG_DATA_HOME") {
-        Some(data_home) => Path::new(&data_home).join("dust"),
-        None => HOME
-            .as_ref()
-            .map(|home| home.join(".local/share/dust"))
-            .unwrap_or_else(|| PathBuf::from("/.local/share/dust")),
-    })
+static BASE_DIRS: LazyLock<BaseDirs> = LazyLock::new(|| {
+    if let Some(base_dirs) = directories::BaseDirs::new() {
+        BaseDirs {
+            config: base_dirs.config_dir().join("dust"),
+            data: base_dirs.data_local_dir().join("dust").to_path_buf(),
+        }
+    } else {
+        BaseDirs {
+            config: Path::new("/.config/dust").to_path_buf(),
+            data: Path::new("/.local/share/dust").to_path_buf(),
+        }
+    }
+});
+
+pub fn base_dirs<'a>() -> &'a BaseDirs {
+    &*BASE_DIRS
 }
 
 pub struct Lazy<T> {
@@ -52,7 +53,8 @@ impl<T> Lazy<T> {
     }
 }
 
-static HOME: LazyLock<Option<PathBuf>> = LazyLock::new(home::home_dir);
+static HOME: LazyLock<Option<PathBuf>> =
+    LazyLock::new(|| Some(directories::BaseDirs::new()?.home_dir().to_path_buf()));
 
 struct HomePathBufVisitor;
 

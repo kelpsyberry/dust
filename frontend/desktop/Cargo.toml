@@ -48,7 +48,7 @@ opener = "0.5"
 
 # System resources
 rfd = "0.10"
-home = "0.5"
+directories = "5.0"
 copypasta = "0.8"
 cpal = "0.14"
 chrono = { version = "0.4", features = ["serde"] }

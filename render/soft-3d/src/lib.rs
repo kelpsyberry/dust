@@ -1,4 +1,5 @@
 #![feature(portable_simd, const_mut_refs, const_trait_impl, new_uninit)]
+#![warn(clippy::all)]
 
 mod data;
 pub use data::RenderingData;
