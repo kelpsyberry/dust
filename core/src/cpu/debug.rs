@@ -77,9 +77,13 @@ impl MemWatchpointRootTable {
 
     pub(super) fn remove(&mut self, addr: u32, size: u8, rw: MemWatchpointRwMask) {
         let root_i = (addr >> 21) as usize;
-        let Some(sub_table) = &mut self.0[root_i] else { return };
+        let Some(sub_table) = &mut self.0[root_i] else {
+            return;
+        };
         let sub_i = (addr >> 10 & 0x7FF) as usize;
-        let Some(leaf_table) = &mut sub_table.0[sub_i] else { return };
+        let Some(leaf_table) = &mut sub_table.0[sub_i] else {
+            return;
+        };
         let mut mask = rw.bits() as usize;
         for i in 0..size.trailing_zeros() {
             mask |= mask << (2 << i);

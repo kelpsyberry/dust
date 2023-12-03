@@ -9,7 +9,6 @@
     maybe_uninit_slice,
     portable_simd,
     const_mut_refs,
-    const_trait_impl,
     const_for,
     new_uninit
 )]

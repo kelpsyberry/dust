@@ -90,18 +90,11 @@ impl Schedule {
     }
 }
 
-impl const cpu::ScheduleConst for Schedule {
+impl cpu::Schedule for Schedule {
     type Timestamp = Timestamp;
     type Event = Event;
     type EventSlotIndex = EventSlotIndex;
 
-    #[inline]
-    fn timer_event_slot(i: timers::Index) -> EventSlotIndex {
-        EventSlotIndex::new(event_slots::TIMERS_START.get() + i.get())
-    }
-}
-
-impl cpu::Schedule for Schedule {
     #[inline]
     fn cur_time(&self) -> Timestamp {
         self.cur_time
@@ -128,11 +121,14 @@ impl cpu::Schedule for Schedule {
     }
 
     #[inline]
+    fn timer_event_slot(i: timers::Index) -> EventSlotIndex {
+        EventSlotIndex::new(event_slots::TIMERS_START.get() + i.get())
+    }
+
+    #[inline]
     fn set_timer_event(&mut self, i: timers::Index) {
-        self.schedule.set_event(
-            <Self as cpu::ScheduleConst>::timer_event_slot(i),
-            Event::Timer(i),
-        );
+        self.schedule
+            .set_event(Self::timer_event_slot(i), Event::Timer(i));
     }
 
     #[inline]

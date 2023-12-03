@@ -54,6 +54,7 @@ cfg_if::cfg_if! {
     }
 }
 
+#[allow(clippy::struct_field_names)]
 #[repr(C)]
 pub struct Ptrs {
     ptrs: [*mut u8; Self::ENTRIES],

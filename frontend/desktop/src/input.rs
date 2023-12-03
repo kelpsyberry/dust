@@ -2,8 +2,8 @@ mod map;
 pub use map::Map;
 mod state;
 pub use state::{Changes, State};
-pub mod trigger;
 pub mod key_codes;
+pub mod trigger;
 pub use key_codes::{KeyCode, ScanCode};
 
 use winit::keyboard::PhysicalKey;

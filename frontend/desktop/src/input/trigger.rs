@@ -62,11 +62,7 @@ impl Trigger {
 
 impl ToString for Trigger {
     fn to_string(&self) -> String {
-        fn write_trigger(
-            result: &mut String,
-            trigger: &Trigger,
-            needs_parens_if_multiple: bool,
-        ) {
+        fn write_trigger(result: &mut String, trigger: &Trigger, needs_parens_if_multiple: bool) {
             match trigger {
                 &Trigger::KeyCode(key_code) => {
                     write!(result, "v{}", <&str>::from(key_code)).unwrap();
@@ -273,7 +269,7 @@ impl<'a> TriggerParser<'a> {
                         kind: ParseErrorKind::ExpectedValue,
                     });
                 }
-                
+
                 if let Some(op) = op {
                     return Ok(Trigger::Chain(op, values));
                 } else {

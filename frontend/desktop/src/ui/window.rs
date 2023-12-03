@@ -46,7 +46,8 @@ impl GfxState {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
-        let surface = unsafe { instance.create_surface_from_raw(window) }.expect("Couldn't create surface");
+        let surface =
+            unsafe { instance.create_surface_from_raw(window) }.expect("Couldn't create surface");
 
         let adapter = match adapter {
             AdapterSelection::Auto(power_preference) => {
@@ -85,7 +86,7 @@ impl GfxState {
             format: {
                 let formats = surface.get_capabilities(&adapter).formats;
                 let preferred = formats
-                    .get(0)
+                    .first()
                     .expect("Couldn't get surface preferred format");
                 #[cfg(target_os = "macos")]
                 {
@@ -155,7 +156,7 @@ impl GfxState {
             .surface
             .get_capabilities(&self.adapter)
             .formats
-            .get(0)
+            .first()
             .expect("Couldn't get surface preferred format");
         if new_format != self.surface_config.format {
             self.surface_config.format = new_format;

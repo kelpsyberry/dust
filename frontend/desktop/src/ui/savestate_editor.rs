@@ -314,7 +314,7 @@ impl Editor {
                 for [a, b] in chunks {
                     text_heights.push(text_height(a).max(text_height(b)));
                 }
-                if let Some(last) = last.get(0) {
+                if let Some(last) = last.first() {
                     text_heights.push(text_height(last));
                 }
             }

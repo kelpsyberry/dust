@@ -90,7 +90,10 @@ struct InputData {
 }
 
 impl InputData {
-    fn fill<T: Sample>(&mut self, data: &[T]) where f64: cpal::FromSample<T> {
+    fn fill<T: Sample>(&mut self, data: &[T])
+    where
+        f64: cpal::FromSample<T>,
+    {
         if let Some(interp) = self.interp_rx.try_iter().last() {
             self.interp = interp;
         }

@@ -1,7 +1,7 @@
 pub mod bus;
 pub mod psr;
 pub mod schedule;
-pub(crate) use schedule::{Schedule, ScheduleConst};
+pub(crate) use schedule::Schedule;
 mod irqs;
 pub(crate) use irqs::Irqs;
 #[cfg(any(feature = "debugger-hooks", doc))]

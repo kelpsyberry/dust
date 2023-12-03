@@ -283,7 +283,7 @@ impl Builder {
 
         ds_rom
             .setup(self.direct_boot)
-            .map_err(|_| BuildError::RomNeedsDecryptionButNoBiosProvided)?;
+            .map_err(|()| BuildError::RomNeedsDecryptionButNoBiosProvided)?;
 
         let (global_engine_data, arm7_engine_data, arm9_engine_data) = engine.into_data();
         let mut arm7 = Arm7::new(

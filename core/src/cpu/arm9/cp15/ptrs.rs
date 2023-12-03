@@ -80,6 +80,7 @@ mod mask {
     pub const ALL: Mask = R_ALL | W_ALL;
 }
 
+#[allow(clippy::struct_field_names)]
 #[repr(C)]
 pub struct Ptrs {
     r_code_ptrs: [*const u8; Self::ENTRIES],

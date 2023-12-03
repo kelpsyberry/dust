@@ -1,6 +1,6 @@
 use crate::utils::Savestate;
 use core::ops::Mul;
-use core::simd::{i32x4, i64x4, Simd, SimdCast, SimdElement, SimdInt};
+use core::simd::{i32x4, i64x4, num::SimdInt, Simd, SimdCast, SimdElement};
 
 #[derive(Clone, Copy, Debug)]
 #[repr(align(16))]

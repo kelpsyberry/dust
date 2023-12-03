@@ -19,7 +19,7 @@ mod utils;
 use ahash::AHashMap as HashMap;
 use core::{
     mem::{self, MaybeUninit},
-    simd::SimdUint,
+    simd::num::SimdUint,
     // simd::u16x2,
     slice,
 };

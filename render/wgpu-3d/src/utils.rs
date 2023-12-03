@@ -1,4 +1,4 @@
-use core::simd::{f64x4, SimdUint};
+use core::simd::{f64x4, num::SimdUint};
 use dust_core::gpu::engine_3d::Color;
 
 #[inline]
