@@ -1,5 +1,5 @@
 use super::{
-    trigger::{self, Trigger},
+    trigger::{Op, Trigger},
     Action,
 };
 use crate::config::SettingOrigin;
@@ -11,7 +11,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use std::{fmt, hash::Hash};
-use winit::event::VirtualKeyCode;
+use winit::keyboard::KeyCode;
 
 static KEY_IDENTS: &[(Keys, &str)] = &[
     (Keys::A, "a"),
@@ -58,27 +58,36 @@ impl Map {
 
 fn default_keypad_map() -> HashMap<Keys, Option<Trigger>> {
     [
-        (Keys::A, Some(Trigger::KeyCode(VirtualKeyCode::X))),
-        (Keys::B, Some(Trigger::KeyCode(VirtualKeyCode::Z))),
-        (Keys::X, Some(Trigger::KeyCode(VirtualKeyCode::S))),
-        (Keys::Y, Some(Trigger::KeyCode(VirtualKeyCode::A))),
-        (Keys::L, Some(Trigger::KeyCode(VirtualKeyCode::Q))),
-        (Keys::R, Some(Trigger::KeyCode(VirtualKeyCode::W))),
-        (Keys::START, Some(Trigger::KeyCode(VirtualKeyCode::Return))),
+        (Keys::A, Some(Trigger::KeyCode(KeyCode::KeyX.into()))),
+        (Keys::B, Some(Trigger::KeyCode(KeyCode::KeyZ.into()))),
+        (Keys::X, Some(Trigger::KeyCode(KeyCode::KeyS.into()))),
+        (Keys::Y, Some(Trigger::KeyCode(KeyCode::KeyA.into()))),
+        (Keys::L, Some(Trigger::KeyCode(KeyCode::KeyQ.into()))),
+        (Keys::R, Some(Trigger::KeyCode(KeyCode::KeyW.into()))),
+        (Keys::START, Some(Trigger::KeyCode(KeyCode::Enter.into()))),
         (
             Keys::SELECT,
             Some(Trigger::Chain(
-                trigger::Op::Or,
+                Op::Or,
                 vec![
-                    Trigger::KeyCode(VirtualKeyCode::LShift),
-                    Trigger::KeyCode(VirtualKeyCode::RShift),
+                    Trigger::KeyCode(KeyCode::ShiftLeft.into()),
+                    Trigger::KeyCode(KeyCode::ShiftRight.into()),
                 ],
             )),
         ),
-        (Keys::RIGHT, Some(Trigger::KeyCode(VirtualKeyCode::Right))),
-        (Keys::LEFT, Some(Trigger::KeyCode(VirtualKeyCode::Left))),
-        (Keys::UP, Some(Trigger::KeyCode(VirtualKeyCode::Up))),
-        (Keys::DOWN, Some(Trigger::KeyCode(VirtualKeyCode::Down))),
+        (
+            Keys::RIGHT,
+            Some(Trigger::KeyCode(KeyCode::ArrowRight.into())),
+        ),
+        (
+            Keys::LEFT,
+            Some(Trigger::KeyCode(KeyCode::ArrowLeft.into())),
+        ),
+        (Keys::UP, Some(Trigger::KeyCode(KeyCode::ArrowUp.into()))),
+        (
+            Keys::DOWN,
+            Some(Trigger::KeyCode(KeyCode::ArrowDown.into())),
+        ),
         (Keys::DEBUG, None),
     ]
     .into_iter()

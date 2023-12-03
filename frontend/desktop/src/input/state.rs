@@ -3,7 +3,7 @@ use ahash::AHashSet as HashSet;
 use dust_core::emu::input::Keys as EmuKeys;
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
-    event::{ElementState, Event, MouseButton, WindowEvent},
+    event::{Event, KeyEvent, MouseButton, WindowEvent},
 };
 
 pub struct State {
@@ -120,15 +120,23 @@ impl State {
         if let Event::WindowEvent { event, .. } = event {
             match event {
                 WindowEvent::KeyboardInput {
-                    input,
-                    is_synthetic: false,
+                    event:
+                        KeyEvent {
+                            physical_key,
+                            state,
+                            ..
+                        },
                     ..
                 } => {
-                    let key = (input.virtual_keycode, input.scancode);
-                    if input.state == ElementState::Released {
+                    let Ok(key) = (*physical_key).try_into() else {
+                        return;
+                    };
+                    if state.is_pressed() {
+                        if catch_new {
+                            self.pressed_keys.insert(key);
+                        }
+                    } else {
                         self.pressed_keys.remove(&key);
-                    } else if catch_new {
-                        self.pressed_keys.insert(key);
                     }
                 }
 
@@ -144,7 +152,7 @@ impl State {
                     button: MouseButton::Left,
                     ..
                 } => {
-                    if *state == ElementState::Pressed {
+                    if state.is_pressed() {
                         if catch_new {
                             self.recalculate_touch_pos::<false>();
                         }

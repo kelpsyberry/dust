@@ -1,27 +1,33 @@
-use super::PressedKey;
-use serde::{de::IntoDeserializer, Deserialize, Serialize};
+use super::{KeyCode, PressedKey, ScanCode};
+use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     fmt::{self, Write},
     str::FromStr,
 };
-use winit::event::{ScanCode, VirtualKeyCode};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op {
     And,
     Or,
     Xor,
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl fmt::Display for Op {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Op::And => f.write_char('&'),
+            Op::Or => f.write_char('|'),
+            Op::Xor => f.write_char('^'),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(try_from = "&str", into = "String")]
 pub enum Trigger {
-    KeyCode(VirtualKeyCode),
-    // TODO: Proper keyboard key to character conversion; right now winit doesn't support reading
-    // the keyboard layout or the character corresponding to a key other than through virtual key
-    // code mapping
-    ScanCode(ScanCode, Option<VirtualKeyCode>),
+    KeyCode(KeyCode),
+    ScanCode(ScanCode),
     Not(Box<Trigger>),
     Chain(Op, Vec<Trigger>),
 }
@@ -32,12 +38,12 @@ impl Trigger {
         pressed_keys: impl IntoIterator<Item = &'a PressedKey> + Copy,
     ) -> bool {
         match self {
-            Trigger::KeyCode(keycode) => {
-                pressed_keys.into_iter().any(|key| key.0 == Some(*keycode))
-            }
-            Trigger::ScanCode(scancode, _) => {
-                pressed_keys.into_iter().any(|key| key.1 == *scancode)
-            }
+            Trigger::KeyCode(key_code) => pressed_keys
+                .into_iter()
+                .any(|key| matches!(key, PressedKey::KeyCode(key_code_) if key_code_ == key_code)),
+            Trigger::ScanCode(scan_code) => pressed_keys.into_iter().any(
+                |key| matches!(key, PressedKey::ScanCode(scan_code_) if scan_code_ == scan_code),
+            ),
             Trigger::Not(trigger) => !trigger.activated(pressed_keys),
             Trigger::Chain(op, triggers) => match op {
                 Op::And => triggers
@@ -56,13 +62,17 @@ impl Trigger {
 
 impl ToString for Trigger {
     fn to_string(&self) -> String {
-        fn write_trigger(result: &mut String, trigger: &Trigger, needs_parens_if_multiple: bool) {
+        fn write_trigger(
+            result: &mut String,
+            trigger: &Trigger,
+            needs_parens_if_multiple: bool,
+        ) {
             match trigger {
                 &Trigger::KeyCode(key_code) => {
-                    write!(result, "v{key_code:?}").unwrap();
+                    write!(result, "v{}", <&str>::from(key_code)).unwrap();
                 }
-                &Trigger::ScanCode(scan_code, key_code) => {
-                    write!(result, "s{scan_code}v{key_code:?}").unwrap();
+                &Trigger::ScanCode(scan_code) => {
+                    write!(result, "s{}", scan_code.to_string()).unwrap();
                 }
                 Trigger::Not(trigger) => {
                     result.push('!');
@@ -97,18 +107,51 @@ impl ToString for Trigger {
 }
 
 impl From<Trigger> for String {
-    fn from(trigger: Trigger) -> Self {
-        trigger.to_string()
+    fn from(value: Trigger) -> Self {
+        value.to_string()
     }
 }
 
-pub struct ParseError;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParseErrorKind {
+    UnexpectedCharacter,
+    UnexpectedClosingParen,
+    InvalidKeyScanCode,
+    ExpectedValue,
+    UnexpectedValue,
+    UnexpectedUnaryOperator,
+    MismatchedOperators { expected: Op, found: Op },
+}
+
+impl fmt::Display for ParseErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnexpectedCharacter => f.write_str("unexpected character"),
+            Self::UnexpectedClosingParen => f.write_str("unexpected closing parens"),
+            Self::InvalidKeyScanCode => f.write_str("invalid key/scan code"),
+            Self::ExpectedValue => f.write_str("expected value"),
+            Self::UnexpectedValue => f.write_str("unexpected value"),
+            Self::UnexpectedUnaryOperator => f.write_str("unexpected unary operator after values"),
+            Self::MismatchedOperators { expected, found } => write!(
+                f,
+                "mismatched operators: expected {}, found {}",
+                expected, found
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct ParseError {
+    pos: usize,
+    kind: ParseErrorKind,
+}
 
 impl Error for ParseError {}
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("parse error")
+        write!(f, "parse error at character {}: {}", self.pos, self.kind)
     }
 }
 
@@ -118,119 +161,192 @@ impl fmt::Debug for ParseError {
     }
 }
 
-impl FromStr for Trigger {
-    type Err = ParseError;
+struct TriggerParser<'a> {
+    s: &'a str,
+    pos: usize,
+    new_pos: usize,
+}
 
-    fn from_str(mut s: &str) -> Result<Self, Self::Err> {
-        fn parse_key_code(s: &mut &str) -> Result<VirtualKeyCode, ParseError> {
-            let end_index = s
-                .char_indices()
-                .find_map(|(i, c)| if c.is_alphanumeric() { None } else { Some(i) })
-                .unwrap_or(s.len());
-            let key_code_str = &s[..end_index];
-            *s = &s[end_index..];
+impl<'a> TriggerParser<'a> {
+    fn parse(s: &'a str) -> Result<Trigger, ParseError> {
+        TriggerParser {
+            s,
+            pos: 0,
+            new_pos: 0,
+        }
+        .parse_trigger(false)
+    }
 
-            VirtualKeyCode::deserialize(key_code_str.into_deserializer())
-                .map_err(|_: serde::de::value::Error| ParseError)
+    fn consume_char(&mut self) -> Option<char> {
+        let mut char_indices = self.s.char_indices();
+        let next_char = char_indices.next().map(|(_, c)| c);
+        let end_index = match char_indices.next() {
+            Some((i, _)) => i,
+            None => self.s.len(),
+        };
+        self.s = &self.s[end_index..];
+        self.new_pos += end_index;
+        next_char
+    }
+
+    fn commit(&mut self) {
+        self.pos = self.new_pos;
+    }
+
+    fn validate_and_change_op(
+        &mut self,
+        new_op: Op,
+        op: &mut Option<Op>,
+        expects_value: &mut bool,
+    ) -> Result<(), ParseError> {
+        if *expects_value {
+            return Err(ParseError {
+                pos: self.pos,
+                kind: ParseErrorKind::ExpectedValue,
+            });
         }
 
-        fn parse_value(s: &mut &str) -> Result<Trigger, ParseError> {
-            let mut negate = false;
-            let mut operator = None;
-            let mut values = Vec::new();
-
-            loop {
-                *s = s.trim_start();
-
-                let mut char_indices = s.char_indices();
-                let next_char = char_indices.next().map(|(_, c)| c);
-
-                if next_char == Some(')') || next_char.is_none() {
-                    if let Some(operator) = operator {
-                        if values.len() <= 1 {
-                            return Err(ParseError);
-                        }
-                        return Ok(Trigger::Chain(operator, values));
-                    } else {
-                        if values.len() != 1 {
-                            return Err(ParseError);
-                        }
-                        return Ok(values.remove(0));
-                    }
-                }
-
-                if let Some((new_start_index, _)) = char_indices.next() {
-                    *s = &s[new_start_index..];
-                }
-
-                let value = match next_char {
-                    Some('!') => {
-                        negate = !negate;
-                        continue;
-                    }
-
-                    Some('&') => {
-                        operator = Some(Op::And);
-                        continue;
-                    }
-
-                    Some('|') => {
-                        operator = Some(Op::Or);
-                        continue;
-                    }
-
-                    Some('^') => {
-                        operator = Some(Op::Xor);
-                        continue;
-                    }
-
-                    Some('v') => Trigger::KeyCode(parse_key_code(s)?),
-
-                    Some('s') => {
-                        let mut char_indices = s.char_indices();
-                        let (scan_code_end_index, scan_code_end_char) = char_indices
-                            .find_map(|(i, c)| {
-                                if c.is_numeric() {
-                                    None
-                                } else {
-                                    Some((i, Some(c)))
-                                }
-                            })
-                            .unwrap_or((s.len(), None));
-                        let scan_code_str = &s[..scan_code_end_index];
-                        *s = &s[scan_code_end_index..];
-
-                        let scan_code =
-                            ScanCode::from_str(scan_code_str).map_err(|_| ParseError)?;
-
-                        let virtual_key_code = match scan_code_end_char {
-                            Some('v') => Some(parse_key_code(s)?),
-                            Some(c) if c.is_alphanumeric() => return Err(ParseError),
-                            _ => None,
-                        };
-
-                        Trigger::ScanCode(scan_code, virtual_key_code)
-                    }
-
-                    Some('(') => {
-                        let value = parse_value(s)?;
-                        *s = s.strip_prefix(')').ok_or(ParseError)?;
-                        value
-                    }
-
-                    _ => return Err(ParseError),
-                };
-
-                values.push(if negate {
-                    Trigger::Not(Box::new(value))
-                } else {
-                    value
+        if let Some(op) = *op {
+            if op != new_op {
+                return Err(ParseError {
+                    pos: self.pos,
+                    kind: ParseErrorKind::MismatchedOperators {
+                        expected: new_op,
+                        found: op,
+                    },
                 });
-                negate = false;
             }
         }
 
-        parse_value(&mut s)
+        *op = Some(new_op);
+        *expects_value = true;
+
+        self.commit();
+
+        Ok(())
+    }
+
+    fn parse_value<T: std::str::FromStr>(&mut self) -> Result<T, ParseError> {
+        let end_index = self
+            .s
+            .char_indices()
+            .find_map(|(i, c)| (!c.is_alphanumeric()).then_some(i))
+            .unwrap_or(self.s.len());
+        let value_str = &self.s[..end_index];
+        self.s = &self.s[end_index..];
+        self.new_pos += end_index;
+
+        let result = value_str.parse().map_err(|_| ParseError {
+            pos: self.pos,
+            kind: ParseErrorKind::InvalidKeyScanCode,
+        })?;
+
+        self.commit();
+
+        Ok(result)
+    }
+
+    fn parse_trigger(&mut self, expect_parens: bool) -> Result<Trigger, ParseError> {
+        let mut negate = false;
+        let mut op = None;
+        let mut values = vec![];
+        let mut expects_value = true;
+
+        loop {
+            self.s = self.s.trim_start();
+
+            let next_char = self.consume_char();
+            if next_char == Some(')') {
+                if !expect_parens {
+                    return Err(ParseError {
+                        pos: self.pos,
+                        kind: ParseErrorKind::UnexpectedClosingParen,
+                    });
+                }
+                self.commit();
+            }
+
+            if next_char == Some(')') || next_char.is_none() {
+                if expects_value {
+                    return Err(ParseError {
+                        pos: self.pos,
+                        kind: ParseErrorKind::ExpectedValue,
+                    });
+                }
+                
+                if let Some(op) = op {
+                    return Ok(Trigger::Chain(op, values));
+                } else {
+                    return Ok(values.remove(0));
+                }
+            }
+            let next_char = next_char.unwrap();
+
+            match next_char {
+                '!' => {
+                    if !expects_value {
+                        return Err(ParseError {
+                            pos: self.pos,
+                            kind: ParseErrorKind::UnexpectedUnaryOperator,
+                        });
+                    }
+                    negate = !negate;
+                    self.commit();
+                    continue;
+                }
+
+                '&' => {
+                    self.validate_and_change_op(Op::And, &mut op, &mut expects_value)?;
+                    continue;
+                }
+
+                '|' => {
+                    self.validate_and_change_op(Op::Or, &mut op, &mut expects_value)?;
+                    continue;
+                }
+
+                '^' => {
+                    self.validate_and_change_op(Op::Xor, &mut op, &mut expects_value)?;
+                    continue;
+                }
+
+                _ => {}
+            }
+
+            if !matches!(next_char, 'v' | 's' | '(') {
+                return Err(ParseError {
+                    pos: self.pos,
+                    kind: ParseErrorKind::UnexpectedCharacter,
+                });
+            }
+
+            if !expects_value {
+                return Err(ParseError {
+                    pos: self.pos,
+                    kind: ParseErrorKind::UnexpectedValue,
+                });
+            }
+
+            let trigger = match next_char {
+                'v' => Trigger::KeyCode(self.parse_value::<KeyCode>()?),
+                's' => Trigger::ScanCode(self.parse_value::<ScanCode>()?),
+                '(' => {
+                    self.commit();
+                    self.parse_trigger(true)?
+                }
+                _ => unreachable!(),
+            };
+            values.push(trigger);
+            expects_value = false;
+        }
+    }
+}
+
+impl FromStr for Trigger {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        TriggerParser::parse(s)
     }
 }
 

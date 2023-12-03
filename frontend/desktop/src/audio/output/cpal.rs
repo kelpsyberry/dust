@@ -83,20 +83,24 @@ impl OutputStream {
                 &supported_output_config.config(),
                 move |data: &mut [u16], _| output_data.fill(data),
                 err_callback,
+                None,
             ),
             SampleFormat::I16 => output_device.build_output_stream(
                 &supported_output_config.config(),
                 move |data: &mut [i16], _| output_data.fill(data),
                 err_callback,
+                None,
             ),
             SampleFormat::F32 => output_device.build_output_stream(
                 &supported_output_config.config(),
                 move |data: &mut [f32], _| output_data.fill(data),
                 err_callback,
+                None,
             ),
+            _ => panic!("Unsupported audio output sample format"),
         }
         .ok()?;
-        stream.play().expect("Couldn't start audio output stream");
+        stream.play().expect("couldn't start audio output stream");
 
         Some(OutputStream {
             _stream: stream,
@@ -143,7 +147,7 @@ struct OutputData {
 }
 
 impl OutputData {
-    fn fill<T: Sample>(&mut self, data: &mut [T]) {
+    fn fill<T: Sample + cpal::FromSample<f32>>(&mut self, data: &mut [T]) {
         if let Some(interp) = self.interp_rx.try_iter().last() {
             self.interp = interp;
         }
@@ -170,8 +174,8 @@ impl OutputData {
                         return;
                     }
                     let result = self.interp.get_output_sample(fract);
-                    data[output_i] = T::from(&(result[0] as f32 * volume));
-                    data[output_i + 1] = T::from(&(result[1] as f32 * volume));
+                    data[output_i] = T::from_sample(result[0] as f32 * volume);
+                    data[output_i + 1] = T::from_sample(result[1] as f32 * volume);
                     fract += sample_rate_ratio;
                     output_i += 2;
                 }

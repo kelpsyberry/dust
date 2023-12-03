@@ -101,6 +101,8 @@ pub struct EmuState {
     arm9_bios: Option<Box<Bytes<{ arm9::BIOS_SIZE }>>>,
 }
 
+// rust-analyzer needs this not to trigger a warning about generated function names
+#[allow(non_snake_case)]
 #[wasm_bindgen]
 impl EmuState {
     pub fn reset(&mut self) {

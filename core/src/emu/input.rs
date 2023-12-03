@@ -3,6 +3,7 @@ use crate::{cpu, utils::Savestate};
 use bitflags::bitflags;
 
 bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct Keys: u32 {
         const A = 1;
         const B = 1 << 1;

@@ -38,26 +38,30 @@ impl InputStream {
             fract: 0.0,
         };
 
-        let err_callback = |err| panic!("Error in default audio output device stream: {err}");
+        let err_callback = |err| panic!("Error in default audio input device stream: {err}");
         let stream = match supported_input_config.sample_format() {
             SampleFormat::U16 => input_device.build_input_stream(
                 &supported_input_config.config(),
                 move |data: &[u16], _| input_data.fill(data),
                 err_callback,
+                None,
             ),
             SampleFormat::I16 => input_device.build_input_stream(
                 &supported_input_config.config(),
                 move |data: &[i16], _| input_data.fill(data),
                 err_callback,
+                None,
             ),
             SampleFormat::F32 => input_device.build_input_stream(
                 &supported_input_config.config(),
                 move |data: &[f32], _| input_data.fill(data),
                 err_callback,
+                None,
             ),
+            _ => panic!("Unsupported audio input sample format"),
         }
         .ok()?;
-        stream.play().expect("Couldn't start audio output stream");
+        stream.play().expect("couldn't start audio input stream");
 
         Some(InputStream {
             _stream: stream,
@@ -86,7 +90,7 @@ struct InputData {
 }
 
 impl InputData {
-    fn fill<T: Sample>(&mut self, data: &[T]) {
+    fn fill<T: Sample>(&mut self, data: &[T]) where f64: cpal::FromSample<T> {
         if let Some(interp) = self.interp_rx.try_iter().last() {
             self.interp = interp;
         }
@@ -95,7 +99,7 @@ impl InputData {
         for input_samples in data.chunks(self.channels as usize) {
             let mut input_sample = 0.0;
             for sample in input_samples {
-                input_sample += sample.to_f32() as f64;
+                input_sample += sample.to_sample::<f64>();
             }
             self.interp
                 .push_input_sample([input_sample / self.channels as f64]);

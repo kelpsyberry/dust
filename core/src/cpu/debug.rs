@@ -11,6 +11,7 @@ pub struct MemWatchpointSubTable(pub [Option<Box<MemWatchpointLeafTable>>; 0x800
 pub struct MemWatchpointLeafTable(pub [usize; MWLT_ENTRY_COUNT as usize]);
 
 bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct MemWatchpointRwMask: u8 {
         const READ = 1 << 0;
         const WRITE = 1 << 1;
@@ -76,15 +77,9 @@ impl MemWatchpointRootTable {
 
     pub(super) fn remove(&mut self, addr: u32, size: u8, rw: MemWatchpointRwMask) {
         let root_i = (addr >> 21) as usize;
-        let sub_table = match &mut self.0[root_i] {
-            Some(sub_table_ptr) => sub_table_ptr,
-            None => return,
-        };
+        let Some(sub_table) = &mut self.0[root_i] else { return };
         let sub_i = (addr >> 10 & 0x7FF) as usize;
-        let leaf_table = match &mut sub_table.0[sub_i] {
-            Some(leaf_table_ptr) => leaf_table_ptr,
-            None => return,
-        };
+        let Some(leaf_table) = &mut sub_table.0[sub_i] else { return };
         let mut mask = rw.bits() as usize;
         for i in 0..size.trailing_zeros() {
             mask |= mask << (2 << i);

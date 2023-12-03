@@ -13,7 +13,7 @@ use imgui::{
     ItemHoveredFlags, MouseButton, StyleColor, TableColumnFlags, TableColumnSetup, TableFlags, Ui,
 };
 use rfd::FileDialog;
-use winit::event::{ElementState, Event, WindowEvent};
+use winit::event::{Event, KeyEvent, WindowEvent};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selection {
@@ -464,28 +464,27 @@ impl Editor {
         if let Event::WindowEvent {
             event:
                 WindowEvent::KeyboardInput {
-                    input,
-                    is_synthetic: false,
+                    event:
+                        KeyEvent {
+                            physical_key,
+                            state,
+                            ..
+                        },
                     ..
                 },
             ..
         } = event
         {
-            let key = (input.virtual_keycode, input.scancode);
-            if input.state == ElementState::Released {
-                self.pressed_keys.remove(&key);
-
-                if self.state.is_capturing() {
-                    self.finalize(config);
-                }
-            } else {
+            let Ok(key) = (*physical_key).try_into() else {
+                return;
+            };
+            if state.is_pressed() {
                 self.pressed_keys.insert(key);
 
                 if self.state.is_capturing() {
-                    let new_trigger = if let Some(key_code) = input.virtual_keycode {
-                        Trigger::KeyCode(key_code)
-                    } else {
-                        Trigger::ScanCode(input.scancode, None)
+                    let new_trigger = match key {
+                        PressedKey::KeyCode(key_code) => Trigger::KeyCode(key_code),
+                        PressedKey::ScanCode(scan_code) => Trigger::ScanCode(scan_code),
                     };
 
                     if let Some(trigger) = &mut self.current_trigger {
@@ -509,6 +508,12 @@ impl Editor {
                     } else {
                         self.current_trigger = Some(new_trigger);
                     }
+                }
+            } else {
+                self.pressed_keys.remove(&key);
+
+                if self.state.is_capturing() {
+                    self.finalize(config);
                 }
             }
         }

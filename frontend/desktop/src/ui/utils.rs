@@ -51,6 +51,7 @@ macro_rules! error {
             .set_description(&format!($($desc)*))
             .set_buttons(rfd::MessageButtons::YesNo)
             .show()
+        == rfd::MessageDialogResult::Yes
     };
     ($title: expr, $($desc: tt)*) => {
         rfd::MessageDialog::new()

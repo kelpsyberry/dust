@@ -3,7 +3,7 @@ use dust_core::gpu::{engine_3d, Scanline, SCREEN_HEIGHT, SCREEN_WIDTH};
 use emu_utils::triple_buffer;
 use parking_lot::RwLock;
 use std::{
-    num::{NonZeroU32, NonZeroU64},
+    num::NonZeroU64,
     slice,
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
@@ -81,6 +81,7 @@ impl OutputAttachments {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
         });
         let color_view = color.create_view(&wgpu::TextureViewDescriptor {
             label: Some("2D renderer color view"),
@@ -476,6 +477,7 @@ impl GfxThreadData {
                     dimension: wgpu::TextureDimension::D2,
                     format: wgpu::TextureFormat::R32Uint,
                     usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
                 });
                 let color_output_view = color_output_texture.create_view(&Default::default());
                 (
@@ -540,6 +542,7 @@ impl GfxThreadData {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rg32Uint,
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
         });
         let fb_texture_view = fb_texture.create_view(&Default::default());
 
@@ -717,7 +720,7 @@ impl GfxThreadData {
                         },
                         wgpu::ImageDataLayout {
                             offset: 0,
-                            bytes_per_row: NonZeroU32::new((SCREEN_WIDTH * 4) as u32),
+                            bytes_per_row: Some((SCREEN_WIDTH * 4) as u32),
                             rows_per_image: None,
                         },
                         wgpu::Extent3d {
@@ -738,7 +741,7 @@ impl GfxThreadData {
                     },
                     wgpu::ImageDataLayout {
                         offset: 0,
-                        bytes_per_row: NonZeroU32::new((SCREEN_WIDTH * 8) as u32),
+                        bytes_per_row: Some((SCREEN_WIDTH * 8) as u32),
                         rows_per_image: None,
                     },
                     wgpu::Extent3d {
@@ -769,10 +772,12 @@ impl GfxThreadData {
                             resolve_target: None,
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: true,
+                                store: wgpu::StoreOp::Store,
                             },
                         })],
                         depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
                     });
 
                 render_pass.set_bind_group(0, &self.fb_data_bg, &[]);

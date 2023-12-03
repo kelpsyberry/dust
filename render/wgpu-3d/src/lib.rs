@@ -19,7 +19,6 @@ mod utils;
 use ahash::AHashMap as HashMap;
 use core::{
     mem::{self, MaybeUninit},
-    num::NonZeroU32,
     simd::SimdUint,
     // simd::u16x2,
     slice,
@@ -285,6 +284,7 @@ fn create_texture(
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8Unorm,
         usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
     });
 
     decode_buffer.clear();
@@ -543,7 +543,7 @@ fn create_texture(
             slice::from_raw_parts(decode_buffer.as_ptr() as *const u8, decode_buffer.len() * 4),
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(NonZeroU32::new_unchecked(width << 2)),
+                bytes_per_row: Some(width << 2),
                 rows_per_image: None,
             },
             size,
@@ -606,6 +606,7 @@ impl OutputAttachments {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
         });
         let color_view = color.create_view(&wgpu::TextureViewDescriptor {
             label: Some("3D renderer color view"),
@@ -624,6 +625,7 @@ impl OutputAttachments {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32FloatStencil8,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
         });
         let depth_view = depth.create_view(&wgpu::TextureViewDescriptor {
             label: Some("3D renderer depth view"),
@@ -930,7 +932,7 @@ impl Renderer {
                             color_to_wgpu_f64(frame.rendering.clear_color)
                         },
                     ),
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -943,13 +945,15 @@ impl Renderer {
                             frame.rendering.clear_depth as f32 / (1 << 24) as f32
                         },
                     ),
-                    store: false,
+                    store: wgpu::StoreOp::Discard,
                 }),
                 stencil_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(0),
-                    store: false,
+                    store: wgpu::StoreOp::Discard,
                 }),
             }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
         });
 
         if frame.rendering.control.rear_plane_bitmap_enabled() {

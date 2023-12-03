@@ -6,6 +6,7 @@ use imgui::{Key, MouseButton, StyleColor, StyleVar, Ui, WindowHoveredFlags};
 use std::{fmt::Write, num::NonZeroU8};
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct Flags: u8 {
         // Creation flags
         const SHOW_VIEW_OPTIONS = 1 << 0;

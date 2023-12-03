@@ -1,6 +1,6 @@
 #[cfg(target_os = "macos")]
 use cocoa::{
-    appkit::{NSWindow, NSWindowOcclusionState, NSWindowStyleMask},
+    appkit::{NSWindow, NSWindowStyleMask},
     base::id,
     foundation::NSRect,
 };
@@ -12,11 +12,12 @@ use std::{
     time::{Duration, Instant},
 };
 #[cfg(target_os = "macos")]
-use winit::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
+use winit::platform::macos::WindowBuilderExtMacOS;
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
     event::{Event, StartCause, WindowEvent},
-    event_loop::{ControlFlow as WinitControlFlow, EventLoop},
+    event_loop::EventLoop,
+    raw_window_handle::{HasWindowHandle, RawWindowHandle},
     window::{Window as WinitWindow, WindowBuilder as WinitWindowBuilder},
 };
 
@@ -26,7 +27,7 @@ pub enum AdapterSelection {
 }
 
 pub struct GfxState {
-    surface: wgpu::Surface,
+    surface: wgpu::Surface<'static>,
     adapter: wgpu::Adapter,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
@@ -41,8 +42,11 @@ impl GfxState {
         features: wgpu::Features,
         adapter: AdapterSelection,
     ) -> Self {
-        let instance = wgpu::Instance::new(wgpu::Backends::all());
-        let surface = unsafe { instance.create_surface(window) };
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            ..Default::default()
+        });
+        let surface = unsafe { instance.create_surface_from_raw(window) }.expect("Couldn't create surface");
 
         let adapter = match adapter {
             AdapterSelection::Auto(power_preference) => {
@@ -58,14 +62,14 @@ impl GfxState {
                 instance.enumerate_adapters(backends).find(suitable)
             }
         }
-        .expect("couldn't create graphics adapter");
+        .expect("Couldn't create graphics adapter");
 
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features,
-                    limits: wgpu::Limits {
+                    required_features: features,
+                    required_limits: wgpu::Limits {
                         max_texture_dimension_2d: 4096,
                         ..wgpu::Limits::downlevel_webgl2_defaults()
                     },
@@ -73,22 +77,19 @@ impl GfxState {
                 None,
             )
             .await
-            .expect("couldn't open connection to graphics device");
+            .expect("Couldn't open connection to graphics device");
 
         let size = window.inner_size();
         let surf_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: {
-                let formats = surface.get_supported_formats(&adapter);
+                let formats = surface.get_capabilities(&adapter).formats;
                 let preferred = formats
                     .get(0)
-                    .expect("couldn't get surface preferred format");
+                    .expect("Couldn't get surface preferred format");
                 #[cfg(target_os = "macos")]
                 {
-                    *formats
-                        .iter()
-                        .find(|f| !f.describe().srgb)
-                        .unwrap_or(preferred)
+                    *formats.iter().find(|f| !f.is_srgb()).unwrap_or(preferred)
                 }
                 #[cfg(not(target_os = "macos"))]
                 *preferred
@@ -97,6 +98,7 @@ impl GfxState {
             height: size.height,
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: Vec::new(),
         };
         surface.configure(&device, &surf_config);
 
@@ -151,9 +153,10 @@ impl GfxState {
     fn update_format_and_rebuild_swapchain(&mut self, size: PhysicalSize<u32>) {
         let new_format = *self
             .surface
-            .get_supported_formats(&self.adapter)
+            .get_capabilities(&self.adapter)
+            .formats
             .get(0)
-            .expect("couldn't get surface preferred format");
+            .expect("Couldn't get surface preferred format");
         if new_format != self.surface_config.format {
             self.surface_config.format = new_format;
             self.surface_format_changed = true;
@@ -282,7 +285,7 @@ impl ImGuiState {
             }),
         }]);
 
-        if gfx_state.surface_config.format.describe().srgb {
+        if gfx_state.surface_config.format.is_srgb() {
             let style = imgui.style_mut();
             for color in &mut style.colors {
                 for component in &mut color[..3] {
@@ -331,8 +334,9 @@ pub struct Window {
 
     pub imgui: ImGuiState,
 
+    is_occluded: bool,
     #[cfg(target_os = "macos")]
-    macos_title_bar_hidden: bool,
+    macos_title_bar_is_hidden: bool,
     #[cfg(target_os = "macos")]
     pub macos_title_bar_height: f32,
 }
@@ -351,26 +355,38 @@ impl Window {
     }
 
     #[cfg(target_os = "macos")]
-    fn macos_title_bar_height(&self) -> f32 {
-        let content_layout_rect: NSRect =
-            unsafe { msg_send![self.window.ns_window() as id, contentLayoutRect] };
+    fn ns_window(&self) -> Option<id> {
+        if let RawWindowHandle::AppKit(window) =
+            RawWindowHandle::from(self.window.window_handle().ok()?)
+        {
+            Some(window.ns_view.as_ptr() as id)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn macos_title_bar_height(&self, ns_window: id) -> f32 {
+        let content_layout_rect: NSRect = unsafe { msg_send![ns_window, contentLayoutRect] };
         (self.window.outer_size().height as f64 / self.scale_factor
             - content_layout_rect.size.height) as f32
     }
 
     #[cfg(target_os = "macos")]
     pub fn set_macos_title_bar_hidden(&mut self, hidden: bool) {
-        self.macos_title_bar_hidden = hidden;
+        let Some(ns_window) = self.ns_window() else {
+            return;
+        };
+        self.macos_title_bar_is_hidden = hidden;
         self.macos_title_bar_height = if hidden {
-            self.macos_title_bar_height()
+            self.macos_title_bar_height(ns_window)
         } else {
             0.0
         };
         unsafe {
-            let window = self.window.ns_window() as id;
-            window.setTitlebarAppearsTransparent_(hidden as cocoa::base::BOOL);
-            let prev_style_mask = window.styleMask();
-            window.setStyleMask_(if hidden {
+            ns_window.setTitlebarAppearsTransparent_(hidden as cocoa::base::BOOL);
+            let prev_style_mask = ns_window.styleMask();
+            ns_window.setStyleMask_(if hidden {
                 prev_style_mask | NSWindowStyleMask::NSFullSizeContentViewWindowMask
             } else {
                 prev_style_mask & !NSWindowStyleMask::NSFullSizeContentViewWindowMask
@@ -380,7 +396,7 @@ impl Window {
 
     pub fn main_menu_bar(&mut self, ui: &imgui::Ui, f: impl FnOnce(&mut Self)) {
         #[cfg(target_os = "macos")]
-        let frame_padding = if self.macos_title_bar_hidden {
+        let frame_padding = if self.macos_title_bar_is_hidden {
             Some(ui.push_style_var(imgui::StyleVar::FramePadding([
                 0.0,
                 0.5 * (self.macos_title_bar_height - ui.text_line_height()),
@@ -393,7 +409,7 @@ impl Window {
             #[cfg(target_os = "macos")]
             {
                 drop(frame_padding);
-                if self.macos_title_bar_hidden && self.window.fullscreen().is_none() {
+                if self.macos_title_bar_is_hidden && self.window.fullscreen().is_none() {
                     // TODO: There has to be some way to compute this width instead of
                     //       hardcoding it.
                     ui.dummy([68.0, 0.0]);
@@ -420,7 +436,7 @@ impl Builder {
         default_logical_size: (u32, u32),
         #[cfg(target_os = "macos")] macos_title_bar_hidden: bool,
     ) -> Self {
-        let event_loop = EventLoop::new();
+        let event_loop = EventLoop::new().expect("Couldn't create event loop");
         let window_builder = WinitWindowBuilder::new()
             .with_title(title)
             .with_inner_size(LogicalSize::new(
@@ -457,15 +473,18 @@ impl Builder {
 
             imgui: imgui_state,
 
+            is_occluded: false,
             #[cfg(target_os = "macos")]
-            macos_title_bar_hidden,
+            macos_title_bar_is_hidden: macos_title_bar_hidden,
             #[cfg(target_os = "macos")]
             macos_title_bar_height: 0.0,
         };
 
         #[cfg(target_os = "macos")]
         if macos_title_bar_hidden {
-            window.macos_title_bar_height = window.macos_title_bar_height();
+            if let Some(ns_window) = window.ns_window() {
+                window.macos_title_bar_height = window.macos_title_bar_height(ns_window);
+            }
         }
 
         Builder {
@@ -516,7 +535,7 @@ impl Builder {
         let mut on_exit_imgui = ManuallyDrop::new(on_exit_imgui);
         let mut on_exit = ManuallyDrop::new(on_exit);
 
-        self.event_loop.run(move |event, _, control_flow| {
+        let _ = self.event_loop.run(move |event, elwt| {
             let window = &mut *window_;
             let imgui = &mut *imgui_;
             window
@@ -526,14 +545,14 @@ impl Builder {
             process_event(window, &mut state, &event);
             match event {
                 Event::NewEvents(StartCause::Init) => {
-                    *control_flow = WinitControlFlow::Poll;
+                    // *control_flow = WinitControlFlow::Poll;
                 }
 
                 Event::WindowEvent {
                     event: WindowEvent::CloseRequested,
                     ..
                 } => {
-                    *control_flow = WinitControlFlow::Exit;
+                    elwt.exit();
                 }
 
                 Event::WindowEvent {
@@ -551,7 +570,17 @@ impl Builder {
                     window.gfx.invalidate_swapchain();
                 }
 
-                Event::RedrawRequested(_) => {
+                Event::WindowEvent {
+                    event: WindowEvent::Occluded(is_occluded),
+                    ..
+                } => {
+                    window.is_occluded = is_occluded;
+                }
+
+                Event::WindowEvent {
+                    event: WindowEvent::RedrawRequested,
+                    ..
+                } => {
                     let now = Instant::now();
                     let delta_time = now - window.last_frame;
                     window.last_frame = now;
@@ -579,13 +608,13 @@ impl Builder {
 
                     let ui = imgui.frame();
                     if draw_imgui(window, &mut state, ui) == ControlFlow::Exit {
-                        *control_flow = WinitControlFlow::Exit;
+                        elwt.exit();
                     }
 
                     if draw(window, &mut state, &frame, &mut encoder, delta_time)
                         == ControlFlow::Exit
                     {
-                        *control_flow = WinitControlFlow::Exit;
+                        elwt.exit();
                     }
 
                     window.imgui.winit.prepare_render(ui, &window.window);
@@ -600,31 +629,24 @@ impl Builder {
                     );
 
                     window.gfx.queue.submit(iter::once(encoder.finish()));
+                    window.window.pre_present_notify();
                     frame.present();
 
                     window.gfx.device.poll(wgpu::Maintain::Poll);
-                }
 
-                Event::RedrawEventsCleared => {
                     if window.is_hidden {
                         window.is_hidden = false;
                         window.window.set_visible(true);
                     }
+                }
 
-                    // TODO: https://github.com/rust-windowing/winit/issues/2022
-                    // Mitigation for https://github.com/gfx-rs/wgpu/issues/1783
-                    #[cfg(target_os = "macos")]
-                    let window_visible =
-                        unsafe { (window.window.ns_window() as id).occlusionState() }
-                            .contains(NSWindowOcclusionState::NSWindowOcclusionStateVisible);
-                    #[cfg(not(target_os = "macos"))]
-                    let window_visible = true;
-                    if window_visible {
+                Event::AboutToWait => {
+                    if !window.is_occluded {
                         window.window.request_redraw();
                     }
                 }
 
-                Event::LoopDestroyed => {
+                Event::LoopExiting => {
                     unsafe {
                         ManuallyDrop::take(&mut on_exit_imgui)(
                             window,
@@ -641,5 +663,6 @@ impl Builder {
                 _ => {}
             }
         });
+        std::process::exit(0);
     }
 }

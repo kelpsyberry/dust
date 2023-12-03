@@ -244,6 +244,7 @@ impl UiState {
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     struct TitleComponents: u8 {
         const EMU_NAME = 1 << 0;
         const GAME_TITLE = 1 << 1;
@@ -1788,10 +1789,12 @@ pub fn main() {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             });
             window::ControlFlow::Continue
         },

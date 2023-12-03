@@ -26,6 +26,7 @@ use gdb_protocol::packet::{CheckedPacket, Kind as PacketKind};
 use std::{cell::RefCell, io::Write, net::ToSocketAddrs, rc::Rc, str};
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     struct ThreadMask: u8 {
         const ARM9 = 1 << 0;
         const ARM7 = 1 << 1;

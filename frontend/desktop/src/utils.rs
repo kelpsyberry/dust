@@ -32,7 +32,7 @@ static BASE_DIRS: LazyLock<BaseDirs> = LazyLock::new(|| {
 });
 
 pub fn base_dirs<'a>() -> &'a BaseDirs {
-    &*BASE_DIRS
+    &BASE_DIRS
 }
 
 pub struct Lazy<T> {
