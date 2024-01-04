@@ -774,11 +774,11 @@ impl UiState {
             TitleBarMode::Imgui => true,
         } {
             window.window().set_title("");
-        } else {
-            window
-                .window()
-                .set_title(&self.title(TitleComponents::all()));
+            return;
         }
+        window
+            .window()
+            .set_title(&self.title(TitleComponents::all()));
     }
 }
 
