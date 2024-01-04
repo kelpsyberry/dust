@@ -12,11 +12,13 @@ mod log;
 #[allow(dead_code)]
 pub mod window;
 
+#[cfg(target_os = "macos")]
+use crate::config::TitleBarMode;
 #[cfg(feature = "debug-views")]
 use crate::debug_views;
 use crate::{
     audio,
-    config::{self, Launch, Renderer2dKind, Renderer3dKind, TitleBarMode},
+    config::{self, Launch, Renderer2dKind, Renderer3dKind},
     emu, game_db, input,
     utils::{base_dirs, Lazy},
     DsSlotRom, FrameData,
@@ -720,7 +722,7 @@ impl UiState {
         self.emu.as_ref().map_or(false, |emu| emu.playing)
     }
 
-    fn update_menu_bar(&mut self, config: &config::Config, window: &mut window::Window) {
+    fn update_menu_bar(&mut self, config: &config::Config, _window: &mut window::Window) {
         if config_changed!(config, full_window_screen) {
             self.show_menu_bar |= !config!(config, full_window_screen);
         }
@@ -728,7 +730,7 @@ impl UiState {
         #[cfg(target_os = "macos")]
         {
             if let Some(mode) = config_changed_value!(config, title_bar_mode) {
-                window.set_macos_title_bar_hidden(mode.system_title_bar_hidden());
+                _window.set_macos_title_bar_hidden(mode.system_title_bar_is_hidden());
             }
         }
     }
@@ -766,9 +768,9 @@ impl UiState {
         buffer
     }
 
-    fn update_title(&self, config: &config::Config, window: &window::Window) {
+    fn update_title(&self, _config: &config::Config, window: &window::Window) {
         #[cfg(target_os = "macos")]
-        if match config!(config, title_bar_mode) {
+        if match config!(_config, title_bar_mode) {
             TitleBarMode::System => false,
             TitleBarMode::Mixed => !self.show_menu_bar,
             TitleBarMode::Imgui => true,
@@ -912,7 +914,7 @@ pub fn main() {
         window::AdapterSelection::Auto(wgpu::PowerPreference::LowPower),
         config.config.window_size,
         #[cfg(target_os = "macos")]
-        config!(config.config, title_bar_mode).system_title_bar_hidden(),
+        config!(config.config, title_bar_mode).system_title_bar_is_hidden(),
     ));
     // TODO: Allow custom styles
     window_builder.apply_default_imgui_style();

@@ -360,7 +360,8 @@ pub enum TitleBarMode {
 }
 
 impl TitleBarMode {
-    pub fn system_title_bar_hidden(&self) -> bool {
+    #[cfg(target_os = "macos")]
+    pub fn system_title_bar_is_hidden(&self) -> bool {
         *self != TitleBarMode::System
     }
 }

@@ -115,11 +115,11 @@ mod setting;
 use super::{utils::heading, Config, EmuState};
 #[cfg(feature = "log")]
 use crate::config::LoggingKind;
+#[cfg(target_os = "macos")]
+use crate::config::TitleBarMode;
 use crate::{
     audio,
-    config::{
-        self, saves, ModelConfig, Renderer2dKind, Renderer3dKind, Setting as _, TitleBarMode,
-    },
+    config::{self, saves, ModelConfig, Renderer2dKind, Renderer3dKind, Setting as _},
     ui::utils::combo_value,
     utils::HomePathBuf,
 };

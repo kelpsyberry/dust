@@ -11,14 +11,16 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-#[cfg(target_os = "macos")]
-use winit::platform::macos::WindowBuilderExtMacOS;
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
     event::{Event, StartCause, WindowEvent},
     event_loop::EventLoop,
-    raw_window_handle::{HasWindowHandle, RawWindowHandle},
     window::{Window as WinitWindow, WindowBuilder as WinitWindowBuilder},
+};
+#[cfg(target_os = "macos")]
+use winit::{
+    platform::macos::WindowBuilderExtMacOS,
+    raw_window_handle::{HasWindowHandle, RawWindowHandle},
 };
 
 pub enum AdapterSelection {

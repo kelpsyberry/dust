@@ -2,7 +2,7 @@
 
 use dust_soft_2d_base::render::bgs::avx2::*;
 
-use core::{arch::x86_64::*, mem::transmute, simd::u64x4};
+use core::arch::x86_64::*;
 use dust_core::gpu::{
     engine_2d::{AffineBgIndex, BgIndex, Role},
     SCREEN_WIDTH,
@@ -159,8 +159,6 @@ pub unsafe fn render_scanline_bgs_and_objs<
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]
 pub unsafe fn render_scanline_bg_3d<B: Buffers>(buffers: &B) {
     // TODO: 3D layer scrolling
-
-    let zero = _mm256_setzero_si256();
 
     let pixel_attrs =
         _mm256_set1_epi64x(BgObjPixel(0).with_color_effects_mask(1).with_is_3d(true).0 as i64);
