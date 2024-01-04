@@ -17,7 +17,8 @@
 | ------- | -------------------------------------------- | ------------------ |
 | [Windows (release)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/Windows.zip) | [Windows (debug)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/Windows-debug.zip) | [Windows (debug + GDB)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/Windows-debug-gdb.zip) |
 | [Linux (release)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/Linux.zip) | [Linux (debug)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/Linux-debug.zip) | [Linux (debug + GDB)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/Linux-debug-gdb.zip) |
-| [macOS (release)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/macOS.zip) | [macOS (debug)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/macOS-debug.zip) | [macOS (debug + GDB)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/macOS-debug-gdb.zip) |
+| [macOS x86_64 (release)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/macOS-x86_64.zip) | [macOS x86_64 (debug)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/macOS-x86_64-debug.zip) | [macOS x86_64 (debug + GDB)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/macOS-x86_64-debug-gdb.zip) |
+| [macOS ARM64 (release)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/macOS-aarch64.zip) | [macOS ARM64 (debug)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/macOS-aarch64-debug.zip) | [macOS ARM64 (debug + GDB)](https://nightly.link/kelpsyberry/dust/workflows/build-release/main/macOS-aarch64-debug-gdb.zip) |
 
 # Credits
 - Martin Korth, for summarizing resources on the DS on [GBATEK](https://problemkaputt.de/gbatek.htm)
