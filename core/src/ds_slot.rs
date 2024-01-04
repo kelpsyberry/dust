@@ -139,7 +139,7 @@ impl DsSlot {
     }
 
     #[inline]
-    pub const fn spi_control(&self) -> AuxSpiControl {
+    pub fn spi_control(&self) -> AuxSpiControl {
         self.spi_control
     }
 
@@ -150,7 +150,7 @@ impl DsSlot {
     }
 
     #[inline]
-    pub const fn rom_control(&self) -> RomControl {
+    pub fn rom_control(&self) -> RomControl {
         self.rom_control
     }
 
@@ -262,7 +262,7 @@ impl DsSlot {
     }
 
     #[inline]
-    pub const fn peek_rom_data(&self) -> u32 {
+    pub fn peek_rom_data(&self) -> u32 {
         self.rom_data_out
     }
 
@@ -331,7 +331,7 @@ impl DsSlot {
     }
 
     #[inline]
-    pub const fn spi_data_out(&self) -> u8 {
+    pub fn spi_data_out(&self) -> u8 {
         // TODO: What's the response while busy?
         self.spi_data_out
     }
@@ -372,12 +372,12 @@ impl DsSlot {
     }
 
     #[inline]
-    pub const fn arm7_access(&self) -> bool {
+    pub fn arm7_access(&self) -> bool {
         self.arm7_access
     }
 
     #[inline]
-    pub const fn arm9_access(&self) -> bool {
+    pub fn arm9_access(&self) -> bool {
         self.arm9_access
     }
 

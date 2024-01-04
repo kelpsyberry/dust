@@ -360,7 +360,7 @@ impl Window {
         if let RawWindowHandle::AppKit(window) =
             RawWindowHandle::from(self.window.window_handle().ok()?)
         {
-            Some(window.ns_view.as_ptr() as id)
+            Some(unsafe { msg_send![window.ns_view.as_ptr() as id, window] })
         } else {
             None
         }

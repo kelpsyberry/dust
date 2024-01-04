@@ -429,9 +429,12 @@ impl Audio {
                     .handle_sample_chunk(&mut emu.audio.sample_chunk);
             }
         }
+        let cur_time = emu.arm7.schedule.cur_time();
         emu.arm7.schedule.schedule_event(
             arm7::event_slots::AUDIO,
-            time + arm7::Timestamp(CYCLES_PER_SAMPLE),
+            arm7::Timestamp(
+                time.0.max(cur_time.0 - cur_time.0 % CYCLES_PER_SAMPLE) + CYCLES_PER_SAMPLE,
+            ),
         );
     }
 
@@ -542,7 +545,12 @@ impl Audio {
         }
 
         if let Some(custom_sample_rate) = emu.audio.custom_sample_rate {
-            emu.audio.next_scaled_sample_index += 1;
+            let cur_time = emu.arm7.schedule.cur_time();
+            let next_scaled_sample_index = (emu.audio.next_scaled_sample_index + 1).max(
+                (cur_time.0 as u128 * custom_sample_rate.get() as u128 / SYS_CLOCK_RATE as u128)
+                    as u64,
+            );
+            emu.audio.next_scaled_sample_index = next_scaled_sample_index;
             emu.arm7.schedule.schedule_event(
                 arm7::event_slots::XQ_AUDIO,
                 arm7::Timestamp(

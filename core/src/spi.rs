@@ -76,7 +76,7 @@ impl Controller {
     }
 
     #[inline]
-    pub const fn control(&self) -> Control {
+    pub fn control(&self) -> Control {
         self.control
     }
 
@@ -93,7 +93,7 @@ impl Controller {
     }
 
     #[inline]
-    pub const fn read_data(&self) -> u8 {
+    pub fn read_data(&self) -> u8 {
         // TODO: What's actually returned while busy/disabled? Right now it's assumed to be the
         // previous value
         self.data_out

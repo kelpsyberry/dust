@@ -160,8 +160,11 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
         ui.same_line();
 
         if ui.button("Disassemble at PC") {
-            self.view
-                .set_selected_addr(self.disasm_results.cpu_pc as Addr);
+            self.view.set_selected_addr(
+                self.disasm_results
+                    .cpu_pc
+                    .wrapping_sub(8 >> self.disasm_results.cpu_thumb as u8) as Addr,
+            );
             self.thumb = self.disasm_results.cpu_thumb;
             emu_state_changed = true;
         }

@@ -111,7 +111,7 @@ pub fn undefined<const MAYBE_HLE_BIOS_CALL: bool, const MAYBE_DLDI_CALL: bool>(
         }
     }
     // TODO: Check timing, the ARM7TDMI manual is unclear
-    handle_undefined::<false>(emu);
+    handle_undefined::<false>(emu, instr);
 }
 
 // TODO: Check what happens with cdp/ldc/stc P14,...
@@ -121,7 +121,7 @@ pub fn mcr(emu: &mut Emu<Interpreter>, instr: u32) {
         inc_r15!(emu.arm7, 4);
     } else {
         // TODO: Check timing, the ARM7TDMI manual is unclear
-        handle_undefined::<false>(emu);
+        handle_undefined::<false>(emu, instr);
     }
 }
 
@@ -140,18 +140,18 @@ pub fn mrc(emu: &mut Emu<Interpreter>, instr: u32) {
         }
     } else {
         // TODO: Check timing, the ARM7TDMI manual is unclear
-        handle_undefined::<false>(emu);
+        handle_undefined::<false>(emu, instr);
     }
 }
 
-pub fn cdp(emu: &mut Emu<Interpreter>, _instr: u32) {
-    handle_undefined::<false>(emu);
+pub fn cdp(emu: &mut Emu<Interpreter>, instr: u32) {
+    handle_undefined::<false>(emu, instr);
 }
 
-pub fn ldc(emu: &mut Emu<Interpreter>, _instr: u32) {
-    handle_undefined::<false>(emu);
+pub fn ldc(emu: &mut Emu<Interpreter>, instr: u32) {
+    handle_undefined::<false>(emu, instr);
 }
 
-pub fn stc(emu: &mut Emu<Interpreter>, _instr: u32) {
-    handle_undefined::<false>(emu);
+pub fn stc(emu: &mut Emu<Interpreter>, instr: u32) {
+    handle_undefined::<false>(emu, instr);
 }

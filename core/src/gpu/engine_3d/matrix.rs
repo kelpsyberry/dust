@@ -11,8 +11,8 @@ pub struct MatrixBuffer<const LEN: usize>(pub [i32; LEN]);
 pub struct Matrix(pub [i32x4; 4]);
 
 impl Matrix {
-    pub fn zero() -> Self {
-        Matrix([i32x4::splat(0); 4])
+    pub const fn zero() -> Self {
+        Matrix([i32x4::from_array([0; 4]); 4])
     }
 
     pub const fn identity() -> Self {

@@ -361,7 +361,7 @@ impl Ptrs {
                     self.$arr_ident[i] = unsafe {
                         sys_bus_ptrs.ptrs()[i / Self::ENTRIES_PER_SYS_ENTRY]
                             .add((i & (Self::ENTRIES_PER_SYS_ENTRY - 1)) << Self::PAGE_SHIFT)
-                    } as _;
+                    };
                 }
             }};
         }

@@ -62,10 +62,10 @@ pub struct Arm9<E: Engine> {
     pub sqrt_engine: SqrtEngine,
     #[cfg(feature = "debugger-hooks")]
     #[savestate(skip)]
-    pub stopped: bool,
+    pub is_stopped: bool,
     #[cfg(feature = "debugger-hooks")]
     #[savestate(skip)]
-    pub(crate) stopped_by_debug_hook: bool,
+    pub(crate) was_stopped_by_debug_hook: bool,
 }
 
 impl<E: Engine> Arm9<E> {
@@ -137,9 +137,9 @@ impl<E: Engine> Arm9<E> {
             div_engine,
             sqrt_engine,
             #[cfg(feature = "debugger-hooks")]
-            stopped: false,
+            is_stopped: false,
             #[cfg(feature = "debugger-hooks")]
-            stopped_by_debug_hook: false,
+            was_stopped_by_debug_hook: false,
         }
     }
 

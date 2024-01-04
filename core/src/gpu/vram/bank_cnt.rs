@@ -1861,7 +1861,7 @@ impl Vram {
                                 .i
                                 .as_byte_mut_slice()
                                 .copy_from_slice(&self.b_obj.as_byte_slice()[..0x4000]);
-                            self.b_obj.as_byte_mut_slice().fill(0);
+                            self.b_obj.as_byte_mut_slice()[..0x2_0000].fill(0);
                         } else {
                             if self.bg_obj_updates.is_none() {
                                 arm9.map_sys_bus_ptr_range(
@@ -1872,8 +1872,9 @@ impl Vram {
                                 );
                             }
                             let writeback_arr = self.writeback.b_obj.get_mut();
-                            for (usage_addr, byte) in
-                                self.b_obj.as_byte_mut_slice().iter_mut().enumerate()
+                            for (usage_addr, byte) in self.b_obj.as_byte_mut_slice()[..0x2_0000]
+                                .iter_mut()
+                                .enumerate()
                             {
                                 if writeback_arr[usage_addr / usize::BITS as usize]
                                     & 1 << (usage_addr & (usize::BITS - 1) as usize)

@@ -2,38 +2,31 @@
     core_intrinsics,
     generic_const_exprs,
     generic_arg_infer,
-    // rustc_attrs,
     adt_const_params,
     doc_cfg,
     maybe_uninit_uninit_array,
-    maybe_uninit_slice,
     portable_simd,
-    const_mut_refs,
-    const_for,
     new_uninit
 )]
 #![warn(clippy::pedantic)]
 #![allow(
     incomplete_features,
+    internal_features,
     clippy::cast_lossless,
     clippy::cast_sign_loss,
     clippy::cast_possible_wrap,
     clippy::cast_possible_truncation,
+    clippy::cast_ptr_alignment,
     clippy::struct_excessive_bools,
     clippy::used_underscore_binding,
     clippy::too_many_lines,
     clippy::missing_panics_doc,
-    clippy::cast_ptr_alignment,
-    clippy::ptr_as_ptr,
-    clippy::option_if_let_else,
     clippy::module_name_repetitions,
     clippy::verbose_bit_mask,
     clippy::wildcard_imports,
     clippy::must_use_candidate,
-    clippy::unused_self,
     clippy::missing_errors_doc,
-    clippy::inline_always,
-    clippy::if_same_then_else, // False positives
+    clippy::inline_always
 )]
 
 pub extern crate emu_utils as utils;

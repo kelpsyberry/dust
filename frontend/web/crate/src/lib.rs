@@ -159,7 +159,7 @@ impl EmuState {
     pub fn run_frame(&mut self) -> Uint32Array {
         // TODO: Handle an eventual shutdown
         let emu = self.emu.as_mut().unwrap();
-        emu.run(true);
+        emu.run();
         Uint32Array::from(unsafe {
             core::slice::from_raw_parts(
                 emu.gpu.renderer_2d().framebuffer().as_ptr() as *const u32,

@@ -4,7 +4,7 @@ pub fn regs_32_default_label(i: usize, max_digits: u32) -> String {
     format!(
         "r{i}: {:<len$}",
         "",
-        len = (max_digits - i.ilog10()) as usize
+        len = (max_digits - i.max(1).ilog10()) as usize
     )
 }
 
@@ -17,7 +17,7 @@ pub fn regs_32(
     mut f: impl FnMut(usize),
 ) {
     let reg_32_bit_width = style!(ui, frame_padding)[0] * 2.0 + ui.calc_text_size("00000000")[0];
-    let max_digits = (start_i + values.len()).ilog10();
+    let max_digits = (start_i + values.len()).max(1).ilog10();
     let mut i = start_i;
     for value in values {
         f(i);

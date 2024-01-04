@@ -3,21 +3,21 @@
 <target version="1.0">
     <architecture>armv5te</architecture>
     <feature name="org.gnu.gdb.arm.core">
-        <reg name="r0" bitsize="32" group="general"/>
-        <reg name="r1" bitsize="32" group="general"/>
-        <reg name="r2" bitsize="32" group="general"/>
-        <reg name="r3" bitsize="32" group="general"/>
-        <reg name="r4" bitsize="32" group="general"/>
-        <reg name="r5" bitsize="32" group="general"/>
-        <reg name="r6" bitsize="32" group="general"/>
-        <reg name="r7" bitsize="32" group="general"/>
-        <reg name="r8" bitsize="32" group="general"/>
-        <reg name="r9" bitsize="32" group="general"/>
-        <reg name="r10" bitsize="32" group="general"/>
-        <reg name="r11" bitsize="32" group="general"/>
-        <reg name="r12" bitsize="32" group="general"/>
+        <reg name="r0" bitsize="32" type="uint32" group="general"/>
+        <reg name="r1" bitsize="32" type="uint32" group="general"/>
+        <reg name="r2" bitsize="32" type="uint32" group="general"/>
+        <reg name="r3" bitsize="32" type="uint32" group="general"/>
+        <reg name="r4" bitsize="32" type="uint32" group="general"/>
+        <reg name="r5" bitsize="32" type="uint32" group="general"/>
+        <reg name="r6" bitsize="32" type="uint32" group="general"/>
+        <reg name="r7" bitsize="32" type="uint32" group="general"/>
+        <reg name="r8" bitsize="32" type="uint32" group="general"/>
+        <reg name="r9" bitsize="32" type="uint32" group="general"/>
+        <reg name="r10" bitsize="32" type="uint32" group="general"/>
+        <reg name="r11" bitsize="32" type="uint32" group="general"/>
+        <reg name="r12" bitsize="32" type="uint32" group="general"/>
         <reg name="sp" bitsize="32" type="data_ptr" group="general"/>
-        <reg name="lr" bitsize="32" type="code_ptr" group="general"/>
+        <reg name="lr" bitsize="32" group="general"/>
         <reg name="pc" bitsize="32" type="code_ptr" group="general"/>
 
         <flags id="cpsr_flags" size="4">

@@ -43,7 +43,7 @@ macro_rules! def_checks {
     ($($fn_ident: ident, $unpriv_mask_ident: ident);*$(;)?) => {
         $(
             #[inline]
-            pub const fn $fn_ident(&self, addr: u32, privileged: bool) -> bool {
+            pub fn $fn_ident(&self, addr: u32, privileged: bool) -> bool {
                 self.0[(addr >> Self::PAGE_SHIFT) as usize]
                     & perms::$unpriv_mask_ident >> ((privileged as u8) << 2)
                     != 0

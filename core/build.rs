@@ -1,5 +1,5 @@
 #[inline]
-const fn arm_shift_ty_to_str(shift_ty: arm_decoder::arm::ShiftTy) -> &'static str {
+fn arm_shift_ty_to_str(shift_ty: arm_decoder::arm::ShiftTy) -> &'static str {
     [
         "ShiftTy::Lsl",
         "ShiftTy::Lsr",

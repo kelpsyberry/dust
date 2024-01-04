@@ -18,7 +18,7 @@ struct RunningState {
     parser: Parser,
     check_for_break: bool,
     no_ack_mode: bool,
-    queued_breaks: usize,
+    has_queued_break: bool,
     recv_queue: Vec<CheckedPacket>,
 }
 
@@ -44,12 +44,12 @@ impl RunningState {
                     // Process TELNET BREAK sequence (plus 'g' if present)
                     let len = 2 + (buf.get(2) == Some(&b'g')) as usize;
                     self.reader.consume(len);
-                    self.queued_breaks += 1;
+                    self.has_queued_break = true;
                     continue;
                 } else if buf.first() == Some(&0x03) {
                     // Process Ctrl-C
                     self.reader.consume(1);
-                    self.queued_breaks += 1;
+                    self.has_queued_break = true;
                     continue;
                 }
             }
@@ -90,10 +90,8 @@ impl RunningState {
 
     fn try_recv_break(&mut self) -> Result<bool, gdb_protocol::Error> {
         self.fill()?;
-        let received = self.queued_breaks != 0;
-        if received {
-            self.queued_breaks -= 1;
-        }
+        let received = self.has_queued_break;
+        self.has_queued_break = false;
         Ok(received)
     }
 
@@ -206,8 +204,8 @@ impl Server {
     }
 
     pub fn poll_listener(&mut self) -> bool {
-        if !matches!(self.state, State::Listening) {
-            return true;
+        if matches!(self.state, State::Running(_)) {
+            unreachable!();
         }
 
         if let Ok((reader, writer)) = self
@@ -221,7 +219,7 @@ impl Server {
                 parser: Parser::default(),
                 check_for_break: true,
                 no_ack_mode: false,
-                queued_breaks: 0,
+                has_queued_break: false,
                 recv_queue: Vec::new(),
             });
             true

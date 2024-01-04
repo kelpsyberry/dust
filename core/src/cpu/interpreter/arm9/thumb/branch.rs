@@ -47,7 +47,7 @@ pub fn bl_prefix(emu: &mut Emu<Interpreter>, instr: u16) {
 
 pub fn bl_suffix<const EXCHANGE: bool>(emu: &mut Emu<Interpreter>, instr: u16) {
     if unlikely(EXCHANGE && instr & 1 != 0) {
-        return handle_undefined::<true>(emu);
+        return handle_undefined::<true>(emu, instr as u32);
     }
     add_bus_cycles(emu, 2);
     prefetch_thumb::<true, false>(emu);

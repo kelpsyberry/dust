@@ -45,10 +45,10 @@ pub struct Arm7<E: Engine> {
     last_dma_words: [u32; 4],
     #[cfg(feature = "debugger-hooks")]
     #[savestate(skip)]
-    pub stopped: bool,
+    pub is_stopped: bool,
     #[cfg(feature = "debugger-hooks")]
     #[savestate(skip)]
-    pub(crate) stopped_by_debug_hook: bool,
+    pub(crate) was_stopped_by_debug_hook: bool,
 }
 
 impl<E: Engine> Arm7<E> {
@@ -118,9 +118,9 @@ impl<E: Engine> Arm7<E> {
             },
             last_dma_words: [0; 4],
             #[cfg(feature = "debugger-hooks")]
-            stopped: false,
+            is_stopped: false,
             #[cfg(feature = "debugger-hooks")]
-            stopped_by_debug_hook: false,
+            was_stopped_by_debug_hook: false,
         }
     }
 

@@ -111,9 +111,9 @@ pub struct Vram {
     #[savestate(skip)]
     pub b_obj: OwnedBytesCellPtr<0x2_0007>,
     #[savestate(skip)]
-    pub b_bg_ext_pal_ptr: *const u8,
+    pub b_bg_ext_pal_ptr: *mut u8,
     #[savestate(skip)]
-    pub b_obj_ext_pal_ptr: *const u8,
+    pub b_obj_ext_pal_ptr: *mut u8,
     #[savestate(skip)]
     pub(super) texture: OwnedBytesCellPtr<0x8_0000>,
     #[savestate(skip)]
@@ -219,12 +219,12 @@ impl Vram {
     }
 
     #[inline]
-    pub const fn bank_control(&self) -> &[BankControl; 9] {
+    pub fn bank_control(&self) -> &[BankControl; 9] {
         &self.bank_control
     }
 
     #[inline]
-    pub const fn arm7_status(&self) -> Arm7Status {
+    pub fn arm7_status(&self) -> Arm7Status {
         self.arm7_status
     }
 

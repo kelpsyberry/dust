@@ -100,7 +100,4 @@
 # Non-essential but wanted additions
 
 ## Frontends
-- Hardware 3D renderer
-- Configuration editor
 - General UI polish
-- Savestate selection and management UI

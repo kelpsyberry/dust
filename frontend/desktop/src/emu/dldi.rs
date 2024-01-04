@@ -77,12 +77,12 @@ impl ChunkManager {
         }
 
         if self.loaded_chunks.len() == self.max_loaded_chunks {
-            if let Some(mut chunk) = self.loaded_chunks.pop_back() {
+            if let Some(mut chunk) = self.loaded_chunks.pop_front() {
                 chunk.writeback(self.temp_dir.path())?;
             }
         }
 
-        self.loaded_chunks.push_front(LoadedChunk::load(
+        self.loaded_chunks.push_back(LoadedChunk::load(
             self.temp_dir.path(),
             chunk_index,
             self.chunk_size_shift,

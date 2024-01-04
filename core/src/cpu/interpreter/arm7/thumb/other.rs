@@ -5,7 +5,7 @@ pub fn swi(emu: &mut Emu<Interpreter>, instr: u16) {
     handle_swi::<true>(emu, instr as u8);
 }
 
-pub fn undefined(emu: &mut Emu<Interpreter>, _instr: u16) {
+pub fn undefined(emu: &mut Emu<Interpreter>, instr: u16) {
     // TODO: Check timing, the ARM7TDMI manual is unclear
-    handle_undefined::<true>(emu);
+    handle_undefined::<true>(emu, instr as u32);
 }

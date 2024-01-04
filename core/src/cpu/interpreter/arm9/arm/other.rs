@@ -121,7 +121,7 @@ pub fn undefined<const MAYBE_HLE_BIOS_SWI: bool, const MAYBE_DLDI_CALL: bool>(
             return;
         }
     }
-    handle_undefined::<false>(emu);
+    handle_undefined::<false>(emu, instr);
 }
 
 // TODO: Confirm timing and interlocks, both in the undefined and CP15 cases (the ARM9E-S manual
@@ -144,7 +144,7 @@ pub fn mcr(emu: &mut Emu<Interpreter>, instr: u32) {
             reg!(emu.arm9, src_reg),
         );
     } else {
-        handle_undefined::<false>(emu);
+        handle_undefined::<false>(emu, instr);
     }
 }
 
@@ -166,26 +166,26 @@ pub fn mrc(emu: &mut Emu<Interpreter>, instr: u32) {
             write_reg_interlock(emu, dst_reg, result, 1, 1);
         }
     } else {
-        handle_undefined::<false>(emu);
+        handle_undefined::<false>(emu, instr);
     }
 }
 
-pub fn mcrr(emu: &mut Emu<Interpreter>, _instr: u32) {
-    handle_undefined::<false>(emu);
+pub fn mcrr(emu: &mut Emu<Interpreter>, instr: u32) {
+    handle_undefined::<false>(emu, instr);
 }
 
-pub fn mrrc(emu: &mut Emu<Interpreter>, _instr: u32) {
-    handle_undefined::<false>(emu);
+pub fn mrrc(emu: &mut Emu<Interpreter>, instr: u32) {
+    handle_undefined::<false>(emu, instr);
 }
 
-pub fn cdp(emu: &mut Emu<Interpreter>, _instr: u32) {
-    handle_undefined::<false>(emu);
+pub fn cdp(emu: &mut Emu<Interpreter>, instr: u32) {
+    handle_undefined::<false>(emu, instr);
 }
 
-pub fn ldc(emu: &mut Emu<Interpreter>, _instr: u32) {
-    handle_undefined::<false>(emu);
+pub fn ldc(emu: &mut Emu<Interpreter>, instr: u32) {
+    handle_undefined::<false>(emu, instr);
 }
 
-pub fn stc(emu: &mut Emu<Interpreter>, _instr: u32) {
-    handle_undefined::<false>(emu);
+pub fn stc(emu: &mut Emu<Interpreter>, instr: u32) {
+    handle_undefined::<false>(emu, instr);
 }

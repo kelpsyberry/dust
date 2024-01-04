@@ -364,7 +364,7 @@ pub fn ldrd<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddr
 ) {
     let dst_base_reg = (instr >> 12 & 0xF) as u8;
     if dst_base_reg & 1 != 0 {
-        return handle_undefined::<false>(emu);
+        return handle_undefined::<false>(emu, instr);
     }
 
     let base_reg = (instr >> 16 & 0xF) as u8;
@@ -465,7 +465,7 @@ pub fn strd<const OFF_IMM: bool, const UPWARDS: bool, const ADDRESSING: MiscAddr
 ) {
     let src_base_reg = (instr >> 12 & 0xF) as u8;
     if src_base_reg & 1 != 0 {
-        return handle_undefined::<false>(emu);
+        return handle_undefined::<false>(emu, instr);
     }
 
     let base_reg = (instr >> 16 & 0xF) as u8;

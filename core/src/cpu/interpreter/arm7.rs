@@ -179,7 +179,7 @@ fn restore_spsr(emu: &mut Emu<Interpreter>) {
     }
 }
 
-fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
+fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Interpreter>, _instr: u32) {
     #[cfg(feature = "log")]
     slog::warn!(
         emu.arm7.logger,
@@ -189,11 +189,12 @@ fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
     );
     #[cfg(feature = "debugger-hooks")]
     if let Some(undef_hook) = emu.arm7.undef_hook() {
-        if unsafe { undef_hook.get()(emu) } {
+        if unsafe { undef_hook.get()(emu, _instr, THUMB) } {
             emu.arm7
                 .schedule
                 .set_target_time(emu.arm7.schedule.cur_time());
-            emu.arm7.stopped_by_debug_hook = true;
+            emu.arm7.was_stopped_by_debug_hook = true;
+            emu.arm7.is_stopped = true;
         }
     }
     let prev_cpsr = emu.arm7.engine_data.regs.cpsr;
@@ -227,7 +228,8 @@ fn handle_swi<const THUMB: bool>(emu: &mut Emu<Interpreter>, number: u8) {
             emu.arm7
                 .schedule
                 .set_target_time(emu.arm7.schedule.cur_time());
-            emu.arm7.stopped_by_debug_hook = true;
+            emu.arm7.was_stopped_by_debug_hook = true;
+            emu.arm7.is_stopped = true;
         }
     }
 
@@ -442,6 +444,11 @@ impl CoreData for EngineData {
     #[inline]
     fn set_cpsr(emu: &mut Emu<Interpreter>, value: Psr) {
         set_cpsr_update_control(emu, value);
+        #[cfg(feature = "interp-pipeline-accurate-reloads")]
+        {
+            emu.arm7.engine_data.r15_increment =
+                4 >> emu.arm7.engine_data.regs.cpsr.thumb_state() as u8;
+        }
     }
 
     #[inline]
@@ -617,7 +624,8 @@ impl Arm7Data for EngineData {
                                 emu.arm7
                                     .schedule
                                     .set_target_time(emu.arm7.schedule.cur_time());
-                                emu.arm7.stopped_by_debug_hook = true;
+                                emu.arm7.was_stopped_by_debug_hook = true;
+                                emu.arm7.is_stopped = true;
                                 return;
                             }
                         }

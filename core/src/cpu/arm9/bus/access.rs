@@ -97,14 +97,17 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32) -> u16 {
         emu.arm9.cp15.ptrs.read_data(addr)
     } {
         unsafe {
-            u16::read_le_aligned(ptr.add(
-                (addr
-                    & (if A::IS_DMA {
-                        SysBusPtrs::PAGE_MASK
-                    } else {
-                        Ptrs::PAGE_MASK
-                    } & !1)) as usize,
-            ) as *const _)
+            u16::read_le_aligned(
+                ptr.add(
+                    (addr
+                        & (if A::IS_DMA {
+                            SysBusPtrs::PAGE_MASK
+                        } else {
+                            Ptrs::PAGE_MASK
+                        } & !1)) as usize,
+                )
+                .cast(),
+            )
         }
     } else {
         #[cfg(feature = "debugger-hooks")]
@@ -126,14 +129,17 @@ pub fn read_32<A: AccessType, E: Engine, const CODE: bool>(emu: &mut Emu<E>, add
         emu.arm9.cp15.ptrs.read_data(addr)
     } {
         unsafe {
-            u32::read_le_aligned(ptr.add(
-                (addr
-                    & (if A::IS_DMA {
-                        SysBusPtrs::PAGE_MASK
-                    } else {
-                        Ptrs::PAGE_MASK
-                    } & !3)) as usize,
-            ) as *const _)
+            u32::read_le_aligned(
+                ptr.add(
+                    (addr
+                        & (if A::IS_DMA {
+                            SysBusPtrs::PAGE_MASK
+                        } else {
+                            Ptrs::PAGE_MASK
+                        } & !3)) as usize,
+                )
+                .cast(),
+            )
         }
     } else {
         #[cfg(feature = "debugger-hooks")]
@@ -182,14 +188,17 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u1
         emu.arm9.cp15.ptrs.write_16_32(addr)
     } {
         unsafe {
-            value.write_le_aligned(ptr.add(
-                (addr
-                    & (if A::IS_DMA {
-                        SysBusPtrs::PAGE_MASK
-                    } else {
-                        Ptrs::PAGE_MASK
-                    } & !1)) as usize,
-            ) as *mut _);
+            value.write_le_aligned(
+                ptr.add(
+                    (addr
+                        & (if A::IS_DMA {
+                            SysBusPtrs::PAGE_MASK
+                        } else {
+                            Ptrs::PAGE_MASK
+                        } & !1)) as usize,
+                )
+                .cast(),
+            );
         }
     } else {
         emu.arm9.engine_data.invalidate_word(addr);
@@ -210,14 +219,17 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, addr: u32, value: u3
         emu.arm9.cp15.ptrs.write_16_32(addr)
     } {
         unsafe {
-            value.write_le_aligned(ptr.add(
-                (addr
-                    & (if A::IS_DMA {
-                        SysBusPtrs::PAGE_MASK
-                    } else {
-                        Ptrs::PAGE_MASK
-                    } & !3)) as usize,
-            ) as *mut _);
+            value.write_le_aligned(
+                ptr.add(
+                    (addr
+                        & (if A::IS_DMA {
+                            SysBusPtrs::PAGE_MASK
+                        } else {
+                            Ptrs::PAGE_MASK
+                        } & !3)) as usize,
+                )
+                .cast(),
+            );
         }
     } else {
         emu.arm9.engine_data.invalidate_word(addr);

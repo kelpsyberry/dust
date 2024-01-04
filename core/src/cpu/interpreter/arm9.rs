@@ -536,7 +536,7 @@ fn restore_spsr(emu: &mut Emu<Interpreter>) {
     }
 }
 
-fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
+fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Interpreter>, _instr: u32) {
     #[cfg(feature = "log")]
     slog::warn!(
         emu.arm9.logger,
@@ -546,11 +546,12 @@ fn handle_undefined<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
     );
     #[cfg(feature = "debugger-hooks")]
     if let Some(undef_hook) = emu.arm9.undef_hook() {
-        if unsafe { undef_hook.get()(emu) } {
+        if unsafe { undef_hook.get()(emu, _instr, THUMB) } {
             emu.arm9
                 .schedule
                 .set_target_time(emu.arm9.schedule.cur_time());
-            emu.arm9.stopped_by_debug_hook = true;
+            emu.arm9.was_stopped_by_debug_hook = true;
+            emu.arm9.is_stopped = true;
         }
     }
     if THUMB {
@@ -594,7 +595,8 @@ fn handle_swi<const THUMB: bool>(emu: &mut Emu<Interpreter>, number: u8) {
             emu.arm9
                 .schedule
                 .set_target_time(emu.arm9.schedule.cur_time());
-            emu.arm9.stopped_by_debug_hook = true;
+            emu.arm9.was_stopped_by_debug_hook = true;
+            emu.arm9.is_stopped = true;
         }
     }
 
@@ -651,7 +653,8 @@ fn handle_prefetch_abort<const THUMB: bool>(emu: &mut Emu<Interpreter>) {
             emu.arm9
                 .schedule
                 .set_target_time(emu.arm9.schedule.cur_time());
-            emu.arm9.stopped_by_debug_hook = true;
+            emu.arm9.was_stopped_by_debug_hook = true;
+            emu.arm9.is_stopped = true;
         }
     }
     if THUMB {
@@ -700,7 +703,8 @@ fn handle_data_abort<const THUMB: bool>(emu: &mut Emu<Interpreter>, _addr: u32) 
             emu.arm9
                 .schedule
                 .set_target_time(emu.arm9.schedule.cur_time());
-            emu.arm9.stopped_by_debug_hook = true;
+            emu.arm9.was_stopped_by_debug_hook = true;
+            emu.arm9.is_stopped = true;
         }
     }
     let prev_cpsr = emu.arm9.engine_data.regs.cpsr;
@@ -952,6 +956,11 @@ impl CoreData for EngineData {
     #[inline]
     fn set_cpsr(emu: &mut Emu<Interpreter>, value: Psr) {
         set_cpsr_update_control(emu, value);
+        #[cfg(feature = "interp-pipeline-accurate-reloads")]
+        {
+            emu.arm9.engine_data.r15_increment =
+                4 >> emu.arm9.engine_data.regs.cpsr.thumb_state() as u8;
+        }
     }
 
     #[inline]
@@ -1171,7 +1180,8 @@ impl Arm9Data for EngineData {
                                     emu.arm9
                                         .schedule
                                         .set_target_time(emu.arm9.schedule.cur_time());
-                                    emu.arm9.stopped_by_debug_hook = true;
+                                    emu.arm9.was_stopped_by_debug_hook = true;
+                                    emu.arm9.is_stopped = true;
                                     return;
                                 }
                             }

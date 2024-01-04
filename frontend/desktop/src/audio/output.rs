@@ -259,6 +259,7 @@ impl Channel {
             )?,
         })
     }
+
     #[cfg(feature = "xq-audio")]
     pub fn set_custom_sample_rate(&mut self, custom_sample_rate: Option<NonZeroU32>) {
         let mut buffer = self.tx_data.buffer_ptr.write();

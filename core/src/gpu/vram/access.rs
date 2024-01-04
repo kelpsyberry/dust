@@ -163,8 +163,9 @@ impl Vram {
         // zero/ignored ones.
         unsafe {
             T::read_le_aligned(
-                self.lcdc_r_ptrs[region].add(addr as usize & (0x3FFF & !(mem::size_of::<T>() - 1)))
-                    as *const T,
+                self.lcdc_r_ptrs[region]
+                    .add(addr as usize & (0x3FFF & !(mem::size_of::<T>() - 1)))
+                    .cast(),
             )
         }
     }
@@ -175,8 +176,9 @@ impl Vram {
         // See read_lcdc
         unsafe {
             value.write_le_aligned(
-                self.lcdc_w_ptrs[region].add(addr as usize & (0x3FFF & !(mem::size_of::<T>() - 1)))
-                    as *mut T,
+                self.lcdc_w_ptrs[region]
+                    .add(addr as usize & (0x3FFF & !(mem::size_of::<T>() - 1)))
+                    .cast(),
             );
         }
     }
@@ -196,7 +198,7 @@ impl Vram {
     #[inline]
     pub unsafe fn read_a_bg_slice<T: MemValue>(&self, addr: u32, len: usize, result: *mut T) {
         ptr::copy_nonoverlapping(
-            self.a_bg.as_ptr().add(addr as usize) as *const T,
+            self.a_bg.as_ptr().add(addr as usize).cast(),
             result,
             len / mem::size_of::<T>(),
         );
@@ -326,7 +328,7 @@ impl Vram {
     #[inline]
     pub unsafe fn read_b_bg_slice<T: MemValue>(&self, addr: u32, len: usize, result: *mut T) {
         ptr::copy_nonoverlapping(
-            self.b_bg.as_ptr().add(addr as usize) as *const T,
+            self.b_bg.as_ptr().add(addr as usize).cast(),
             result,
             len / mem::size_of::<T>(),
         );
@@ -498,7 +500,7 @@ impl Vram {
         result: *mut T,
     ) {
         ptr::copy_nonoverlapping(
-            self.a_bg_ext_pal.as_ptr().add(addr as usize) as *const T,
+            self.a_bg_ext_pal.as_ptr().add(addr as usize).cast(),
             result,
             len / mem::size_of::<T>(),
         );
@@ -541,7 +543,7 @@ impl Vram {
         result: *mut T,
     ) {
         ptr::copy_nonoverlapping(
-            self.a_obj_ext_pal.as_ptr().add(addr as usize) as *const T,
+            self.a_obj_ext_pal.as_ptr().add(addr as usize).cast(),
             result,
             len / mem::size_of::<T>(),
         );
@@ -570,7 +572,7 @@ impl Vram {
             T::read_le_aligned(
                 self.b_bg_ext_pal_ptr
                     .add(addr as usize & (0x7FFF & !(mem::size_of::<T>() - 1)))
-                    as *const T,
+                    .cast(),
             )
         }
     }
@@ -588,7 +590,7 @@ impl Vram {
     ) {
         // NOTE: As for LCDC, the pointer will never be null
         ptr::copy_nonoverlapping(
-            self.b_bg_ext_pal_ptr.add(addr as usize) as *const T,
+            self.b_bg_ext_pal_ptr.add(addr as usize).cast(),
             result,
             len / mem::size_of::<T>(),
         );
@@ -604,7 +606,7 @@ impl Vram {
                 value.write_le_aligned(
                     self.b_bg_ext_pal_ptr
                         .add(addr as usize & (0x7FFF & !(mem::size_of::<T>() - 1)))
-                        as *mut T,
+                        .cast(),
                 );
             }
             if let Some(updates) = &mut self.bg_obj_updates {
@@ -620,7 +622,7 @@ impl Vram {
             T::read_le_aligned(
                 self.b_obj_ext_pal_ptr
                     .add(addr as usize & (0x1FFF & !(mem::size_of::<T>() - 1)))
-                    as *const T,
+                    .cast(),
             )
         }
     }
@@ -638,7 +640,7 @@ impl Vram {
     ) {
         // NOTE: As for LCDC, the pointer will never be null
         ptr::copy_nonoverlapping(
-            self.b_obj_ext_pal_ptr.add(addr as usize) as *const T,
+            self.b_obj_ext_pal_ptr.add(addr as usize).cast(),
             result,
             len / mem::size_of::<T>(),
         );
@@ -654,7 +656,7 @@ impl Vram {
                 value.write_le_aligned(
                     self.b_obj_ext_pal_ptr
                         .add(addr as usize & (0x1FFF & !(mem::size_of::<T>() - 1)))
-                        as *mut T,
+                        .cast(),
                 );
             }
             if let Some(updates) = &mut self.bg_obj_updates {
@@ -670,7 +672,7 @@ impl Vram {
     #[inline]
     pub unsafe fn read_texture_slice<T: MemValue>(&self, addr: u32, len: usize, result: *mut T) {
         ptr::copy_nonoverlapping(
-            self.texture.as_ptr().add(addr as usize) as *const T,
+            self.texture.as_ptr().add(addr as usize).cast(),
             result,
             len / mem::size_of::<T>(),
         );
@@ -683,7 +685,7 @@ impl Vram {
     #[inline]
     pub unsafe fn read_tex_pal_slice<T: MemValue>(&self, addr: u32, len: usize, result: *mut T) {
         ptr::copy_nonoverlapping(
-            self.tex_pal.as_ptr().add(addr as usize) as *const T,
+            self.tex_pal.as_ptr().add(addr as usize).cast(),
             result,
             len / mem::size_of::<T>(),
         );

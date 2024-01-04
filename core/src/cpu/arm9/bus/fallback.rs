@@ -257,7 +257,7 @@ pub fn read_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u16
                 emu.swram
                     .arm9_r_ptr()
                     .add(addr as usize & emu.swram.arm9_mask() as usize)
-                    as *const u16,
+                    .cast(),
             )
         },
 
@@ -469,7 +469,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
                 emu.swram
                     .arm9_r_ptr()
                     .add(addr as usize & emu.swram.arm9_mask() as usize)
-                    as *const u32,
+                    .cast(),
             )
         },
 
@@ -946,7 +946,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
                 emu.swram
                     .arm9_w_ptr()
                     .add(addr as usize & emu.swram.arm9_mask() as usize)
-                    as *mut u16,
+                    .cast(),
             );
         },
 
@@ -1370,7 +1370,7 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
                 emu.swram
                     .arm9_w_ptr()
                     .add(addr as usize & emu.swram.arm9_mask() as usize)
-                    as *mut u32,
+                    .cast(),
             );
         },
 

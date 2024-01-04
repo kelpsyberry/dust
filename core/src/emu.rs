@@ -118,6 +118,9 @@ pub struct Emu<E: cpu::Engine> {
     pub dldi: Option<Dldi>,
     rcnt: u16, // TODO: Move to SIO
     is_debugger: bool,
+    #[cfg(feature = "debugger-hooks")]
+    #[savestate(skip)]
+    frame_finished: bool,
 }
 
 impl<E: cpu::Engine> Emu<E> {
@@ -129,7 +132,7 @@ impl<E: cpu::Engine> Emu<E> {
         } else {
             self.main_mem_mask = MainMemMask::new(0x3F_FFFF);
             save.load_into(unsafe {
-                &mut *(self.main_mem.as_bytes_ptr() as *mut Bytes<0x40_0000>)
+                &mut *self.main_mem.as_bytes_ptr().cast::<Bytes<0x40_0000>>()
             })?;
         }
 
@@ -151,7 +154,7 @@ impl<E: cpu::Engine> Emu<E> {
         if self.is_debugger {
             save.store(&mut self.main_mem)
         } else {
-            save.store(unsafe { &mut *(self.main_mem.as_bytes_ptr() as *mut Bytes<0x40_0000>) })
+            save.store(unsafe { &mut *self.main_mem.as_bytes_ptr().cast::<Bytes<0x40_0000>>() })
         }
     }
 }
@@ -358,6 +361,8 @@ impl Builder {
             arm7,
             arm9,
             is_debugger: self.is_debugger,
+            #[cfg(feature = "debugger-hooks")]
+            frame_finished: true,
         };
         Arm7::setup(&mut emu);
         Arm9::setup(&mut emu);
@@ -371,18 +376,23 @@ impl Builder {
     }
 }
 
+#[cfg(feature = "debugger-hooks")]
+bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct CoreMask: u8 {
+        const ARM7 = 1 << 0;
+        const ARM9 = 1 << 1;
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunOutput {
     FrameFinished,
     Shutdown,
     #[cfg(feature = "debugger-hooks")]
-    StoppedByDebugHook {
-        frame_finished: bool,
-    },
+    StoppedByDebugHook,
     #[cfg(feature = "debugger-hooks")]
-    CyclesOver {
-        frame_finished: bool,
-    },
+    CyclesOver(CoreMask),
 }
 
 impl<E: cpu::Engine> Emu<E> {
@@ -595,13 +605,16 @@ impl<E: cpu::Engine> Emu<E> {
 }
 
 macro_rules! run {
-    ($emu: expr, $engine: ty, $frame_finished: ident $(, $cycles: expr)?) => {
+    ($emu: expr, $engine: ty $(, $cycles: expr)?) => {
         let mut batch_end_time = $emu.schedule.batch_end_time();
         $(
             #[cfg(feature = "debugger-hooks")]
+            let batch_start_time = $emu.schedule.cur_time();
+            #[cfg(feature = "debugger-hooks")]
             {
-                batch_end_time = batch_end_time.min($emu.schedule.cur_time() + Timestamp(*$cycles));
-                *$cycles -= batch_end_time.0 - $emu.schedule.cur_time().0;
+                batch_end_time = batch_end_time.min(
+                    batch_start_time + Timestamp($cycles[0].min($cycles[1])),
+                );
             }
         )*
         if $emu.gpu.engine_3d.gx_fifo_stalled() {
@@ -609,34 +622,39 @@ macro_rules! run {
             <$engine>::Arm7Data::run_stalled_until($emu, batch_end_time.into());
         } else {
             macro_rules! run_core {
-                ($core: expr, $engine_data: ty, $run: expr) => {
-                    $core.schedule.set_cur_time_after($emu.schedule.cur_time().into());
+                ($core: expr, $engine_data: ty, $after_run: expr) => {
                     #[cfg(feature = "debugger-hooks")]
-                    let stopped = $core.stopped;
+                    let is_stopped = $core.is_stopped;
                     #[cfg(not(feature = "debugger-hooks"))]
-                    let stopped = false;
-                    if stopped {
+                    let is_stopped = false;
+                    if is_stopped {
                         $core.schedule.set_cur_time(batch_end_time.into());
                     } else {
                         <$engine_data>::run_until($emu, batch_end_time.into());
-                        $run
+                        $after_run
                     }
                 };
             }
             run_core!($emu.arm9, <$engine>::Arm9Data, {
                 batch_end_time = batch_end_time.min(Timestamp::from($emu.arm9.schedule.cur_time()));
+                $(
+                    #[cfg(feature = "debugger-hooks")]
+                    {
+                        $cycles[1] -= batch_end_time.0 - batch_start_time.0;
+                    }
+                )*
             });
             run_core!($emu.arm7, <$engine>::Arm7Data, {
-                #[cfg(feature = "debugger-hooks")]
-                {
-                    batch_end_time =
-                        batch_end_time.min(Timestamp::from($emu.arm7.schedule.cur_time()));
-                }
+                batch_end_time = batch_end_time.min(Timestamp::from($emu.arm7.schedule.cur_time()));
+                $(
+                    #[cfg(feature = "debugger-hooks")]
+                    {
+                        $cycles[0] -= batch_end_time.0 - batch_start_time.0;
+                    }
+                )*
             });
         }
         $emu.schedule.set_cur_time(batch_end_time);
-        #[cfg(feature = "debugger-hooks")]
-        let mut $frame_finished = false;
         while let Some((event, time)) = $emu.schedule.pop_pending_event() {
             match event {
                 Event::Gpu(event) => match event {
@@ -646,7 +664,7 @@ macro_rules! run {
                         Gpu::end_hblank($emu, time);
                         #[cfg(feature = "debugger-hooks")]
                         {
-                            $frame_finished = true;
+                            $emu.frame_finished = true;
                         }
                         #[cfg(not(feature = "debugger-hooks"))]
                         return RunOutput::FrameFinished;
@@ -660,10 +678,10 @@ macro_rules! run {
         }
         #[cfg(feature = "debugger-hooks")]
         {
-            if $emu.arm7.stopped_by_debug_hook || $emu.arm9.stopped_by_debug_hook {
-                return RunOutput::StoppedByDebugHook { frame_finished: $frame_finished };
+            if $emu.arm7.was_stopped_by_debug_hook || $emu.arm9.was_stopped_by_debug_hook {
+                return RunOutput::StoppedByDebugHook;
             }
-            if $frame_finished {
+            if $emu.frame_finished {
                 return RunOutput::FrameFinished;
             }
         }
@@ -673,11 +691,18 @@ macro_rules! run {
 impl<E: cpu::Engine> Emu<E> {
     #[cfg(feature = "debugger-hooks")]
     #[inline(never)]
-    fn run_for_cycles(&mut self, cycles: &mut RawTimestamp) -> RunOutput {
+    fn run_for_cycles(&mut self, cycles: &mut [RawTimestamp; 2]) -> RunOutput {
         loop {
-            run!(self, E, frame_finished, cycles);
-            if *cycles == 0 {
-                return RunOutput::CyclesOver { frame_finished };
+            run!(self, E, cycles);
+            if cycles[0] == 0 || cycles[1] == 0 {
+                let mut core_mask = CoreMask::empty();
+                if cycles[0] == 0 {
+                    core_mask |= CoreMask::ARM7;
+                }
+                if cycles[1] == 0 {
+                    core_mask |= CoreMask::ARM9;
+                }
+                return RunOutput::CyclesOver(core_mask);
             }
         }
     }
@@ -685,22 +710,34 @@ impl<E: cpu::Engine> Emu<E> {
     #[inline(never)]
     pub fn run(
         &mut self,
-        frame_starting: bool,
-        #[cfg(feature = "debugger-hooks")] cycles: &mut RawTimestamp,
+        #[cfg(feature = "debugger-hooks")] cycles: &mut [RawTimestamp; 2],
     ) -> RunOutput {
+        #[cfg(feature = "debugger-hooks")]
+        let frame_starting = core::mem::replace(&mut self.frame_finished, false);
+        #[cfg(not(feature = "debugger-hooks"))]
+        let frame_starting = true;
         if frame_starting {
             self.spi.tsc.start_frame(self.schedule.cur_time());
         }
         #[cfg(feature = "debugger-hooks")]
         {
-            self.arm7.stopped_by_debug_hook = false;
-            self.arm9.stopped_by_debug_hook = false;
-            if *cycles != 0 {
-                return self.run_for_cycles(cycles);
+            if (cycles[0] != 0 && !self.arm7.is_stopped)
+                || (cycles[1] != 0 && !self.arm9.is_stopped)
+            {
+                self.arm7.was_stopped_by_debug_hook = false;
+                self.arm9.was_stopped_by_debug_hook = false;
+                let mut new_cycles = cycles.map(|c| if c == 0 { RawTimestamp::MAX } else { c });
+                let output = self.run_for_cycles(&mut new_cycles);
+                for i in 0..2 {
+                    if cycles[i] != 0 {
+                        cycles[i] = new_cycles[i];
+                    }
+                }
+                return output;
             }
         }
         loop {
-            run!(self, E, frame_finished);
+            run!(self, E);
         }
     }
 }

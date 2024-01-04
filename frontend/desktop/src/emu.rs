@@ -59,7 +59,7 @@ pub struct SavePathUpdate {
 
 pub struct Savestate {
     pub contents: Vec<u8>,
-    pub save: Option<Box<[u8]>>,
+    pub save: Option<BoxedByteSlice>,
     pub framebuffer: Box<Framebuffer>,
 }
 
@@ -119,6 +119,7 @@ pub struct DsSlot {
     pub has_ir: bool,
 }
 
+#[cfg(feature = "dldi")]
 pub struct Dldi {
     pub root_path: PathBuf,
     pub skip_path: PathBuf,
@@ -452,8 +453,6 @@ pub(super) fn run(
 
     #[cfg(feature = "gdb-server")]
     let mut gdb_server = None;
-    #[cfg(feature = "gdb-server")]
-    let mut start_new_frame = true;
 
     macro_rules! save {
         () => {
@@ -512,7 +511,10 @@ pub(super) fn run(
                             Savestate {
                                 contents,
                                 save: if include_save {
-                                    Some((&*emu.ds_slot.spi.contents()).into())
+                                    let spi_contents = emu.ds_slot.spi.contents();
+                                    let mut save = BoxedByteSlice::new_zeroed(spi_contents.len());
+                                    save.copy_from_slice(&spi_contents[..]);
+                                    Some(save)
                                 } else {
                                     None
                                 },
@@ -542,12 +544,9 @@ pub(super) fn run(
                         .is_ok()
                     {
                         if let Some(save) = savestate.save {
-                            // TODO: Avoid this copy
-                            let mut contents = BoxedByteSlice::new_zeroed(save.len());
-                            contents.copy_from_slice(&save[..]);
                             emu.ds_slot
                                 .spi
-                                .reload_contents(SaveReloadContents::Existing(contents));
+                                .reload_contents(SaveReloadContents::Existing(save));
                         }
                     }
                 }
@@ -666,8 +665,7 @@ pub(super) fn run(
                     if gdb_server.is_some() != enabled {
                         if let Some(addr) = addr {
                             match gdb_server::GdbServer::new(addr) {
-                                Ok(mut server) => {
-                                    server.attach(&mut emu);
+                                Ok(server) => {
                                     gdb_server = Some(server);
                                 }
                                 Err(_err) => {
@@ -677,7 +675,7 @@ pub(super) fn run(
                                 }
                             }
                         } else {
-                            gdb_server = None;
+                            gdb_server.take().unwrap().detach(&mut emu);
                         }
                         shared_state
                             .gdb_server_active
@@ -691,8 +689,8 @@ pub(super) fn run(
 
         #[cfg(feature = "gdb-server")]
         if let Some(gdb_server) = &mut gdb_server {
-            reset_triggered |= gdb_server.poll(&mut emu);
-            playing &= !gdb_server.target_stopped();
+            reset_triggered |= gdb_server.poll(&mut emu) == gdb_server::EmuControlFlow::Reset;
+            playing &= gdb_server.is_running();
         }
 
         if reset_triggered {
@@ -731,10 +729,6 @@ pub(super) fn run(
             }
 
             emu = emu_builder.build(Interpreter).unwrap();
-            #[cfg(feature = "gdb-server")]
-            if let Some(server) = &mut gdb_server {
-                server.attach(&mut emu);
-            }
         }
 
         playing &= shared_state.playing.load(Ordering::Relaxed);
@@ -743,41 +737,30 @@ pub(super) fn run(
 
         if playing {
             #[cfg(feature = "gdb-server")]
-            let mut run_forever = 0;
-            #[cfg(feature = "gdb-server")]
-            let cycles = if let Some(gdb_server) = &mut gdb_server {
-                &mut gdb_server.remaining_step_cycles
-            } else {
-                &mut run_forever
-            };
+            let mut run_forever = [0; 2];
             match emu.run(
                 #[cfg(feature = "gdb-server")]
-                start_new_frame,
-                #[cfg(not(feature = "gdb-server"))]
-                true,
-                #[cfg(feature = "gdb-server")]
-                cycles,
+                if let Some(gdb_server) = &mut gdb_server {
+                    &mut gdb_server.remaining_step_cycles
+                } else {
+                    &mut run_forever
+                },
             ) {
-                RunOutput::FrameFinished => {
-                    #[cfg(feature = "gdb-server")]
-                    {
-                        start_new_frame = true;
-                    }
-                }
+                RunOutput::FrameFinished => {}
                 RunOutput::Shutdown => {
                     notif!(Notification::Stopped);
                     playing = false;
                     #[cfg(feature = "gdb-server")]
                     if let Some(gdb_server) = &mut gdb_server {
-                        gdb_server.emu_shutdown(&mut emu);
+                        gdb_server.emu_shutdown();
                     }
                 }
                 #[cfg(feature = "gdb-server")]
-                RunOutput::StoppedByDebugHook { frame_finished }
-                | RunOutput::CyclesOver { frame_finished } => {
-                    start_new_frame = frame_finished;
+                RunOutput::StoppedByDebugHook => {}
+                #[cfg(feature = "gdb-server")]
+                RunOutput::CyclesOver(core_mask) => {
                     if let Some(gdb_server) = &mut gdb_server {
-                        gdb_server.emu_stopped(&mut emu);
+                        gdb_server.cycles_over(&mut emu, core_mask);
                     }
                 }
             }

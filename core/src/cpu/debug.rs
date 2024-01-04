@@ -51,7 +51,8 @@ macro_rules! check_watchpoints {
                 {
                     use $crate::cpu::Schedule;
                     $core.schedule.set_target_time($core.schedule.cur_time());
-                    $core.stopped_by_debug_hook = true;
+                    $core.was_stopped_by_debug_hook = true;
+                    $core.is_stopped = true;
                 }
             }
         }
@@ -182,7 +183,7 @@ impl<T: ?Sized> Drop for Hook<T> {
 }
 
 pub type SwiHook<E> = Hook<dyn FnMut(&mut Emu<E>, u8) -> bool>;
-pub type UndefHook<E> = Hook<dyn FnMut(&mut Emu<E>) -> bool>;
+pub type UndefHook<E> = Hook<dyn FnMut(&mut Emu<E>, u32, bool) -> bool>;
 pub type PrefetchAbortHook<E> = Hook<dyn FnMut(&mut Emu<E>) -> bool>;
 pub type DataAbortHook<E> = Hook<dyn FnMut(&mut Emu<E>, u32) -> bool>;
 pub type BreakpointHook<E> = Hook<dyn FnMut(&mut Emu<E>, u32) -> bool>;

@@ -3,7 +3,7 @@ use crate::{config::Config, emu};
 use chrono::DateTime;
 use dust_core::{
     gpu::{Framebuffer, SCREEN_HEIGHT, SCREEN_WIDTH},
-    utils::{ByteSlice, MemValue},
+    utils::{BoxedByteSlice, ByteSlice, MemValue},
 };
 use imgui::{Image, StyleColor, TableFlags, TextureId, Ui, WindowHoveredFlags};
 use miniz_oxide::{
@@ -19,7 +19,7 @@ use std::{
 
 struct Savestate {
     contents: Vec<u8>,
-    save: Option<Box<[u8]>>,
+    save: Option<BoxedByteSlice>,
     framebuffer: Box<Framebuffer>,
     texture_id: TextureId,
 }
@@ -95,17 +95,16 @@ impl Savestate {
         let save_info: u32 = ByteSlice::new(&contents[contents.len() - 4..]).read_le(0);
         let save = if save_info & 0x8000_0000 != 0 {
             let len = (save_info & 0x7FFF_FFFF) as usize;
-            let mut buffer = Vec::with_capacity(len);
+            let mut buffer = BoxedByteSlice::new_zeroed(len);
             let src_start_i = contents.len().checked_sub(len + 4).unwrap();
             unsafe {
-                buffer.set_len(len);
                 contents
                     .as_ptr()
                     .add(src_start_i)
                     .copy_to_nonoverlapping(buffer.as_mut_ptr(), len);
             }
             contents.truncate(src_start_i);
-            Some(buffer.into_boxed_slice())
+            Some(buffer)
         } else {
             contents.truncate(contents.len() - 4);
             None
@@ -124,7 +123,7 @@ impl Savestate {
     fn create(
         name: &str,
         contents: Vec<u8>,
-        save: Option<Box<[u8]>>,
+        save: Option<BoxedByteSlice>,
         framebuffer: Box<Framebuffer>,
         savestate_dir: &Path,
         window: &Window,
