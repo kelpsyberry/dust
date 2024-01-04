@@ -14,7 +14,7 @@ env:
 
 jobs:
   build:
-    name: Build
+    name: Build (${{ matrix.os }})
     strategy:
       matrix:
         include:
@@ -51,6 +51,7 @@ jobs:
           ~/.cargo/registry/cache
           ~/.cargo/git/db
         key: cargo-registry
+        enableCrossOsArchive: true
 
     - name: Cache build directory
       uses: actions/cache@v3

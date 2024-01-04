@@ -21,6 +21,7 @@ jobs:
       uses: dtolnay/rust-toolchain@v1
       with:
         toolchain: nightly
+        components: rust-src
 
     - name: Setup Node
       uses: actions/setup-node@v4
@@ -36,6 +37,7 @@ jobs:
           ~/.cargo/registry/cache
           ~/.cargo/git/db
         key: cargo-registry
+        enableCrossOsArchive: true
 
     - name: Cache build directory
       uses: actions/cache@v3

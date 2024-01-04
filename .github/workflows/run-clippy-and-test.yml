@@ -12,7 +12,7 @@ env:
 
 jobs:
   run-clippy-and-test:
-    name: Run Clippy and test
+    name: Run Clippy and test (${{ matrix.os }})
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
@@ -36,6 +36,7 @@ jobs:
           ~/.cargo/registry/cache
           ~/.cargo/git/db
         key: cargo-registry
+        enableCrossOsArchive: true
 
     - name: Install GTK and ALSA
       if: ${{ matrix.os == 'ubuntu-latest' }}
