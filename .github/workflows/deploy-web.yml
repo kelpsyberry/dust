@@ -15,30 +15,33 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Install nightly toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@v1
       with:
         toolchain: nightly
-        override: true
-        components: rust-src
 
     - name: Setup Node
-      uses: actions/setup-node@v2
+      uses: actions/setup-node@v4
       with:
         node-version: '17'
     
-    - name: Cache dependencies and build directory
-      uses: actions/cache@v2
+    - name: Cache Cargo registry
+      uses: actions/cache@v3
       with:
         path: |
           ~/.cargo/bin
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ~/.cargo/git/db
-          target/
-        key: web
+        key: cargo-registry
+
+    - name: Cache build directory
+      uses: actions/cache@v3
+      with:
+        path: target/
+        key: web-release
 
     - name: Build
       working-directory: frontend/web

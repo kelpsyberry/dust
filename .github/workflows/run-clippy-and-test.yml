@@ -7,7 +7,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  FEATURES: xq-audio,discord-presence,debug-views,log,pu-checks,gdb-server,dldi
+  FEATURES: xq-audio,discord-presence,log,debug-views,pu-checks,gdb-server,dldi
   MACOSX_DEPLOYMENT_TARGET: 10.11
 
 jobs:
@@ -19,25 +19,23 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Install nightly toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@v1
       with:
           toolchain: nightly
-          override: true
           components: clippy
 
-    - name: Cache dependencies and build directory
-      uses: actions/cache@v2
+    - name: Cache Cargo registry
+      uses: actions/cache@v3
       with:
         path: |
           ~/.cargo/bin
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ~/.cargo/git/db
-          target/
-        key: ${{ matrix.os }}-clippy
+        key: cargo-registry
 
     - name: Install GTK and ALSA
       if: ${{ matrix.os == 'ubuntu-latest' }}
