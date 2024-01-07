@@ -409,10 +409,8 @@ pub(super) fn run(
         renderer_3d_tx,
         #[cfg(feature = "dldi")]
         dldi.map(|dldi| {
-            Box::new(
-                dldi::FsProvider::new(&dldi.root_path, &dldi.skip_path)
-                    .expect("Couldn't create DLDI"),
-            ) as Box<dyn dust_core::dldi::Provider>
+            Box::new(dldi::FsProvider::new(dldi.root_path, dldi.skip_path))
+                as Box<dyn dust_core::dldi::Provider>
         }),
         #[cfg(not(feature = "dldi"))]
         None,

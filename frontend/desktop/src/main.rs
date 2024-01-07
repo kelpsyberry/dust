@@ -2,7 +2,6 @@
     step_trait,
     new_uninit,
     slice_ptr_get,
-    try_blocks,
     slice_ptr_len,
     array_chunks,
     portable_simd,

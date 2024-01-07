@@ -7,6 +7,7 @@ use crate::{
 };
 
 pub trait Provider {
+    fn setup(&mut self) -> bool;
     fn supports_writes(&self) -> bool;
     fn read_sector(&mut self, sector: u32, buffer: &mut Bytes<0x200>) -> bool;
     fn write_sector(&mut self, sector: u32, buffer: &Bytes<0x200>) -> bool;
@@ -37,7 +38,7 @@ const TOTAL_DRIVER_LEN: usize = 0x98;
 impl Dldi {
     pub(crate) fn new_if_supported(
         ds_rom: &mut Box<dyn ds_slot::rom::Contents>,
-        provider: Box<dyn Provider>,
+        mut provider: Box<dyn Provider>,
     ) -> Option<Self> {
         let rom_offset = 'search: {
             let mut block_buffer = zeroed_box::<Bytes<0x400>>();
@@ -64,6 +65,10 @@ impl Dldi {
         // If the driver can't fit into the allocated space, exit
         let driver_size_shift = TOTAL_DRIVER_LEN.next_power_of_two().trailing_zeros() as u8;
         if driver_size_shift > dldi_area[0x0F] {
+            return None;
+        }
+
+        if !provider.setup() {
             return None;
         }
 

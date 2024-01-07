@@ -107,11 +107,10 @@ impl RunningState {
     fn send(&mut self, packet: &CheckedPacket) -> Result<(), gdb_protocol::Error> {
         'send_packet: loop {
             loop {
-                let result: io::Result<()> = try {
-                    packet.encode(&mut self.writer)?;
-                    self.writer.flush()?;
-                };
-                match result {
+                match packet
+                    .encode(&mut self.writer)
+                    .and_then(|_| self.writer.flush())
+                {
                     Ok(_) => break,
                     Err(err) => {
                         if err.kind() == ErrorKind::WouldBlock {

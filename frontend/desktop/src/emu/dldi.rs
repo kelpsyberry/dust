@@ -188,11 +188,74 @@ impl Write for ChunkManager {
 }
 
 pub struct FsProvider {
-    chunk_manager: ChunkManager,
+    root_path: PathBuf,
+    skip_path: PathBuf,
+    chunk_manager: Option<ChunkManager>,
 }
 
 impl FsProvider {
-    pub fn new(root_path: &Path, skip_path: &Path) -> io::Result<Self> {
+    pub fn new(root_path: PathBuf, skip_path: PathBuf) -> FsProvider {
+        FsProvider {
+            root_path,
+            skip_path,
+            chunk_manager: None,
+        }
+    }
+
+    fn construct_direntry(
+        dir: &fatfs::Dir<&mut ChunkManager>,
+        entry: &fs::DirEntry,
+        skip_path: &Path,
+        file_read_buf: &mut Vec<u8>,
+        warnings: &mut Vec<String>,
+    ) -> io::Result<()> {
+        let path = entry.path();
+        if path == skip_path {
+            return Ok(());
+        }
+        let file_type = entry.file_type()?;
+        let name_os = entry.file_name();
+        let Some(name) = name_os.to_str() else {
+            return Ok(());
+        };
+        if file_type.is_dir() {
+            let dir = dir.create_dir(name)?;
+            Self::construct_dir(dir, &path, skip_path, file_read_buf, warnings);
+        } else if file_type.is_file() {
+            let mut file = dir.create_file(name)?;
+            fs::File::open(path)?.read_to_end(file_read_buf)?;
+            file.write_all(file_read_buf)?;
+            file_read_buf.clear();
+        }
+        Ok(())
+    }
+
+    fn construct_dir(
+        dir: fatfs::Dir<&mut ChunkManager>,
+        path: &Path,
+        skip_path: &Path,
+        file_read_buf: &mut Vec<u8>,
+        warnings: &mut Vec<String>,
+    ) {
+        let Ok(entries) = fs::read_dir(path) else {
+            return;
+        };
+        for entry in entries {
+            let Ok(entry) = entry else {
+                return;
+            };
+            if let Err(err) =
+                Self::construct_direntry(&dir, &entry, skip_path, file_read_buf, warnings)
+            {
+                warnings.push(format!("Couldn't copy entry {:?}: {}", entry.path(), err));
+            }
+        }
+    }
+
+    fn try_setup(&mut self) -> io::Result<()> {
+        if self.chunk_manager.is_some() {
+            return Ok(());
+        }
         let mut chunk_manager = ChunkManager {
             temp_dir: TempDir::new("dust")?,
             cur_addr: 0,
@@ -208,55 +271,56 @@ impl FsProvider {
                 .fat_type(fatfs::FatType::Fat16)
                 .volume_label(*b"Dust DLDI  "),
         )?;
-        let fs = fatfs::FileSystem::new(&mut chunk_manager, fatfs::FsOptions::new())?;
-        Self::construct_dir(fs.root_dir(), root_path, skip_path)?;
-        drop(fs);
-        Ok(FsProvider { chunk_manager })
-    }
-
-    fn construct_dir(
-        dir: fatfs::Dir<&mut ChunkManager>,
-        path: &Path,
-        skip_path: &Path,
-    ) -> io::Result<()> {
-        for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            let file_type = entry.file_type()?;
-            if entry.path() == skip_path {
-                continue;
-            }
-            if let Some(name) = entry.file_name().to_str() {
-                let path = entry.path();
-                if file_type.is_dir() {
-                    let dir = dir.create_dir(name)?;
-                    Self::construct_dir(dir, &path, skip_path)?;
-                } else if file_type.is_file() {
-                    let mut file = dir.create_file(name)?;
-                    let contents = std::fs::read(path)?;
-                    file.write_all(&contents)?;
-                }
-            }
+        let mut warnings = Vec::new();
+        {
+            let mut file_read_buf = Vec::new();
+            let fs = fatfs::FileSystem::new(&mut chunk_manager, fatfs::FsOptions::new())?;
+            Self::construct_dir(
+                fs.root_dir(),
+                &self.root_path,
+                &self.skip_path,
+                &mut file_read_buf,
+                &mut warnings,
+            );
         }
+        if !warnings.is_empty() {
+            warning!(
+                "DLDI warnings",
+                "The virtual DLDI device was initialized with the following warnings:{}",
+                format_list!(warnings)
+            );
+        }
+        self.chunk_manager = Some(chunk_manager);
         Ok(())
     }
 }
 
 impl Provider for FsProvider {
+    fn setup(&mut self) -> bool {
+        self.try_setup().is_ok()
+    }
+
     fn supports_writes(&self) -> bool {
         true
     }
 
     fn read_sector(&mut self, sector: u32, buffer: &mut Bytes<0x200>) -> bool {
-        self.chunk_manager
+        let Some(chunk_manager) = &mut self.chunk_manager else {
+            return false;
+        };
+        chunk_manager
             .seek(SeekFrom::Start((sector as u64) << 9))
             .is_ok()
-            && self.chunk_manager.read_exact(&mut buffer[..]).is_ok()
+            && chunk_manager.read_exact(&mut buffer[..]).is_ok()
     }
 
     fn write_sector(&mut self, sector: u32, buffer: &Bytes<0x200>) -> bool {
-        self.chunk_manager
+        let Some(chunk_manager) = &mut self.chunk_manager else {
+            return false;
+        };
+        chunk_manager
             .seek(SeekFrom::Start((sector as u64) << 9))
             .is_ok()
-            && self.chunk_manager.write_all(&buffer[..]).is_ok()
+            && chunk_manager.write_all(&buffer[..]).is_ok()
     }
 }
