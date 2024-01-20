@@ -49,8 +49,13 @@ impl GfxState {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
-        let surface =
-            unsafe { instance.create_surface_from_raw(window) }.expect("Couldn't create surface");
+        let surface = unsafe {
+            instance.create_surface_unsafe(
+                wgpu::SurfaceTargetUnsafe::from_window(window)
+                    .expect("Couldn't get surface target from window"),
+            )
+        }
+        .expect("Couldn't create surface");
 
         let adapter = match adapter {
             AdapterSelection::Auto(power_preference) => {
@@ -62,9 +67,10 @@ impl GfxState {
                     })
                     .await
             }
-            AdapterSelection::Manual(backends, suitable) => {
-                instance.enumerate_adapters(backends).find(suitable)
-            }
+            AdapterSelection::Manual(backends, suitable) => instance
+                .enumerate_adapters(backends)
+                .into_iter()
+                .find(suitable),
         }
         .expect("Couldn't create graphics adapter");
 
@@ -103,6 +109,7 @@ impl GfxState {
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: Vec::new(),
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &surf_config);
 
