@@ -147,10 +147,11 @@ macro_rules! home_path {
 }
 
 macro_rules! opt_home_path {
-    (nonoverridable $id: ident) => {
+    (nonoverridable $id: ident, $is_folder: expr) => {
         setting::OptHomePath::new(
             |config| config!(config, &$id).as_ref(),
             |config, value| set_config!(config, $id, value),
+            $is_folder,
         )
     };
 }
@@ -403,7 +404,7 @@ macro_rules! overridable {
 }
 
 macro_rules! sys_path {
-    ($label: literal, $field: ident) => {
+    ($label: literal, $field: ident, $is_folder: expr) => {
         setting::Overridable::new(
             concat!($label, ": "),
             (
@@ -416,6 +417,7 @@ macro_rules! sys_path {
                             })
                         });
                     },
+                    $is_folder,
                 ),
                 setting::OptHomePath::new(
                     |config| {
@@ -435,6 +437,7 @@ macro_rules! sys_path {
                             })
                         });
                     },
+                    $is_folder,
                 ),
             ),
             |config| config.sys_paths.inner().game().$field.is_some(),
@@ -487,13 +490,14 @@ impl PathsSettings {
             imgui_config_path: nonoverridable!(
                 "ImGui config path",
                 imgui_config_path,
-                opt_home_path
+                opt_home_path,
+                false
             ),
-            game_db_path: nonoverridable!("Game database path", game_db_path, opt_home_path),
-            sys_dir_path: sys_path!("System dir path", dir),
-            arm7_bios_path: sys_path!("ARM7 BIOS path", arm7_bios),
-            arm9_bios_path: sys_path!("ARM9 BIOS path", arm9_bios),
-            firmware_path: sys_path!("Firmware path", firmware),
+            game_db_path: nonoverridable!("Game database path", game_db_path, opt_home_path, false),
+            sys_dir_path: sys_path!("System dir path", dir, true),
+            arm7_bios_path: sys_path!("ARM7 BIOS path", arm7_bios, false),
+            arm9_bios_path: sys_path!("ARM9 BIOS path", arm9_bios, false),
+            firmware_path: sys_path!("Firmware path", firmware, false),
         }
     }
 }
@@ -653,7 +657,7 @@ impl SavesSettings {
             ),
             save_dir_path: nonoverridable!("Save directory path", save_dir_path, home_path),
             savestate_dir_path: nonoverridable!(
-                "Saved state directory path",
+                "Savestate directory path",
                 savestate_dir_path,
                 home_path
             ),

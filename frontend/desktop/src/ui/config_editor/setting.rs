@@ -127,17 +127,20 @@ pub struct OptHomePath {
     pub get: fn(&Config) -> Option<&HomePathBuf>,
     pub set: fn(&mut Config, Option<HomePathBuf>),
     buffer: StdString,
+    is_folder: bool,
 }
 
 impl OptHomePath {
     pub const fn new(
         get: fn(&Config) -> Option<&HomePathBuf>,
         set: fn(&mut Config, Option<HomePathBuf>),
+        is_folder: bool,
     ) -> Self {
         OptHomePath {
             get,
             set,
             buffer: StdString::new(),
+            is_folder,
         }
     }
 }
@@ -179,17 +182,31 @@ impl RawSetting for OptHomePath {
 
             ui.enabled(path.is_some(), || {
                 if ui.button("\u{f08e}") {
-                    let _ = opener::open(&path.unwrap().0);
+                    let path = &path.unwrap().0;
+                    let _ = opener::open(if self.is_folder {
+                        path
+                    } else {
+                        path.parent().unwrap_or(path)
+                    });
                 }
                 if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
-                    ui.tooltip_text("Open");
+                    ui.tooltip_text(if self.is_folder {
+                        "Open folder"
+                    } else {
+                        "Open containing folder"
+                    });
                 }
             });
 
             ui.same_line();
 
             if ui.button("\u{f07c}") {
-                if let Some(path) = FileDialog::new().pick_folder() {
+                let path = if self.is_folder {
+                    FileDialog::new().pick_folder()
+                } else {
+                    FileDialog::new().pick_file()
+                };
+                if let Some(path) = path {
                     new_value = Some(Some(HomePathBuf(path)));
                 }
             }
