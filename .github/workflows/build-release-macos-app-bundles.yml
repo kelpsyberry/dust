@@ -76,7 +76,7 @@ jobs:
         -create
         -output Dust.app/Contents/MacOS/Dust
 
-        tar -czf Dust.app.tar.gz Dust.app
+        tar -cf Dust.app.tar.gz Dust.app
 
     - name: Upload release bundle (no debugging features)
       uses: actions/upload-artifact@v4
@@ -108,7 +108,7 @@ jobs:
         -create
         -output Dust.app/Contents/MacOS/Dust
 
-        tar -czf Dust.app.tar.gz Dust.app
+        tar -cf Dust.app.tar.gz Dust.app
       
     - name: Upload release bundle (debugging features)
       uses: actions/upload-artifact@v4
@@ -142,7 +142,7 @@ jobs:
 
         cp -R frontend/desktop/src/emu/gdb_server/specs Dust.app/Contents/Resources
 
-        tar -czf Dust.app.tar.gz Dust.app
+        tar -cf Dust.app.tar.gz Dust.app
       
     - name: Upload release bundle (debugging features + GDB)
       uses: actions/upload-artifact@v4

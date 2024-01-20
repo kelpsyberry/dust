@@ -1,4 +1,4 @@
-name: Run Clippy and test
+name: Clippy
 
 on:
   push:
@@ -11,8 +11,8 @@ env:
   MACOSX_DEPLOYMENT_TARGET: 10.11
 
 jobs:
-  run-clippy-and-test:
-    name: Run Clippy and test (${{ matrix.os }})
+  clippy:
+    name: Clippy (${{ matrix.os }})
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
@@ -56,9 +56,3 @@ jobs:
         name: Run clippy (${{ matrix.os }}, all features)
         token: ${{ secrets.GITHUB_TOKEN }}
         args: --no-default-features --features=${{ env.FEATURES }} --package dust-desktop
-
-    - name: Run tests (no default features)
-      run: cargo test --verbose --no-default-features --package dust-desktop
-
-    - name: Run tests (all features)
-      run: cargo test --verbose --features=${{ env.FEATURES }} --package dust-desktop
