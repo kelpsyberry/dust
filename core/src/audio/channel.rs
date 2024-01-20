@@ -338,6 +338,7 @@ impl Channel {
     }
 
     #[inline]
+    #[allow(clippy::unused_self)]
     fn keep_last_sample(&mut self) {
         #[cfg(feature = "xq-audio")]
         self.hist.copy_within(1.., 0);

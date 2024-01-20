@@ -70,8 +70,8 @@ jobs:
         --package dust-desktop
 
         lipo
-        target/x86_64-apple-darwin/dust-desktop
-        target/aarch64-apple-darwin/release/dust-desktop
+        target/x86_64-apple-darwin/ci/dust-desktop
+        target/aarch64-apple-darwin/ci/dust-desktop
         -create
         -output Dust.app/Contents/MacOS/Dust
 
@@ -100,8 +100,8 @@ jobs:
         --package dust-desktop
 
         lipo
-        target/x86_64-apple-darwin/dust-desktop
-        target/aarch64-apple-darwin/release/dust-desktop
+        target/x86_64-apple-darwin/ci/dust-desktop
+        target/aarch64-apple-darwin/ci/dust-desktop
         -create
         -output Dust.app/Contents/MacOS/Dust
       
@@ -130,8 +130,8 @@ jobs:
         --package dust-desktop
 
         lipo
-        target/x86_64-apple-darwin/dust-desktop
-        target/aarch64-apple-darwin/release/dust-desktop
+        target/x86_64-apple-darwin/ci/dust-desktop
+        target/aarch64-apple-darwin/ci/dust-desktop
         -create
         -output Dust.app/Contents/MacOS/Dust
 

@@ -564,6 +564,8 @@ impl UiState {
 
         let frame_tx = self.frame_tx.take().unwrap();
 
+        // TODO: False positive
+        #[allow(clippy::useless_asref)]
         let audio_tx_data = self
             .audio_channel
             .as_ref()
