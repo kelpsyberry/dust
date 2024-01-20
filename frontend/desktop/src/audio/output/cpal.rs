@@ -78,25 +78,29 @@ impl OutputStream {
         };
 
         let err_callback = |err| panic!("Error in default audio output device stream: {err}");
+
+        macro_rules! build_output_stream {
+            ($t: ty) => {
+                output_device.build_output_stream(
+                    &supported_output_config.config(),
+                    move |data: &mut [$t], _| output_data.fill(data),
+                    err_callback,
+                    None,
+                )
+            };
+        }
+
         let stream = match supported_output_config.sample_format() {
-            SampleFormat::U16 => output_device.build_output_stream(
-                &supported_output_config.config(),
-                move |data: &mut [u16], _| output_data.fill(data),
-                err_callback,
-                None,
-            ),
-            SampleFormat::I16 => output_device.build_output_stream(
-                &supported_output_config.config(),
-                move |data: &mut [i16], _| output_data.fill(data),
-                err_callback,
-                None,
-            ),
-            SampleFormat::F32 => output_device.build_output_stream(
-                &supported_output_config.config(),
-                move |data: &mut [f32], _| output_data.fill(data),
-                err_callback,
-                None,
-            ),
+            SampleFormat::U8 => build_output_stream!(u8),
+            SampleFormat::I8 => build_output_stream!(i8),
+            SampleFormat::U16 => build_output_stream!(u16),
+            SampleFormat::I16 => build_output_stream!(i16),
+            SampleFormat::U32 => build_output_stream!(u32),
+            SampleFormat::I32 => build_output_stream!(i32),
+            SampleFormat::U64 => build_output_stream!(u64),
+            SampleFormat::I64 => build_output_stream!(i64),
+            SampleFormat::F32 => build_output_stream!(f32),
+            SampleFormat::F64 => build_output_stream!(f64),
             _ => panic!("Unsupported audio output sample format"),
         }
         .ok()?;
