@@ -793,6 +793,9 @@ impl GfxThreadData {
                 } = &self.renderer_3d_data
                 {
                     while last_submitted_frame.0.load(Ordering::Relaxed) < frame.frame_index {
+                        if self.shared_data.stopped.load(Ordering::Relaxed) {
+                            return;
+                        }
                         thread::park_timeout(Duration::from_millis(1));
                     }
                 }

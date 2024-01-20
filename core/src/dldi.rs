@@ -3,7 +3,7 @@ use crate::{
     cpu::{arm7::bus as arm7_bus, arm9::bus as arm9_bus, bus::CpuAccess},
     ds_slot,
     emu::Emu,
-    utils::{make_zero, zeroed_box, Bytes},
+    utils::{make_zero, zeroed_box, ByteMutSlice, Bytes},
 };
 
 pub trait Provider {
@@ -43,9 +43,12 @@ impl Dldi {
         let rom_offset = 'search: {
             let mut block_buffer = zeroed_box::<Bytes<0x400>>();
             let mut magic_string_buffer = zeroed_box::<Bytes<12>>();
-            for addr in (0..ds_rom.len().checked_sub(0x7C)?).step_by(4) {
+            for addr in (0..ds_rom.len().checked_sub(TOTAL_DRIVER_LEN)?).step_by(4) {
                 if addr & 0x3FF == 0 {
-                    ds_rom.read_slice(addr, block_buffer.as_byte_mut_slice());
+                    ds_rom.read_slice(
+                        addr,
+                        ByteMutSlice::new(&mut block_buffer[..0x400.min(ds_rom.len() - addr)]),
+                    );
                 }
                 let value = unsafe { block_buffer.read_le_aligned::<u32>(addr & 0x3FC) };
                 // Look for the DLDI magic string
