@@ -6,6 +6,7 @@ use dust_core::{
     cpu::{self, arm7, arm9, bus::DebugCpuAccess, debug::SwiHook, psr::Psr},
     emu::Emu,
 };
+use emu_utils::resource;
 use std::rc::Rc;
 
 fn split_once_mut(data: &mut [u8], byte: u8) -> (&mut [u8], &mut [u8]) {
@@ -611,7 +612,7 @@ impl GdbServer {
                                     return Err(PacketError::InvalidParams.into());
                                 }
                                 self.send_packet(binary_range_reply(
-                                    include_bytes!("target.xml"),
+                                    resource!("specs/target.xml", "gdb/target.xml"),
                                     addr,
                                     length,
                                 ))?;
@@ -623,7 +624,7 @@ impl GdbServer {
                                     return Err(PacketError::InvalidParams.into());
                                 }
                                 self.send_packet(binary_range_reply(
-                                    include_bytes!("threads.xml"),
+                                    resource!("specs/threads.xml", "gdb/threads.xml"),
                                     addr,
                                     length,
                                 ))?;

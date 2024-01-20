@@ -40,7 +40,7 @@ jobs:
       uses: dtolnay/rust-toolchain@v1
       with:
         toolchain: nightly
-        target: ${{ matrix.target }}
+        targets: ${{ matrix.target }}
     
     - name: Cache Cargo registry
       uses: actions/cache@v3

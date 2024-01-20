@@ -5,6 +5,7 @@ use cocoa::{
     foundation::NSRect,
 };
 use copypasta::{ClipboardContext, ClipboardProvider};
+use emu_utils::resource;
 use std::{
     iter,
     mem::ManuallyDrop,
@@ -229,16 +230,28 @@ impl ImGuiState {
         imgui_io.config_windows_move_from_title_bar_only = true;
         imgui_io.font_global_scale = (1.0 / scale_factor) as f32;
 
-        static OPEN_SANS_DATA: &[u8] = include_bytes!("../../fonts/OpenSans-Regular.ttf");
-        static FIRA_MONO_DATA: &[u8] = include_bytes!("../../fonts/FiraMono-Regular.ttf");
-        static FA_SOLID_DATA: &[u8] = include_bytes!("../../fonts/FontAwesome-Solid.ttf");
-        static FA_BRANDS_DATA: &[u8] = include_bytes!("../../fonts/FontAwesome-Brands.ttf");
+        let open_sans_data = resource!(
+            "../../fonts/OpenSans-Regular.ttf",
+            "fonts/OpenSans-Regular.ttf"
+        );
+        let fira_mono_data = resource!(
+            "../../fonts/FiraMono-Regular.ttf",
+            "fonts/FiraMono-Regular.ttf"
+        );
+        let fa_solid_data = resource!(
+            "../../fonts/FontAwesome-Solid.ttf",
+            "fonts/FontAwesome-Solid.ttf"
+        );
+        let fa_brands_data = resource!(
+            "../../fonts/FontAwesome-Brands.ttf",
+            "fonts/FontAwesome-Brands.ttf"
+        );
         let fa_solid_glyph_ranges = imgui::FontGlyphRanges::from_slice(&[0xE000, 0xF8FF, 0]);
         let fa_brands_glyph_ranges = imgui::FontGlyphRanges::from_slice(&[0xF392, 0xF392, 0]);
 
         let normal_font = imgui.fonts().add_font(&[
             imgui::FontSource::TtfData {
-                data: OPEN_SANS_DATA,
+                data: open_sans_data,
                 size_pixels: (16.0 * scale_factor).round() as f32,
                 config: Some(imgui::FontConfig {
                     oversample_h: 2,
@@ -246,7 +259,7 @@ impl ImGuiState {
                 }),
             },
             imgui::FontSource::TtfData {
-                data: FA_SOLID_DATA,
+                data: fa_solid_data,
                 size_pixels: (16.0 * scale_factor).round() as f32,
                 config: Some(imgui::FontConfig {
                     glyph_ranges: fa_solid_glyph_ranges,
@@ -257,7 +270,7 @@ impl ImGuiState {
                 }),
             },
             imgui::FontSource::TtfData {
-                data: FA_BRANDS_DATA,
+                data: fa_brands_data,
                 size_pixels: (16.0 * scale_factor).round() as f32,
                 config: Some(imgui::FontConfig {
                     glyph_ranges: fa_brands_glyph_ranges,
@@ -269,7 +282,7 @@ impl ImGuiState {
             },
         ]);
         let mono_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
-            data: FIRA_MONO_DATA,
+            data: fira_mono_data,
             size_pixels: (13.0 * scale_factor).round() as f32,
             config: Some(imgui::FontConfig {
                 oversample_h: 2,
@@ -277,7 +290,7 @@ impl ImGuiState {
             }),
         }]);
         let large_icon_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
-            data: FA_SOLID_DATA,
+            data: fa_solid_data,
             size_pixels: (32.0 * scale_factor).round() as f32,
             config: Some(imgui::FontConfig {
                 glyph_ranges: imgui::FontGlyphRanges::from_slice(&[

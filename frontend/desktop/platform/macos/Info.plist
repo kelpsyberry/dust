@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.games</string>
+  <key>CFBundleIdentifier</key>
+  <string>org.dust-emu.dust</string>
+  <key>CFBundleName</key>
+  <string>Dust</string>
+  <key>CFBundleDisplayName</key>
+  <string>Dust</string>
+  <key>CFBundleVersion</key>
+  <string>0.0.1</string>
+  <key>CFBundleShortVersionString</key>
+  <string>Version 0.0.1</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>10.7.0</string>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleIconFile</key>
+  <string>Dust.icns</string>
+  <key>NSPrefersDisplaySafeAreaCompatibilityMode</key>
+  <false/>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>CFBundleExecutable</key>
+  <string>Dust</string>
+</dict>
+</plist>

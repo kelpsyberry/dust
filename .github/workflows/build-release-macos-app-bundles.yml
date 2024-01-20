@@ -1,0 +1,144 @@
+name: Build release macOS app bundles
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RELEASE_FEATURES: xq-audio,discord-presence,dldi
+  DEBUG_FEATURES: xq-audio,discord-presence,log,debug-views,dldi
+  DEBUG_GDB_FEATURES: xq-audio,discord-presence,log,debug-views,pu-checks,gdb-server,dldi
+  MACOSX_DEPLOYMENT_TARGET: 10.11
+  BUILD_APP_BUNDLE: true
+
+jobs:
+  build:
+    name: Build release macOS app bundles
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install nightly toolchain
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: nightly
+        targets: x86_64-apple-darwin, aarch64-apple-darwin
+    
+    - name: Cache Cargo registry
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+        key: cargo-registry
+        enableCrossOsArchive: true
+
+    - name: Cache build directory
+      uses: actions/cache@v3
+      with:
+        path: target/
+        key: macos-app-release
+
+    - name: Prepare empty bundle
+      run: |
+        mkdir -p Dust.app/Contents/MacOS Dust.app/Contents/Resources
+        cp frontend/desktop/platform/macos/Info.plist Dust.app/Contents
+        cp frontend/desktop/platform/macos/Dust.icns Dust.app/Contents/Resources
+        cp -R frontend/desktop/fonts Dust.app/Contents/Resources
+        cp -R render/wgpu-2d/src/common/shaders Dust.app/Contents/shaders
+
+    - name: Build release bundle (no debugging features)
+      run: >
+        cargo build
+        --verbose
+        --profile ci
+        --target x86_64-apple-darwin
+        --no-default-features
+        --features=${{ env.RELEASE_FEATURES }}
+        --package dust-desktop
+
+        cargo build
+        --verbose
+        --profile ci
+        --target aarch64-apple-darwin
+        --no-default-features
+        --features=${{ env.RELEASE_FEATURES }}
+        --package dust-desktop
+
+        lipo
+        target/x86_64-apple-darwin/dust-desktop
+        target/aarch64-apple-darwin/release/dust-desktop
+        -create
+        -output Dust.app/Contents/MacOS/Dust
+
+    - name: Upload release bundle (no debugging features)
+      uses: actions/upload-artifact@v4
+      with:
+        name: macOS-app
+        path: Dust.app
+
+    - name: Build release bundle (debugging features)
+      run: >
+        cargo build
+        --verbose
+        --profile ci
+        --target x86_64-apple-darwin
+        --no-default-features
+        --features=${{ env.DEBUG_FEATURES }}
+        --package dust-desktop
+
+        cargo build
+        --verbose
+        --profile ci
+        --target aarch64-apple-darwin
+        --no-default-features
+        --features=${{ env.DEBUG_FEATURES }}
+        --package dust-desktop
+
+        lipo
+        target/x86_64-apple-darwin/dust-desktop
+        target/aarch64-apple-darwin/release/dust-desktop
+        -create
+        -output Dust.app/Contents/MacOS/Dust
+      
+    - name: Upload release bundle (debugging features)
+      uses: actions/upload-artifact@v4
+      with:
+        name: macOS-app-debug
+        path: Dust.app
+
+    - name: Build release bundle (debugging features + GDB)
+      run: >
+        cargo build
+        --verbose
+        --profile ci
+        --target x86_64-apple-darwin
+        --no-default-features
+        --features=${{ env.DEBUG_GDB_FEATURES }}
+        --package dust-desktop
+
+        cargo build
+        --verbose
+        --profile ci
+        --target aarch64-apple-darwin
+        --no-default-features
+        --features=${{ env.DEBUG_GDB_FEATURES }}
+        --package dust-desktop
+
+        lipo
+        target/x86_64-apple-darwin/dust-desktop
+        target/aarch64-apple-darwin/release/dust-desktop
+        -create
+        -output Dust.app/Contents/MacOS/Dust
+
+        cp -R frontend/desktop/src/emu/gdb_server/specs Dust.app/Contents/Resources
+      
+    - name: Upload release bundle (debugging features + GDB)
+      uses: actions/upload-artifact@v4
+      with:
+        name: macOS-app-debug-gdb
+        path: Dust.app

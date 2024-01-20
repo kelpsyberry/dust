@@ -1,6 +1,6 @@
 use super::{BgObjPixel, ScanlineFlags};
 use dust_core::gpu::{engine_3d, Scanline, SCREEN_HEIGHT, SCREEN_WIDTH};
-use emu_utils::triple_buffer;
+use emu_utils::{resource_str, triple_buffer};
 use parking_lot::RwLock;
 use std::{
     num::NonZeroU64,
@@ -411,9 +411,9 @@ impl GfxThreadData {
             label: Some("2D renderer"),
             source: wgpu::ShaderSource::Wgsl(
                 if accel {
-                    include_str!("shaders/wgpu-2d-accel.wgsl")
+                    resource_str!("shaders/wgpu-2d-accel.wgsl", "shaders/wgpu-2d-accel.wgsl")
                 } else {
-                    include_str!("shaders/wgpu-2d-soft.wgsl")
+                    resource_str!("shaders/wgpu-2d-soft.wgsl", "shaders/wgpu-2d-soft.wgsl")
                 }
                 .into(),
             ),
