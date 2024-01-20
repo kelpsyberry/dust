@@ -36,7 +36,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install nightly toolchain
+    - id: toolchain
+      name: Install nightly toolchain
       uses: dtolnay/rust-toolchain@v1
       with:
         toolchain: nightly
@@ -56,7 +57,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: target/
-        key: ${{ matrix.target }}-release
+        key: ${{ matrix.target }}-release-${{ steps.toolchain.outputs.cachekey }}
 
     - name: Install GTK and ALSA
       if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -74,11 +75,16 @@ jobs:
         --features=${{ env.RELEASE_FEATURES }}
         --package dust-desktop
 
+        tar
+        -C target/${{ matrix.target }}/ci
+        -czf ../../../dust-desktop.tar.gz
+        dust-desktop${{ matrix.artifact-extension }}
+
     - name: Upload release binary (no debugging features)
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact }}
-        path: target/${{ matrix.target }}/ci/dust-desktop${{ matrix.artifact-extension }}
+        path: dust-desktop.tar.gz
 
     - name: Build release binary (debugging features)
       run: >
@@ -89,12 +95,17 @@ jobs:
         --no-default-features
         --features=${{ env.DEBUG_FEATURES }}
         --package dust-desktop
+
+        tar
+        -C target/${{ matrix.target }}/ci
+        -czf ../../../dust-desktop.tar.gz
+        dust-desktop${{ matrix.artifact-extension }}
       
     - name: Upload release binary (debugging features)
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact }}-debug
-        path: target/${{ matrix.target }}/ci/dust-desktop${{ matrix.artifact-extension }}
+        path: dust-desktop.tar.gz
 
     - name: Build release binary (debugging features + GDB)
       run: >
@@ -105,9 +116,14 @@ jobs:
         --no-default-features
         --features=${{ env.DEBUG_GDB_FEATURES }}
         --package dust-desktop
+
+        tar
+        -C target/${{ matrix.target }}/ci
+        -czf ../../../dust-desktop.tar.gz
+        dust-desktop${{ matrix.artifact-extension }}
       
     - name: Upload release binary (debugging features + GDB)
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact }}-debug-gdb
-        path: target/${{ matrix.target }}/ci/dust-desktop${{ matrix.artifact-extension }}
+        path: dust-desktop.tar.gz

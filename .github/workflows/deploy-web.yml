@@ -17,7 +17,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install nightly toolchain
+    - id: toolchain
+      name: Install nightly toolchain
       uses: dtolnay/rust-toolchain@v1
       with:
         toolchain: nightly
@@ -42,7 +43,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: target/
-        key: web-release
+        key: web-release-${{ steps.toolchain.outputs.cachekey }}
 
     - name: Build
       working-directory: frontend/web

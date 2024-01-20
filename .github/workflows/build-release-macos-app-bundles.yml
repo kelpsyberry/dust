@@ -21,7 +21,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install nightly toolchain
+    - id: toolchain
+      name: Install nightly toolchain
       uses: dtolnay/rust-toolchain@v1
       with:
         toolchain: nightly
@@ -41,7 +42,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: target/
-        key: macos-app-release
+        key: macos-app-release-${{ steps.toolchain.outputs.cachekey }}
 
     - name: Prepare empty bundle
       run: |
@@ -49,7 +50,7 @@ jobs:
         cp frontend/desktop/platform/macos/Info.plist Dust.app/Contents
         cp frontend/desktop/platform/macos/Dust.icns Dust.app/Contents/Resources
         cp -R frontend/desktop/fonts Dust.app/Contents/Resources
-        cp -R render/wgpu-2d/src/common/shaders Dust.app/Contents/shaders
+        cp -R render/wgpu-2d/src/common/shaders Dust.app/Contents/Resources
 
     - name: Build release bundle (no debugging features)
       run: >
@@ -75,11 +76,13 @@ jobs:
         -create
         -output Dust.app/Contents/MacOS/Dust
 
+        tar -czf Dust.app.tar.gz Dust.app
+
     - name: Upload release bundle (no debugging features)
       uses: actions/upload-artifact@v4
       with:
         name: macOS-app
-        path: Dust.app
+        path: Dust.app.tar.gz
 
     - name: Build release bundle (debugging features)
       run: >
@@ -104,12 +107,14 @@ jobs:
         target/aarch64-apple-darwin/ci/dust-desktop
         -create
         -output Dust.app/Contents/MacOS/Dust
+
+        tar -czf Dust.app.tar.gz Dust.app
       
     - name: Upload release bundle (debugging features)
       uses: actions/upload-artifact@v4
       with:
         name: macOS-app-debug
-        path: Dust.app
+        path: Dust.app.tar.gz
 
     - name: Build release bundle (debugging features + GDB)
       run: >
@@ -136,9 +141,11 @@ jobs:
         -output Dust.app/Contents/MacOS/Dust
 
         cp -R frontend/desktop/src/emu/gdb_server/specs Dust.app/Contents/Resources
+
+        tar -czf Dust.app.tar.gz Dust.app
       
     - name: Upload release bundle (debugging features + GDB)
       uses: actions/upload-artifact@v4
       with:
         name: macOS-app-debug-gdb
-        path: Dust.app
+        path: Dust.app.tar.gz
