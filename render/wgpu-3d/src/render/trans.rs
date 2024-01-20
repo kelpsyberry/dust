@@ -169,7 +169,7 @@ pub(crate) fn create_pipeline(
         primitive: PRIMITIVE_STATE,
 
         depth_stencil: Some(wgpu::DepthStencilState {
-            format: wgpu::TextureFormat::Depth32FloatStencil8,
+            format: wgpu::TextureFormat::Depth24PlusStencil8,
             depth_write_enabled: true,
             depth_compare: if pipeline.depth_test_equal() {
                 wgpu::CompareFunction::Equal
@@ -211,7 +211,7 @@ pub(crate) fn create_pipeline(
             },
 
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32FloatStencil8,
+                format: wgpu::TextureFormat::Depth24PlusStencil8,
                 depth_write_enabled: true,
                 depth_compare: if pipeline.depth_test_equal() {
                     wgpu::CompareFunction::Equal

@@ -928,7 +928,7 @@ pub fn main() {
 
     let mut window_builder = futures_executor::block_on(window::Builder::new(
         "Dust",
-        wgpu::Features::DEPTH32FLOAT_STENCIL8,
+        wgpu::Features::empty(),
         window::AdapterSelection::Auto(wgpu::PowerPreference::LowPower),
         config.config.window_size,
         #[cfg(target_os = "macos")]
