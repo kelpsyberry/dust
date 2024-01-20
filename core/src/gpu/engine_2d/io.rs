@@ -5,6 +5,7 @@ use super::{
 use crate::cpu::bus::AccessType;
 
 impl<R: Role> Engine2d<R> {
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn read_8<A: AccessType>(&mut self, addr: u32) -> u8 {
         let addr = addr & 0x7F;
         match addr {
@@ -34,6 +35,7 @@ impl<R: Role> Engine2d<R> {
         }
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn read_16<A: AccessType>(&mut self, addr: u32) -> u16 {
         let addr = addr & 0x7E;
         match addr {
@@ -60,6 +62,7 @@ impl<R: Role> Engine2d<R> {
         }
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn read_32<A: AccessType>(&mut self, addr: u32) -> u32 {
         let addr = addr & 0x7C;
         match addr {
@@ -85,6 +88,7 @@ impl<R: Role> Engine2d<R> {
         }
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn write_8<A: AccessType>(&mut self, addr: u32, value: u8) {
         let addr = addr & 0x7F;
         match addr {
@@ -201,6 +205,7 @@ impl<R: Role> Engine2d<R> {
         }
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn write_16<A: AccessType>(&mut self, addr: u32, value: u16) {
         let addr = addr & 0x7E;
         match addr {
@@ -311,6 +316,7 @@ impl<R: Role> Engine2d<R> {
         }
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn write_32<A: AccessType>(&mut self, addr: u32, value: u32) {
         let addr = addr & 0x7C;
         match addr {

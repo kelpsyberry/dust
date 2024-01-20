@@ -2,6 +2,7 @@ use super::{capture, channel, Audio, Control};
 use crate::cpu::bus::AccessType;
 
 impl Audio {
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn read_8<A: AccessType>(&mut self, addr: u32) -> u8 {
         if addr & 0x100 == 0 {
             let channel = &self.channels[addr as usize >> 4 & 0xF];
@@ -51,6 +52,7 @@ impl Audio {
         0
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn read_16<A: AccessType>(&mut self, addr: u32) -> u16 {
         if addr & 0x100 == 0 {
             let channel = &self.channels[addr as usize >> 4 & 0xF];
@@ -91,6 +93,7 @@ impl Audio {
         0
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn read_32<A: AccessType>(&mut self, addr: u32) -> u32 {
         if addr & 0x100 == 0 {
             let channel = &self.channels[addr as usize >> 4 & 0xF];
@@ -122,6 +125,7 @@ impl Audio {
         0
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn write_8<A: AccessType>(&mut self, addr: u32, value: u8) {
         if addr & 0x100 == 0 {
             let i = addr as usize >> 4 & 0xF;
@@ -253,6 +257,7 @@ impl Audio {
         }
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn write_16<A: AccessType>(&mut self, addr: u32, value: u16) {
         if addr & 0x100 == 0 {
             let i = addr as usize >> 4 & 0xF;
@@ -332,6 +337,7 @@ impl Audio {
         }
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn write_32<A: AccessType>(&mut self, addr: u32, value: u32) {
         if addr & 0x100 == 0 {
             let i = addr as usize >> 4 & 0xF;

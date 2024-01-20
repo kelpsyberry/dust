@@ -28,11 +28,9 @@ use crate::{
     wifi::WiFi,
     Model,
 };
-use core::fmt;
 #[cfg(feature = "xq-audio")]
 use core::num::NonZeroU32;
 use input::Input;
-use std::error::Error;
 use swram::Swram;
 
 proc_bitfield::bitfield! {
@@ -193,26 +191,6 @@ pub enum BuildError {
     RomNeedsDecryptionButNoBiosProvided,
 }
 
-impl Error for BuildError {}
-
-impl fmt::Display for BuildError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BuildError::MissingSysFiles => f.write_str("missing system files"),
-            BuildError::RomCreation(e) => write!(f, "ROM creation error: {e}"),
-            BuildError::RomNeedsDecryptionButNoBiosProvided => {
-                f.write_str("ROM needs decryption, but no original ARM7 BIOS provided")
-            }
-        }
-    }
-}
-
-impl fmt::Debug for BuildError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        <Self as fmt::Display>::fmt(self, f)
-    }
-}
-
 impl Builder {
     #[inline]
     #[allow(clippy::too_many_arguments)]
@@ -273,6 +251,7 @@ impl Builder {
                 ds_slot::rom::normal::Normal::new(
                     contents,
                     self.arm7_bios.as_deref(),
+                    self.model,
                     #[cfg(feature = "log")]
                     self.logger.new(slog::o!("ds_rom" => "normal")),
                 )
@@ -402,7 +381,8 @@ impl<E: cpu::Engine> Emu<E> {
         let mut header_bytes = Bytes::new([0; 0x170]);
         self.ds_slot.rom.read_header(&mut header_bytes);
         let header = ds_slot::rom::header::Header::new(header_bytes.as_byte_slice())
-            .expect("invalid ROM header");
+            // NOTE: The ROM file's size is ensured beforehand, this should never occur.
+            .expect("Couldn't read DS slot ROM header");
         let chip_id = self.ds_slot.rom.chip_id();
 
         macro_rules! write_main_mem {

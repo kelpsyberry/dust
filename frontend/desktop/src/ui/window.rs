@@ -230,6 +230,7 @@ impl ImGuiState {
         imgui_io.font_global_scale = (1.0 / scale_factor) as f32;
 
         static OPEN_SANS_DATA: &[u8] = include_bytes!("../../fonts/OpenSans-Regular.ttf");
+        static FIRA_MONO_DATA: &[u8] = include_bytes!("../../fonts/FiraMono-Regular.ttf");
         static FA_SOLID_DATA: &[u8] = include_bytes!("../../fonts/FontAwesome-Solid.ttf");
         static FA_BRANDS_DATA: &[u8] = include_bytes!("../../fonts/FontAwesome-Brands.ttf");
         let fa_solid_glyph_ranges = imgui::FontGlyphRanges::from_slice(&[0xE000, 0xF8FF, 0]);
@@ -238,7 +239,7 @@ impl ImGuiState {
         let normal_font = imgui.fonts().add_font(&[
             imgui::FontSource::TtfData {
                 data: OPEN_SANS_DATA,
-                size_pixels: (16.0 * scale_factor) as f32,
+                size_pixels: (16.0 * scale_factor).round() as f32,
                 config: Some(imgui::FontConfig {
                     oversample_h: 2,
                     ..Default::default()
@@ -246,10 +247,10 @@ impl ImGuiState {
             },
             imgui::FontSource::TtfData {
                 data: FA_SOLID_DATA,
-                size_pixels: (16.0 * scale_factor) as f32,
+                size_pixels: (16.0 * scale_factor).round() as f32,
                 config: Some(imgui::FontConfig {
                     glyph_ranges: fa_solid_glyph_ranges,
-                    glyph_min_advance_x: (20.0 * scale_factor) as f32,
+                    glyph_min_advance_x: (20.0 * scale_factor).round() as f32,
                     glyph_offset: [0.0, 2.0],
                     oversample_h: 2,
                     ..Default::default()
@@ -257,10 +258,10 @@ impl ImGuiState {
             },
             imgui::FontSource::TtfData {
                 data: FA_BRANDS_DATA,
-                size_pixels: (16.0 * scale_factor) as f32,
+                size_pixels: (16.0 * scale_factor).round() as f32,
                 config: Some(imgui::FontConfig {
                     glyph_ranges: fa_brands_glyph_ranges,
-                    glyph_min_advance_x: (20.0 * scale_factor) as f32,
+                    glyph_min_advance_x: (20.0 * scale_factor).round() as f32,
                     glyph_offset: [0.0, 2.0],
                     oversample_h: 2,
                     ..Default::default()
@@ -268,8 +269,8 @@ impl ImGuiState {
             },
         ]);
         let mono_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
-            data: include_bytes!("../../fonts/FiraMono-Regular.ttf"),
-            size_pixels: (13.0 * scale_factor) as f32,
+            data: FIRA_MONO_DATA,
+            size_pixels: (13.0 * scale_factor).round() as f32,
             config: Some(imgui::FontConfig {
                 oversample_h: 2,
                 ..Default::default()
@@ -277,12 +278,12 @@ impl ImGuiState {
         }]);
         let large_icon_font = imgui.fonts().add_font(&[imgui::FontSource::TtfData {
             data: FA_SOLID_DATA,
-            size_pixels: (32.0 * scale_factor) as f32,
+            size_pixels: (32.0 * scale_factor).round() as f32,
             config: Some(imgui::FontConfig {
                 glyph_ranges: imgui::FontGlyphRanges::from_slice(&[
                     0x002B, 0x002B, 0xE000, 0xF8FF, 0,
                 ]),
-                glyph_min_advance_x: (40.0 * scale_factor) as f32,
+                glyph_min_advance_x: (40.0 * scale_factor).round() as f32,
                 oversample_h: 2,
                 ..Default::default()
             }),

@@ -247,6 +247,7 @@ impl Channel {
     }
 
     #[inline]
+    #[allow(clippy::unused_self)]
     fn check_loop_start(&self) {
         #[cfg(feature = "log")]
         if self.control.running() && self.format == Format::Adpcm && self.loop_start == 0 {
@@ -255,6 +256,7 @@ impl Channel {
     }
 
     #[inline]
+    #[allow(clippy::unused_self)]
     fn check_total_size(&self) {
         #[cfg(feature = "log")]
         if self.control.running()

@@ -411,9 +411,9 @@ impl GfxThreadData {
             label: Some("2D renderer"),
             source: wgpu::ShaderSource::Wgsl(
                 if accel {
-                    include_str!("shaders/3d-accel.wgsl")
+                    include_str!("shaders/wgpu-2d-accel.wgsl")
                 } else {
-                    include_str!("shaders/3d-soft.wgsl")
+                    include_str!("shaders/wgpu-2d-soft.wgsl")
                 }
                 .into(),
             ),

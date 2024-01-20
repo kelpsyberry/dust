@@ -42,7 +42,7 @@ pub struct Flash {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CreationError {
-    SizeNotPowerOfTwo,
+    InvalidSize,
 }
 
 impl Flash {
@@ -51,8 +51,8 @@ impl Flash {
         id: [u8; 20],
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Result<Self, CreationError> {
-        if !contents.len().is_power_of_two() || contents.len() < 0x4_0000 {
-            return Err(CreationError::SizeNotPowerOfTwo);
+        if !contents.len().is_power_of_two() || contents.len() < 0x2_0000 {
+            return Err(CreationError::InvalidSize);
         }
         let contents_len_mask = (contents.len() - 1) as u32;
         Ok(Flash {

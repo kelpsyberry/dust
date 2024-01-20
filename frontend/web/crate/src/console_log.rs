@@ -69,7 +69,7 @@ impl<'a> Serializer<'a> {
         }
     }
 
-    fn maybe_print_comma(&mut self) {
+    fn maybe_add_comma(&mut self) {
         if self.comma_needed {
             *self.buffer += ", ";
         }
@@ -80,7 +80,7 @@ impl<'a> Serializer<'a> {
 macro_rules! s {
     ($s:expr, $k:expr, $v:expr) => {
         use core::fmt::Write;
-        $s.maybe_print_comma();
+        $s.maybe_add_comma();
         let _ = write!($s.buffer, "{}: {}", $k, $v);
     };
 }

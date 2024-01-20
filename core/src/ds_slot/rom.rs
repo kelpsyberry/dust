@@ -6,7 +6,10 @@ pub mod icon;
 pub mod normal;
 
 use super::RomOutputLen;
-use crate::utils::{BoxedByteSlice, ByteMutSlice, Bytes, Savestate};
+use crate::{
+    utils::{BoxedByteSlice, ByteMutSlice, Bytes, Savestate},
+    Model,
+};
 
 #[allow(clippy::len_without_is_empty)]
 pub trait Contents {
@@ -112,3 +115,14 @@ impl Rom {
 }
 
 impl_from_variants!(Rom; Normal, Empty; normal::Normal, Empty);
+
+pub fn min_size_for_model(model: Model) -> usize {
+    match model {
+        Model::Ds | Model::Lite | Model::Ique | Model::IqueLite => 0x200,
+        Model::Dsi => 0x1000,
+    }
+}
+
+pub fn is_valid_size(len: usize, model: Model) -> bool {
+    len.is_power_of_two() && len >= min_size_for_model(model)
+}

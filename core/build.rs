@@ -915,7 +915,7 @@ mod disasm {
                     Instr::Mrc => write!(file, "mrc_mcr::<true>"),
                     Instr::Swi => write!(file, "swi"),
                     Instr::Undefined { .. } => write!(file, "undefined"),
-                    oops => unreachable!("{:?}", oops),
+                    _ => unreachable!(),
                 }?;
                 write!(file, ",")?;
             }

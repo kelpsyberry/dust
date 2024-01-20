@@ -509,6 +509,15 @@ pub enum FileError {
     Json(serde_json::Error),
 }
 
+impl fmt::Display for FileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FileError::Io(err) => write!(f, "I/O error: {err}"),
+            FileError::Json(err) => write!(f, "JSON serialization error: {err}"),
+        }
+    }
+}
+
 impl<T: Default + Serialize + for<'de> Deserialize<'de>> File<T> {
     pub fn read(path: &Path, default_on_not_found: bool) -> Result<Self, FileError> {
         let content = match fs::read_to_string(path) {
@@ -567,8 +576,11 @@ impl fmt::Display for LaunchWarning {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LaunchWarning::InvalidFirmware(verification_error) => match verification_error {
-                firmware::VerificationError::IncorrectSize(got) => {
-                    write!(f, "Invalid firmware size ({got} bytes)")
+                firmware::VerificationError::IncorrectSize { expected, got } => {
+                    write!(
+                        f,
+                        "Invalid firmware size (expected {expected} B, got {got} B)"
+                    )
                 }
                 firmware::VerificationError::IncorrectCrc16 {
                     region,
@@ -603,6 +615,9 @@ pub enum LaunchError {
         expected: usize,
         got: u64,
     },
+    InvalidFirmwareFileLength {
+        got: usize,
+    },
 }
 
 impl fmt::Display for LaunchError {
@@ -631,6 +646,13 @@ impl fmt::Display for LaunchError {
                     SYS_FILE_NAMES[*file as usize]
                 )
             }
+            LaunchError::InvalidFirmwareFileLength { got } => {
+                write!(
+                    f,
+                    "Invalid firmware size: expected 131072, 262144 or 524288 bytes, got {got} \
+                     bytes"
+                )
+            }
         }
     }
 }
@@ -644,10 +666,10 @@ pub struct Launch {
 impl Launch {
     pub fn new(
         config: &Config,
-        is_firmware: bool,
+        is_firmware_boot: bool,
     ) -> Result<(Self, Vec<LaunchWarning>), Vec<LaunchError>> {
-        let prefer_hle_bios = !is_firmware && *config.prefer_hle_bios.get();
-        let skip_firmware = !is_firmware && (prefer_hle_bios || *config.skip_firmware.get());
+        let prefer_hle_bios = !is_firmware_boot && *config.prefer_hle_bios.get();
+        let skip_firmware = !is_firmware_boot && (prefer_hle_bios || *config.skip_firmware.get());
 
         let mut warnings = Vec::new();
         let mut errors = Vec::new();
@@ -660,13 +682,13 @@ impl Launch {
                         Ok($f)
                     })()
                     .unwrap_or_else(|err| {
-                        if is_firmware {
+                        if is_firmware_boot {
                             errors.push(LaunchError::SysFileError(SystemFile::$file, err));
                         }
                         None
                     }),
                     None => {
-                        if is_firmware {
+                        if is_firmware_boot {
                             errors.push(LaunchError::MissingSysPath(SystemFile::$file));
                         }
                         None
@@ -726,10 +748,26 @@ impl Launch {
             }),
         );
 
+        if let Some(firmware) = &firmware {
+            if !firmware::is_valid_size(firmware.len()) {
+                errors.push(LaunchError::InvalidFirmwareFileLength {
+                    got: firmware.len(),
+                });
+            }
+        }
+
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
         let model = match config.model.get() {
             ModelConfig::Auto => firmware
                 .as_ref()
-                .and_then(|firmware| firmware::detect_model(firmware.as_byte_slice()).ok())
+                .and_then(|firmware| {
+                    firmware::detect_model(firmware.as_byte_slice())
+                        // NOTE: The firmware's size was already checked, this should never occur
+                        .expect("Couldn't detect firmware model")
+                })
                 .unwrap_or_default(),
             ModelConfig::Ds => Model::Ds,
             ModelConfig::Lite => Model::Lite,
@@ -737,14 +775,11 @@ impl Launch {
             ModelConfig::IqueLite => Model::IqueLite,
             ModelConfig::Dsi => Model::Dsi,
         };
+
         if let Some(firmware) = &firmware {
             if let Err(error) = firmware::verify(firmware.as_byte_slice(), model) {
                 warnings.push(LaunchWarning::InvalidFirmware(error));
             }
-        }
-
-        if !errors.is_empty() {
-            return Err(errors);
         }
 
         Ok((

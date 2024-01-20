@@ -41,7 +41,7 @@ pub struct Eeprom4k {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CreationError {
-    IncorrectSize,
+    InvalidSize,
 }
 
 impl Eeprom4k {
@@ -51,7 +51,7 @@ impl Eeprom4k {
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Result<Self, CreationError> {
         if contents.len() != 512 {
-            return Err(CreationError::IncorrectSize);
+            return Err(CreationError::InvalidSize);
         }
         let mut result = Eeprom4k {
             #[cfg(feature = "log")]

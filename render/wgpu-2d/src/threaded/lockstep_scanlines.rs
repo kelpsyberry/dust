@@ -448,7 +448,6 @@ impl RendererTrait for Renderer {
             {
                 self.flush_vram_updates::<EngineA>(vram);
             }
-            #[allow(clippy::match_same_arms)]
             match display_mode {
                 2 => render::render_scanline_vram_display(
                     unsafe {

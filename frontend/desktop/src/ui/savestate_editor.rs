@@ -222,21 +222,46 @@ impl Editor {
         }
 
         if let Some(dir_path) = &self.dir_path {
-            fs::create_dir_all(dir_path).expect("couldn't create saved state directory");
-            for entry in fs::read_dir(dir_path).expect("couldn't read saved state directory") {
-                let entry = entry.expect("couldn't read saved state directory entry");
+            let dir_entries =
+                match fs::create_dir_all(dir_path).and_then(|_| fs::read_dir(dir_path)) {
+                    Ok(dir_entries) => dir_entries,
+                    Err(err) => {
+                        error!(
+                            "Savestate directory error",
+                            "Couldn't create/read savestate directory: {err}"
+                        );
+                        self.dir_path = None;
+                        return;
+                    }
+                };
+            let mut warnings = Vec::new();
+            for entry in dir_entries {
+                let Ok(entry) = entry else {
+                    continue;
+                };
                 let path = entry.path();
                 if path.extension() != Some("state".as_ref()) {
                     continue;
                 }
                 if let Some(name) = path.file_stem().and_then(|p| p.to_str()) {
-                    if let Ok(savestate) = Savestate::load(&path, window) {
-                        self.entries.push(Entry {
+                    match Savestate::load(&path, window) {
+                        Ok(savestate) => self.entries.push(Entry {
                             name: name.to_string(),
                             kind: EntryKind::Savestate(savestate),
-                        })
+                        }),
+                        Err(err) => {
+                            warnings.push(format!("Couldn't load savestate at {:?}: {err}", path));
+                            continue;
+                        }
                     }
                 }
+            }
+            if !warnings.is_empty() {
+                warning!(
+                    "Missing savestates",
+                    "Not all savestates could be loaded:{}",
+                    format_list!(warnings)
+                );
             }
         }
     }

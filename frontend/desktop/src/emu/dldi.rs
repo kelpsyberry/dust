@@ -285,7 +285,7 @@ impl FsProvider {
         }
         if !warnings.is_empty() {
             warning!(
-                "DLDI warnings",
+                "Not all files copied to DLDI device",
                 "The virtual DLDI device was initialized with the following warnings:{}",
                 format_list!(warnings)
             );

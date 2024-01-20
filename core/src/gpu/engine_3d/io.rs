@@ -26,7 +26,7 @@ fn set_rgb5_high(mut color: Color, value: u8) -> Color {
 }
 
 impl Engine3d {
-    #[allow(clippy::match_same_arms)]
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn read_8<A: AccessType>(&mut self, addr: u16) -> u8 {
         match addr & 0xFFF {
             0x320 => self.line_buffer_level(),
@@ -71,7 +71,7 @@ impl Engine3d {
         }
     }
 
-    #[allow(clippy::match_same_arms)]
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn read_16<A: AccessType>(&mut self, addr: u16) -> u16 {
         match addr & 0xFFE {
             0x320 => self.line_buffer_level() as u16,
@@ -112,6 +112,7 @@ impl Engine3d {
         }
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn read_32<A: AccessType>(&mut self, addr: u16) -> u32 {
         match addr & 0xFFC {
             0x320 => self.line_buffer_level() as u32,
@@ -142,7 +143,7 @@ impl Engine3d {
         }
     }
 
-    #[allow(clippy::match_same_arms)]
+    #[allow(clippy::extra_unused_type_parameters, clippy::match_same_arms)]
     pub(crate) fn write_8<A: AccessType, E: cpu::Engine>(emu: &mut Emu<E>, addr: u16, value: u8) {
         match addr & 0xFFF {
             0x330..=0x33F => {
@@ -301,7 +302,7 @@ impl Engine3d {
         }
     }
 
-    #[allow(clippy::match_same_arms)]
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn write_16<A: AccessType, E: cpu::Engine>(
         emu: &mut Emu<E>,
         addr: u16,
@@ -419,6 +420,7 @@ impl Engine3d {
         }
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn write_32<A: AccessType, E: cpu::Engine>(
         emu: &mut Emu<E>,
         addr: u16,

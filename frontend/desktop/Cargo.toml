@@ -5,7 +5,8 @@ edition = "2021"
 publish = false
 
 [features]
-log = ["slog", "slog-term", "slog-async", "slog-imgui", "dust-core/log"]
+logging = ["slog", "slog-term", "slog-async", "slog-imgui"]
+log = ["logging", "dust-core/log"]
 debug-views = [
     "imgui-memory-editor",
     "realfft",

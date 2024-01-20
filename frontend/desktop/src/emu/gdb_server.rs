@@ -23,7 +23,7 @@ use gdb_protocol::packet::{CheckedPacket, Kind as PacketKind};
 use packets::{HandlePacketError, PacketError};
 use std::{
     cell::RefCell, collections::VecDeque, io::Write, net::ToSocketAddrs, rc::Rc,
-    result::Result as StdResult, str,
+    result::Result as StdResult,
 };
 
 type Result<T = ()> = StdResult<T, gdb_protocol::Error>;
@@ -148,6 +148,8 @@ pub enum EmuControlFlow {
 }
 
 pub struct GdbServer {
+    #[cfg(feature = "logging")]
+    logger: slog::Logger,
     server: Server,
     c_thread: ThreadId,
     g_thread: ThreadId,
@@ -176,8 +178,13 @@ macro_rules! set_hook {
 }
 
 impl GdbServer {
-    pub fn new(addr: impl ToSocketAddrs) -> Result<Self> {
+    pub fn new(
+        addr: impl ToSocketAddrs,
+        #[cfg(feature = "logging")] logger: slog::Logger,
+    ) -> Result<Self> {
         Ok(GdbServer {
+            #[cfg(feature = "logging")]
+            logger,
             server: Server::new(addr)?,
             c_thread: ThreadId::Arm7,
             g_thread: ThreadId::Arm7,
@@ -606,7 +613,8 @@ impl GdbServer {
                     let mut packet = packet.invalidate_check();
 
                     if packet.kind != PacketKind::Packet {
-                        eprintln!("[GDB] Received unknown notification");
+                        #[cfg(feature = "logging")]
+                        slog::warn!(self.logger, "Received unknown notification packet");
                         continue;
                     }
 
@@ -616,33 +624,50 @@ impl GdbServer {
                         Ok(EmuControlFlow::Continue) => {}
 
                         Err(HandlePacketError::Packet(e)) => {
+                            #[cfg(feature = "logging")]
                             let packet_str =
-                                str::from_utf8(&packet.data).unwrap_or("<invalid UTF-8>");
+                                std::str::from_utf8(&packet.data).unwrap_or("<invalid UTF-8>");
                             match e {
                                 PacketError::Unrecognized => {
                                     if packet.data != b"vMustReplyEmpty" {
-                                        eprintln!(
-                                            "[GDB] Received unrecognized packet: {packet_str}",
+                                        #[cfg(feature = "logging")]
+                                        slog::warn!(
+                                            self.logger,
+                                            "Received unrecognized packet: {packet_str}",
                                         );
                                     }
                                     self.send_empty_packet()?;
                                 }
                                 PacketError::Parsing => {
-                                    eprintln!(
-                                        "[GDB] Couldn't parse packet parameters: {packet_str}",
+                                    #[cfg(feature = "logging")]
+                                    slog::warn!(
+                                        self.logger,
+                                        "Couldn't parse packet parameters: {packet_str}",
                                     );
                                     self.send_empty_packet()?;
                                 }
                                 PacketError::InvalidParams => {
-                                    eprintln!("[GDB] Invalid parameters: {packet_str}",);
+                                    #[cfg(feature = "logging")]
+                                    slog::warn!(
+                                        self.logger,
+                                        "Invalid packet parameters: {packet_str}"
+                                    );
                                     self.send_packet_slice(b"E00")?;
                                 }
                                 PacketError::UnrecognizedParams => {
-                                    eprintln!("[GDB] Unrecognized parameters: {packet_str}",);
+                                    #[cfg(feature = "logging")]
+                                    slog::warn!(
+                                        self.logger,
+                                        "Unrecognized packet parameters: {packet_str}",
+                                    );
                                     self.send_empty_packet()?;
                                 }
                                 PacketError::MultipleThreadsSelected => {
-                                    eprintln!("[GDB] Multiple threads selected: {packet_str}",);
+                                    #[cfg(feature = "logging")]
+                                    slog::warn!(
+                                        self.logger,
+                                        "Multiple threads selected for packet: {packet_str}",
+                                    );
                                     self.send_packet_slice(b"E00")?;
                                 }
                             }
@@ -663,7 +688,10 @@ impl GdbServer {
         match self.poll_inner(emu) {
             Ok(control_flow) => control_flow,
             Err(err) => {
-                eprintln!("[GDB] Protocol error: {err}");
+                error!(
+                    "GDB server error",
+                    "Terminating GDB server due to protocol error: {err}",
+                );
                 self.detach(emu);
                 EmuControlFlow::Continue
             }

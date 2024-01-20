@@ -86,6 +86,7 @@ pub struct AudioChannels {
     samples: RingBuffer<f32>,
     data: ChannelData,
     fft_planner: FftPlanner<f32>,
+    fft_scratch_buf: Vec<Complex<f32>>,
     fft_input_buf: Vec<f32>,
     fft_output_buf: Vec<Complex<f32>>,
     fft_output_f32_buf: Vec<f32>,
@@ -105,6 +106,7 @@ impl View for AudioChannels {
             samples: RingBuffer::new(DEFAULT_SAMPLES as usize, 0.0),
             data: ChannelData::default(),
             fft_planner: FftPlanner::new(),
+            fft_scratch_buf: Vec::new(),
             fft_input_buf: Vec::new(),
             fft_output_buf: Vec::new(),
             fft_output_f32_buf: Vec::new(),
@@ -235,8 +237,14 @@ impl View for AudioChannels {
             self.samples_to_show as usize / 2 + 1,
             Complex { re: 0.0, im: 0.0 },
         );
-        fft.process(&mut self.fft_input_buf, &mut self.fft_output_buf)
-            .expect("couldn't process FFT");
+        self.fft_scratch_buf
+            .resize(fft.get_scratch_len(), Complex { re: 0.0, im: 0.0 });
+        fft.process_with_scratch(
+            &mut self.fft_input_buf,
+            &mut self.fft_output_buf,
+            &mut self.fft_scratch_buf,
+        )
+        .unwrap();
         self.fft_output_f32_buf.clear();
         self.fft_output_f32_buf.reserve(self.fft_output_buf.len());
         let scale = 1.0 / (self.samples_to_show as f32).sqrt();

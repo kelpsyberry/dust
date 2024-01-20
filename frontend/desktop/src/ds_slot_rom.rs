@@ -1,6 +1,7 @@
 use dust_core::{
-    ds_slot::rom::Contents,
+    ds_slot::rom::{self, Contents},
     utils::{BoxedByteSlice, ByteMutSlice, Bytes},
+    Model,
 };
 use std::{
     fs,
@@ -63,7 +64,8 @@ impl Contents for File {
         self.file
             .seek(SeekFrom::Start(0))
             .and_then(|_| self.file.read_exact(&mut buf[..]))
-            .expect("couldn't read DS slot ROM header");
+            // NOTE: The ROM file's size is ensured beforehand, this should never occur.
+            .expect("Couldn't read DS slot ROM header");
     }
 
     fn read_slice(&mut self, addr: usize, mut output: ByteMutSlice) {
@@ -74,7 +76,7 @@ impl Contents for File {
                 output[read_len..].fill(0);
                 self.file.read_exact(&mut output[..read_len])
             })
-            .expect("couldn't read DS slot ROM data");
+            .expect("Couldn't read DS slot ROM data");
         macro_rules! apply_overlay {
             ($bytes: expr, $start: expr, $end: expr) => {
                 if let Some(Some(bytes)) = $bytes {
@@ -105,10 +107,26 @@ pub enum DsSlotRom {
     Memory(BoxedByteSlice),
 }
 
+pub enum CreationError {
+    InvalidFileSize(u64),
+    Io(io::Error),
+}
+
+impl From<io::Error> for CreationError {
+    fn from(value: io::Error) -> Self {
+        CreationError::Io(value)
+    }
+}
+
 impl DsSlotRom {
-    pub fn new(path: &Path, in_memory_max_size: u32) -> io::Result<Self> {
+    pub fn new(path: &Path, in_memory_max_size: u32, model: Model) -> Result<Self, CreationError> {
         let mut file = fs::File::open(path)?;
-        let len = file.metadata()?.len() as usize;
+        let len = file.metadata()?.len();
+        if len > usize::MAX as u64 || !rom::is_valid_size((len as usize).next_power_of_two(), model)
+        {
+            return Err(CreationError::InvalidFileSize(len));
+        }
+        let len = len as usize;
 
         let read_to_memory = len <= in_memory_max_size as usize;
 

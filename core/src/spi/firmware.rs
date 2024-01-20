@@ -38,7 +38,10 @@ pub enum VerificationRegion {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VerificationError {
-    IncorrectSize(usize),
+    IncorrectSize {
+        expected: usize,
+        got: usize,
+    },
     IncorrectCrc16 {
         region: VerificationRegion,
         calculated: u16,
@@ -79,7 +82,10 @@ pub fn verify(firmware: ByteSlice, model: Model) -> Result<(), VerificationError
         Model::Ique | Model::IqueLite => 0x8_0000,
     };
     if firmware.len() != expected_len {
-        return Err(VerificationError::IncorrectSize(firmware.len()));
+        return Err(VerificationError::IncorrectSize {
+            expected: expected_len,
+            got: firmware.len(),
+        });
     }
 
     let mask = firmware.len() - 1;
@@ -162,7 +168,10 @@ pub fn id_for_model(model: Model) -> [u8; 20] {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelDetectionError {
     IncorrectSize,
-    UnknownModel,
+}
+
+pub fn is_valid_size(firmware_len: usize) -> bool {
+    firmware_len.is_power_of_two() && (0x2_0000..=0x8_0000).contains(&firmware_len)
 }
 
 /// # Errors
@@ -170,17 +179,17 @@ pub enum ModelDetectionError {
 ///   among real consoles' firmware sizes (a power of two between 0x20000 and 0x80000 bytes).
 /// - [`DetectionError::UnknownModel`](DetectionError::UnknownModel): the DS model could not be
 ///   detected based on the contents of the firmware.
-pub fn detect_model(firmware: ByteSlice) -> Result<Model, ModelDetectionError> {
-    if !firmware.len().is_power_of_two() || !(0x2_0000..=0x8_0000).contains(&firmware.len()) {
+pub fn detect_model(firmware: ByteSlice) -> Result<Option<Model>, ModelDetectionError> {
+    if !is_valid_size(firmware.len()) {
         return Err(ModelDetectionError::IncorrectSize);
     }
     match firmware[0x1D] {
-        0xFF => Ok(Model::Ds),
-        0x20 => Ok(Model::Lite),
-        0x43 => Ok(Model::Ique),
-        0x63 => Ok(Model::IqueLite),
-        0x57 => Ok(Model::Dsi),
-        _ => Err(ModelDetectionError::UnknownModel),
+        0xFF => Ok(Some(Model::Ds)),
+        0x20 => Ok(Some(Model::Lite)),
+        0x43 => Ok(Some(Model::Ique)),
+        0x63 => Ok(Some(Model::IqueLite)),
+        0x57 => Ok(Some(Model::Dsi)),
+        _ => Ok(None),
     }
 }
 

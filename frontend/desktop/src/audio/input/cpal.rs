@@ -61,7 +61,7 @@ impl InputStream {
             _ => panic!("Unsupported audio input sample format"),
         }
         .ok()?;
-        stream.play().expect("couldn't start audio input stream");
+        stream.play().expect("Couldn't start audio input stream");
 
         Some(InputStream {
             _stream: stream,

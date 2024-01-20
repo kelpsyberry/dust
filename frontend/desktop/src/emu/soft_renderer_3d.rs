@@ -175,7 +175,7 @@ pub fn init() -> (Tx, Rx) {
                             }
                         }
                     })
-                    .expect("couldn't spawn 3D rendering thread"),
+                    .expect("Couldn't spawn 3D rendering thread"),
             ),
         },
         rx,

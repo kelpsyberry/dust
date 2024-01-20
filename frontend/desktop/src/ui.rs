@@ -7,7 +7,7 @@ use save_slot_editor::Editor as SaveSlotEditor;
 mod savestate_editor;
 use savestate_editor::Editor as SavestateEditor;
 
-#[cfg(feature = "log")]
+#[cfg(feature = "logging")]
 mod log;
 #[allow(dead_code)]
 pub mod window;
@@ -19,16 +19,17 @@ use crate::debug_views;
 use crate::{
     audio,
     config::{self, Launch, Renderer2dKind, Renderer3dKind},
+    ds_slot_rom::{self, DsSlotRom},
     emu, game_db, input,
     utils::{base_dirs, Lazy},
-    DsSlotRom, FrameData,
+    FrameData,
 };
 use dust_core::{
     ds_slot::rom::Contents,
     gpu::{engine_2d, engine_3d, Framebuffer, SCREEN_HEIGHT, SCREEN_WIDTH},
 };
 use emu_utils::triple_buffer;
-#[cfg(feature = "log")]
+#[cfg(feature = "logging")]
 use log::Log;
 use rfd::FileDialog;
 #[cfg(feature = "gdb-server")]
@@ -93,7 +94,7 @@ impl EmuState {
     fn send_message(&self, msg: emu::Message) {
         self.to_emu
             .send(msg)
-            .expect("couldn't send message to emulation thread");
+            .expect("Couldn't send message to emulation thread");
     }
 }
 
@@ -216,7 +217,7 @@ pub struct UiState {
     #[cfg(target_os = "windows")]
     icon_update: Option<Option<[u32; 32 * 32]>>,
 
-    #[cfg(feature = "log")]
+    #[cfg(feature = "logging")]
     log: Log,
 
     #[cfg(feature = "debug-views")]
@@ -256,21 +257,12 @@ bitflags::bitflags! {
 
 impl UiState {
     fn load_from_rom_path(&mut self, path: &Path, config: &mut Config, window: &window::Window) {
-        if let Some(extension) = path.extension().and_then(|s| s.to_str()) {
-            if !ALLOWED_ROM_EXTENSIONS.contains(&extension) {
-                return;
-            }
-        } else {
+        let Some(game_title) = path.file_stem().and_then(|path| path.to_str()) else {
+            error!("Invalid ROM path", "Invalid ROM path provided: {path:?}");
             return;
-        }
+        };
 
         self.stop(config, window);
-
-        let game_title = path
-            .file_stem()
-            .unwrap()
-            .to_str()
-            .expect("non-UTF-8 ROM filename provided");
 
         let game_config: config::File<config::Game> = config
             .games_base_path
@@ -282,15 +274,35 @@ impl UiState {
 
         config.config.deserialize_game(&game_config.contents);
 
-        let ds_slot_rom =
-            DsSlotRom::new(path, config!(config.config, ds_slot_rom_in_memory_max_size))
-                .expect("couldn't load the specified ROM file");
-
         match config::Launch::new(&config.config, false) {
             Ok((launch_config, warnings)) => {
                 if !warnings.is_empty() {
                     config_warning!("{}", format_list!(warnings));
                 }
+
+                let ds_slot_rom = match DsSlotRom::new(
+                    path,
+                    config!(config.config, ds_slot_rom_in_memory_max_size),
+                    launch_config.model,
+                ) {
+                    Ok(ds_slot_rom) => ds_slot_rom,
+                    Err(err) => {
+                        config.config.unset_game();
+                        match err {
+                            ds_slot_rom::CreationError::Io(err) => {
+                                error!(
+                                    "Couldn't load ROM file",
+                                    "Couldn't load the specified ROM file: {err}"
+                                );
+                            }
+                            ds_slot_rom::CreationError::InvalidFileSize(got) => {
+                                error!("Invalid ROM file", "Invalid ROM file size: {got} B");
+                            }
+                        }
+                        return;
+                    }
+                };
+
                 self.start(
                     config,
                     launch_config,
@@ -478,7 +490,7 @@ impl UiState {
             game_loaded.then_some(title.as_str()),
         );
 
-        #[cfg(feature = "log")]
+        #[cfg(feature = "logging")]
         let logger = self.log.logger().clone();
 
         let (ds_slot_rom, _ds_slot_rom_path) = ds_slot_rom.unzip();
@@ -489,8 +501,10 @@ impl UiState {
                 use dust_core::{ds_slot, utils::Bytes};
                 let mut header_bytes = Bytes::new([0; 0x170]);
                 rom.read_header(&mut header_bytes);
-                let header = ds_slot::rom::header::Header::new(header_bytes.as_byte_slice())?;
-                let icon_title_offset = header.icon_title_offset();
+                let header = ds_slot::rom::header::Header::new(header_bytes.as_byte_slice())
+                    // NOTE: The ROM file's size is ensured beforehand, this should never occur.
+                    .expect("Couldn't read DS slot ROM header");
+                let icon_title_offset = header.icon_title_offset() as usize;
                 self.icon_update = Some(ds_slot::rom::icon::decode(icon_title_offset, &mut rom));
             }
 
@@ -532,9 +546,8 @@ impl UiState {
                 .and_then(|db| db.lookup(game_code))
                 .map(|entry| {
                     if entry.rom_size as usize != rom.len() {
-                        #[cfg(feature = "log")]
-                        slog::error!(
-                            logger,
+                        warning!(
+                            "Unexpected ROM size",
                             "Unexpected ROM size: expected {} B, got {} B",
                             entry.rom_size,
                             rom.len()
@@ -625,14 +638,14 @@ impl UiState {
             renderer_2d,
             renderer_3d_tx,
 
-            #[cfg(feature = "log")]
+            #[cfg(feature = "logging")]
             logger,
         };
 
         let thread = thread::Builder::new()
             .name("emulation".to_string())
             .spawn(move || emu::run(launch_data))
-            .expect("couldn't spawn emulation thread");
+            .expect("Couldn't spawn emulation thread");
 
         #[cfg(feature = "debug-views")]
         self.debug_views.reload_emu_state();
@@ -661,16 +674,19 @@ impl UiState {
     fn stop_emu(&mut self, config: &mut Config) {
         if let Some(emu) = self.emu.take() {
             emu.send_message(emu::Message::Stop);
-            self.frame_tx = Some(emu.thread.join().expect("couldn't join emulation thread"));
+            self.frame_tx = Some(emu.thread.join().expect("Couldn't join emulation thread"));
 
             if let Some(path) = config.game_path.take() {
                 let game_config = config::File {
                     contents: config.config.serialize_game(),
                     path: Some(path),
                 };
-                game_config
-                    .write()
-                    .expect("couldn't save game configuration");
+                if let Err(err) = game_config.write() {
+                    error!(
+                        "Game configuration error",
+                        "Couldn't save game configuration: {err}"
+                    );
+                }
             }
         }
     }
@@ -905,7 +921,7 @@ pub fn main() {
 
     let mut config = Config::new();
 
-    #[cfg(feature = "log")]
+    #[cfg(feature = "logging")]
     let log = Log::new(&config.config);
 
     let mut window_builder = futures_executor::block_on(window::Builder::new(
@@ -966,7 +982,7 @@ pub fn main() {
         #[cfg(target_os = "windows")]
         icon_update: None,
 
-        #[cfg(feature = "log")]
+        #[cfg(feature = "logging")]
         log,
 
         #[cfg(feature = "debug-views")]
@@ -1044,7 +1060,7 @@ pub fn main() {
             {
                 state.update_menu_bar(&config.config, window);
 
-                #[cfg(feature = "log")]
+                #[cfg(feature = "logging")]
                 if state.log.update(&config.config) {
                     if let Some(emu) = &state.emu {
                         emu.send_message(emu::Message::UpdateLogger(state.log.logger().clone()));
@@ -1493,9 +1509,9 @@ pub fn main() {
                         draw_config_toggle!(sync_to_audio, "\u{f026} Sync to audio");
                     });
 
-                    #[cfg(feature = "log")]
+                    #[cfg(feature = "logging")]
                     let imgui_log_enabled = state.log.is_imgui();
-                    #[cfg(not(feature = "log"))]
+                    #[cfg(not(feature = "logging"))]
                     let imgui_log_enabled = false;
                     if cfg!(any(feature = "debug-views", feature = "gdb-server"))
                         || imgui_log_enabled
@@ -1516,7 +1532,7 @@ pub fn main() {
                                 }
                             }
 
-                            #[cfg(feature = "log")]
+                            #[cfg(feature = "logging")]
                             if let Log::Imgui { console_opened, .. } = &mut state.log {
                                 section! {{
                                     ui.menu_item_config("Log").build_with_ref(console_opened);
@@ -1626,7 +1642,7 @@ pub fn main() {
             }
 
             // Draw log
-            #[cfg(feature = "log")]
+            #[cfg(feature = "logging")]
             state.log.draw(ui, window.imgui.mono_font);
 
             // Draw debug views
@@ -1780,7 +1796,12 @@ pub fn main() {
                 }
                 let mut buf = String::new();
                 imgui.save_ini_settings(&mut buf);
-                fs::write(&path.0, &buf).expect("couldn't save imgui configuration");
+                if let Err(err) = fs::write(&path.0, &buf) {
+                    error!(
+                        "ImGui configuration error",
+                        "Couldn't save ImGui configuration: {err}"
+                    );
+                }
             }
         },
         move |_, _, frame, encoder, _| {
@@ -1814,9 +1835,12 @@ pub fn main() {
                     contents: config.config.serialize_global(),
                     path: Some(path),
                 };
-                global_config
-                    .write()
-                    .expect("couldn't save global configuration");
+                if let Err(err) = global_config.write() {
+                    error!(
+                        "Global configuration error",
+                        "Couldn't save global configuration: {err}"
+                    );
+                }
             }
         },
     );

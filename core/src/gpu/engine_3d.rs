@@ -576,6 +576,7 @@ impl Engine3d {
     }
 
     #[inline]
+    #[allow(clippy::unused_self, clippy::let_and_return)]
     fn params_for_command(&self, command: u8) -> u8 {
         let result = CMD_PARAMS[command as usize];
         #[cfg(feature = "log")]

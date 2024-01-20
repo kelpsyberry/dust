@@ -51,7 +51,7 @@ pub struct EepromFram {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CreationError {
-    IncorrectSize,
+    InvalidSize,
 }
 
 pub enum CreationContents {}
@@ -63,7 +63,7 @@ impl EepromFram {
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Result<Self, CreationError> {
         if !matches!(contents.len(), 0x2000 | 0x1_0000 | 0x2_0000) {
-            return Err(CreationError::IncorrectSize);
+            return Err(CreationError::InvalidSize);
         }
         let contents_len_mask = (contents.len() - 1) as u32;
         let page_mask = match contents.len().trailing_zeros() {

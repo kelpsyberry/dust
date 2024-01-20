@@ -3,17 +3,6 @@ use imgui::{StyleColor, Ui};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, path::Path};
 
-macro_rules! format_list {
-    ($list: expr) => {
-        $list.into_iter().fold(String::new(), |mut acc, v| {
-            #[allow(unused_imports)]
-            use std::fmt::Write;
-            let _ = write!(acc, "\n- {v}");
-            acc
-        })
-    };
-}
-
 macro_rules! location_str {
     ($path: expr) => {
         if let Some(path_str) = $path.to_str() {
@@ -21,45 +10,6 @@ macro_rules! location_str {
         } else {
             String::new()
         }
-    };
-}
-
-macro_rules! warning {
-    (yes_no, $title: expr, $($desc: tt)*) => {
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Warning)
-            .set_title($title)
-            .set_description(&format!($($desc)*))
-            .set_buttons(rfd::MessageButtons::YesNo)
-            .show()
-    };
-    ($title: expr, $($desc: tt)*) => {
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Warning)
-            .set_title($title)
-            .set_description(&format!($($desc)*))
-            .set_buttons(rfd::MessageButtons::Ok)
-            .show()
-    };
-}
-
-macro_rules! error {
-    (yes_no, $title: expr, $($desc: tt)*) => {
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Error)
-            .set_title($title)
-            .set_description(&format!($($desc)*))
-            .set_buttons(rfd::MessageButtons::YesNo)
-            .show()
-        == rfd::MessageDialogResult::Yes
-    };
-    ($title: expr, $($desc: tt)*) => {
-        rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Error)
-            .set_title($title)
-            .set_description(&format!($($desc)*))
-            .set_buttons(rfd::MessageButtons::Ok)
-            .show()
     };
 }
 

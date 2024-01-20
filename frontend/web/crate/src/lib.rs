@@ -7,7 +7,7 @@ mod console_log;
 pub mod renderer_3d;
 
 use dust_core::{
-    cpu::{arm7, arm9, interpreter::Interpreter},
+    cpu::{self, arm7, arm9, interpreter::Interpreter},
     ds_slot,
     emu::{self, input::Keys, Emu},
     flash::Flash,
@@ -101,6 +101,23 @@ pub struct EmuState {
     arm9_bios: Option<Box<Bytes<{ arm9::BIOS_SIZE }>>>,
 }
 
+fn build_emu<E: cpu::Engine>(emu_builder: emu::Builder, engine: E) -> emu::Emu<E> {
+    match emu_builder.build(engine) {
+        Ok(emu) => emu,
+        Err(err) => match err {
+            emu::BuildError::MissingSysFiles => unreachable!("Missing emulator system files"),
+            emu::BuildError::RomCreation(err) => match err {
+                ds_slot::rom::normal::CreationError::InvalidSize => {
+                    unreachable!("Invalid DS slot ROM file size")
+                }
+            },
+            emu::BuildError::RomNeedsDecryptionButNoBiosProvided => {
+                panic!("Couldn't start emulator: ROM needs decryption but no BIOS provided.");
+            }
+        },
+    }
+}
+
 // rust-analyzer needs this not to trigger a warning about generated function names
 #[allow(non_snake_case)]
 #[wasm_bindgen]
@@ -130,7 +147,7 @@ impl EmuState {
         emu_builder.model = self.model;
         emu_builder.direct_boot = true;
 
-        self.emu = Some(emu_builder.build(Interpreter).unwrap());
+        self.emu = Some(build_emu(emu_builder, Interpreter));
     }
 
     pub fn load_save(&mut self, ram_arr: Uint8Array) {
@@ -212,6 +229,9 @@ pub fn create_emu_state(
 
     let mut rom = BoxedByteSlice::new_zeroed(rom_arr.length().next_power_of_two() as usize);
     rom_arr.copy_to(&mut rom[..rom_arr.length() as usize]);
+    if !ds_slot::rom::is_valid_size(rom.len(), model) {
+        panic!("Invalid ROM size");
+    }
 
     let save_contents = save_contents_arr.map(|save_contents_arr| {
         let mut save_contents = BoxedByteSlice::new_zeroed(save_contents_arr.length() as usize);
@@ -366,7 +386,7 @@ pub fn create_emu_state(
     emu_builder.model = model;
     emu_builder.direct_boot = true;
 
-    let emu = emu_builder.build(Interpreter).unwrap();
+    let emu = build_emu(emu_builder, Interpreter);
 
     EmuState {
         #[cfg(feature = "log")]

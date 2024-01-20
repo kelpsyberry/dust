@@ -1,23 +1,13 @@
-use super::{super::RomOutputLen, key1, Contents};
+use super::{super::RomOutputLen, is_valid_size, key1, Contents};
 use crate::{
     cpu::arm7,
     utils::{make_zero, zero, ByteMutSlice, Bytes, Savestate},
+    Model,
 };
-use core::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CreationError {
-    SizeNotPowerOfTwo,
-    SizeTooSmall,
-}
-
-impl fmt::Display for CreationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CreationError::SizeNotPowerOfTwo => f.write_str("ROM size not power of 2"),
-            CreationError::SizeTooSmall => f.write_str("ROM size too small"),
-        }
-    }
+    InvalidSize,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
@@ -47,19 +37,17 @@ pub struct Normal {
 
 impl Normal {
     /// # Errors
-    /// - [`CreationError::SizeNotPowerOfTwo`](CreationError::SizeNotPowerOfTwo): the ROM contents'
-    ///   size is not a power of two.
+    /// - [`CreationError::InvalidSize`](CreationError::InvalidSize): the ROM contents' size is
+    ///   either not a power of two or too small.
     pub fn new(
         contents: Box<dyn Contents>,
         arm7_bios: Option<&Bytes<{ arm7::BIOS_SIZE }>>,
+        model: Model,
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Result<Self, CreationError> {
         let len = contents.len();
-        if !len.is_power_of_two() {
-            return Err(CreationError::SizeNotPowerOfTwo);
-        }
-        if len < 0x200 {
-            return Err(CreationError::SizeTooSmall);
+        if !is_valid_size(len, model) {
+            return Err(CreationError::InvalidSize);
         }
         let rom_mask = (len - 1) as u32;
         let chip_id = 0x0000_00C2
@@ -160,7 +148,10 @@ impl super::RomDevice for Normal {
             let Some(mut secure_area) = self.contents.secure_area_mut() else {
                 return Ok(());
             };
-            let key_buf = self.key_buf.as_ref().unwrap();
+            let key_buf = self
+                .key_buf
+                .as_ref()
+                .expect("key_buf should be initialized");
             if secure_area.read_le::<u64>(0) == 0xE7FF_DEFF_E7FF_DEFF {
                 secure_area[..8].copy_from_slice(b"encryObj");
                 let level_3_key_buf = key_buf.level_3::<2>();
@@ -244,7 +235,7 @@ impl super::RomDevice for Normal {
                     let res = self
                         .key_buf
                         .as_ref()
-                        .unwrap()
+                        .expect("key_buf should be initialized")
                         .decrypt_64_bit([cmd.read_be(4), cmd.read_be(0)]);
                     cmd.write_be(4, res[0]);
                     cmd.write_be(0, res[1]);

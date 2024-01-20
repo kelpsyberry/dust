@@ -170,7 +170,6 @@ impl Renderer {
             }
         }
 
-        #[allow(clippy::match_same_arms)]
         match display_mode {
             0 => {
                 scanline_buffer.0.fill(0xFFFF_FFFF);

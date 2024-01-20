@@ -12,6 +12,57 @@ macro_rules! style {
     };
 }
 
+macro_rules! format_list {
+    ($list: expr) => {
+        $list.into_iter().fold(String::new(), |mut acc, v| {
+            #[allow(unused_imports)]
+            use std::fmt::Write;
+            let _ = write!(acc, "\n- {v}");
+            acc
+        })
+    };
+}
+
+macro_rules! warning {
+    (yes_no, $title: expr, $($desc: tt)*) => {
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Warning)
+            .set_title($title)
+            .set_description(&format!($($desc)*))
+            .set_buttons(rfd::MessageButtons::YesNo)
+            .show()
+        == rfd::MessageDialogResult::Yes
+    };
+    ($title: expr, $($desc: tt)*) => {
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Warning)
+            .set_title($title)
+            .set_description(&format!($($desc)*))
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show()
+    };
+}
+
+macro_rules! error {
+    (yes_no, $title: expr, $($desc: tt)*) => {
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title($title)
+            .set_description(&format!($($desc)*))
+            .set_buttons(rfd::MessageButtons::YesNo)
+            .show()
+        == rfd::MessageDialogResult::Yes
+    };
+    ($title: expr, $($desc: tt)*) => {
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title($title)
+            .set_description(&format!($($desc)*))
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show()
+    };
+}
+
 pub struct BaseDirs {
     pub config: PathBuf,
     pub data: PathBuf,

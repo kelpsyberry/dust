@@ -2,9 +2,12 @@ use super::Contents;
 use crate::utils::Bytes;
 
 #[inline]
-pub fn decode(offset: u32, rom_contents: &mut impl Contents) -> Option<[u32; 32 * 32]> {
+pub fn decode(offset: usize, rom_contents: &mut impl Contents) -> Option<[u32; 32 * 32]> {
     let mut icon_data = Bytes::new([0; 0x220]);
-    rom_contents.read_slice(offset as usize, icon_data.as_byte_mut_slice());
+    if offset + 0x220 > rom_contents.len() {
+        return None;
+    }
+    rom_contents.read_slice(offset, icon_data.as_byte_mut_slice());
 
     let mut palette = [0; 16];
     for (i, color) in palette.iter_mut().enumerate().skip(1) {

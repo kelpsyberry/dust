@@ -141,7 +141,6 @@ impl Tsc {
             input_status.set_pen_down(true);
         }
         self.cur_control_byte = value;
-        #[allow(clippy::match_same_arms)]
         let result = match value.channel() {
             0 => {
                 #[cfg(feature = "log")]

@@ -12,7 +12,7 @@ use crate::{audio, config::SysFiles, game_db::SaveType, input, DsSlotRom, FrameD
 use dust_core::audio::{Audio, ChannelInterpMethod as AudioChannelInterpMethod};
 use dust_core::{
     audio::DummyBackend as DummyAudioBackend,
-    cpu::interpreter::Interpreter,
+    cpu::{self, interpreter::Interpreter},
     ds_slot,
     emu::{self, RunOutput},
     flash::Flash,
@@ -99,7 +99,7 @@ pub enum Message {
 
     ToggleAudioInput(Option<audio::input::Receiver>),
 
-    #[cfg(feature = "log")]
+    #[cfg(feature = "logging")]
     UpdateLogger(slog::Logger),
 
     #[cfg(feature = "gdb-server")]
@@ -125,6 +125,20 @@ pub struct Dldi {
     pub skip_path: PathBuf,
 }
 
+fn read_save_file_contents(save_path: &PathBuf) -> io::Result<Option<BoxedByteSlice>> {
+    let mut save_file = match File::open(save_path) {
+        Ok(save_file) => save_file,
+        Err(err) => match err.kind() {
+            io::ErrorKind::NotFound => return Ok(None),
+            _ => return Err(err),
+        },
+    };
+    let save_len = save_file.metadata()?.len() as usize;
+    let mut save_contents = BoxedByteSlice::new_zeroed(save_len.next_power_of_two());
+    save_file.read_exact(&mut save_contents[..save_len])?;
+    Ok(Some(save_contents))
+}
+
 fn setup_ds_slot(
     ds_slot: Option<DsSlot>,
     save_path: &Option<PathBuf>,
@@ -133,45 +147,29 @@ fn setup_ds_slot(
     if let Some(ds_slot) = ds_slot {
         let rom: Box<dyn ds_slot::rom::Contents> = ds_slot.rom.into();
 
-        let save_contents = save_path
-            .as_deref()
-            .and_then(|path| match File::open(path) {
-                Ok(mut save_file) => {
-                    let save_len = save_file
-                        .metadata()
-                        .expect("Couldn't get save file metadata")
-                        .len() as usize;
-                    let mut save = BoxedByteSlice::new_zeroed(save_len.next_power_of_two());
-                    save_file
-                        .read_exact(&mut save[..save_len])
-                        .expect("Couldn't read save file");
-                    Some(save)
-                }
-                Err(err) => match err.kind() {
-                    io::ErrorKind::NotFound => None,
-                    _err => {
-                        #[cfg(feature = "log")]
-                        slog::error!(logger, "Couldn't read save file: {_err:?}.");
-                        None
-                    }
-                },
-            });
+        let save_contents = if let Some(save_path) = save_path {
+            read_save_file_contents(save_path).unwrap_or_else(|err| {
+                error!("Save file error", "Couldn't read save file: {err}");
+                None
+            })
+        } else {
+            None
+        };
 
         let save_type = if let Some(save_contents) = &save_contents {
             if let Some(save_type) = ds_slot.save_type {
                 let expected_len = save_type.expected_len();
                 if expected_len != Some(save_contents.len()) {
-                    let (chosen_save_type, _chosen) = if let Some(detected_save_type) =
+                    let (chosen_save_type, chosen) = if let Some(detected_save_type) =
                         SaveType::from_save_len(save_contents.len())
                     {
                         (detected_save_type, "existing save file")
                     } else {
                         (save_type, "database entry")
                     };
-                    #[cfg(feature = "log")]
-                    slog::error!(
-                        logger,
-                        "Unexpected save file size: expected {}, got {} B; respecting {_chosen}.",
+                    warning!(
+                        "Save file size mismatch",
+                        "Unexpected save file size: expected {}, got {} B; respecting {chosen}.",
                         if let Some(expected_len) = expected_len {
                             format!("{expected_len} B")
                         } else {
@@ -184,11 +182,9 @@ fn setup_ds_slot(
                     save_type
                 }
             } else {
-                #[allow(clippy::unnecessary_lazy_evaluations)]
                 SaveType::from_save_len(save_contents.len()).unwrap_or_else(|| {
-                    #[cfg(feature = "log")]
-                    slog::error!(
-                        logger,
+                    error!(
+                        "Unrecognized save type",
                         "Unrecognized save file size ({} B) and no database entry found, \
                          defaulting to an empty save.",
                         save_contents.len()
@@ -197,11 +193,9 @@ fn setup_ds_slot(
                 })
             }
         } else {
-            #[allow(clippy::unnecessary_lazy_evaluations)]
             ds_slot.save_type.unwrap_or_else(|| {
-                #[cfg(feature = "log")]
-                slog::error!(
-                    logger,
+                error!(
+                    "Unknown save type",
                     "No existing save file present and no database entry found, defaulting to an \
                      empty save.",
                 );
@@ -219,10 +213,10 @@ fn setup_ds_slot(
             let expected_len = save_type.expected_len().unwrap();
             let save_contents = match save_contents {
                 Some(save_contents) => {
-                    SaveContents::Existing(if save_contents.len() == expected_len {
+                    SaveContents::Existing(if save_contents.len() != expected_len {
                         let mut new_contents = BoxedByteSlice::new_zeroed(expected_len);
-                        new_contents[..save_contents.len()].copy_from_slice(&save_contents);
-                        drop(save_contents);
+                        let copy_len = save_contents.len().min(expected_len);
+                        new_contents[..copy_len].copy_from_slice(&save_contents[..copy_len]);
                         new_contents
                     } else {
                         save_contents
@@ -238,6 +232,7 @@ fn setup_ds_slot(
                     #[cfg(feature = "log")]
                     logger.new(slog::o!("ds_spi" => "eeprom_4k")),
                 )
+                // NOTE: The save contents' size is ensured beforehand, this should never occur.
                 .expect("Couldn't create 4 Kib EEPROM DS slot SPI device")
                 .into(),
                 SaveType::EepromFram64k | SaveType::EepromFram512k | SaveType::EepromFram1m => {
@@ -247,6 +242,7 @@ fn setup_ds_slot(
                         #[cfg(feature = "log")]
                         logger.new(slog::o!("ds_spi" => "eeprom_fram")),
                     )
+                    // NOTE: The save contents' size is ensured beforehand, this should never occur.
                     .expect("Couldn't create EEPROM/FRAM DS slot SPI device")
                     .into()
                 }
@@ -260,12 +256,15 @@ fn setup_ds_slot(
                             slog::o!("ds_spi" => if ds_slot.has_ir { "flash" } else { "flash_ir" }),
                         ),
                     )
+                    // NOTE: The save contents' size is ensured beforehand, this should never occur.
                     .expect("Couldn't create FLASH DS slot SPI device")
                     .into()
                 }
                 SaveType::Nand64m | SaveType::Nand128m | SaveType::Nand256m => {
-                    #[cfg(feature = "log")]
-                    slog::error!(logger, "TODO: NAND saves");
+                    error!(
+                        "Save file unsupported",
+                        "TODO: NAND saves are currently unsupported, falling back to no save file.",
+                    );
                     ds_slot::spi::Empty::new(
                         #[cfg(feature = "log")]
                         logger.new(slog::o!("ds_spi" => "nand_todo")),
@@ -285,6 +284,27 @@ fn setup_ds_slot(
             )
             .into(),
         )
+    }
+}
+
+fn build_emu<E: cpu::Engine>(emu_builder: emu::Builder, engine: E) -> Option<emu::Emu<E>> {
+    match emu_builder.build(engine) {
+        Ok(emu) => Some(emu),
+        Err(err) => match err {
+            emu::BuildError::MissingSysFiles => unreachable!("Missing emulator system files"),
+            emu::BuildError::RomCreation(err) => match err {
+                ds_slot::rom::normal::CreationError::InvalidSize => {
+                    unreachable!("Invalid DS slot ROM file size")
+                }
+            },
+            emu::BuildError::RomNeedsDecryptionButNoBiosProvided => {
+                error!(
+                    "Emulator error",
+                    "Couldn't start emulator: ROM needs decryption but no BIOS provided."
+                );
+                None
+            }
+        },
     }
 }
 
@@ -324,7 +344,7 @@ pub struct LaunchData {
     pub renderer_2d: Box<dyn engine_2d::Renderer + Send>,
     pub renderer_3d_tx: Box<dyn engine_3d::RendererTx + Send>,
 
-    #[cfg(feature = "log")]
+    #[cfg(feature = "logging")]
     pub logger: slog::Logger,
 }
 
@@ -366,7 +386,7 @@ pub(super) fn run(
         renderer_2d,
         renderer_3d_tx,
 
-        #[cfg(feature = "log")]
+        #[cfg(feature = "logging")]
         logger,
     }: LaunchData,
 ) -> triple_buffer::Sender<FrameData> {
@@ -374,9 +394,22 @@ pub(super) fn run(
         ($value: expr) => {
             to_ui
                 .send($value)
-                .expect("couldn't send notification to UI thread");
+                .expect("Couldn't send notification to UI thread");
         };
     }
+
+    let firmware_flash = Flash::new(
+        SaveContents::Existing(
+            sys_files
+                .firmware
+                .unwrap_or_else(|| firmware::default(model)),
+        ),
+        firmware::id_for_model(model),
+        #[cfg(feature = "log")]
+        logger.new(slog::o!("fw" => "")),
+    )
+    // NOTE: The firmware's size is checked before launch, this should never occur.
+    .expect("Couldn't build firmware");
 
     let (ds_slot_rom, ds_slot_spi) = setup_ds_slot(
         ds_slot,
@@ -386,17 +419,7 @@ pub(super) fn run(
     );
 
     let mut emu_builder = emu::Builder::new(
-        Flash::new(
-            SaveContents::Existing(
-                sys_files
-                    .firmware
-                    .unwrap_or_else(|| firmware::default(model)),
-            ),
-            firmware::id_for_model(model),
-            #[cfg(feature = "log")]
-            logger.new(slog::o!("fw" => "")),
-        )
-        .expect("Couldn't build firmware"),
+        firmware_flash,
         ds_slot_rom,
         ds_slot_spi,
         match &audio_tx_data {
@@ -431,7 +454,9 @@ pub(super) fn run(
         emu_builder.audio_channel_interp_method = audio_channel_interp_method;
     }
 
-    let mut emu = emu_builder.build(Interpreter).unwrap();
+    let Some(mut emu) = build_emu(emu_builder, Interpreter) else {
+        return frame_tx;
+    };
 
     const FRAME_BASE_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
     let mut frame_interval = framerate_ratio_limit.map(|value| FRAME_BASE_INTERVAL.div_f32(value));
@@ -571,18 +596,15 @@ pub(super) fn run(
 
                     if reload {
                         if let Some(save_path) = save_path.as_ref() {
-                            let save_contents = if let Ok(mut save_file) = File::open(save_path) {
-                                let save_len = save_file
-                                    .metadata()
-                                    .expect("Couldn't get save file metadata")
-                                    .len() as usize;
-                                let mut contents = BoxedByteSlice::new_zeroed(save_len);
-                                save_file
-                                    .read_exact(&mut contents[..])
-                                    .expect("Couldn't read save file");
-                                SaveReloadContents::Existing(contents)
-                            } else {
-                                SaveReloadContents::New
+                            let save_contents = match read_save_file_contents(save_path) {
+                                Ok(contents) => match contents {
+                                    Some(contents) => SaveReloadContents::Existing(contents),
+                                    None => SaveReloadContents::New,
+                                },
+                                Err(err) => {
+                                    error!("Save file error", "Couldn't read save file: {err}");
+                                    SaveReloadContents::New
+                                }
                             };
                             emu.ds_slot.spi.reload_contents(save_contents);
                         }
@@ -652,7 +674,7 @@ pub(super) fn run(
                         mic_rx.map(|mic_rx| spi::tsc::MicData::new(Box::new(mic_rx)));
                 }
 
-                #[cfg(feature = "log")]
+                #[cfg(feature = "logging")]
                 Message::UpdateLogger(_logger) => {
                     // TODO
                 }
@@ -662,13 +684,19 @@ pub(super) fn run(
                     let mut enabled = addr.is_some();
                     if gdb_server.is_some() != enabled {
                         if let Some(addr) = addr {
-                            match gdb_server::GdbServer::new(addr) {
+                            match gdb_server::GdbServer::new(
+                                addr,
+                                #[cfg(feature = "logging")]
+                                logger.new(slog::o!("gdb" => "")),
+                            ) {
                                 Ok(server) => {
                                     gdb_server = Some(server);
                                 }
-                                Err(_err) => {
-                                    #[cfg(feature = "log")]
-                                    slog::error!(logger, "Couldn't start GDB server: {_err}");
+                                Err(err) => {
+                                    error!(
+                                        "GDB server not started",
+                                        "Couldn't start GDB server: {err}"
+                                    );
                                     enabled = false;
                                 }
                             }
@@ -726,7 +754,11 @@ pub(super) fn run(
                 emu_builder.audio_channel_interp_method = audio_channel_interp_method;
             }
 
-            emu = emu_builder.build(Interpreter).unwrap();
+            if let Some(new_emu) = build_emu(emu_builder, Interpreter) {
+                emu = new_emu;
+            } else {
+                return frame_tx;
+            };
         }
 
         playing &= shared_state.playing.load(Ordering::Relaxed);

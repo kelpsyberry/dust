@@ -113,7 +113,7 @@ mod input_map;
 mod setting;
 
 use super::{utils::heading, Config, EmuState};
-#[cfg(feature = "log")]
+#[cfg(feature = "logging")]
 use crate::config::LoggingKind;
 #[cfg(target_os = "macos")]
 use crate::config::TitleBarMode;
@@ -774,21 +774,21 @@ impl EmulationSettings {
     }
 }
 
-#[cfg(any(feature = "log", feature = "gdb-server"))]
+#[cfg(any(feature = "logging", feature = "gdb-server"))]
 struct DebugSettings {
-    #[cfg(feature = "log")]
+    #[cfg(feature = "logging")]
     logging_kind: setting::NonOverridable<setting::Combo<LoggingKind>>,
-    #[cfg(feature = "log")]
+    #[cfg(feature = "logging")]
     imgui_log_history_capacity: setting::Overridable<setting::Scalar<u32>>,
     #[cfg(feature = "gdb-server")]
     gdb_server_addr: setting::NonOverridable<setting::SocketAddr>,
 }
 
-#[cfg(any(feature = "log", feature = "gdb-server"))]
+#[cfg(any(feature = "logging", feature = "gdb-server"))]
 impl DebugSettings {
     fn new() -> Self {
         DebugSettings {
-            #[cfg(feature = "log")]
+            #[cfg(feature = "logging")]
             logging_kind: nonoverridable!(
                 "Kind",
                 logging_kind,
@@ -800,7 +800,7 @@ impl DebugSettings {
                 }
                 .into()
             ),
-            #[cfg(feature = "log")]
+            #[cfg(feature = "logging")]
             imgui_log_history_capacity: overridable!(
                 "ImGui log history capacity",
                 imgui_log_history_capacity,
@@ -835,7 +835,7 @@ enum Section {
     Saves,
     Emulation,
     Input,
-    #[cfg(any(feature = "log", feature = "gdb-server"))]
+    #[cfg(any(feature = "logging", feature = "gdb-server"))]
     Debug,
     #[cfg(feature = "discord-presence")]
     DiscordPresence,
@@ -847,7 +847,7 @@ struct Settings {
     audio: AudioSettings,
     saves: SavesSettings,
     emulation: EmulationSettings,
-    #[cfg(any(feature = "log", feature = "gdb-server"))]
+    #[cfg(any(feature = "logging", feature = "gdb-server"))]
     debug: DebugSettings,
     #[cfg(feature = "discord-presence")]
     discord_presence: DiscordPresenceSettings,
@@ -861,7 +861,7 @@ impl Settings {
             audio: AudioSettings::new(),
             saves: SavesSettings::new(),
             emulation: EmulationSettings::new(),
-            #[cfg(any(feature = "log", feature = "gdb-server"))]
+            #[cfg(any(feature = "logging", feature = "gdb-server"))]
             debug: DebugSettings::new(),
             #[cfg(feature = "discord-presence")]
             discord_presence: DiscordPresenceSettings::new(),
@@ -1213,7 +1213,7 @@ impl Editor {
                     ("\u{f0c7} Saves", Section::Saves),
                     ("\u{f2db} Emulation", Section::Emulation),
                     ("\u{f11b} Input", Section::Input),
-                    #[cfg(any(feature = "log", feature = "gdb-server"))]
+                    #[cfg(any(feature = "logging", feature = "gdb-server"))]
                     ("\u{f7d9} Debug", Section::Debug),
                     #[cfg(feature = "discord-presence")]
                     ("\u{f392} Discord presence", Section::DiscordPresence),
@@ -1465,13 +1465,13 @@ impl Editor {
                                     .draw(ui, &mut config.config, &data);
                             }
 
-                            #[cfg(any(feature = "log", feature = "gdb-server"))]
+                            #[cfg(any(feature = "logging", feature = "gdb-server"))]
                             Section::Debug => {
                                 // logging_kind
                                 // imgui_log_history_capacity
                                 // gdb_server_addr
 
-                                #[cfg(feature = "log")]
+                                #[cfg(feature = "logging")]
                                 {
                                     heading(ui, "Logging", 16.0, 5.0);
                                     draw!(

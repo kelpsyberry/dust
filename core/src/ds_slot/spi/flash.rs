@@ -17,7 +17,7 @@ pub struct Flash {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CreationError {
-    IncorrectSize,
+    InvalidSize,
 }
 
 pub enum CreationContents {}
@@ -30,7 +30,7 @@ impl Flash {
         #[cfg(feature = "log")] logger: slog::Logger,
     ) -> Result<Self, CreationError> {
         if !matches!(contents.len(), 0x4_0000 | 0x8_0000 | 0x10_0000) {
-            return Err(CreationError::IncorrectSize);
+            return Err(CreationError::InvalidSize);
         }
         Ok(Flash {
             contents: flash::Flash::new(
@@ -39,7 +39,8 @@ impl Flash {
                 #[cfg(feature = "log")]
                 logger.new(slog::o!("contents" => "")),
             )
-            .unwrap(),
+            // NOTE: The contents' length was just checked above, this should never occur.
+            .expect("Couldn't create SPI FLASH device"),
             has_ir,
             ir_cmd: 0,
             first_ir_data_byte: false,

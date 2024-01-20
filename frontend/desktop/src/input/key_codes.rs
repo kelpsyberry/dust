@@ -212,7 +212,7 @@ impl From<KeyCode> for &'static str {
         KEY_CODE_STR_MAP
             .iter()
             .find_map(|(key_code, str)| (*key_code == value.0).then_some(*str))
-            .expect("invalid key code")
+            .expect("Invalid key code")
     }
 }
 
