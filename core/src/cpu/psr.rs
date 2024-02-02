@@ -1,8 +1,9 @@
 use crate::utils::Savestate;
 
 mod bounded {
-    use crate::utils::bounded_int_lit;
+    use crate::utils::{bounded_int_from_into, bounded_int_lit};
     bounded_int_lit!(pub struct Mode(u8), max 0xF);
+    bounded_int_from_into!(Mode(u8));
 }
 pub use bounded::Mode;
 

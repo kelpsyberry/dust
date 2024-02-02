@@ -140,7 +140,7 @@ impl BatchKind {
             let pipeline = PipelineKey(0)
                 .with_texture_mapping_enabled(texture_mapping_enabled)
                 .with_alpha_blending_enabled(
-                    poly.is_translucent && control.alpha_blending_enabled(),
+                    poly.attrs.is_translucent() && control.alpha_blending_enabled(),
                 )
                 .with_depth_test_equal(depth_test_equal)
                 .with_mode(if is_shadow {
@@ -163,7 +163,7 @@ impl BatchKind {
 
             let alpha = poly.attrs.alpha();
 
-            if poly.is_translucent {
+            if poly.attrs.is_translucent() {
                 if poly.attrs.update_depth_for_translucent() {
                     BatchKind::Translucent {
                         pipeline,
@@ -1252,7 +1252,9 @@ impl Renderer {
 
                 toon_used |= poly.attrs.mode() == 2;
 
-                if poly.vertices_len.get() < 3 || poly.attrs.mode() == 3 {
+                let verts_len = poly.attrs.verts_len();
+
+                if verts_len.get() < 3 || poly.attrs.mode() == 3 {
                     // TODO: Do process shadow/shadow mask polygons
                     continue;
                 }
@@ -1260,7 +1262,7 @@ impl Renderer {
                 let id = poly.attrs.id();
                 let base_idx = self.vtx_buffer_contents.len() as u16;
                 self.vtx_buffer_contents.extend(
-                    poly.vertices[..poly.vertices_len.get() as usize]
+                    poly.verts[..verts_len.get() as usize]
                         .iter()
                         .enumerate()
                         .map(|(i, vert_addr)| {
@@ -1274,7 +1276,7 @@ impl Renderer {
                         }),
                 );
 
-                for i in base_idx..base_idx + (poly.vertices_len.get() - 1) as u16 {
+                for i in base_idx..base_idx + (verts_len.get() - 1) as u16 {
                     self.idx_buffer_contents
                         .extend_from_slice(&[base_idx, i, i + 1]);
                 }

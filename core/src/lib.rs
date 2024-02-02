@@ -5,6 +5,7 @@
     adt_const_params,
     doc_cfg,
     maybe_uninit_uninit_array,
+    maybe_uninit_slice,
     portable_simd,
     new_uninit
 )]

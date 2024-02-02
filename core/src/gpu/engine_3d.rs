@@ -130,37 +130,48 @@ enum PrimitiveType {
 }
 
 mod bounded {
-    use crate::utils::{bounded_int_lit, bounded_int_savestate};
+    use crate::utils::{bounded_int_lit, bounded_int_savestate, bounded_int_unsafe_from_into};
     bounded_int_lit!(pub struct PrimVertIndex(u8), max 3);
     bounded_int_savestate!(PrimVertIndex(u8));
     bounded_int_lit!(pub struct PrimMaxVerts(u8), max 4);
     bounded_int_savestate!(PrimMaxVerts(u8));
     bounded_int_lit!(pub struct PolyVertIndex(u8), max 9);
-    bounded_int_savestate!(PolyVertIndex(u8));
     bounded_int_lit!(pub struct PolyVertsLen(u8), max 10);
-    bounded_int_savestate!(PolyVertsLen(u8));
+    bounded_int_unsafe_from_into!(PolyVertsLen(u8));
     bounded_int_lit!(pub struct PolyAddr(u16), max 2047);
-    bounded_int_savestate!(PolyAddr(u16));
     bounded_int_lit!(pub struct VertexAddr(u16), max 6143);
     bounded_int_savestate!(VertexAddr(u16));
 }
 pub use bounded::{PolyAddr, PolyVertIndex, PolyVertsLen, VertexAddr};
 use bounded::{PrimMaxVerts, PrimVertIndex};
 
+proc_bitfield::bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq, Savestate)]
+    pub struct RenderingPolygonAttrs(u32): Debug {
+        pub raw: u32 [read_only] @ ..,
+        pub verts_len: u8 [unsafe PolyVertsLen] @ 0..=3,
+        pub mode: u8 @ 4..=5,
+        pub update_depth_for_translucent: bool @ 11,
+        pub depth_test_equal: bool @ 14,
+        pub fog_enabled: bool @ 15,
+        pub alpha: u8 @ 16..=20,
+        pub id: u8 @ 24..=29,
+        pub is_front_facing: bool @ 30,
+        pub is_translucent: bool @ 30,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
 #[repr(C)]
 pub struct Polygon {
-    pub vertices: [VertexAddr; 10],
+    pub verts: [VertexAddr; 10],
     pub depth_values: [u32; 10],
     pub w_values: [u16; 10],
     pub top_y: u8,
     pub bot_y: u8,
-    pub vertices_len: PolyVertsLen,
-    pub attrs: PolygonAttrs,
-    pub is_front_facing: bool,
-    pub is_translucent: bool,
-    pub tex_params: TextureParams,
     pub tex_palette_base: u16,
+    pub tex_params: TextureParams,
+    pub attrs: RenderingPolygonAttrs,
 }
 
 proc_bitfield::bitfield! {
@@ -936,7 +947,7 @@ impl Engine3d {
             };
         }
 
-        macro_rules! run_pass {
+        macro_rules! run_clip_pass {
             ($axis_i: expr, $clip_far: expr, $input: expr$(, $assume_init: ident)? => $output: expr) => {
                 let input_len = replace(&mut clipped_verts_len, shared_verts);
                 for (i, vert) in $input[..input_len].iter().enumerate().skip(shared_verts) {
@@ -1004,6 +1015,7 @@ impl Engine3d {
                     }
                 }
                 if clipped_verts_len == 0 {
+                    self.connect_to_last_strip_prim = false;
                     return;
                 }
             };
@@ -1022,31 +1034,37 @@ impl Engine3d {
             buffer_0[i] = MaybeUninit::new(self.cur_prim_verts[i]);
             buffer_1[i] = MaybeUninit::new(self.cur_prim_verts[i]);
         }
-        run_pass!(2, self.cur_poly_attrs.clip_far_plane(), self.cur_prim_verts => buffer_0);
+        run_clip_pass!(2, self.cur_poly_attrs.clip_far_plane(), self.cur_prim_verts => buffer_0);
         unsafe {
-            run_pass!(1, true, buffer_0, assume_init_ref => buffer_1);
-            run_pass!(0, true, buffer_1, assume_init_ref => buffer_0);
+            run_clip_pass!(1, true, buffer_0, assume_init_ref => buffer_1);
+            run_clip_pass!(0, true, buffer_1, assume_init_ref => buffer_0);
         }
+        let clipped_verts =
+            unsafe { MaybeUninit::slice_assume_init_mut(&mut buffer_0[..clipped_verts_len]) };
 
         if self.vert_ram_level as usize > self.vert_ram.len() - (clipped_verts_len - shared_verts) {
             self.rendering_state
                 .control
                 .set_poly_vert_ram_overflow(true);
+            self.connect_to_last_strip_prim = false;
             return;
         }
 
+        let is_translucent = matches!(self.cur_poly_attrs.alpha(), 1..=30)
+            || (matches!(self.cur_poly_attrs.mode(), 0 | 2)
+                && matches!(self.tex_params.format(), 1 | 6));
+
         let poly = &mut self.poly_ram[self.poly_ram_level as usize];
         self.poly_ram_level += 1;
-        poly.vertices_len = PolyVertsLen::new(clipped_verts_len as u8);
         poly.tex_palette_base = self.tex_palette_base;
         poly.tex_params = self.tex_params;
-        poly.attrs = self.cur_poly_attrs;
-        poly.is_front_facing = is_front_facing;
-        poly.is_translucent = matches!(poly.attrs.alpha(), 1..=30)
-            || (matches!(poly.attrs.mode(), 0 | 2) && matches!(poly.tex_params.format(), 1 | 6));
+        poly.attrs = RenderingPolygonAttrs(self.cur_poly_attrs.0)
+            .with_verts_len(PolyVertsLen::new(clipped_verts_len as u8))
+            .with_is_front_facing(is_front_facing)
+            .with_is_translucent(is_translucent);
 
         if connect_to_last_strip_prim {
-            poly.vertices[..2].copy_from_slice(&self.last_strip_prim_vert_indices);
+            poly.verts[..2].copy_from_slice(&self.last_strip_prim_vert_indices);
         }
 
         let mut top_y = 0xFF;
@@ -1054,11 +1072,10 @@ impl Engine3d {
 
         let viewport_origin = self.viewport_origin;
         let viewport_size = self.viewport_size;
-        for (vert, vert_addr) in buffer_0[shared_verts..clipped_verts_len]
+        for (vert, vert_addr) in clipped_verts[shared_verts..]
             .iter_mut()
-            .zip(&mut poly.vertices[shared_verts..clipped_verts_len])
+            .zip(&mut poly.verts[shared_verts..clipped_verts_len])
         {
-            let vert = unsafe { vert.assume_init_mut() };
             vert.coords[3] &= 0x00FF_FFFF;
             let w = vert.coords[3] as u32;
             let coords = if w == 0 {
@@ -1114,7 +1131,7 @@ impl Engine3d {
             self.vert_ram_level += 1;
         }
 
-        for &vert_addr in &poly.vertices[..shared_verts] {
+        for &vert_addr in &poly.verts[..shared_verts] {
             let y = self.vert_ram[vert_addr.get() as usize].coords[1] as u8;
             top_y = top_y.min(y);
             bot_y = bot_y.max(y);
@@ -1124,26 +1141,24 @@ impl Engine3d {
         poly.bot_y = bot_y;
 
         let mut w_leading_zeros = 32;
-        for vert in &buffer_0[..clipped_verts_len] {
-            w_leading_zeros =
-                w_leading_zeros.min(unsafe { vert.assume_init_ref() }.coords[3].leading_zeros());
+        for vert in clipped_verts.iter() {
+            w_leading_zeros = w_leading_zeros.min(vert.coords[3].leading_zeros());
         }
         w_leading_zeros &= !3;
 
         if w_leading_zeros >= 16 {
             let shift = w_leading_zeros - 16;
-            for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
-                poly.w_values[i] = (unsafe { vert.assume_init_ref() }.coords[3] << shift) as u16;
+            for (i, vert) in clipped_verts.iter().enumerate() {
+                poly.w_values[i] = (vert.coords[3] << shift) as u16;
             }
         } else {
             let shift = 16 - w_leading_zeros;
-            for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
-                poly.w_values[i] = (unsafe { vert.assume_init_ref() }.coords[3] >> shift) as u16;
+            for (i, vert) in clipped_verts.iter().enumerate() {
+                poly.w_values[i] = (vert.coords[3] >> shift) as u16;
             }
         }
 
-        for (i, vert) in buffer_0[..clipped_verts_len].iter().enumerate() {
-            let vert = unsafe { vert.assume_init_ref() };
+        for (i, vert) in clipped_verts.iter().enumerate() {
             let w = vert.coords[3] as u32;
             poly.depth_values[i] = if self.rendering_state.w_buffering {
                 w & !((((1_u64 << (32 - w_leading_zeros)) - 1) as u32) >> 16)
@@ -1160,14 +1175,14 @@ impl Engine3d {
             match self.cur_prim_type {
                 PrimitiveType::TriangleStrip => {
                     self.last_strip_prim_vert_indices = if self.cur_strip_prim_is_odd {
-                        [poly.vertices[0], poly.vertices[2]]
+                        [poly.verts[0], poly.verts[2]]
                     } else {
-                        [poly.vertices[2], poly.vertices[1]]
+                        [poly.verts[2], poly.verts[1]]
                     };
                 }
 
                 PrimitiveType::QuadStrip => {
-                    self.last_strip_prim_vert_indices = [poly.vertices[3], poly.vertices[2]];
+                    self.last_strip_prim_vert_indices = [poly.verts[3], poly.verts[2]];
                 }
 
                 _ => {}
@@ -1201,7 +1216,7 @@ impl Engine3d {
             {
                 emu.gpu.engine_3d.poly_ram[..emu.gpu.engine_3d.poly_ram_level as usize]
                     .sort_by_key(|poly| {
-                        if poly.is_translucent {
+                        if poly.attrs.is_translucent() {
                             0x1_0000
                         } else {
                             (poly.bot_y as u32) << 8 | poly.top_y as u32
@@ -1210,7 +1225,7 @@ impl Engine3d {
             } else {
                 emu.gpu.engine_3d.poly_ram[..emu.gpu.engine_3d.poly_ram_level as usize]
                     .sort_by_key(|poly| {
-                        (poly.is_translucent as u32) << 16
+                        (poly.attrs.is_translucent() as u32) << 16
                             | (poly.bot_y as u32) << 8
                             | poly.top_y as u32
                     });

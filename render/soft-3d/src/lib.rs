@@ -8,7 +8,8 @@ mod utils;
 use core::simd::{cmp::SimdOrd, num::SimdUint};
 use dust_core::gpu::{
     engine_3d::{
-        Color, InterpColor, PolyAddr, PolyVertIndex, PolygonAttrs, TexCoords, TextureParams,
+        Color, InterpColor, PolyAddr, PolyVertIndex, RenderingPolygonAttrs, TexCoords,
+        TextureParams,
     },
     Scanline,
 };
@@ -23,7 +24,7 @@ type ProcessPixelFn = fn(&RenderingData, &RenderingPolygon, TexCoords, InterpCol
 #[derive(Clone, Copy)]
 struct RenderingPolygon {
     poly_addr: PolyAddr,
-    attrs: PolygonAttrs,
+    attrs: RenderingPolygonAttrs,
     is_shadow: bool,
     tex_params: TextureParams,
     tex_palette_base: u16,
@@ -36,7 +37,6 @@ struct RenderingPolygon {
     bot_i: PolyVertIndex,
     alpha: u8,
     id: u8,
-    is_front_facing: bool,
     depth_test: DepthTestFn,
     process_pixel: ProcessPixelFn,
 }
@@ -51,7 +51,7 @@ proc_bitfield::bitfield! {
         pub left_edge: bool @ 3,
 
         pub translucent: bool @ 13,
-        pub back_facing: bool @ 14,
+        pub front_facing: bool @ 14,
 
         pub fog_enabled: bool @ 15,
 
@@ -65,14 +65,14 @@ proc_bitfield::bitfield! {
 impl PixelAttrs {
     #[inline]
     fn from_opaque_poly_attrs(poly: &RenderingPolygon) -> Self {
-        PixelAttrs(poly.attrs.0 & 0x3F00_8000).with_back_facing(!poly.is_front_facing)
+        PixelAttrs(poly.attrs.raw() & 0x3F00_8000).with_front_facing(poly.attrs.is_front_facing())
     }
 
     #[inline]
     fn from_translucent_poly_attrs(poly: &RenderingPolygon, opaque: PixelAttrs) -> Self {
         PixelAttrs(opaque.0 & 0x3F00_8000)
             .with_translucent(true)
-            .with_back_facing(!poly.is_front_facing)
+            .with_front_facing(poly.attrs.is_front_facing())
             .with_translucent_id(poly.id | 0x40)
     }
 }
@@ -367,11 +367,11 @@ fn depth_test_equal_z(a: u32, b: u32, _: PixelAttrs) -> bool {
 fn depth_test_less_front_facing(a: u32, b: u32, b_attrs: PixelAttrs) -> bool {
     let mask = PixelAttrs(0)
         .with_translucent(true)
-        .with_back_facing(true)
+        .with_front_facing(true)
         .0;
     let value = PixelAttrs(0)
         .with_translucent(false)
-        .with_back_facing(true)
+        .with_front_facing(false)
         .0;
     if b_attrs.0 & mask == value {
         a <= b
@@ -400,8 +400,9 @@ impl Renderer {
         for poly_addr in 0..rendering_data.poly_ram_level {
             let poly_addr = unsafe { PolyAddr::new_unchecked(poly_addr) };
             let poly = &rendering_data.poly_ram[poly_addr.get() as usize];
+            let verts_len = poly.attrs.verts_len();
 
-            if poly.vertices_len.get() < 3 {
+            if verts_len.get() < 3 {
                 continue;
             }
 
@@ -411,7 +412,7 @@ impl Renderer {
                 } else {
                     depth_test_equal_z
                 }
-            } else if poly.is_front_facing {
+            } else if poly.attrs.is_front_facing() {
                 depth_test_less_front_facing
             } else {
                 depth_test_less_back_facing
@@ -445,7 +446,7 @@ impl Renderer {
             if top_y == bot_y {
                 let mut top_i = PolyVertIndex::new(0);
                 let mut bot_i = top_i;
-                let mut top_vert_addr = poly.vertices[0];
+                let mut top_vert_addr = poly.verts[0];
                 let mut top_vert = &rendering_data.vert_ram[top_vert_addr.get() as usize];
                 let mut bot_vert_addr = top_vert_addr;
                 let mut bot_vert = top_vert;
@@ -453,7 +454,7 @@ impl Renderer {
                 macro_rules! vert {
                     ($i: expr) => {{
                         let i = $i;
-                        let vert_addr = poly.vertices[i.get() as usize];
+                        let vert_addr = poly.verts[i.get() as usize];
                         let vert = &rendering_data.vert_ram[vert_addr.get() as usize];
                         if vert.coords[0] < top_vert.coords[0] {
                             top_i = i;
@@ -469,7 +470,7 @@ impl Renderer {
                 }
 
                 vert!(PolyVertIndex::new(1));
-                vert!(PolyVertIndex::new(poly.vertices_len.get() - 1));
+                vert!(PolyVertIndex::new(verts_len.get() - 1));
 
                 self.polys.push(RenderingPolygon {
                     poly_addr,
@@ -482,7 +483,6 @@ impl Renderer {
                     height: 1,
                     alpha: poly.attrs.alpha(),
                     id: poly.attrs.id(),
-                    is_front_facing: poly.is_front_facing,
                     edges: [
                         Edge::new(
                             poly,
@@ -514,9 +514,9 @@ impl Renderer {
                     let mut top_i = PolyVertIndex::new(0);
                     let mut bot_i = top_i;
                     let mut top_vert = None;
-                    for i in 0..poly.vertices_len.get() as usize {
+                    for i in 0..verts_len.get() as usize {
                         let i = PolyVertIndex::new(i as u8);
-                        let vert_addr = poly.vertices[i.get() as usize];
+                        let vert_addr = poly.verts[i.get() as usize];
                         let vert = &rendering_data.vert_ram[vert_addr.get() as usize];
                         if vert.coords[1] as u8 == top_y && top_vert.is_none() {
                             top_i = i;
@@ -533,17 +533,17 @@ impl Renderer {
                 macro_rules! vert {
                     ($i: expr) => {{
                         let i = $i;
-                        let addr = poly.vertices[i.get() as usize];
+                        let addr = poly.verts[i.get() as usize];
                         (i, addr, &rendering_data.vert_ram[addr.get() as usize])
                     }};
                 }
 
                 let mut other_verts = [
-                    vert!(inc_poly_vert_index(top_i, poly.vertices_len)),
-                    vert!(dec_poly_vert_index(top_i, poly.vertices_len)),
+                    vert!(inc_poly_vert_index(top_i, verts_len)),
+                    vert!(dec_poly_vert_index(top_i, verts_len)),
                 ];
 
-                if !poly.is_front_facing {
+                if !poly.attrs.is_front_facing() {
                     other_verts.swap(0, 1);
                 }
 
@@ -558,7 +558,6 @@ impl Renderer {
                     height: poly.bot_y - poly.top_y,
                     alpha: poly.attrs.alpha(),
                     id: poly.attrs.id(),
-                    is_front_facing: poly.is_front_facing,
                     edges: [
                         Edge::new(
                             poly,
@@ -643,21 +642,23 @@ impl Renderer {
 
             if poly.top_y != poly.bot_y {
                 let raw_poly = rendering_data.poly_ram[poly.poly_addr.get() as usize];
+                let verts_len = raw_poly.attrs.verts_len();
 
                 macro_rules! process_edge {
                     ($vert_i: expr, $edge: expr, $increasing: expr) => {{
+                        let increasing = $increasing;
                         if y >= $edge.b_y() {
                             let mut i = *$vert_i;
                             let mut start_vert_addr = $edge.b_addr();
                             let mut start_vert =
                                 &rendering_data.vert_ram[start_vert_addr.get() as usize];
                             while i != poly.bot_i {
-                                i = if $increasing {
-                                    inc_poly_vert_index(i, raw_poly.vertices_len)
+                                i = if increasing {
+                                    inc_poly_vert_index(i, verts_len)
                                 } else {
-                                    dec_poly_vert_index(i, raw_poly.vertices_len)
+                                    dec_poly_vert_index(i, verts_len)
                                 };
-                                let new_end_vert_addr = raw_poly.vertices[i.get() as usize];
+                                let new_end_vert_addr = raw_poly.verts[i.get() as usize];
                                 let new_end_vert =
                                     &rendering_data.vert_ram[new_end_vert_addr.get() as usize];
                                 let new_b_y = new_end_vert.coords[1] as u8;
@@ -683,8 +684,16 @@ impl Renderer {
                     }};
                 }
 
-                process_edge!(&mut poly.l_vert_i, poly.edges[0], raw_poly.is_front_facing);
-                process_edge!(&mut poly.r_vert_i, poly.edges[1], !raw_poly.is_front_facing);
+                process_edge!(
+                    &mut poly.l_vert_i,
+                    poly.edges[0],
+                    raw_poly.attrs.is_front_facing()
+                );
+                process_edge!(
+                    &mut poly.r_vert_i,
+                    poly.edges[1],
+                    !raw_poly.attrs.is_front_facing()
+                );
             }
 
             let mut edges = [&poly.edges[0], &poly.edges[1]];
