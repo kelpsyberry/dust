@@ -9,7 +9,7 @@
 
 [![Web deploy status](https://github.com/kelpsyberry/dust/actions/workflows/deploy-web.yml/badge.svg?branch=main&event=push)](https://github.com/kelpsyberry/dust/actions/workflows/deploy-web.yml?query=branch%3Amain+event%3Apush)
 
-[Web frontend](https://dust-emu.netlify.app)
+[Web frontend](https://dust-ds.netlify.app)
 
 ## Prebuilt binaries
 
