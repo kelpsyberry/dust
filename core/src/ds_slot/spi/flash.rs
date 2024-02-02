@@ -40,7 +40,7 @@ impl Flash {
                 logger.new(slog::o!("contents" => "")),
             )
             // NOTE: The contents' length was just checked above, this should never occur.
-            .expect("Couldn't create SPI FLASH device"),
+            .expect("couldn't create SPI FLASH device"),
             has_ir,
             ir_cmd: 0,
             first_ir_data_byte: false,

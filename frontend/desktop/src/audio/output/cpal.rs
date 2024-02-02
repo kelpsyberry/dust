@@ -104,7 +104,7 @@ impl OutputStream {
             _ => panic!("Unsupported audio output sample format"),
         }
         .ok()?;
-        stream.play().expect("Couldn't start audio output stream");
+        stream.play().expect("couldn't start audio output stream");
 
         Some(OutputStream {
             _stream: stream,
@@ -122,7 +122,7 @@ impl OutputStream {
         }
         self.interp_tx
             .send(value.create_interp())
-            .expect("Couldn't send new interpolator to audio output thread");
+            .expect("couldn't send new interpolator to audio output thread");
     }
 
     #[cfg(feature = "xq-audio")]

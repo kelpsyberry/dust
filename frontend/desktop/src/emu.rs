@@ -233,7 +233,7 @@ fn setup_ds_slot(
                     logger.new(slog::o!("ds_spi" => "eeprom_4k")),
                 )
                 // NOTE: The save contents' size is ensured beforehand, this should never occur.
-                .expect("Couldn't create 4 Kib EEPROM DS slot SPI device")
+                .expect("couldn't create 4 Kib EEPROM DS slot SPI device")
                 .into(),
                 SaveType::EepromFram64k | SaveType::EepromFram512k | SaveType::EepromFram1m => {
                     ds_slot::spi::eeprom_fram::EepromFram::new(
@@ -243,7 +243,7 @@ fn setup_ds_slot(
                         logger.new(slog::o!("ds_spi" => "eeprom_fram")),
                     )
                     // NOTE: The save contents' size is ensured beforehand, this should never occur.
-                    .expect("Couldn't create EEPROM/FRAM DS slot SPI device")
+                    .expect("couldn't create EEPROM/FRAM DS slot SPI device")
                     .into()
                 }
                 SaveType::Flash2m | SaveType::Flash4m | SaveType::Flash8m => {
@@ -257,7 +257,7 @@ fn setup_ds_slot(
                         ),
                     )
                     // NOTE: The save contents' size is ensured beforehand, this should never occur.
-                    .expect("Couldn't create FLASH DS slot SPI device")
+                    .expect("couldn't create FLASH DS slot SPI device")
                     .into()
                 }
                 SaveType::Nand64m | SaveType::Nand128m | SaveType::Nand256m => {
@@ -394,7 +394,7 @@ pub(super) fn run(
         ($value: expr) => {
             to_ui
                 .send($value)
-                .expect("Couldn't send notification to UI thread");
+                .expect("couldn't send notification to UI thread");
         };
     }
 
@@ -409,7 +409,7 @@ pub(super) fn run(
         logger.new(slog::o!("fw" => "")),
     )
     // NOTE: The firmware's size is checked before launch, this should never occur.
-    .expect("Couldn't build firmware");
+    .expect("couldn't build firmware");
 
     let (ds_slot_rom, ds_slot_spi) = setup_ds_slot(
         ds_slot,

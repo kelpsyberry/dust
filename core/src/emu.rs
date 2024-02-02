@@ -382,7 +382,7 @@ impl<E: cpu::Engine> Emu<E> {
         self.ds_slot.rom.read_header(&mut header_bytes);
         let header = ds_slot::rom::header::Header::new(header_bytes.as_byte_slice())
             // NOTE: The ROM file's size is ensured beforehand, this should never occur.
-            .expect("Couldn't read DS slot ROM header");
+            .expect("couldn't read DS slot ROM header");
         let chip_id = self.ds_slot.rom.chip_id();
 
         macro_rules! write_main_mem {

@@ -61,7 +61,7 @@ impl InputStream {
             _ => panic!("Unsupported audio input sample format"),
         }
         .ok()?;
-        stream.play().expect("Couldn't start audio input stream");
+        stream.play().expect("couldn't start audio input stream");
 
         Some(InputStream {
             _stream: stream,
@@ -76,7 +76,7 @@ impl InputStream {
         }
         self.interp_tx
             .send(value.create_interp())
-            .expect("Couldn't send new interpolator to audio input thread");
+            .expect("couldn't send new interpolator to audio input thread");
     }
 }
 

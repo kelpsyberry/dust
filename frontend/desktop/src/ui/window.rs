@@ -52,10 +52,10 @@ impl GfxState {
         let surface = unsafe {
             instance.create_surface_unsafe(
                 wgpu::SurfaceTargetUnsafe::from_window(window)
-                    .expect("Couldn't get surface target from window"),
+                    .expect("couldn't get surface target from window"),
             )
         }
-        .expect("Couldn't create surface");
+        .expect("couldn't create surface");
 
         let adapter = match adapter {
             AdapterSelection::Auto(power_preference) => {
@@ -72,7 +72,7 @@ impl GfxState {
                 .into_iter()
                 .find(suitable),
         }
-        .expect("Couldn't create graphics adapter");
+        .expect("couldn't create graphics adapter");
 
         let (device, queue) = adapter
             .request_device(
@@ -87,7 +87,7 @@ impl GfxState {
                 None,
             )
             .await
-            .expect("Couldn't open connection to graphics device");
+            .expect("couldn't open connection to graphics device");
 
         let size = window.inner_size();
         let surf_config = wgpu::SurfaceConfiguration {
@@ -96,7 +96,7 @@ impl GfxState {
                 let formats = surface.get_capabilities(&adapter).formats;
                 let preferred = formats
                     .first()
-                    .expect("Couldn't get surface preferred format");
+                    .expect("couldn't get surface preferred format");
                 #[cfg(target_os = "macos")]
                 {
                     *formats.iter().find(|f| !f.is_srgb()).unwrap_or(preferred)
@@ -167,7 +167,7 @@ impl GfxState {
             .get_capabilities(&self.adapter)
             .formats
             .first()
-            .expect("Couldn't get surface preferred format");
+            .expect("couldn't get surface preferred format");
         if new_format != self.surface_config.format {
             self.surface_config.format = new_format;
             self.surface_format_changed = true;
@@ -460,7 +460,7 @@ impl Builder {
         default_logical_size: (u32, u32),
         #[cfg(target_os = "macos")] macos_title_bar_hidden: bool,
     ) -> Self {
-        let event_loop = EventLoop::new().expect("Couldn't create event loop");
+        let event_loop = EventLoop::new().expect("couldn't create event loop");
         let window_builder = WinitWindowBuilder::new()
             .with_title(title)
             .with_inner_size(LogicalSize::new(
@@ -479,7 +479,7 @@ impl Builder {
         };
         let window = window_builder
             .build(&event_loop)
-            .expect("Couldn't create window");
+            .expect("couldn't create window");
         let scale_factor = window.scale_factor();
 
         let gfx = GfxState::new(&window, features, adapter).await;
@@ -628,7 +628,7 @@ impl Builder {
                         .imgui
                         .winit
                         .prepare_frame(io, &window.window)
-                        .expect("Couldn't prepare imgui frame");
+                        .expect("couldn't prepare imgui frame");
 
                     let ui = imgui.frame();
                     if draw_imgui(window, &mut state, ui) == ControlFlow::Exit {

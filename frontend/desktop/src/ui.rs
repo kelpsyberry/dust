@@ -94,7 +94,7 @@ impl EmuState {
     fn send_message(&self, msg: emu::Message) {
         self.to_emu
             .send(msg)
-            .expect("Couldn't send message to emulation thread");
+            .expect("couldn't send message to emulation thread");
     }
 }
 
@@ -503,7 +503,7 @@ impl UiState {
                 rom.read_header(&mut header_bytes);
                 let header = ds_slot::rom::header::Header::new(header_bytes.as_byte_slice())
                     // NOTE: The ROM file's size is ensured beforehand, this should never occur.
-                    .expect("Couldn't read DS slot ROM header");
+                    .expect("couldn't read DS slot ROM header");
                 let icon_title_offset = header.icon_title_offset() as usize;
                 self.icon_update = Some(ds_slot::rom::icon::decode(icon_title_offset, &mut rom));
             }
@@ -647,7 +647,7 @@ impl UiState {
         let thread = thread::Builder::new()
             .name("emulation".to_string())
             .spawn(move || emu::run(launch_data))
-            .expect("Couldn't spawn emulation thread");
+            .expect("couldn't spawn emulation thread");
 
         #[cfg(feature = "debug-views")]
         self.debug_views.reload_emu_state();
@@ -676,7 +676,7 @@ impl UiState {
     fn stop_emu(&mut self, config: &mut Config) {
         if let Some(emu) = self.emu.take() {
             emu.send_message(emu::Message::Stop);
-            self.frame_tx = Some(emu.thread.join().expect("Couldn't join emulation thread"));
+            self.frame_tx = Some(emu.thread.join().expect("couldn't join emulation thread"));
 
             if let Some(path) = config.game_path.take() {
                 let game_config = config::File {

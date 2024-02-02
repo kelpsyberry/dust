@@ -322,7 +322,7 @@ pub fn create_emu_state(
                     #[cfg(feature = "log")]
                     logger.new(slog::o!("ds_spi" => "eeprom_4k")),
                 )
-                .expect("Couldn't create 4 Kib EEPROM DS slot SPI device")
+                .expect("couldn't create 4 Kib EEPROM DS slot SPI device")
                 .into(),
                 SaveType::EepromFram64k | SaveType::EepromFram512k | SaveType::EepromFram1m => {
                     ds_slot::spi::eeprom_fram::EepromFram::new(
@@ -331,7 +331,7 @@ pub fn create_emu_state(
                         #[cfg(feature = "log")]
                         logger.new(slog::o!("ds_spi" => "eeprom_fram")),
                     )
-                    .expect("Couldn't create EEPROM/FRAM DS slot SPI device")
+                    .expect("couldn't create EEPROM/FRAM DS slot SPI device")
                     .into()
                 }
                 SaveType::Flash2m | SaveType::Flash4m | SaveType::Flash8m => {
@@ -342,12 +342,15 @@ pub fn create_emu_state(
                         #[cfg(feature = "log")]
                         logger.new(slog::o!("ds_spi" => if has_ir { "flash" } else { "flash_ir" })),
                     )
-                    .expect("Couldn't create FLASH DS slot SPI device")
+                    .expect("couldn't create FLASH DS slot SPI device")
                     .into()
                 }
                 SaveType::Nand64m | SaveType::Nand128m | SaveType::Nand256m => {
                     #[cfg(feature = "log")]
-                    slog::error!(logger, "TODO: NAND saves");
+                    slog::error!(
+                        logger,
+                        "TODO: NAND saves are currently unsupported, falling back to no save file."
+                    );
                     ds_slot::spi::Empty::new(
                         #[cfg(feature = "log")]
                         logger.new(slog::o!("ds_spi" => "nand_todo")),
@@ -367,7 +370,7 @@ pub fn create_emu_state(
             #[cfg(feature = "log")]
             logger.new(slog::o!("fw" => "")),
         )
-        .expect("Couldn't build firmware"),
+        .expect("couldn't build firmware"),
         Some(Box::new(rom)),
         ds_slot_spi,
         Box::new(audio::Backend::new(audio_callback)),

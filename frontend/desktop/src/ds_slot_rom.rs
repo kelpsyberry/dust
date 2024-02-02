@@ -65,7 +65,7 @@ impl Contents for File {
             .seek(SeekFrom::Start(0))
             .and_then(|_| self.file.read_exact(&mut buf[..]))
             // NOTE: The ROM file's size is ensured beforehand, this should never occur.
-            .expect("Couldn't read DS slot ROM header");
+            .expect("couldn't read DS slot ROM header");
     }
 
     fn read_slice(&mut self, addr: usize, mut output: ByteMutSlice) {
@@ -76,7 +76,7 @@ impl Contents for File {
                 output[read_len..].fill(0);
                 self.file.read_exact(&mut output[..read_len])
             })
-            .expect("Couldn't read DS slot ROM data");
+            .expect("couldn't read DS slot ROM data");
         macro_rules! apply_overlay {
             ($bytes: expr, $start: expr, $end: expr) => {
                 if let Some(Some(bytes)) = $bytes {

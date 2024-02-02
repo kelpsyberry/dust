@@ -766,7 +766,7 @@ impl Launch {
                 .and_then(|firmware| {
                     firmware::detect_model(firmware.as_byte_slice())
                         // NOTE: The firmware's size was already checked, this should never occur
-                        .expect("Couldn't detect firmware model")
+                        .expect("couldn't detect firmware model")
                 })
                 .unwrap_or_default(),
             ModelConfig::Ds => Model::Ds,
