@@ -303,10 +303,10 @@ pub fn create_emu_state(
             let expected_len = save_type.expected_len().unwrap();
             let save_contents = match save_contents {
                 Some(save_contents) => {
-                    SaveContents::Existing(if save_contents.len() == expected_len {
+                    SaveContents::Existing(if save_contents.len() != expected_len {
                         let mut new_contents = BoxedByteSlice::new_zeroed(expected_len);
-                        new_contents[..save_contents.len()].copy_from_slice(&save_contents);
-                        drop(save_contents);
+                        let copy_len = save_contents.len().min(expected_len);
+                        new_contents[..copy_len].copy_from_slice(&save_contents[..copy_len]);
                         new_contents
                     } else {
                         save_contents
@@ -322,6 +322,7 @@ pub fn create_emu_state(
                     #[cfg(feature = "log")]
                     logger.new(slog::o!("ds_spi" => "eeprom_4k")),
                 )
+                // NOTE: The save contents' size is ensured beforehand, this should never occur.
                 .expect("couldn't create 4 Kib EEPROM DS slot SPI device")
                 .into(),
                 SaveType::EepromFram64k | SaveType::EepromFram512k | SaveType::EepromFram1m => {
@@ -331,6 +332,7 @@ pub fn create_emu_state(
                         #[cfg(feature = "log")]
                         logger.new(slog::o!("ds_spi" => "eeprom_fram")),
                     )
+                    // NOTE: The save contents' size is ensured beforehand, this should never occur.
                     .expect("couldn't create EEPROM/FRAM DS slot SPI device")
                     .into()
                 }
@@ -342,6 +344,7 @@ pub fn create_emu_state(
                         #[cfg(feature = "log")]
                         logger.new(slog::o!("ds_spi" => if has_ir { "flash" } else { "flash_ir" })),
                     )
+                    // NOTE: The save contents' size is ensured beforehand, this should never occur.
                     .expect("couldn't create FLASH DS slot SPI device")
                     .into()
                 }

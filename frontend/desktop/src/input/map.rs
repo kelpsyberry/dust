@@ -220,31 +220,16 @@ impl<'de> Deserialize<'de> for Map {
             {
                 let mut keypad = None;
                 let mut hotkeys = None;
-                loop {
-                    if let Ok(next) = map.next_entry::<&str, DeserializedKeypadMap>() {
-                        if let Some(("keypad", value)) = next {
-                            keypad = Some(value);
-                        } else {
-                            break;
-                        }
-                    }
-                    if let Ok(next) = map.next_entry::<&str, DeserializedHotkeyMap>() {
-                        if let Some(("hotkeys", value)) = next {
-                            hotkeys = Some(value);
-                        } else {
-                            break;
-                        }
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        "keypad" => keypad = Some(map.next_value::<DeserializedKeypadMap>()?.0),
+                        "hotkeys" => hotkeys = Some(map.next_value::<DeserializedHotkeyMap>()?.0),
+                        _ => {}
                     }
                 }
                 Ok(Map {
-                    keypad: match keypad {
-                        Some(keypad) => keypad.0,
-                        None => default_keypad_map(),
-                    },
-                    hotkeys: match hotkeys {
-                        Some(hotkeys) => hotkeys.0,
-                        None => default_hotkey_map(),
-                    },
+                    keypad: keypad.unwrap_or_else(default_keypad_map),
+                    hotkeys: hotkeys.unwrap_or_else(default_hotkey_map),
                 })
             }
         }

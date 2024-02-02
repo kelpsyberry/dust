@@ -35,7 +35,7 @@ impl<E: Engine> Arm9<E> {
         if !value.enabled() {
             // Stop DMA; the code can avoid computing everything else as the control register will
             // be written to again.
-            
+
             channel.timing = Timing::Disabled;
             if prev_value.enabled() {
                 // Handle self-disabling DMAs
