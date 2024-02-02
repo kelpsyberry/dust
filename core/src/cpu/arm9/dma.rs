@@ -33,12 +33,15 @@ impl<E: Engine> Arm9<E> {
         channel.control = value;
 
         if !value.enabled() {
+            // Stop DMA; the code can avoid computing everything else as the control register will
+            // be written to again.
+            
             channel.timing = Timing::Disabled;
             if prev_value.enabled() {
                 // Handle self-disabling DMAs
                 self.dma.running_channels &= !(1 << i.get());
                 if self.dma.cur_channel == Some(i) {
-                    self.find_next_dma_channel();
+                    self.dma.switch_to_max_priority_running_channel();
                     self.schedule.set_target_time(self.schedule.cur_time());
                 }
             }
@@ -74,6 +77,8 @@ impl<E: Engine> Arm9<E> {
             return;
         }
 
+        // Start DMA
+
         let mask = !(1 | (value.is_32_bit() as u32) << 1);
         channel.cur_src_addr = channel.src_addr & mask;
         channel.cur_dst_addr = channel.dst_addr & mask;
@@ -91,16 +96,6 @@ impl<E: Engine> Arm9<E> {
             self.start_dma_transfer::<true, { Timing::Immediate }>(i);
         } else if channel.timing == Timing::GxFifo && engine_3d.gx_fifo_half_empty() {
             self.start_dma_transfer::<true, { Timing::GxFifo }>(i);
-        }
-    }
-
-    #[inline]
-    fn find_next_dma_channel(&mut self) {
-        let trailing_zeros = self.dma.running_channels.trailing_zeros() as u8;
-        if trailing_zeros < 4 {
-            self.dma.cur_channel = Some(Index::new(trailing_zeros));
-        } else {
-            self.dma.cur_channel = None;
         }
     }
 
@@ -161,7 +156,7 @@ impl<E: Engine> Arm9<E> {
         }
         self.dma.running_channels &= !(1 << i.get());
         if self.dma.cur_channel == Some(i) {
-            self.find_next_dma_channel();
+            self.dma.switch_to_max_priority_running_channel();
         }
     }
 

@@ -269,6 +269,7 @@ fn create_texture(
     let width = 8 << texture_key.width_shift();
     let height = 8 << texture_key.height_shift();
     let total_shift = texture_key.width_shift() + texture_key.height_shift();
+    let len = 64 << total_shift;
 
     let size = wgpu::Extent3d {
         width,
@@ -288,6 +289,7 @@ fn create_texture(
     });
 
     decode_buffer.clear();
+    decode_buffer.reserve(len);
 
     let tex_base = (texture_key.vram_offset() as usize) << 3;
     let pal_base = (texture_key.palette_base() as usize) << 3 << (texture_key.format() != 2) as u8;
@@ -326,7 +328,7 @@ fn create_texture(
             calc_range!(range, 8);
 
             let mut i = range.0;
-            while i != range.1 {
+            while i != range.1 || decode_buffer.len() != len {
                 let pixel = unsafe { *frame.rendering.texture.get_unchecked(i) };
                 let color_index = pixel as usize & 0x1F;
                 let raw_alpha = pixel >> 5;
@@ -339,7 +341,7 @@ fn create_texture(
             calc_range!(range, 2);
 
             let mut i = range.0;
-            while i != range.1 {
+            while i != range.1 || decode_buffer.len() != len {
                 let mut pixels = unsafe { *frame.rendering.texture.get_unchecked(i) };
                 for _ in 0..4 {
                     let color_index = pixels as usize & 3;
@@ -361,7 +363,7 @@ fn create_texture(
             calc_range!(range, 4);
 
             let mut i = range.0;
-            while i != range.1 {
+            while i != range.1 || decode_buffer.len() != len {
                 let mut pixels = unsafe { *frame.rendering.texture.get_unchecked(i) };
                 for _ in 0..2 {
                     let color_index = pixels as usize & 0xF;
@@ -383,7 +385,7 @@ fn create_texture(
             calc_range!(range, 8);
 
             let mut i = range.0;
-            while i != range.1 {
+            while i != range.1 || decode_buffer.len() != len {
                 let color_index = unsafe { *frame.rendering.texture.get_unchecked(i) } as usize;
                 decode_buffer.push(read_palette!(
                     color_index,
@@ -403,9 +405,6 @@ fn create_texture(
                 (tex_base & 0x4_0000) | ((tex_base + ((8 * 2) << total_shift)) & 0x1_FFFF),
             );
             texture_region_mask = 1 << (tex_base >> 17 & 2) | 2;
-
-            let len = 64 << total_shift;
-            decode_buffer.reserve(len);
 
             let mut dst_pos = 0;
             let width = width as usize;
@@ -513,7 +512,7 @@ fn create_texture(
             calc_range!(range, 8);
 
             let mut i = range.0;
-            while i != range.1 {
+            while i != range.1 || decode_buffer.len() != len {
                 let pixel = unsafe { *frame.rendering.texture.get_unchecked(i) };
                 let color_index = pixel as usize & 7;
                 let raw_alpha = pixel >> 3;
@@ -526,7 +525,7 @@ fn create_texture(
             calc_range!(range, 16);
 
             let mut i = range.0;
-            while i != range.1 {
+            while i != range.1 || decode_buffer.len() != len {
                 let color = unsafe { frame.rendering.texture.read_le_aligned_unchecked::<u16>(i) };
                 decode_buffer.push(decode_rgb5(
                     color,
@@ -819,9 +818,9 @@ impl Renderer {
             wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
             8,
             {
-                let mut buffer_contents = vec![0; alpha_and_ref_bg_elem_size * (31 * 0x20)];
+                let mut buffer_contents = vec![0; alpha_and_ref_bg_elem_size * (0x20 * 0x20)];
                 let mut addr = 0;
-                for alpha in 1_u32..0x20 {
+                for alpha in 0_u32..0x20 {
                     for alpha_ref in 0_u32..0x20 {
                         buffer_contents[addr..addr + 4]
                             .copy_from_slice(&(alpha as f32 * (1.0 / 31.0)).to_ne_bytes());
@@ -1066,7 +1065,7 @@ impl Renderer {
                             });
                         }
 
-                        if texture_changed {
+                        if texture_changed || pipeline_changed {
                             if let Some(texture) = texture {
                                 prepare_texture(texture);
                             }
@@ -1080,7 +1079,7 @@ impl Renderer {
                             ),
                             PreparedBatchKind::Opaque {
                                 pipeline: pipeline_changed.then_some(pipeline),
-                                texture: texture_changed
+                                texture: (texture_changed || pipeline_changed)
                                     .then(|| texture.map(|t| (t, texture_bg_index))),
                             }
                         )
@@ -1113,7 +1112,7 @@ impl Renderer {
                             });
                         }
 
-                        if texture_changed {
+                        if texture_changed || pipeline_changed {
                             if let Some(texture) = texture {
                                 prepare_texture(texture);
                             }
@@ -1128,7 +1127,7 @@ impl Renderer {
                             PreparedBatchKind::Translucent {
                                 pipeline_changed,
                                 pipeline,
-                                texture: texture_changed
+                                texture: (texture_changed || pipeline_changed)
                                     .then(|| texture.map(|t| (t, texture_bg_index))),
                                 id: id_changed.then_some(id),
                                 alpha_and_ref: alpha_and_ref_changed.then_some(alpha_and_ref)
@@ -1165,7 +1164,7 @@ impl Renderer {
                                 });
                         }
 
-                        if texture_changed {
+                        if texture_changed || pipeline_changed {
                             if let Some(texture) = texture {
                                 prepare_texture(texture);
                             }
@@ -1180,7 +1179,7 @@ impl Renderer {
                             PreparedBatchKind::TranslucentNoDepthUpdate {
                                 pipeline_changed,
                                 pipeline,
-                                texture: texture_changed
+                                texture: (texture_changed || pipeline_changed)
                                     .then(|| texture.map(|t| (t, texture_bg_index))),
                                 id: id_changed.then_some(id),
                                 alpha_and_ref: alpha_and_ref_changed.then_some(alpha_and_ref)
@@ -1199,7 +1198,7 @@ impl Renderer {
                             // TODO
                         }
 
-                        if texture_changed {
+                        if texture_changed || pipeline_changed {
                             if let Some(texture) = texture {
                                 prepare_texture(texture);
                             }
@@ -1213,7 +1212,7 @@ impl Renderer {
                             ),
                             PreparedBatchKind::Wireframe {
                                 pipeline: pipeline_changed.then_some(pipeline),
-                                texture: texture_changed
+                                texture: (texture_changed || pipeline_changed)
                                     .then(|| texture.map(|t| (t, texture_bg_index))),
                             }
                         )
@@ -1376,7 +1375,7 @@ impl Renderer {
                             render_pass.set_bind_group(
                                 1,
                                 &self.alpha_and_ref_bg,
-                                &[(((alpha - 1) as usize * 0x20 + alpha_ref as usize)
+                                &[((alpha as usize * 0x20 + alpha_ref as usize)
                                     * self.alpha_and_ref_bg_elem_size)
                                     as wgpu::DynamicOffset],
                             );
@@ -1426,7 +1425,7 @@ impl Renderer {
                             render_pass.set_bind_group(
                                 1,
                                 &self.alpha_and_ref_bg,
-                                &[(((alpha - 1) as usize * 0x20 + alpha_ref as usize)
+                                &[((alpha as usize * 0x20 + alpha_ref as usize)
                                     * self.alpha_and_ref_bg_elem_size)
                                     as wgpu::DynamicOffset],
                             );

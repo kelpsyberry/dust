@@ -581,7 +581,6 @@ impl Engine3d {
         let result = CMD_PARAMS[command as usize];
         #[cfg(feature = "log")]
         if result == 0xFF {
-            #[cfg(feature = "log")]
             slog::warn!(self.logger, "Unknown command: {:#04X}", command);
             return 0;
         }
@@ -707,18 +706,36 @@ impl Engine3d {
         }
     }
 
-    fn refill_gx_pipe(&mut self, arm9: &mut Arm9<impl cpu::Engine>, empty: usize) {
-        if self.gx_pipe.len() > 2 {
+    fn refill_gx_pipe_and_update_gx_fifo(emu: &mut Emu<impl cpu::Engine>, empty: usize) {
+        if emu.gpu.engine_3d.gx_pipe.len() > 2 {
             return;
         }
-        for _ in (self.gx_pipe.len()..4 - empty).take(self.gx_fifo.len()) {
+        for _ in (emu.gpu.engine_3d.gx_pipe.len()..4 - empty).take(emu.gpu.engine_3d.gx_fifo.len())
+        {
             unsafe {
-                self.gx_pipe.write_unchecked(self.gx_fifo.read_unchecked());
+                emu.gpu
+                    .engine_3d
+                    .gx_pipe
+                    .write_unchecked(emu.gpu.engine_3d.gx_fifo.read_unchecked());
             }
         }
-        self.update_gx_fifo_irq(arm9);
-        if self.gx_fifo_half_empty() {
-            arm9.start_dma_transfers_with_timing::<{ arm9::dma::Timing::GxFifo }>();
+        emu.gpu.engine_3d.update_gx_fifo_irq(&mut emu.arm9);
+        if emu.gpu.engine_3d.gx_fifo_half_empty() {
+            emu.arm9
+                .start_dma_transfers_with_timing::<{ arm9::dma::Timing::GxFifo }>();
+        }
+
+        let was_stalled = emu.gpu.engine_3d.gx_fifo_stalled;
+        emu.gpu.engine_3d.gx_fifo_stalled &= emu.gpu.engine_3d.gx_fifo.len() > 256;
+        if was_stalled
+            && !emu.gpu.engine_3d.gx_fifo_stalled
+            && emu
+                .arm9
+                .schedule
+                .schedule()
+                .is_scheduled(arm9::event_slots::GX_FIFO)
+        {
+            emu.arm9.schedule.cancel_event(arm9::event_slots::GX_FIFO);
         }
     }
 
@@ -780,7 +797,7 @@ impl Engine3d {
                 >> 9)
                 .max(0);
             if shininess_level >= 0x200 {
-                shininess_level = 0x400 - shininess_level;
+                shininess_level = (0x400_i32.wrapping_sub(shininess_level)) & 0x1FF;
             }
             shininess_level = (((shininess_level * shininess_level) >> 9) - 0x100).max(0);
 
@@ -1262,6 +1279,7 @@ impl Engine3d {
                 };
             }
 
+            let prev_gx_pipe_len = emu.gpu.engine_3d.gx_pipe.len();
             let FifoEntry {
                 command,
                 param: first_param,
@@ -1271,7 +1289,7 @@ impl Engine3d {
                 unsafe {
                     read_from_gx_pipe!();
                 }
-                emu.gpu.engine_3d.refill_gx_pipe(&mut emu.arm9, 0);
+                Self::refill_gx_pipe_and_update_gx_fifo(emu, (prev_gx_pipe_len ^ 1) & 1);
                 continue;
             }
 
@@ -1282,7 +1300,6 @@ impl Engine3d {
             }
 
             emu.gpu.engine_3d.gx_status.set_busy(true);
-            let prev_gx_pipe_len = emu.gpu.engine_3d.gx_pipe.len();
 
             unsafe {
                 read_from_gx_pipe!();
@@ -1810,6 +1827,9 @@ impl Engine3d {
                 0x50 => {
                     // SWAP_BUFFERS
                     emu.gpu.engine_3d.swap_buffers_attrs = SwapBuffersAttrs(first_param as u8);
+
+                    Self::refill_gx_pipe_and_update_gx_fifo(emu, (prev_gx_pipe_len ^ 1) & 1);
+
                     // Gets unlocked by the GPU when VBlank starts
                     emu.gpu.engine_3d.command_finish_time.0 = RawTimestamp::MAX;
                     return;
@@ -1861,14 +1881,13 @@ impl Engine3d {
                 _ => {}
             }
 
-            emu.gpu.engine_3d.refill_gx_pipe(
-                &mut emu.arm9,
+            Self::refill_gx_pipe_and_update_gx_fifo(
+                emu,
                 (prev_gx_pipe_len ^ params.max(1) as usize) & 1,
             );
 
             emu.gpu.engine_3d.command_finish_time.0 =
                 emu::Timestamp::from(arm9::Timestamp(emu.arm9.schedule.cur_time().0 + 1)).0 + 10;
-            emu.gpu.engine_3d.gx_fifo_stalled &= emu.gpu.engine_3d.gx_fifo.len() > 256;
             if emu.gpu.engine_3d.gx_fifo_stalled() {
                 emu.schedule.schedule_event(
                     emu::event_slots::ENGINE_3D,

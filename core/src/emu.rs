@@ -597,43 +597,47 @@ macro_rules! run {
                 );
             }
         )*
-        if $emu.gpu.engine_3d.gx_fifo_stalled() {
-            <$engine>::Arm9Data::run_stalled_until($emu, batch_end_time.into());
-            <$engine>::Arm7Data::run_stalled_until($emu, batch_end_time.into());
-        } else {
-            macro_rules! run_core {
-                ($core: expr, $engine_data: ty, $after_run: expr) => {
-                    #[cfg(feature = "debugger-hooks")]
-                    let is_stopped = $core.is_stopped;
-                    #[cfg(not(feature = "debugger-hooks"))]
-                    let is_stopped = false;
-                    if is_stopped {
-                        $core.schedule.set_cur_time(batch_end_time.into());
-                    } else {
-                        <$engine_data>::run_until($emu, batch_end_time.into());
-                        $after_run
-                    }
-                };
-            }
-            run_core!($emu.arm9, <$engine>::Arm9Data, {
-                batch_end_time = batch_end_time.min(Timestamp::from($emu.arm9.schedule.cur_time()));
-                $(
-                    #[cfg(feature = "debugger-hooks")]
-                    {
-                        $cycles[1] -= batch_end_time.0 - batch_start_time.0;
-                    }
-                )*
-            });
-            run_core!($emu.arm7, <$engine>::Arm7Data, {
-                batch_end_time = batch_end_time.min(Timestamp::from($emu.arm7.schedule.cur_time()));
-                $(
-                    #[cfg(feature = "debugger-hooks")]
-                    {
-                        $cycles[0] -= batch_end_time.0 - batch_start_time.0;
-                    }
-                )*
-            });
+
+        macro_rules! run_core {
+            ($core: expr, $engine_data: ty, $run: expr) => {
+                #[cfg(feature = "debugger-hooks")]
+                let is_stopped = $core.is_stopped;
+                #[cfg(not(feature = "debugger-hooks"))]
+                let is_stopped = false;
+                if is_stopped {
+                    $core.schedule.set_cur_time(batch_end_time.into());
+                } else {
+                    $run
+                }
+            };
         }
+
+        run_core!($emu.arm9, <$engine>::Arm9Data, {
+            if $emu.gpu.engine_3d.gx_fifo_stalled() {
+                <$engine>::Arm9Data::run_stalled_until($emu, batch_end_time.into());
+            } else {
+                <$engine>::Arm9Data::run_until($emu, batch_end_time.into());
+                batch_end_time = batch_end_time.min(Timestamp::from($emu.arm9.schedule.cur_time()));
+            }
+            $(
+                #[cfg(feature = "debugger-hooks")]
+                {
+                    $cycles[1] -= batch_end_time.0 - batch_start_time.0;
+                }
+            )*
+        });
+
+        run_core!($emu.arm7, <$engine>::Arm7Data, {
+            <$engine>::Arm7Data::run_until($emu, batch_end_time.into());
+            batch_end_time = batch_end_time.min(Timestamp::from($emu.arm7.schedule.cur_time()));
+            $(
+                #[cfg(feature = "debugger-hooks")]
+                {
+                    $cycles[0] -= batch_end_time.0 - batch_start_time.0;
+                }
+            )*
+        });
+
         $emu.schedule.set_cur_time(batch_end_time);
         while let Some((event, time)) = $emu.schedule.pop_pending_event() {
             match event {

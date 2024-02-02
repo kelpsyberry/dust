@@ -160,7 +160,7 @@ impl Engine3d {
 
             0x340 => {
                 if emu.gpu.engine_3d.rendering_enabled {
-                    emu.gpu.engine_3d.rendering_state.alpha_test_ref = value;
+                    emu.gpu.engine_3d.rendering_state.alpha_test_ref = value & 0x1F;
                 }
             }
 
@@ -318,7 +318,7 @@ impl Engine3d {
 
             0x340 => {
                 if emu.gpu.engine_3d.rendering_enabled {
-                    emu.gpu.engine_3d.rendering_state.alpha_test_ref = value as u8;
+                    emu.gpu.engine_3d.rendering_state.alpha_test_ref = value as u8 & 0x1F;
                 }
             }
 
@@ -439,7 +439,7 @@ impl Engine3d {
 
             0x340 => {
                 if emu.gpu.engine_3d.rendering_enabled {
-                    emu.gpu.engine_3d.rendering_state.alpha_test_ref = value as u8;
+                    emu.gpu.engine_3d.rendering_state.alpha_test_ref = value as u8 & 0x1F;
                 }
             }
 
