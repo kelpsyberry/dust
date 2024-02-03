@@ -6,7 +6,6 @@ publish = false
 
 [features]
 log = ["slog"]
-disasm = []
 
 # Bus fallback toggling (to temporarily switch to slow memory handlers for breakpoint checking or
 # JIT block invalidation)
@@ -25,6 +24,8 @@ interp-r15-write-checks = []
 
 3d-hi-res-coords = []
 
+disasm = []
+serde = ["dep:serde"]
 xq-audio = []
 channel-audio-capture = []
 debugger-hooks = ["bft-r", "bft-w"]
@@ -35,7 +36,7 @@ proc-bitfield = { version = "0.3", features = ["nightly"] }
 bitflags = "2.4"
 cfg-if = "1.0"
 slog = { version = "2.7", optional = true }
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"], optional = true }
 
 [build-dependencies]
 arm-decoder = { git = "https://github.com/kelpsyberry/arm-decoder" }

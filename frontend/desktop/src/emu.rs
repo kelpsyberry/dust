@@ -1,5 +1,6 @@
 #[cfg(feature = "dldi")]
 mod dldi;
+pub mod ds_slot_rom;
 #[cfg(feature = "gdb-server")]
 mod gdb_server;
 mod rtc;
@@ -7,7 +8,8 @@ pub mod soft_renderer_3d;
 
 #[cfg(feature = "debug-views")]
 use super::debug_views;
-use crate::{audio, config::SysFiles, game_db::SaveType, input, DsSlotRom, FrameData};
+use crate::{audio, config::SysFiles, game_db::SaveType, input, FrameData};
+use ds_slot_rom::DsSlotRom;
 #[cfg(feature = "xq-audio")]
 use dust_core::audio::{Audio, ChannelInterpMethod as AudioChannelInterpMethod};
 use dust_core::{

@@ -19,8 +19,11 @@ use crate::debug_views;
 use crate::{
     audio,
     config::{self, Launch, Renderer2dKind, Renderer3dKind},
-    ds_slot_rom::{self, DsSlotRom},
-    emu, game_db, input,
+    emu::{
+        self,
+        ds_slot_rom::{self, DsSlotRom},
+    },
+    game_db, input,
     utils::{base_dirs, Lazy},
     FrameData,
 };
@@ -926,7 +929,7 @@ pub fn main() {
     #[cfg(feature = "logging")]
     let log = Log::new(&config.config);
 
-    let mut window_builder = futures_executor::block_on(window::Builder::new(
+    let mut window_builder = pollster::block_on(window::Builder::new(
         "Dust",
         wgpu::Features::empty(),
         window::AdapterSelection::Auto(wgpu::PowerPreference::LowPower),

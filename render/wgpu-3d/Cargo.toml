@@ -10,7 +10,7 @@ threaded = ["emu-utils", "crossbeam-channel", "parking_lot"]
 [dependencies]
 dust-core = { path = "../../core", features = ["3d-hi-res-coords"] }
 dust-soft-3d = { path = "../soft-3d" }
-emu-utils = { git = "https://github.com/kelpsyberry/emu-utils", features = ["std"], optional = true}
+emu-utils = { git = "https://github.com/kelpsyberry/emu-utils", features = ["triple-buffer"], optional = true}
 proc-bitfield = { version = "0.3", features = ["nightly"] }
 ahash = "0.8"
 wgpu = "0.19"

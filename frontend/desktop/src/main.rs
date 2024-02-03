@@ -28,8 +28,6 @@ mod config;
 mod audio;
 #[cfg(feature = "debug-views")]
 mod debug_views;
-mod ds_slot_rom;
-use ds_slot_rom::DsSlotRom;
 mod frame_data;
 use frame_data::FrameData;
 mod game_db;
@@ -39,6 +37,6 @@ mod emu;
 mod ui;
 
 fn main() {
-    emu_utils::setup_current_dir();
+    emu_utils::app::setup_current_dir();
     ui::main();
 }

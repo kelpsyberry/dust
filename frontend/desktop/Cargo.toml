@@ -31,8 +31,8 @@ interp-r15-write-checks = ["dust-core/interp-r15-write-checks"]
 xq-audio = ["dust-core/xq-audio"]
 
 [dependencies]
-dust-core = { path = "../../core" }
-emu-utils = { git = "https://github.com/kelpsyberry/emu-utils", features = ["std"] }
+dust-core = { path = "../../core", features = ["serde"] }
+emu-utils = { git = "https://github.com/kelpsyberry/emu-utils", features = ["triple-buffer", "app"] }
 dust-soft-2d = { path = "../../render/soft-2d", features = ["threaded"] }
 dust-soft-3d = { path = "../../render/soft-3d" }
 dust-wgpu-2d = { path = "../../render/wgpu-2d" }
@@ -56,7 +56,7 @@ libc = "0.2"
 
 # Utils
 ahash = "0.8"
-futures-executor = "0.3"
+pollster = "0.3"
 crossbeam-channel = "0.5"
 parking_lot = "0.12"
 bitflags = "2.4"
