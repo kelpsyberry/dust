@@ -766,16 +766,18 @@ pub(super) fn run(
         let frame = frame_tx.current();
 
         if playing {
+            #[cfg(not(feature = "gdb-server"))]
+            let run_output = emu.run();
             #[cfg(feature = "gdb-server")]
-            let mut run_forever = [0; 2];
-            match emu.run(
-                #[cfg(feature = "gdb-server")]
-                if let Some(gdb_server) = &mut gdb_server {
+            let run_output = {
+                let mut run_forever = [0; 2];
+                emu.run_with_cycles(if let Some(gdb_server) = &mut gdb_server {
                     &mut gdb_server.remaining_step_cycles
                 } else {
                     &mut run_forever
-                },
-            ) {
+                })
+            };
+            match run_output {
                 RunOutput::FrameFinished => {}
                 RunOutput::Shutdown => {
                     notif!(Notification::Stopped);

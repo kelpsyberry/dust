@@ -691,35 +691,32 @@ impl<E: cpu::Engine> Emu<E> {
         }
     }
 
+    #[cfg(feature = "debugger-hooks")]
     #[inline(never)]
-    pub fn run(
-        &mut self,
-        #[cfg(feature = "debugger-hooks")] cycles: &mut [RawTimestamp; 2],
-    ) -> RunOutput {
-        #[cfg(feature = "debugger-hooks")]
-        let frame_starting = core::mem::replace(&mut self.frame_finished, false);
-        #[cfg(not(feature = "debugger-hooks"))]
-        let frame_starting = true;
-        if frame_starting {
+    pub fn run_with_cycles(&mut self, cycles: &mut [RawTimestamp; 2]) -> RunOutput {
+        if core::mem::replace(&mut self.frame_finished, false) {
             self.spi.tsc.start_frame(self.schedule.cur_time());
         }
-        #[cfg(feature = "debugger-hooks")]
-        {
-            if (cycles[0] != 0 && !self.arm7.is_stopped)
-                || (cycles[1] != 0 && !self.arm9.is_stopped)
-            {
-                self.arm7.was_stopped_by_debug_hook = false;
-                self.arm9.was_stopped_by_debug_hook = false;
-                let mut new_cycles = cycles.map(|c| if c == 0 { RawTimestamp::MAX } else { c });
-                let output = self.run_for_cycles(&mut new_cycles);
-                for i in 0..2 {
-                    if cycles[i] != 0 {
-                        cycles[i] = new_cycles[i];
-                    }
+        if (cycles[0] != 0 && !self.arm7.is_stopped) || (cycles[1] != 0 && !self.arm9.is_stopped) {
+            self.arm7.was_stopped_by_debug_hook = false;
+            self.arm9.was_stopped_by_debug_hook = false;
+            let mut new_cycles = cycles.map(|c| if c == 0 { RawTimestamp::MAX } else { c });
+            let output = self.run_for_cycles(&mut new_cycles);
+            for i in 0..2 {
+                if cycles[i] != 0 {
+                    cycles[i] = new_cycles[i];
                 }
-                return output;
             }
+            return output;
         }
+        loop {
+            run!(self, E);
+        }
+    }
+
+    #[inline(never)]
+    pub fn run(&mut self) -> RunOutput {
+        self.spi.tsc.start_frame(self.schedule.cur_time());
         loop {
             run!(self, E);
         }
