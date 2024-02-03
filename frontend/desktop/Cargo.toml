@@ -40,14 +40,14 @@ dust-wgpu-3d = { path = "../../render/wgpu-3d", features = ["threaded"] }
 
 # UI
 winit = { version = "0.29", features = ["serde"] }
-wgpu = { git = "https://github.com/gfx-rs/wgpu" }
+wgpu = "0.19"
 imgui = { version = "0.11", features = ["docking", "tables-api"] }
 imgui-winit-support = { git = "https://github.com/kelpsyberry/imgui-rs" }
 imgui-wgpu = { git = "https://github.com/kelpsyberry/imgui-wgpu" }
 opener = "0.6"
 
 # System resources
-rfd = "0.12"
+rfd = "0.13"
 directories = "5.0"
 copypasta = "0.10"
 cpal = "0.15"
