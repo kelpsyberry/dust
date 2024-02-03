@@ -42,6 +42,14 @@ impl Engine3d {
             0x606 => (self.poly_vert_ram_level().0 >> 16) as u8,
             0x607 => (self.poly_vert_ram_level().0 >> 24) as u8,
 
+            0x620..=0x62F => {
+                (self.pos_test_result[addr as usize >> 2 & 3] >> ((addr & 3) << 3)) as u8
+            }
+
+            0x630..=0x635 => {
+                (self.vec_test_result[addr as usize >> 1 & 3] >> ((addr & 1) << 3)) as u8
+            }
+
             0x640..=0x67F => {
                 if self.clip_mtx_needs_recalculation {
                     self.update_clip_mtx();
@@ -83,7 +91,13 @@ impl Engine3d {
             0x604 => self.poly_vert_ram_level().0 as u16,
             0x606 => (self.poly_vert_ram_level().0 >> 16) as u16,
 
-            0x640..=0x67F => {
+            0x620..=0x62E => {
+                (self.pos_test_result[addr as usize >> 2 & 3] >> ((addr & 2) << 3)) as u16
+            }
+
+            0x630..=0x634 => self.vec_test_result[addr as usize >> 1 & 3],
+
+            0x640..=0x67E => {
                 if self.clip_mtx_needs_recalculation {
                     self.update_clip_mtx();
                 }
@@ -121,6 +135,11 @@ impl Engine3d {
 
             0x600 => self.gx_status().0,
             0x604 => self.poly_vert_ram_level().0,
+
+            0x620..=0x62C => self.pos_test_result[addr as usize >> 2 & 3],
+
+            0x630 => self.vec_test_result[0] as u32 | (self.vec_test_result[1] as u32) << 16,
+            0x634 => self.vec_test_result[2] as u32,
 
             0x640..=0x67F => {
                 if self.clip_mtx_needs_recalculation {

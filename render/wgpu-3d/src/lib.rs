@@ -20,7 +20,6 @@ use ahash::AHashMap as HashMap;
 use core::{
     mem::{self, MaybeUninit},
     simd::num::SimdUint,
-    // simd::u16x2,
     slice,
 };
 use dust_core::gpu::engine_3d::{Color, Polygon, RenderingControl, ScreenVertex, TextureParams};

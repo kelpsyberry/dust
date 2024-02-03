@@ -368,8 +368,7 @@ impl Editor {
                     {
                         let cell_base_height_with_padding =
                             cell_base_height + cell_padding[1] * 2.0;
-                        let create_button_height =
-                            cell_base_height_with_padding + text_line_height * 2.0;
+                        let create_button_height = cell_base_height_with_padding + text_line_height;
                         match self.entries.len() {
                             0 => create_button_height,
                             1 => cell_base_height_with_padding + text_heights[0],
@@ -607,7 +606,7 @@ impl Editor {
                                 + text_heights
                                     .get(self.entries.len() >> 1)
                                     .copied()
-                                    .unwrap_or(2.0 * text_line_height);
+                                    .unwrap_or(text_line_height);
 
                             entry_layout!(
                                 cell_height,

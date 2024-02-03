@@ -16,10 +16,11 @@ use crate::{
     utils::{load_slice_in_place, schedule::RawTimestamp, store_slice, Fifo, Savestate},
 };
 use core::{
+    intrinsics::simd::simd_div,
     mem::{replace, transmute, MaybeUninit},
     simd::{
         cmp::SimdOrd,
-        i32x4,
+        i32x4, i64x4,
         num::{SimdInt, SimdUint},
         u32x2, u64x2,
     },
@@ -252,6 +253,9 @@ pub struct Engine3d {
     queued_mtx_stack_cmds: u16,
     queued_test_cmd_entries: u16,
 
+    vec_test_result: [u16; 3],
+    pos_test_result: [u32; 4],
+
     swap_buffers_attrs: SwapBuffersAttrs,
 
     mtx_mode: MatrixMode,
@@ -360,6 +364,60 @@ static CMD_PARAMS: [u8; 0x100] = {
     params
 };
 
+trait Clip {
+    type Output;
+    fn coords(&self) -> i32x4;
+    fn coords_mut(&mut self) -> &mut i32x4;
+    fn interpolate(&self, other: &Self, numer: i64, denom: i64) -> Self;
+    fn output(clipped_verts_len: usize, clipped: bool) -> Self::Output;
+}
+
+impl Clip for Vertex {
+    type Output = (PolyVertsLen, bool);
+    #[inline]
+    fn coords(&self) -> i32x4 {
+        self.coords
+    }
+    #[inline]
+    fn coords_mut(&mut self) -> &mut i32x4 {
+        &mut self.coords
+    }
+    #[inline]
+    fn interpolate(&self, other: &Self, numer: i64, denom: i64) -> Self {
+        self.interpolate(other, numer, denom)
+    }
+    #[inline]
+    fn output(clipped_verts_len: usize, clipped: bool) -> Self::Output {
+        (PolyVertsLen::new(clipped_verts_len as u8), clipped)
+    }
+}
+
+impl Clip for i32x4 {
+    type Output = ();
+    #[inline]
+    fn coords(&self) -> i32x4 {
+        *self
+    }
+    #[inline]
+    fn coords_mut(&mut self) -> &mut i32x4 {
+        self
+    }
+    #[inline]
+    fn interpolate(&self, other: &Self, numer: i64, denom: i64) -> Self {
+        *self
+            + unsafe {
+                // Safety: denom != 0 && numer != i64::MIN
+                simd_div(
+                    (other.cast::<i64>() - self.cast::<i64>()) * i64x4::splat(numer),
+                    i64x4::splat(denom),
+                )
+            }
+            .cast()
+    }
+    #[inline]
+    fn output(_clipped_verts_len: usize, _clipped: bool) -> Self::Output {}
+}
+
 impl Engine3d {
     pub(super) fn new(
         renderer_tx: Box<dyn RendererTx>,
@@ -396,6 +454,9 @@ impl Engine3d {
             gx_fifo_stalled: false,
             queued_mtx_stack_cmds: 0,
             queued_test_cmd_entries: 0,
+
+            pos_test_result: [0; 4],
+            vec_test_result: [0; 3],
 
             swap_buffers_attrs: SwapBuffersAttrs(0),
 
@@ -886,29 +947,20 @@ impl Engine3d {
         }
     }
 
-    fn clip_and_submit_polygon(&mut self) {
+    #[inline]
+    fn clip_polygon<V: Clip + Copy>(
+        &self,
+        verts: &[V],
+        shared_verts_len: usize,
+        clip_buffer: &mut [MaybeUninit<V>; 10],
+    ) -> Option<V::Output> {
+        // If the last polygon wasn't clipped, then the shared vertices won't need clipping either
         // TODO:
-        // - Check whether </> or <=/>= should be used for the frustum checks
-        // - Check what happens for vertices where the divisor ends up being 0
         // - Maybe use the Cohen-Sutherland algorithm? It'd basically be the same but without
         //   grouping passes, and instead running until there are no points outside the frustum
 
-        let mut clipped_verts_len = self.cur_prim_max_verts.get() as usize;
-
-        let (culled, is_front_facing) = vertex::culled(
-            &self.cur_prim_verts[0],
-            &self.cur_prim_verts[1],
-            &self.cur_prim_verts[2],
-            self.cur_poly_attrs.show_front(),
-            self.cur_poly_attrs.show_back(),
-        );
-        if culled {
-            self.connect_to_last_strip_prim = false;
-            return;
-        }
-
-        // If the last polygon wasn't clipped, then the shared vertices won't need clipping either
-        let shared_verts = (self.connect_to_last_strip_prim as usize) << 1;
+        let mut clipped_verts_len = verts.len();
+        let mut clipped = false;
 
         macro_rules! interpolate {
             (
@@ -920,8 +972,8 @@ impl Engine3d {
                 ($compare: expr, $numer: expr, $coord_diff: expr,),
             ) => {
                 let other = $other;
-                let $other_coord = other.coords[$axis_i] as i64;
-                let $other_w = other.coords[3] as i64;
+                let $other_coord = other.coords()[$axis_i] as i64;
+                let $other_w = other.coords()[3] as i64;
                 if $compare {
                     // For the positive side of the frustum:
                     //          w0 - x0
@@ -939,8 +991,8 @@ impl Engine3d {
                     #[allow(clippy::neg_multiply)]
                     if denom != 0 {
                         let mut vert = $vert.interpolate($other, $numer, denom);
-                        vert.coords[$axis_i] = $sign * vert.coords[3];
-                        $output[clipped_verts_len] = MaybeUninit::new(vert);
+                        vert.coords_mut()[$axis_i] = $sign * vert.coords()[3];
+                        *$output.get_unchecked_mut(clipped_verts_len) = MaybeUninit::new(vert);
                         clipped_verts_len += 1;
                     }
                 }
@@ -949,21 +1001,26 @@ impl Engine3d {
 
         macro_rules! run_clip_pass {
             ($axis_i: expr, $clip_far: expr, $input: expr$(, $assume_init: ident)? => $output: expr) => {
-                let input_len = replace(&mut clipped_verts_len, shared_verts);
-                for (i, vert) in $input[..input_len].iter().enumerate().skip(shared_verts) {
+                let input_len = replace(&mut clipped_verts_len, shared_verts_len);
+                for (i, vert) in $input
+                    .get_unchecked(..input_len)
+                    .iter()
+                    .enumerate()
+                    .skip(shared_verts_len)
+                {
                     $(let vert = vert.$assume_init();)*
-                    let coord = vert.coords[$axis_i] as i64;
-                    let w = vert.coords[3] as i64;
+                    let coord = vert.coords()[$axis_i] as i64;
+                    let w = vert.coords()[3] as i64;
                     if coord > w {
                         if !$clip_far {
-                            return;
+                            return None;
                         }
-                        self.connect_to_last_strip_prim = false;
+                        clipped = true;
                         interpolate!(
                             $axis_i,
                             $output,
                             (vert, coord, w, 1),
-                            (&$input[if i == 0 { input_len - 1 } else { i - 1 }])
+                            $input.get_unchecked(if i == 0 { input_len - 1 } else { i - 1 })
                                 $(.$assume_init())*,
                             |other_coord, other_w| (
                                 other_coord <= other_w,
@@ -975,7 +1032,7 @@ impl Engine3d {
                             $axis_i,
                             $output,
                             (vert, coord, w, 1),
-                            (&$input[if i + 1 == input_len { 0 } else { i + 1 }])
+                            $input.get_unchecked(if i + 1 == input_len { 0 } else { i + 1 })
                                 $(.$assume_init())*,
                             |other_coord, other_w| (
                                 other_coord <= other_w,
@@ -984,12 +1041,12 @@ impl Engine3d {
                             ),
                         );
                     } else if coord < -w {
-                        self.connect_to_last_strip_prim = false;
+                        clipped = true;
                         interpolate!(
                             $axis_i,
                             $output,
                             (vert, coord, w, -1),
-                            (&$input[if i == 0 { input_len - 1 } else { i - 1 }])
+                            $input.get_unchecked(if i == 0 { input_len - 1 } else { i - 1 })
                                 $(.$assume_init())*,
                             |other_coord, other_w| (
                                 other_coord >= -other_w,
@@ -1001,7 +1058,7 @@ impl Engine3d {
                             $axis_i,
                             $output,
                             (vert, coord, w, -1),
-                            (&$input[if i + 1 == input_len { 0 } else { i + 1 }])
+                            $input.get_unchecked(if i + 1 == input_len { 0 } else { i + 1 })
                                 $(.$assume_init())*,
                             |other_coord, other_w| (
                                 other_coord >= -other_w,
@@ -1010,15 +1067,72 @@ impl Engine3d {
                             ),
                         );
                     } else {
-                        $output[clipped_verts_len] = MaybeUninit::new(*vert);
+                        *$output.get_unchecked_mut(clipped_verts_len) = MaybeUninit::new(*vert);
                         clipped_verts_len += 1;
                     }
                 }
                 if clipped_verts_len == 0 {
-                    self.connect_to_last_strip_prim = false;
-                    return;
+                    return None;
                 }
             };
+        }
+
+        // Safety:
+        // - Assumes that shared_verts_len == 0 or 2
+        // - Assumes that verts.len() == 3 or 4
+        // - Assumes that the clipped vertices will not exceed 10 (guaranteed geometrically)
+        let mut buffer_1 = MaybeUninit::uninit_array::<10>();
+        unsafe {
+            for i in 0..shared_verts_len {
+                *clip_buffer.get_unchecked_mut(i) = MaybeUninit::new(*verts.get_unchecked(i));
+                *buffer_1.get_unchecked_mut(i) = MaybeUninit::new(*verts.get_unchecked(i));
+            }
+            run_clip_pass!(2, self.cur_poly_attrs.clip_far_plane(), verts => clip_buffer);
+            run_clip_pass!(1, true, clip_buffer, assume_init_ref => buffer_1);
+            run_clip_pass!(0, true, buffer_1, assume_init_ref => clip_buffer);
+        }
+        Some(V::output(clipped_verts_len, clipped))
+    }
+
+    fn clip_and_submit_polygon(&mut self) {
+        // TODO:
+        // - Check whether </> or <=/>= should be used for the frustum checks
+        // - Check what happens for vertices where the divisor ends up being 0
+
+        let (culled, is_front_facing) = vertex::culled(
+            &self.cur_prim_verts[0],
+            &self.cur_prim_verts[1],
+            &self.cur_prim_verts[2],
+            self.cur_poly_attrs.show_front(),
+            self.cur_poly_attrs.show_back(),
+        );
+        if culled {
+            self.connect_to_last_strip_prim = false;
+            return;
+        }
+
+        let shared_verts_len = (self.connect_to_last_strip_prim as usize) << 1;
+        let mut clip_buffer = MaybeUninit::uninit_array::<10>();
+        let Some((clipped_verts_len, clipped)) = self.clip_polygon(
+            &self.cur_prim_verts[..self.cur_prim_max_verts.get() as usize],
+            shared_verts_len,
+            &mut clip_buffer,
+        ) else {
+            self.connect_to_last_strip_prim = false;
+            return;
+        };
+        let clipped_verts = unsafe {
+            MaybeUninit::slice_assume_init_mut(&mut clip_buffer[..clipped_verts_len.get() as usize])
+        };
+
+        if self.vert_ram_level as usize
+            > self.vert_ram.len() - (clipped_verts_len.get() as usize - shared_verts_len)
+        {
+            self.rendering_state
+                .control
+                .set_poly_vert_ram_overflow(true);
+            self.connect_to_last_strip_prim = false;
+            return;
         }
 
         let connect_to_last_strip_prim = replace(
@@ -1026,29 +1140,8 @@ impl Engine3d {
             matches!(
                 self.cur_prim_type,
                 PrimitiveType::TriangleStrip | PrimitiveType::QuadStrip
-            ),
+            ) && !clipped,
         );
-        let mut buffer_0 = MaybeUninit::uninit_array::<10>();
-        let mut buffer_1 = MaybeUninit::uninit_array::<10>();
-        for i in 0..shared_verts {
-            buffer_0[i] = MaybeUninit::new(self.cur_prim_verts[i]);
-            buffer_1[i] = MaybeUninit::new(self.cur_prim_verts[i]);
-        }
-        run_clip_pass!(2, self.cur_poly_attrs.clip_far_plane(), self.cur_prim_verts => buffer_0);
-        unsafe {
-            run_clip_pass!(1, true, buffer_0, assume_init_ref => buffer_1);
-            run_clip_pass!(0, true, buffer_1, assume_init_ref => buffer_0);
-        }
-        let clipped_verts =
-            unsafe { MaybeUninit::slice_assume_init_mut(&mut buffer_0[..clipped_verts_len]) };
-
-        if self.vert_ram_level as usize > self.vert_ram.len() - (clipped_verts_len - shared_verts) {
-            self.rendering_state
-                .control
-                .set_poly_vert_ram_overflow(true);
-            self.connect_to_last_strip_prim = false;
-            return;
-        }
 
         let is_translucent = matches!(self.cur_poly_attrs.alpha(), 1..=30)
             || (matches!(self.cur_poly_attrs.mode(), 0 | 2)
@@ -1059,7 +1152,7 @@ impl Engine3d {
         poly.tex_palette_base = self.tex_palette_base;
         poly.tex_params = self.tex_params;
         poly.attrs = RenderingPolygonAttrs(self.cur_poly_attrs.0)
-            .with_verts_len(PolyVertsLen::new(clipped_verts_len as u8))
+            .with_verts_len(clipped_verts_len)
             .with_is_front_facing(is_front_facing)
             .with_is_translucent(is_translucent);
 
@@ -1072,9 +1165,9 @@ impl Engine3d {
 
         let viewport_origin = self.viewport_origin;
         let viewport_size = self.viewport_size;
-        for (vert, vert_addr) in clipped_verts[shared_verts..]
+        for (vert, vert_addr) in clipped_verts[shared_verts_len..]
             .iter_mut()
-            .zip(&mut poly.verts[shared_verts..clipped_verts_len])
+            .zip(&mut poly.verts[shared_verts_len..clipped_verts_len.get() as usize])
         {
             vert.coords[3] &= 0x00FF_FFFF;
             let w = vert.coords[3] as u32;
@@ -1091,8 +1184,14 @@ impl Engine3d {
                     w >>= 1;
                     coords >>= u32x2::splat(1);
                 }
-                (((coords.cast::<u64>() * viewport_size / u64x2::splat((w << 1) as u64))
-                    .cast::<u32>()
+                ((unsafe {
+                    // Safety: w != 0
+                    simd_div(
+                        coords.cast::<u64>() * viewport_size,
+                        u64x2::splat((w << 1) as u64),
+                    )
+                }
+                .cast::<u32>()
                     + viewport_origin)
                     & u32x2::from_array([0x1FF, 0xFF]))
                 .cast::<u16>()
@@ -1116,8 +1215,13 @@ impl Engine3d {
                         w >>= 1;
                         coords >>= u32x2::splat(1);
                     }
-                    ((((coords.cast::<u64>() << u64x2::splat(4)) * viewport_size
-                        / u64x2::splat((w << 1) as u64))
+                    ((unsafe {
+                        // Safety: w != 0
+                        simd_div(
+                            (coords.cast::<u64>() << u64x2::splat(4)) * viewport_size,
+                            u64x2::splat((w << 1) as u64),
+                        )
+                    }
                     .cast::<u32>()
                         + (viewport_origin << u32x2::splat(4)))
                         & u32x2::from_array([0x1FFF, 0xFFF]))
@@ -1131,7 +1235,7 @@ impl Engine3d {
             self.vert_ram_level += 1;
         }
 
-        for &vert_addr in &poly.verts[..shared_verts] {
+        for &vert_addr in &poly.verts[..shared_verts_len] {
             let y = self.vert_ram[vert_addr.get() as usize].coords[1] as u8;
             top_y = top_y.min(y);
             bot_y = bot_y.max(y);
@@ -1188,6 +1292,86 @@ impl Engine3d {
                 _ => {}
             }
         }
+    }
+
+    fn box_test(&mut self, param0: u32, param1: u32, param2: u32) -> bool {
+        if self.clip_mtx_needs_recalculation {
+            self.update_clip_mtx();
+        }
+
+        let start = [param0 as i16, (param0 >> 16) as i16, param1 as i16];
+        let end = [
+            start[0].wrapping_add((param1 >> 16) as i16),
+            start[1].wrapping_add(param2 as i16),
+            start[2].wrapping_add((param2 >> 16) as i16),
+        ];
+        let bounds = [start, end];
+
+        let mut coords = [i32x4::splat(0); 8];
+        for x in 0..2 {
+            for y in 0..2 {
+                for z in 0..2 {
+                    coords[x << 2 | y << 1 | z] = self.cur_clip_mtx.mul_left_vec3::<i16, i32>([
+                        bounds[x][0],
+                        bounds[y][1],
+                        bounds[z][2],
+                    ]);
+                }
+            }
+        }
+
+        let mut clip_buffer = MaybeUninit::uninit_array::<10>();
+
+        for x in 0..2 {
+            if self
+                .clip_polygon(
+                    &[
+                        coords[x << 2],
+                        coords[x << 2 | 1],
+                        coords[x << 2 | 3],
+                        coords[x << 2 | 2],
+                    ],
+                    0,
+                    &mut clip_buffer,
+                )
+                .is_some()
+            {
+                return true;
+            }
+        }
+
+        for y in 0..2 {
+            if self
+                .clip_polygon(
+                    &[
+                        coords[y << 1],
+                        coords[y << 1 | 1],
+                        coords[y << 1 | 5],
+                        coords[y << 1 | 4],
+                    ],
+                    0,
+                    &mut clip_buffer,
+                )
+                .is_some()
+            {
+                return true;
+            }
+        }
+
+        for z in 0..2 {
+            if self
+                .clip_polygon(
+                    &[coords[z], coords[z | 2], coords[z | 6], coords[z | 4]],
+                    0,
+                    &mut clip_buffer,
+                )
+                .is_some()
+            {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub(super) fn swap_buffers_waiting(&self) -> bool {
@@ -1868,28 +2052,63 @@ impl Engine3d {
                 }
 
                 0x70 => {
-                    // TODO: BOX_TEST
-                    emu.gpu.engine_3d.gx_status.set_box_test_result(true);
-                    for _ in 1..3 {
-                        unsafe {
-                            read_from_gx_pipe!();
-                        }
-                    }
+                    // BOX_TEST
+
+                    let result = unsafe {
+                        let second_param = read_from_gx_pipe!().param;
+                        let third_param = read_from_gx_pipe!().param;
+                        emu.gpu
+                            .engine_3d
+                            .box_test(first_param, second_param, third_param)
+                    };
+                    emu.gpu.engine_3d.gx_status.set_box_test_result(result);
+
                     dequeue_test_cmd_entries!(3);
                 }
 
                 0x71 => {
-                    // TODO: POS_TEST
-                    for _ in 1..2 {
-                        unsafe {
-                            read_from_gx_pipe!();
-                        }
+                    // POS_TEST
+
+                    if emu.gpu.engine_3d.clip_mtx_needs_recalculation {
+                        emu.gpu.engine_3d.update_clip_mtx();
                     }
+
+                    let second_param = unsafe { read_from_gx_pipe!() }.param;
+                    emu.gpu.engine_3d.last_vtx_coords = [
+                        first_param as i16,
+                        (first_param >> 16) as i16,
+                        second_param as i16,
+                    ];
+                    let transformed_coords = emu
+                        .gpu
+                        .engine_3d
+                        .cur_clip_mtx
+                        .mul_left_vec3::<i16, i32>(emu.gpu.engine_3d.last_vtx_coords);
+                    emu.gpu.engine_3d.pos_test_result = transformed_coords.cast().to_array();
+
                     dequeue_test_cmd_entries!(2);
                 }
 
                 0x72 => {
-                    // TODO: VEC_TEST
+                    // VEC_TEST
+
+                    let normal = [
+                        (first_param as i16) << 6 >> 6,
+                        (first_param >> 4) as i16 >> 6,
+                        (first_param >> 14) as i16 >> 6,
+                    ];
+                    let transformed_normal = (emu.gpu.engine_3d.cur_pos_vec_mtxs[1]
+                        .mul_left_vec3_zero::<i16, i16, 12>(normal)
+                        << 3
+                        >> 3)
+                        .cast()
+                        .to_array();
+                    emu.gpu.engine_3d.vec_test_result = [
+                        transformed_normal[0],
+                        transformed_normal[1],
+                        transformed_normal[2],
+                    ];
+
                     dequeue_test_cmd_entries!(1);
                 }
 

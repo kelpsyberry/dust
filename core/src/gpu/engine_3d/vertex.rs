@@ -1,9 +1,12 @@
 use crate::utils::Savestate;
-use core::simd::{
-    cmp::SimdPartialEq,
-    i16x2, i32x4, i64x2, i64x4, mask64x4,
-    num::{SimdInt, SimdUint},
-    simd_swizzle, u16x2, u16x4, u8x4,
+use core::{
+    intrinsics::simd::simd_div,
+    simd::{
+        cmp::SimdPartialEq,
+        i16x2, i32x4, i64x2, i64x4, mask64x4,
+        num::{SimdInt, SimdUint},
+        simd_swizzle, u16x2, u16x4, u8x4,
+    },
 };
 
 pub type TexCoords = i16x2;
@@ -36,8 +39,14 @@ impl Vertex {
         macro_rules! interpolate_attr {
             ($ident: ident, $numer: expr, $denom: expr) => {
                 self.$ident
-                    + ((other.$ident.cast::<i64>() - self.$ident.cast::<i64>()) * $numer / $denom)
-                        .cast()
+                    + unsafe {
+                        // Safety: denom != 0 && numer != i64::MIN
+                        simd_div(
+                            (other.$ident.cast::<i64>() - self.$ident.cast::<i64>()) * $numer,
+                            $denom,
+                        )
+                    }
+                    .cast()
             };
         }
         Vertex {
