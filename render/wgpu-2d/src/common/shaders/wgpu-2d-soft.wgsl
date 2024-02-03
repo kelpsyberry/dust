@@ -106,10 +106,10 @@ fn fs_main(
             coeff_b = blend_coeff_b;
         }
         blended_rgb = blend(top_rgb, bot_rgb, coeff_a, coeff_b);
-    } else {
+    } else if top_matches {
         switch color_effect {
             case 1u: {
-                if top_matches && bot_matches {
+                if bot_matches {
                     blended_rgb = blend(top_rgb, bot_rgb, blend_coeff_a, blend_coeff_b);
                 } else {
                     blended_rgb = top_rgb;
@@ -131,6 +131,8 @@ fn fs_main(
                 blended_rgb = top_rgb;
             }
         }
+    } else {
+        blended_rgb = top_rgb;
     }
 
     let brightness_factor = f32(scanline_flags.master_brightness_control & 0x1Fu) * (1.0 / 16.0);
