@@ -1,4 +1,5 @@
 use super::{Action, Map, PressedKey};
+use crate::ui::utils::mul2s;
 use ahash::AHashSet as HashSet;
 use dust_core::emu::input::Keys as EmuKeys;
 use winit::{
@@ -103,7 +104,7 @@ impl State {
                 .abs()
                 .min((self.touchscreen_half_size.height / diff[1]).abs())
                 .min(1.0);
-            diff = diff.map(|v| v * scale);
+            diff = mul2s(diff, scale);
         } else if diff[0].abs() >= self.touchscreen_half_size.width
             || diff[1].abs() >= self.touchscreen_half_size.height
         {

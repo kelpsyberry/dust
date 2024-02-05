@@ -1,6 +1,6 @@
 use super::{common::rgb5_to_rgba8, FrameDataSlot, InstanceableView, Messages, View};
 use crate::ui::{
-    utils::{combo_value, scale_to_fit},
+    utils::{add2, combo_value, scale_to_fit},
     window::Window,
 };
 use dust_core::{
@@ -627,7 +627,7 @@ impl View for BgMaps2d {
                 | BgDisplayMode::LargeBitmap
         ) {
             let window_abs_pos = ui.window_pos();
-            let image_abs_pos = [0, 1].map(|i| window_abs_pos[i] + image_pos[i]);
+            let image_abs_pos = add2(window_abs_pos, image_pos);
             let tiles = [
                 self.data.cur_bg.size[0] as usize >> 3,
                 self.data.cur_bg.size[1] as usize >> 3,
@@ -640,7 +640,7 @@ impl View for BgMaps2d {
 
             if self.show_grid_lines {
                 let draw_list = ui.get_window_draw_list();
-                let image_abs_end_pos = [0, 1].map(|i| image_abs_pos[i] + image_size[i]);
+                let image_abs_end_pos = add2(image_abs_pos, image_size);
                 for x in 0..=tiles[0] {
                     let x_pos = image_abs_pos[0] + x as f32 * tile_size[0];
                     draw_list
@@ -671,8 +671,8 @@ impl View for BgMaps2d {
                         .map(|i| ((mouse_abs_pos[i] - image_abs_pos[i]) / tile_size[i]) as usize);
                     let image = Image::new(self.tex_id, [font_size * 4.0, font_size * 4.0])
                         .border_col(border_color)
-                        .uv0([0, 1].map(|i| tile_pos[i] as f32 / 128.0))
-                        .uv1([0, 1].map(|i| (tile_pos[i] + 1) as f32 / 128.0));
+                        .uv0(tile_pos.map(|pos| pos as f32 / 128.0))
+                        .uv1(tile_pos.map(|pos| (pos + 1) as f32 / 128.0));
                     let map_entry_index = tile_pos[1] * tiles[0] + tile_pos[0];
                     if self.data.cur_bg.display_mode == BgDisplayMode::Affine {
                         ui.text(format!("Tile {:#04X}", self.data.tiles[map_entry_index]));

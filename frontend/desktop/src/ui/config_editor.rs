@@ -2,7 +2,7 @@ macro_rules! modify_configs_mask {
     (
         $ui: expr, $(width $width: expr,)?
         $(icon_tooltip $icon: literal, $tooltip: literal,)?
-        $(label $label: literal,)?
+        $(label $label: expr,)?
         $id: literal,
         $global_enabled: expr, $game_enabled: expr,
         |$global: ident, $game: ident| $process: expr
@@ -60,7 +60,7 @@ macro_rules! modify_configs {
     (
         $ui: expr, $(width $width: expr,)?
         $(icon_tooltip $icon: literal, $tooltip: literal,)?
-        $(label $label: literal,)?
+        $(label $label: expr,)?
         $id: literal,
         $game_enabled: expr, $process_global: expr, $process_game: expr
     ) => {
@@ -112,7 +112,6 @@ mod input_map;
 #[allow(dead_code)]
 mod setting;
 
-use super::{utils::heading, Config, EmuState};
 #[cfg(feature = "logging")]
 use crate::config::LoggingKind;
 #[cfg(target_os = "macos")]
@@ -120,12 +119,15 @@ use crate::config::TitleBarMode;
 use crate::{
     audio,
     config::{self, saves, ModelConfig, Renderer2dKind, Renderer3dKind, Setting as _},
-    ui::utils::combo_value,
+    ui::{
+        utils::{add2, combo_value, heading, heading_options, heading_spacing, sub2},
+        Config, EmuState,
+    },
     utils::HomePathBuf,
 };
 #[cfg(feature = "xq-audio")]
 use dust_core::audio::ChannelInterpMethod as AudioChannelInterpMethod;
-use imgui::{StyleColor, TableColumnFlags, TableColumnSetup, TableFlags, Ui};
+use imgui::{StyleColor, StyleVar, TableColumnFlags, TableColumnSetup, TableFlags, Ui};
 use input_map::Editor as InputMapEditor;
 use rfd::FileDialog;
 use setting::Setting;
@@ -135,6 +137,19 @@ use std::num::NonZeroU32;
 
 struct SettingsData {
     game_loaded: bool,
+    current_help_item: Option<(String, String)>,
+}
+
+impl SettingsData {
+    fn current_help_item_or_default(&self) -> (&str, &str) {
+        match &self.current_help_item {
+            Some((help_path, help_message)) => (help_path.as_str(), help_message.as_str()),
+            None => (
+                "No item selected",
+                "Help for the selected setting will display here.",
+            ),
+        }
+    }
 }
 
 macro_rules! home_path {
@@ -147,11 +162,12 @@ macro_rules! home_path {
 }
 
 macro_rules! opt_home_path {
-    (nonoverridable $id: ident, $is_folder: expr) => {
+    (nonoverridable $id: ident, $placeholder: expr, $is_dir: expr) => {
         setting::OptHomePath::new(
             |config| config!(config, &$id).as_ref(),
             |config, value| set_config!(config, $id, value),
-            $is_folder,
+            $placeholder,
+            $is_dir,
         )
     };
 }
@@ -374,9 +390,8 @@ macro_rules! combo {
 }
 
 macro_rules! nonoverridable {
-    ($label: literal, $id: ident, $inner: ident$(, $($args: tt)*)?) => {
+    ($id: ident, $inner: ident$(, $($args: tt)*)?) => {
         setting::NonOverridable::new(
-            concat!($label, ": "),
             $inner!(nonoverridable $id$(, $($args)*)*),
             |config| config.$id.set_default(),
         )
@@ -384,9 +399,8 @@ macro_rules! nonoverridable {
 }
 
 macro_rules! overridable {
-    ($label: literal, $id: ident, $inner: ident$(, $($args: tt)*)?) => {
+    ($id: ident, $inner: ident$(, $($args: tt)*)?) => {
         setting::Overridable::new(
-            concat!($label, ": "),
             $inner!(overridable $id$(, $($args)*)*),
             |config| config.$id.inner().game().is_some(),
             |config, enabled| {
@@ -404,9 +418,13 @@ macro_rules! overridable {
 }
 
 macro_rules! sys_path {
-    ($label: literal, $field: ident, $is_folder: expr) => {
+    (
+        $field: ident,
+        $placeholder_global: expr,
+        $placeholder_game: expr,
+        $is_dir: expr
+    ) => {
         setting::Overridable::new(
-            concat!($label, ": "),
             (
                 setting::OptHomePath::new(
                     |config| config.sys_paths.inner().global().$field.as_ref(),
@@ -417,7 +435,8 @@ macro_rules! sys_path {
                             })
                         });
                     },
-                    $is_folder,
+                    $placeholder_global,
+                    $is_dir,
                 ),
                 setting::OptHomePath::new(
                     |config| {
@@ -437,7 +456,8 @@ macro_rules! sys_path {
                             })
                         });
                     },
-                    $is_folder,
+                    $placeholder_game,
+                    $is_dir,
                 ),
             ),
             |config| config.sys_paths.inner().game().$field.is_some(),
@@ -487,17 +507,12 @@ struct PathsSettings {
 impl PathsSettings {
     fn new() -> Self {
         PathsSettings {
-            imgui_config_path: nonoverridable!(
-                "ImGui config path",
-                imgui_config_path,
-                opt_home_path,
-                false
-            ),
-            game_db_path: nonoverridable!("Game database path", game_db_path, opt_home_path, false),
-            sys_dir_path: sys_path!("System dir path", dir, true),
-            arm7_bios_path: sys_path!("ARM7 BIOS path", arm7_bios, false),
-            arm9_bios_path: sys_path!("ARM9 BIOS path", arm9_bios, false),
-            firmware_path: sys_path!("Firmware path", firmware, false),
+            imgui_config_path: nonoverridable!(imgui_config_path, opt_home_path, "", false),
+            game_db_path: nonoverridable!(game_db_path, opt_home_path, "", false),
+            sys_dir_path: sys_path!(dir, "", "", true),
+            arm7_bios_path: sys_path!(arm7_bios, "$sys_dir_path/biosnds7.bin", "", false),
+            arm9_bios_path: sys_path!(arm9_bios, "$sys_dir_path/biosnds9.bin", "", false),
+            firmware_path: sys_path!(firmware, "$sys_dir_path/firmware.bin", "", false),
         }
     }
 }
@@ -515,7 +530,6 @@ impl UiSettings {
         UiSettings {
             #[cfg(target_os = "macos")]
             title_bar_mode: nonoverridable!(
-                "Title bar mode",
                 title_bar_mode,
                 combo,
                 &[
@@ -532,13 +546,9 @@ impl UiSettings {
                     .into()
                 }
             ),
-            full_window_screen: overridable!("Full-window screen", full_window_screen, bool),
-            screen_integer_scale: nonoverridable!(
-                "Limit screen size to integer scales",
-                screen_integer_scale,
-                bool
-            ),
-            screen_rot: overridable!("Screen rotation", screen_rot, slider, 0, 359, "%d°"),
+            full_window_screen: overridable!(full_window_screen, bool),
+            screen_integer_scale: nonoverridable!(screen_integer_scale, bool),
+            screen_rot: overridable!(screen_rot, slider, 0, 359, "%d°"),
         }
     }
 }
@@ -558,16 +568,10 @@ struct AudioSettings {
 impl AudioSettings {
     fn new() -> Self {
         AudioSettings {
-            volume: overridable!("Volume", audio_volume, slider, 0.0, 100.0, "%.02f%%", 100.0),
-            sample_chunk_size: overridable!(
-                "Sample chunk size",
-                audio_sample_chunk_size,
-                scalar,
-                Some(128)
-            ),
+            volume: overridable!(audio_volume, slider, 0.0, 100.0, "%.02f%%", 100.0),
+            sample_chunk_size: overridable!(audio_sample_chunk_size, scalar, Some(128)),
             #[cfg(feature = "xq-audio")]
             custom_sample_rate: overridable!(
-                "Custom sample rate",
                 audio_custom_sample_rate,
                 opt_nonzero_u32_slider,
                 NonZeroU32::new(
@@ -582,7 +586,6 @@ impl AudioSettings {
             ),
             #[cfg(feature = "xq-audio")]
             channel_interp_method: overridable!(
-                "Channel interpolation method",
                 audio_channel_interp_method,
                 combo,
                 &[
@@ -598,7 +601,6 @@ impl AudioSettings {
                 }
             ),
             output_interp_method: overridable!(
-                "Interpolation method",
                 audio_output_interp_method,
                 combo,
                 &[audio::InterpMethod::Nearest, audio::InterpMethod::Cubic],
@@ -610,9 +612,8 @@ impl AudioSettings {
                     .into()
                 }
             ),
-            input_enabled: overridable!("Enabled", audio_input_enabled, bool),
+            input_enabled: overridable!(audio_input_enabled, bool),
             input_interp_method: overridable!(
-                "Interpolation method",
                 audio_input_interp_method,
                 combo,
                 &[audio::InterpMethod::Nearest, audio::InterpMethod::Cubic],
@@ -639,28 +640,11 @@ struct SavesSettings {
 impl SavesSettings {
     fn new() -> Self {
         SavesSettings {
-            save_interval_ms: overridable!(
-                "Save interval ms",
-                save_interval_ms,
-                scalar,
-                Some(100.0)
-            ),
-            reset_on_save_slot_switch: nonoverridable!(
-                "Restart on save slot switch",
-                reset_on_save_slot_switch,
-                bool
-            ),
-            include_save_in_savestates: overridable!(
-                "Include save in states",
-                include_save_in_savestates,
-                bool
-            ),
-            save_dir_path: nonoverridable!("Save directory path", save_dir_path, home_path),
-            savestate_dir_path: nonoverridable!(
-                "Savestate directory path",
-                savestate_dir_path,
-                home_path
-            ),
+            save_interval_ms: overridable!(save_interval_ms, scalar, Some(100.0)),
+            reset_on_save_slot_switch: nonoverridable!(reset_on_save_slot_switch, bool),
+            include_save_in_savestates: overridable!(include_save_in_savestates, bool),
+            save_dir_path: nonoverridable!(save_dir_path, home_path),
+            savestate_dir_path: nonoverridable!(savestate_dir_path, home_path),
         }
     }
 }
@@ -684,7 +668,6 @@ impl EmulationSettings {
     fn new() -> Self {
         EmulationSettings {
             framerate_ratio_limit: overridable!(
-                "Framerate limit",
                 framerate_ratio_limit,
                 bool_and_value_slider,
                 12.5,
@@ -693,19 +676,17 @@ impl EmulationSettings {
                 100.0
             ),
             paused_framerate_limit: overridable!(
-                "Paused framerate limit",
                 paused_framerate_limit,
                 slider,
                 1.0,
                 480.0,
                 "%.02f FPS"
             ),
-            sync_to_audio: overridable!("Sync to audio", sync_to_audio, bool),
-            pause_on_launch: overridable!("Pause on launch", pause_on_launch, bool),
-            skip_firmware: overridable!("Skip firmware", skip_firmware, bool),
-            prefer_hle_bios: overridable!("Prefer HLE BIOS", prefer_hle_bios, bool),
+            sync_to_audio: overridable!(sync_to_audio, bool),
+            pause_on_launch: overridable!(pause_on_launch, bool),
+            skip_firmware: overridable!(skip_firmware, bool),
+            prefer_hle_bios: overridable!(prefer_hle_bios, bool),
             model: overridable!(
-                "Model",
                 model,
                 combo,
                 &[
@@ -727,19 +708,12 @@ impl EmulationSettings {
                 .into()
             ),
             ds_slot_rom_in_memory_max_size: overridable!(
-                "DS slot ROM in-memory max size",
                 ds_slot_rom_in_memory_max_size,
                 scalar,
                 Some(1024 * 1024)
             ),
-            rtc_time_offset_seconds: overridable!(
-                "RTC time offset seconds",
-                rtc_time_offset_seconds,
-                scalar,
-                Some(1)
-            ),
+            rtc_time_offset_seconds: overridable!(rtc_time_offset_seconds, scalar, Some(1)),
             renderer_2d_kind: overridable!(
-                "2D renderer kind",
                 renderer_2d_kind,
                 combo,
                 &[
@@ -756,7 +730,6 @@ impl EmulationSettings {
                 .into()
             ),
             renderer_3d_kind: overridable!(
-                "3D renderer kind",
                 renderer_3d_kind,
                 combo,
                 &[Renderer3dKind::Soft, Renderer3dKind::Wgpu],
@@ -767,7 +740,6 @@ impl EmulationSettings {
                 .into()
             ),
             resolution_scale_shift: overridable!(
-                "Resolution scale",
                 resolution_scale_shift,
                 string_format_slider,
                 0,
@@ -794,7 +766,6 @@ impl DebugSettings {
         DebugSettings {
             #[cfg(feature = "logging")]
             logging_kind: nonoverridable!(
-                "Kind",
                 logging_kind,
                 combo,
                 &[LoggingKind::Imgui, LoggingKind::Term],
@@ -806,13 +777,12 @@ impl DebugSettings {
             ),
             #[cfg(feature = "logging")]
             imgui_log_history_capacity: overridable!(
-                "ImGui log history capacity",
                 imgui_log_history_capacity,
                 scalar,
                 Some(1024)
             ),
             #[cfg(feature = "gdb-server")]
-            gdb_server_addr: nonoverridable!("GDB server address", gdb_server_addr, socket_addr),
+            gdb_server_addr: nonoverridable!(gdb_server_addr, socket_addr),
         }
     }
 }
@@ -826,7 +796,7 @@ struct DiscordPresenceSettings {
 impl DiscordPresenceSettings {
     fn new() -> Self {
         DiscordPresenceSettings {
-            enabled: overridable!("Enabled", discord_presence_enabled, bool),
+            enabled: overridable!(discord_presence_enabled, bool),
         }
     }
 }
@@ -877,6 +847,7 @@ pub(super) struct Editor {
     settings: Settings,
     cur_section: Section,
     input_map_editor: Option<InputMapEditor>,
+    data: SettingsData,
 }
 
 impl Editor {
@@ -885,6 +856,10 @@ impl Editor {
             settings: Settings::new(),
             cur_section: Section::Paths,
             input_map_editor: None,
+            data: SettingsData {
+                game_loaded: false,
+                current_help_item: None,
+            },
         }
     }
 
@@ -1041,6 +1016,721 @@ impl Editor {
         }
     }
 
+    fn draw_control_buttons(&mut self, ui: &Ui, config: &mut Config, emu_state: Option<&EmuState>) {
+        let item_spacing = style!(ui, item_spacing);
+
+        {
+            let height = 2.0 * ui.frame_height() + item_spacing[1];
+            let cell_padding = style!(ui, cell_padding);
+            let cursor_pos = ui.cursor_screen_pos();
+            let min = sub2(cursor_pos, cell_padding);
+            let max = add2(
+                add2(cursor_pos, [ui.content_region_avail()[0], height]),
+                cell_padding,
+            );
+            ui.get_window_draw_list()
+                .add_rect(min, max, [0.7, 0.7, 0.7, 0.2])
+                .filled(true)
+                .build();
+        }
+
+        let (top_button_width, bot_button_width) = {
+            let min_button_width = 20.0 + style!(ui, frame_padding)[0] * 2.0;
+            let avail_x = ui.content_region_avail()[0];
+            (
+                ((avail_x - item_spacing[0] * 2.0) / 3.0).max(min_button_width),
+                ((avail_x - item_spacing[0]) / 2.0).max(min_button_width),
+            )
+        };
+
+        modify_configs_mask!(
+            ui,
+            width top_button_width,
+            icon_tooltip "\u{f1f8}", "Restore defaults",
+            "restore_defaults",
+            true,
+            self.data.game_loaded,
+            |global, game| {
+                if global {
+                    config.config.deserialize_global(&config::Global::default());
+                }
+                if game {
+                    config.config.deserialize_game(&config::Game::default());
+                }
+            }
+        );
+        ui.same_line();
+        modify_configs_mask!(
+            ui,
+            width top_button_width,
+            icon_tooltip "\u{f2f9}", "Reload",
+            "reload",
+            config.global_path.is_some(),
+            self.data.game_loaded && config.game_path.is_some(),
+            |global, game| {
+                if global {
+                    if let Ok(config::File { contents, .. }) =
+                        config::File::read(config.global_path.as_ref().unwrap(), false)
+                    {
+                        config.config.deserialize_global(&contents);
+                    }
+                }
+                if game {
+                    if let Ok(config::File { contents, .. }) =
+                        config::File::read(config.game_path.as_ref().unwrap(), false)
+                    {
+                        config.config.deserialize_game(&contents);
+                    }
+                }
+            }
+        );
+        ui.same_line();
+        modify_configs_mask!(
+            ui,
+            width top_button_width,
+            icon_tooltip "\u{f0c7}", "Save",
+            "save",
+            config.global_path.is_some(),
+            self.data.game_loaded && config.game_path.is_some(),
+            |global, game| {
+                if global {
+                    let _ = config::File {
+                        contents: config.config.serialize_global(),
+                        path: Some(config.global_path.as_ref().unwrap().clone()),
+                    }
+                    .write();
+                }
+                if game {
+                    let _ = config::File {
+                        contents: config.config.serialize_game(),
+                        path: Some(config.game_path.as_ref().unwrap().clone()),
+                    }
+                    .write();
+                }
+            }
+        );
+
+        macro_rules! import_config {
+            ($deserialize: ident) => {
+                if let Some(config_file) = FileDialog::new()
+                    .add_filter("JSON configuration file", &["json"])
+                    .pick_file()
+                    .and_then(|path| config::File::read(&path, false).ok())
+                {
+                    config.config.$deserialize(&config_file.contents);
+                }
+            };
+        }
+
+        modify_configs!(
+            ui,
+            width bot_button_width,
+            icon_tooltip "\u{f56f}", "Import ",
+            "import",
+            self.data.game_loaded,
+            import_config!(deserialize_global),
+            import_config!(deserialize_game)
+        );
+
+        macro_rules! export_config {
+            ($serialize: ident, $default_file_name: expr) => {
+                if let Some(path) = FileDialog::new()
+                    .add_filter("JSON configuration file", &["json"])
+                    .set_file_name($default_file_name)
+                    .save_file()
+                {
+                    let _ = config::File {
+                        contents: config.config.$serialize(),
+                        path: Some(path),
+                    }
+                    .write();
+                }
+            };
+        }
+
+        ui.same_line();
+        modify_configs!(
+            ui,
+            width bot_button_width,
+            icon_tooltip "\u{f56e}", "Export ",
+            "export",
+            self.data.game_loaded,
+            export_config!(serialize_global, "global_config.json"),
+            export_config!(
+                serialize_game,
+                &format!("{}.json", emu_state.as_ref().unwrap().title)
+            )
+        );
+    }
+
+    fn draw_section_list(&mut self, ui: &Ui) {
+        let cell_padding = style!(ui, cell_padding);
+
+        {
+            let cursor_pos = ui.cursor_screen_pos();
+            let min = sub2(cursor_pos, cell_padding);
+            let mut max = add2(cursor_pos, ui.content_region_avail());
+            max[0] += cell_padding[0];
+            ui.get_window_draw_list()
+                .add_rect(min, max, [0.6, 0.6, 0.6, 0.2])
+                .filled(true)
+                .rounding(style!(ui, window_rounding))
+                .round_top_right(false)
+                .round_top_left(false)
+                .round_bot_left(true)
+                .round_bot_right(false)
+                .build();
+        }
+
+        const LABELS_AND_SECTIONS: &[(&str, Section)] = &[
+            ("\u{f07b} Paths", Section::Paths),
+            ("\u{e163} UI", Section::Ui),
+            ("\u{f026} Audio", Section::Audio),
+            ("\u{f0c7} Saves", Section::Saves),
+            ("\u{f2db} Emulation", Section::Emulation),
+            ("\u{f11b} Input", Section::Input),
+            #[cfg(any(feature = "logging", feature = "gdb-server"))]
+            ("\u{f7d9} Debug", Section::Debug),
+            #[cfg(feature = "discord-presence")]
+            ("\u{f392} Discord presence", Section::DiscordPresence),
+        ];
+
+        ui.child_window("section_list")
+            .size([
+                {
+                    let base_width = style!(ui, frame_padding)[0] * 2.0;
+                    LABELS_AND_SECTIONS
+                        .iter()
+                        .map(|&(label, _)| ui.calc_text_size(label)[0] + base_width)
+                        .fold(0.0, f32::max)
+                        + style!(ui, scrollbar_size)
+                },
+                ui.content_region_avail()[1] - cell_padding[1],
+            ])
+            .build(|| {
+                let frame_padding = style!(ui, frame_padding);
+                let padding = [
+                    frame_padding[0],
+                    frame_padding[1] + style!(ui, item_spacing)[1] * 0.25,
+                ];
+                let double_padding_h = padding[0] * 2.0;
+                let height = padding[1] * 2.0 + ui.text_line_height();
+
+                for &(label, section) in LABELS_AND_SECTIONS {
+                    let upper_left = ui.cursor_screen_pos();
+
+                    let width = ui.content_region_avail()[0]
+                        .max(ui.calc_text_size(label)[0] + double_padding_h);
+
+                    if self.cur_section == section {
+                        ui.get_window_draw_list()
+                            .add_rect(
+                                upper_left,
+                                [upper_left[0] + width, upper_left[1] + height],
+                                ui.style_color(StyleColor::ButtonActive),
+                            )
+                            .filled(true)
+                            .build();
+                    }
+
+                    if ui.invisible_button(label, [width, height]) {
+                        self.data.current_help_item = None;
+                        self.cur_section = section;
+                    }
+
+                    ui.set_cursor_screen_pos(add2(upper_left, padding));
+                    ui.text(label);
+
+                    ui.set_cursor_screen_pos([upper_left[0], upper_left[1] + height]);
+                }
+            });
+    }
+
+    fn draw_section(
+        &mut self,
+        ui: &Ui,
+        config: &mut Config,
+        emu_state: Option<&mut EmuState>,
+        remaining_height: f32,
+        orig_cell_padding: [f32; 2],
+    ) {
+        let outer_cell_padding = style!(ui, cell_padding);
+        let _cell_padding = ui.push_style_var(StyleVar::CellPadding(orig_cell_padding));
+        ui.child_window("section")
+            .size([
+                0.0,
+                ui.content_region_avail()[1] - remaining_height - outer_cell_padding[1],
+            ])
+            .build(|| {
+                self.data.game_loaded = emu_state.as_ref().map_or(false, |e| e.game_loaded);
+
+                macro_rules! draw {
+                    (
+                        $id: literal,
+                        $tab: ident,
+                        $parents: expr,
+                        [$(
+                            $(#[$attr: meta])*
+                            ($field: ident, $label: expr, $help: expr,)
+                        ),*]
+                    ) => {
+                        if let Some(_table) = ui.begin_table_with_flags(
+                            $id,
+                            5,
+                            TableFlags::SIZING_STRETCH_SAME | TableFlags::NO_CLIP,
+                        ) {
+                            ui.table_setup_column_with(TableColumnSetup {
+                                flags: TableColumnFlags::WIDTH_FIXED,
+                                ..TableColumnSetup::new("")
+                            });
+                            ui.table_setup_column("");
+                            ui.table_setup_column_with(TableColumnSetup {
+                                flags: if self.data.game_loaded {
+                                    TableColumnFlags::empty()
+                                } else {
+                                    TableColumnFlags::WIDTH_FIXED
+                                },
+                                ..TableColumnSetup::new("")
+                            });
+                            ui.table_setup_column_with(TableColumnSetup {
+                                flags: TableColumnFlags::WIDTH_FIXED,
+                                ..TableColumnSetup::new("")
+                            });
+                            ui.table_setup_column_with(TableColumnSetup {
+                                flags: TableColumnFlags::WIDTH_FIXED,
+                                ..TableColumnSetup::new("")
+                            });
+                            $(
+                                $(#[$attr])*
+                                {
+                                    let _id = ui.push_id(stringify!($field));
+                                    self.settings.$tab.$field.draw(
+                                        concat!($label, ": "),
+                                        concat!($parents, " > ", $label),
+                                        $help,
+                                        ui,
+                                        &mut config.config,
+                                        &mut self.data
+                                    );
+                                }
+                            )*
+                        }
+                    };
+                }
+
+                match self.cur_section {
+                    Section::Paths => {
+                        // imgui_config_path
+                        // game_db_path
+                        // sys_paths
+
+                        heading(ui, "General", 16.0, 5.0);
+                        draw!(
+                            "general",
+                            paths,
+                            "Paths > General",
+                            [
+                                (
+                                    imgui_config_path,
+                                    "ImGui config path",
+                                    "Where to store the INI configuration file for ImGui, used to \
+                                     remember the window layout across launches.",
+                                ),
+                                (
+                                    game_db_path,
+                                    "Game database path",
+                                    "Where to read the JSON game database from, used to determine \
+                                     save types for games.",
+                                )
+                            ]
+                        );
+
+                        heading_spacing(ui, "System files", 16.0, 5.0, 8.0);
+                        draw!(
+                            "sys_files",
+                            paths,
+                            "Paths > System files",
+                            [
+                                (
+                                    sys_dir_path,
+                                    "System dir path",
+                                    "The directory containing the system files (biosnds7.bin, \
+                                     biosnds9.bin, firmware.bin); can be overridden by the below \
+                                     settings.",
+                                ),
+                                (
+                                    arm7_bios_path,
+                                    "ARM7 BIOS path",
+                                    "The path where the ARM7 BIOS binary is stored; will default \
+                                     to $sys_dir_path/biosnds7.bin if not specified.",
+                                ),
+                                (
+                                    arm9_bios_path,
+                                    "ARM9 BIOS path",
+                                    "The path where the ARM9 BIOS binary is stored; will default \
+                                     to $sys_dir_path/biosnds9.bin if not specified.",
+                                ),
+                                (
+                                    firmware_path,
+                                    "Firmware path",
+                                    "The path where the firmware binary is stored; will default \
+                                     to $sys_dir_path/firmware.bin if not specified.",
+                                )
+                            ]
+                        );
+                    }
+
+                    Section::Ui => {
+                        // title_bar_mode
+                        // full_window_screen
+                        // screen_integer_scale
+                        // screen_rot
+
+                        draw!(
+                                    "general",
+                                    ui,
+                                    "UI",
+                                    [
+                                        (
+                                            title_bar_mode,
+                                            "Title bar mode",
+                                            "How to display the title bar:
+- System: will use the system title bar and display the emulator's menu under it
+- Mixed: will blend the emulator's menu with the transparent system title bar, used to display the \
+ title and FPS
+- Imgui: will completely hide the system title bar and render the title and FPS as part of the \
+ menu",
+                                        ),
+                                        (
+                                            full_window_screen,
+                                            "Full-window screen",
+                                            "Whether the screen should be fill the entire \
+                                             emulator window background, instead of being \
+                                             rendered as its own Imgui window.",
+                                        ),
+                                        (
+                                            screen_integer_scale,
+                                            "Limit screen size to integer scales",
+                                            "Whether the screen should be shrunk down to limit \
+                                             its displayed size to multiples of 256x384 (intended \
+                                             to prevent uneven pixel scaling at lower \
+                                             resolutions).",
+                                        ),
+                                        (
+                                            screen_rot,
+                                            "Screen rotation",
+                                            "The clockwise rotation to apply to the screen in \
+                                             degrees (intended for games that require the \
+                                             physical system to be rotated).",
+                                        )
+                                    ]
+                                );
+                    }
+
+                    Section::Audio => {
+                        // audio_volume
+                        // audio_sample_chunk_size
+                        // audio_custom_sample_rate
+                        // audio_channel_interp_method
+                        // audio_interp_method
+
+                        heading(ui, "Output", 16.0, 5.0);
+                        draw!(
+                            "general",
+                            audio,
+                            "Audio > Output",
+                            [
+                                (
+                                    volume,
+                                    "Volume",
+                                    "Volume to play the console's audio output at.",
+                                ),
+                                (
+                                    sample_chunk_size,
+                                    "Sample chunk size",
+                                    "(Advanced) How many samples to produce in the emulator's \
+                                     core before they're queued to be played back.",
+                                )
+                            ]
+                        );
+
+                        #[cfg(feature = "xq-audio")]
+                        {
+                            heading_spacing(ui, "Backend output interpolation", 16.0, 5.0, 8.0);
+                            draw!(
+                                "backend_interp",
+                                audio,
+                                "Audio > Backend output interpolation",
+                                [
+                                    (
+                                        custom_sample_rate,
+                                        "Custom sample rate",
+                                        "A custom rate at which audio output samples should be \
+                                         produced by the console for playback, in Hz.",
+                                    ),
+                                    (
+                                        channel_interp_method,
+                                        "Channel interpolation method",
+                                        "The interpolation method to apply to the console's \
+                                         individual audio channels to map their samples to the \
+                                         console's (custom or default) sample rate:
+- Nearest: Don't apply any interpolation
+- Cubic: Apply cubic interpolation",
+                                    )
+                                ]
+                            );
+                        }
+
+                        heading_spacing(ui, "Frontend Output Interpolation", 16.0, 5.0, 8.0);
+                        draw!(
+                            "frontend_interp",
+                            audio,
+                            "Audio > Frontend Output Interpolation",
+                            [(
+                                output_interp_method,
+                                "Interpolation method",
+                                "The interpolation method to apply to the console's audio output \
+                                 samples to map them to the sample rate of the current audio \
+                                 output device:
+- Nearest: Don't apply any interpolation
+- Cubic: Apply cubic interpolation",
+                            )]
+                        );
+
+                        heading_spacing(ui, "Microphone Input", 16.0, 5.0, 8.0);
+                        draw!(
+                            "frontend_interp",
+                            audio,
+                            "Audio > Microphone Input",
+                            [
+                                (
+                                    input_enabled,
+                                    "Enabled",
+                                    "Whether to enable audio input (may ask for microphone \
+                                     permissions).",
+                                ),
+                                (
+                                    input_interp_method,
+                                    "Interpolation method",
+                                    "The interpolation method to apply to the current audio input \
+                                     device to map its samples to the console's audio input \
+                                     sample rate:
+- Nearest: Don't apply any interpolation
+- Cubic: Apply cubic interpolation",
+                                )
+                            ]
+                        );
+                    }
+
+                    Section::Saves => {
+                        // save_interval_ms
+                        // reset_on_save_slot_switch
+                        // include_save_in_savestates
+                        // save_dir_path
+                        // save_path_config
+
+                        heading(ui, "General", 16.0, 5.0);
+                        draw!(
+                            "general",
+                            saves,
+                            "Saves > General",
+                            [
+                                (
+                                    save_interval_ms,
+                                    "Save interval ms",
+                                    "The interval at which any new save file changes are \
+                                     committed to the filesystem.",
+                                ),
+                                (
+                                    reset_on_save_slot_switch,
+                                    "Restart on save slot switch",
+                                    "Whether to restart the emulator when switching save slots \
+                                     (not doing so could lead to save file corruption).",
+                                ),
+                                (
+                                    include_save_in_savestates,
+                                    "Include save in savestates",
+                                    "Whether to embed the current version of the save file in \
+                                     savestates (not doing so could lead to save file corruption \
+                                     due to inconsistencies when loading a savestate).",
+                                ),
+                                (save_dir_path, "Save directory path", "TODO",),
+                                (savestate_dir_path, "Savestate directory path", "TODO",)
+                            ]
+                        );
+
+                        heading_spacing(ui, "Game", 16.0, 5.0, 8.0);
+                        if self.data.game_loaded {
+                            self.draw_game_saves_config(ui, config, emu_state.unwrap());
+                        } else {
+                            ui.text_disabled("Load a game to configure its save path");
+                        }
+                    }
+
+                    Section::Emulation => {
+                        // framerate_ratio_limit
+                        // paused_framerate_limit
+                        // sync_to_audio
+                        // pause_on_launch
+                        // skip_firmware
+                        // prefer_hle_bios
+                        // model
+                        // ds_slot_rom_in_memory_max_size
+                        // rtc_time_offset_seconds
+                        // renderer_2d_kind
+                        // renderer_3d_kind
+                        // resolution_scale_shift
+
+                        draw!(
+                            "general",
+                            emulation,
+                            "Emulation",
+                            [
+                                (framerate_ratio_limit, "Framerate limit", "TODO",),
+                                (paused_framerate_limit, "Paused framerate limit", "TODO",),
+                                (sync_to_audio, "Sync to audio", "TODO",),
+                                (pause_on_launch, "Pause on launch", "TODO",),
+                                (skip_firmware, "Skip firmware", "TODO",),
+                                (prefer_hle_bios, "Prefer HLE BIOS", "TODO",),
+                                (model, "Model", "TODO",),
+                                (
+                                    ds_slot_rom_in_memory_max_size,
+                                    "DS slot ROM in-memory max size",
+                                    "TODO",
+                                ),
+                                (rtc_time_offset_seconds, "RTC time offset seconds", "TODO",),
+                                (renderer_2d_kind, "2D renderer kind", "TODO",),
+                                (renderer_3d_kind, "3D renderer kind", "TODO",),
+                                (resolution_scale_shift, "3D HW resolution scale", "TODO",)
+                            ]
+                        );
+                    }
+
+                    Section::Input => {
+                        self.input_map_editor
+                            .get_or_insert_with(InputMapEditor::new)
+                            .draw(ui, &mut config.config, &self.data);
+                    }
+
+                    #[cfg(any(feature = "logging", feature = "gdb-server"))]
+                    Section::Debug => {
+                        // logging_kind
+                        // imgui_log_history_capacity
+                        // gdb_server_addr
+
+                        #[cfg(feature = "logging")]
+                        {
+                            heading(ui, "Logging", 16.0, 5.0);
+                            draw!(
+                                "logging",
+                                debug,
+                                "Debug > Logging",
+                                [
+                                    (
+                                        logging_kind,
+                                        "Kind",
+                                        "Whether to show the collected logs inside the terminal \
+                                         that launched the emulator or in an Imgui window \
+                                         (accessed through Debug > Log)",
+                                    ),
+                                    (
+                                        imgui_log_history_capacity,
+                                        "ImGui log history capacity",
+                                        "How many log messages to store in the Imgui log window \
+                                         before clearing the oldest ones.",
+                                    )
+                                ]
+                            );
+                        }
+
+                        #[cfg(feature = "gdb-server")]
+                        {
+                            heading_spacing(
+                                ui,
+                                "GDB server",
+                                16.0,
+                                5.0,
+                                (cfg!(feature = "logging") as u8 * 4) as f32,
+                            );
+                            draw!(
+                                "gdb_server",
+                                debug,
+                                "Debug > GDB server",
+                                [(
+                                    gdb_server_addr,
+                                    "GDB server address",
+                                    "The address to expose the GDB server at once started.",
+                                )]
+                            );
+                        }
+                    }
+
+                    #[cfg(feature = "discord-presence")]
+                    Section::DiscordPresence => {
+                        // discord_presence_enabled
+
+                        draw!(
+                            "general",
+                            discord_presence,
+                            "Discord presence",
+                            [(
+                                enabled,
+                                "Enabled",
+                                "Whether to enable Discord Rich Presence. If enabled, the current \
+                                 game and its playtime will be shown in the Discord status.",
+                            )]
+                        );
+                    }
+                }
+
+                if self.cur_section != Section::Input {
+                    self.input_map_editor = None;
+                }
+            });
+    }
+
+    fn help_height(&self, ui: &Ui) -> f32 {
+        let (help_path, help_message) = self.data.current_help_item_or_default();
+        ui.calc_text_size_with_opts(help_path, false, ui.content_region_avail()[0])[1]
+            + style!(ui, item_spacing)[1] * 5.0
+            + ui.calc_text_size_with_opts(help_message, false, ui.content_region_avail()[0])[1]
+    }
+
+    fn draw_help(&self, ui: &Ui) {
+        let cell_padding = style!(ui, cell_padding);
+
+        {
+            let cursor_pos = ui.cursor_screen_pos();
+            let min = [
+                cursor_pos[0] - cell_padding[0],
+                cursor_pos[1] - cell_padding[1].max(ui.text_line_height() * 0.5),
+            ];
+            let mut max = add2(cursor_pos, ui.content_region_avail());
+            max[0] += cell_padding[0];
+            ui.get_window_draw_list()
+                .add_rect(min, max, [0.5, 0.5, 0.5, 0.2])
+                .filled(true)
+                .rounding(style!(ui, window_rounding))
+                .round_top_right(false)
+                .round_top_left(false)
+                .round_bot_left(false)
+                .round_bot_right(true)
+                .build();
+        }
+
+        ui.child_window("help")
+            .size([0.0, self.help_height(ui)])
+            .build(|| {
+                let (help_path, help_message) = self.data.current_help_item_or_default();
+                ui.dummy([0.0; 2]);
+                ui.text_wrapped(help_path);
+                ui.dummy([0.0; 2]);
+                ui.text_wrapped(help_message);
+                ui.dummy([0.0; 2]);
+                ui.dummy([0.0; 2]);
+            });
+    }
+
     pub fn draw(
         &mut self,
         ui: &Ui,
@@ -1048,11 +1738,21 @@ impl Editor {
         emu_state: Option<&mut EmuState>,
         opened: &mut bool,
     ) {
-        let game_loaded = emu_state.as_ref().map_or(false, |e| e.game_loaded);
+        self.data.game_loaded = emu_state.as_ref().map_or(false, |e| e.game_loaded);
 
+        let _window_padding = ui.push_style_var(StyleVar::WindowPadding([0.0; 2]));
         ui.window("Configuration").opened(opened).build(|| {
-            if let Some(_table) = ui.begin_table_with_flags("##all", 2, TableFlags::BORDERS_INNER_V)
-            {
+            drop(_window_padding);
+            let orig_cell_padding = style!(ui, cell_padding);
+            let _cell_padding = ui.push_style_var(StyleVar::CellPadding([orig_cell_padding[0]; 2]));
+            if let Some(_table) = ui.begin_table_with_flags(
+                "##layout",
+                2,
+                TableFlags::BORDERS_INNER_V | TableFlags::PAD_OUTER_X,
+            ) {
+                let cell_padding = style!(ui, cell_padding);
+                let border_width = 1.0;
+
                 ui.table_setup_column_with(TableColumnSetup {
                     flags: TableColumnFlags::WIDTH_FIXED,
                     ..TableColumnSetup::new("")
@@ -1062,451 +1762,60 @@ impl Editor {
                 ui.table_next_row();
                 ui.table_next_column();
 
-                let (top_button_width, bot_button_width) = {
-                    let min_button_width = 20.0 + style!(ui, frame_padding)[0] * 2.0;
-                    let item_spacing_x = style!(ui, item_spacing)[0];
-                    let avail_x = ui.content_region_avail()[0];
+                // ui.table_set_bg_color(TableBgTarget::CELL_BG, [0.5, 0.5, 0.5, 0.4]);
+
+                self.draw_control_buttons(ui, config, emu_state.as_deref());
+
+                let (separator_p1, separator_p2) = {
+                    let mut cursor_pos = ui.cursor_screen_pos();
+                    cursor_pos[1] -= style!(ui, item_spacing)[1];
+                    let height = cell_padding[1] * 2.0 + border_width;
+                    let x = cursor_pos[0] - cell_padding[0];
+                    let y = cursor_pos[1] + height * 0.5;
+                    cursor_pos[1] += height;
+                    ui.set_cursor_screen_pos(cursor_pos);
                     (
-                        ((avail_x - item_spacing_x * 2.0) / 3.0).max(min_button_width),
-                        ((avail_x - style!(ui, item_spacing)[0]) / 2.0).max(min_button_width),
+                        [x, y],
+                        [x + ui.content_region_avail()[0] + cell_padding[0] * 2.0, y],
                     )
                 };
 
-                modify_configs_mask!(
-                    ui,
-                    width top_button_width,
-                    icon_tooltip "\u{f1f8}", "Restore defaults",
-                    "restore_defaults",
-                    true,
-                    game_loaded,
-                    |global, game| {
-                        if global {
-                            config.config.deserialize_global(&config::Global::default());
-                        }
-                        if game {
-                            config.config.deserialize_game(&config::Game::default());
-                        }
-                    }
-                );
-                ui.same_line();
-                modify_configs_mask!(
-                    ui,
-                    width top_button_width,
-                    icon_tooltip "\u{f2f9}", "Reload",
-                    "reload",
-                    config.global_path.is_some(),
-                    game_loaded && config.game_path.is_some(),
-                    |global, game| {
-                        if global {
-                            if let Ok(config::File { contents, .. }) =
-                                config::File::read(config.global_path.as_ref().unwrap(), false)
-                            {
-                                config.config.deserialize_global(&contents);
-                            }
-                        }
-                        if game {
-                            if let Ok(config::File { contents, .. }) =
-                                config::File::read(config.game_path.as_ref().unwrap(), false)
-                            {
-                                config.config.deserialize_game(&contents);
-                            }
-                        }
-                    }
-                );
-                ui.same_line();
-                modify_configs_mask!(
-                    ui,
-                    width top_button_width,
-                    icon_tooltip "\u{f0c7}", "Save",
-                    "save",
-                    config.global_path.is_some(),
-                    game_loaded && config.game_path.is_some(),
-                    |global, game| {
-                        if global {
-                            let _ = config::File {
-                                contents: config.config.serialize_global(),
-                                path: Some(config.global_path.as_ref().unwrap().clone()),
-                            }
-                            .write();
-                        }
-                        if game {
-                            let _ = config::File {
-                                contents: config.config.serialize_game(),
-                                path: Some(config.game_path.as_ref().unwrap().clone()),
-                            }
-                            .write();
-                        }
-                    }
-                );
+                self.draw_section_list(ui);
 
-                macro_rules! import_config {
-                    ($deserialize: ident) => {
-                        if let Some(config_file) = FileDialog::new()
-                            .add_filter("JSON configuration file", &["json"])
-                            .pick_file()
-                            .and_then(|path| config::File::read(&path, false).ok())
-                        {
-                            config.config.$deserialize(&config_file.contents);
-                        }
-                    };
-                }
-
-                modify_configs!(
-                    ui,
-                    width bot_button_width,
-                    icon_tooltip "\u{f56f}", "Import ",
-                    "import",
-                    game_loaded,
-                    import_config!(deserialize_global),
-                    import_config!(deserialize_game)
-                );
-
-                macro_rules! export_config {
-                    ($serialize: ident, $default_file_name: expr) => {
-                        if let Some(path) = FileDialog::new()
-                            .add_filter("JSON configuration file", &["json"])
-                            .set_file_name($default_file_name)
-                            .save_file()
-                        {
-                            let _ = config::File {
-                                contents: config.config.$serialize(),
-                                path: Some(path),
-                            }
-                            .write();
-                        }
-                    };
-                }
-
-                ui.same_line();
-                modify_configs!(
-                    ui,
-                    width bot_button_width,
-                    icon_tooltip "\u{f56e}", "Export ",
-                    "export",
-                    game_loaded,
-                    export_config!(serialize_global, "global_config.json"),
-                    export_config!(
-                        serialize_game,
-                        &format!("{}.json", emu_state.as_ref().unwrap().title)
+                ui.get_window_draw_list()
+                    .add_line(
+                        separator_p1,
+                        separator_p2,
+                        ui.style_color(StyleColor::Separator),
                     )
-                );
-
-                {
-                    let item_spacing = style!(ui, item_spacing)[1];
-                    let cursor_pos = ui.cursor_screen_pos();
-                    let y = cursor_pos[1] + item_spacing;
-                    ui.get_window_draw_list()
-                        .add_line(
-                            [cursor_pos[0], y],
-                            [
-                                cursor_pos[0]
-                                    + ui.content_region_avail()[0]
-                                    + style!(ui, cell_padding)[0],
-                                y,
-                            ],
-                            ui.style_color(StyleColor::Separator),
-                        )
-                        .build();
-                    ui.set_cursor_screen_pos([cursor_pos[0], cursor_pos[1] + item_spacing * 2.0]);
-                }
-
-                let labels_and_sections = [
-                    ("\u{f07b} Paths", Section::Paths),
-                    ("\u{e163} UI", Section::Ui),
-                    ("\u{f026} Audio", Section::Audio),
-                    ("\u{f0c7} Saves", Section::Saves),
-                    ("\u{f2db} Emulation", Section::Emulation),
-                    ("\u{f11b} Input", Section::Input),
-                    #[cfg(any(feature = "logging", feature = "gdb-server"))]
-                    ("\u{f7d9} Debug", Section::Debug),
-                    #[cfg(feature = "discord-presence")]
-                    ("\u{f392} Discord presence", Section::DiscordPresence),
-                ];
-
-                ui.child_window("section_list")
-                    .size([
-                        {
-                            let base_width = style!(ui, frame_padding)[0] * 2.0;
-                            labels_and_sections
-                                .iter()
-                                .map(|(label, _)| ui.calc_text_size(label)[0] + base_width)
-                                .fold(0.0, f32::max)
-                                + style!(ui, scrollbar_size)
-                        },
-                        ui.content_region_avail()[1] - style!(ui, cell_padding)[1],
-                    ])
-                    .build(|| {
-                        let frame_padding = style!(ui, frame_padding);
-                        let padding = [
-                            frame_padding[0],
-                            frame_padding[1] + style!(ui, item_spacing)[1] * 0.25,
-                        ];
-                        let double_padding_h = padding[0] * 2.0;
-                        let height = padding[1] * 2.0 + ui.text_line_height();
-
-                        for (label, section) in labels_and_sections {
-                            let upper_left = ui.cursor_screen_pos();
-
-                            let width = ui.content_region_avail()[0]
-                                .max(ui.calc_text_size(label)[0] + double_padding_h);
-
-                            if self.cur_section == section {
-                                ui.get_window_draw_list()
-                                    .add_rect(
-                                        upper_left,
-                                        [upper_left[0] + width, upper_left[1] + height],
-                                        ui.style_color(StyleColor::ButtonActive),
-                                    )
-                                    .filled(true)
-                                    .build();
-                            }
-
-                            if ui.invisible_button(label, [width, height]) {
-                                self.cur_section = section;
-                            }
-
-                            ui.set_cursor_screen_pos([
-                                upper_left[0] + padding[0],
-                                upper_left[1] + padding[1],
-                            ]);
-                            ui.text(label);
-
-                            ui.set_cursor_screen_pos([upper_left[0], upper_left[1] + height]);
-                        }
-                    });
+                    .thickness(border_width)
+                    .build();
 
                 ui.table_next_column();
 
-                ui.child_window("section")
-                    .size([
-                        0.0,
-                        ui.content_region_avail()[1] - style!(ui, cell_padding)[1],
-                    ])
-                    .build(|| {
-                        let data = SettingsData {
-                            game_loaded: emu_state.as_ref().map_or(false, |e| e.game_loaded),
-                        };
+                let help_plus_header_height =
+                    self.help_height(ui) + ui.text_line_height().max(cell_padding[1] * 2.0);
 
-                        macro_rules! draw {
-                            (
-                                $id: literal,
-                                $tab: ident,
-                                [$($(#[$attr: meta])* $field: ident),*]
-                            ) => {
-                                if let Some(_table) = ui.begin_table_with_flags(
-                                    $id,
-                                    4,
-                                    TableFlags::SIZING_STRETCH_SAME | TableFlags::NO_CLIP,
-                                ) {
-                                    ui.table_setup_column_with(TableColumnSetup {
-                                        flags: TableColumnFlags::WIDTH_FIXED,
-                                        ..TableColumnSetup::new("")
-                                    });
-                                    ui.table_setup_column("");
-                                    ui.table_setup_column_with(TableColumnSetup {
-                                        flags: if data.game_loaded {
-                                            TableColumnFlags::empty()
-                                        } else {
-                                            TableColumnFlags::WIDTH_FIXED
-                                        },
-                                        ..TableColumnSetup::new("")
-                                    });
-                                    ui.table_setup_column_with(TableColumnSetup {
-                                        flags: TableColumnFlags::WIDTH_FIXED,
-                                        ..TableColumnSetup::new("")
-                                    });
-                                    $(
-                                        $(#[$attr])*
-                                        {
-                                            let _id = ui.push_id(stringify!($field));
-                                            self.settings.$tab.$field.draw(
-                                                ui,
-                                                &mut config.config,
-                                                &data
-                                            );
-                                        }
-                                    )*
-                                }
-                            }
-                        }
+                self.draw_section(
+                    ui,
+                    config,
+                    emu_state,
+                    help_plus_header_height,
+                    orig_cell_padding,
+                );
 
-                        match self.cur_section {
-                            Section::Paths => {
-                                // imgui_config_path
-                                // game_db_path
-                                // sys_paths
+                heading_options(
+                    ui,
+                    "Help",
+                    16.0,
+                    5.0,
+                    -cell_padding[0],
+                    -cell_padding[0],
+                    2.0 * cell_padding[1],
+                    true,
+                );
 
-                                draw!("general", paths, [imgui_config_path, game_db_path]);
-
-                                ui.dummy([0.0, 4.0]);
-                                heading(ui, "System files", 16.0, 5.0);
-
-                                draw!(
-                                    "sys_files",
-                                    paths,
-                                    [sys_dir_path, arm7_bios_path, arm9_bios_path, firmware_path]
-                                );
-                            }
-
-                            Section::Ui => {
-                                // title_bar_mode
-                                // full_window_screen
-                                // screen_integer_scale
-                                // screen_rot
-
-                                draw!(
-                                    "general",
-                                    ui,
-                                    [
-                                        #[cfg(target_os = "macos")]
-                                        title_bar_mode,
-                                        full_window_screen,
-                                        screen_integer_scale,
-                                        screen_rot
-                                    ]
-                                );
-                            }
-
-                            Section::Audio => {
-                                // audio_volume
-                                // audio_sample_chunk_size
-                                // audio_custom_sample_rate
-                                // audio_channel_interp_method
-                                // audio_interp_method
-
-                                draw!("general", audio, [volume, sample_chunk_size]);
-
-                                #[cfg(feature = "xq-audio")]
-                                {
-                                    ui.dummy([0.0, 4.0]);
-                                    heading(ui, "Backend output interpolation", 16.0, 5.0);
-                                    draw!(
-                                        "backend_interp",
-                                        audio,
-                                        [custom_sample_rate, channel_interp_method]
-                                    );
-                                }
-
-                                ui.dummy([0.0, 4.0]);
-                                heading(ui, "Frontend output interpolation", 16.0, 5.0);
-                                draw!("frontend_interp", audio, [output_interp_method]);
-
-                                ui.dummy([0.0, 4.0]);
-                                heading(ui, "Input", 16.0, 5.0);
-                                draw!(
-                                    "frontend_interp",
-                                    audio,
-                                    [input_enabled, input_interp_method]
-                                );
-                            }
-
-                            Section::Saves => {
-                                // save_interval_ms
-                                // reset_on_save_slot_switch
-                                // include_save_in_savestates
-                                // save_dir_path
-                                // save_path_config
-
-                                draw!(
-                                    "general",
-                                    saves,
-                                    [
-                                        save_interval_ms,
-                                        reset_on_save_slot_switch,
-                                        include_save_in_savestates,
-                                        save_dir_path,
-                                        savestate_dir_path
-                                    ]
-                                );
-
-                                ui.dummy([0.0, 4.0]);
-                                heading(ui, "Game", 16.0, 5.0);
-
-                                if data.game_loaded {
-                                    self.draw_game_saves_config(ui, config, emu_state.unwrap());
-                                } else {
-                                    ui.text_disabled("Load a game to configure its save path");
-                                }
-                            }
-
-                            Section::Emulation => {
-                                // framerate_ratio_limit
-                                // paused_framerate_limit
-                                // sync_to_audio
-                                // pause_on_launch
-                                // skip_firmware
-                                // prefer_hle_bios
-                                // model
-                                // ds_slot_rom_in_memory_max_size
-                                // rtc_time_offset_seconds
-                                // renderer_2d_kind
-                                // renderer_3d_kind
-                                // resolution_scale_shift
-
-                                draw!(
-                                    "general",
-                                    emulation,
-                                    [
-                                        framerate_ratio_limit,
-                                        paused_framerate_limit,
-                                        sync_to_audio,
-                                        pause_on_launch,
-                                        skip_firmware,
-                                        prefer_hle_bios,
-                                        model,
-                                        ds_slot_rom_in_memory_max_size,
-                                        rtc_time_offset_seconds,
-                                        renderer_2d_kind,
-                                        renderer_3d_kind,
-                                        resolution_scale_shift
-                                    ]
-                                );
-                            }
-
-                            Section::Input => {
-                                self.input_map_editor
-                                    .get_or_insert_with(InputMapEditor::new)
-                                    .draw(ui, &mut config.config, &data);
-                            }
-
-                            #[cfg(any(feature = "logging", feature = "gdb-server"))]
-                            Section::Debug => {
-                                // logging_kind
-                                // imgui_log_history_capacity
-                                // gdb_server_addr
-
-                                #[cfg(feature = "logging")]
-                                {
-                                    heading(ui, "Logging", 16.0, 5.0);
-                                    draw!(
-                                        "logging",
-                                        debug,
-                                        [logging_kind, imgui_log_history_capacity]
-                                    );
-
-                                    #[cfg(feature = "gdb-server")]
-                                    ui.dummy([0.0, 4.0]);
-                                }
-
-                                #[cfg(feature = "gdb-server")]
-                                {
-                                    heading(ui, "GDB server", 16.0, 5.0);
-                                    draw!("gdb_server", debug, [gdb_server_addr]);
-                                }
-                            }
-
-                            #[cfg(feature = "discord-presence")]
-                            Section::DiscordPresence => {
-                                // discord_presence_enabled
-
-                                draw!("general", discord_presence, [enabled]);
-                            }
-                        }
-
-                        if self.cur_section != Section::Input {
-                            self.input_map_editor = None;
-                        }
-                    });
+                self.draw_help(ui);
             }
         });
     }

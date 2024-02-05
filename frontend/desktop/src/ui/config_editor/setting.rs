@@ -127,20 +127,23 @@ pub struct OptHomePath {
     pub get: fn(&Config) -> Option<&HomePathBuf>,
     pub set: fn(&mut Config, Option<HomePathBuf>),
     buffer: StdString,
-    is_folder: bool,
+    placeholder: &'static str,
+    is_dir: bool,
 }
 
 impl OptHomePath {
     pub const fn new(
         get: fn(&Config) -> Option<&HomePathBuf>,
         set: fn(&mut Config, Option<HomePathBuf>),
-        is_folder: bool,
+        placeholder: &'static str,
+        is_dir: bool,
     ) -> Self {
         OptHomePath {
             get,
             set,
             buffer: StdString::new(),
-            is_folder,
+            placeholder,
+            is_dir,
         }
     }
 }
@@ -171,6 +174,7 @@ impl RawSetting for OptHomePath {
                 .input_text("", &mut self.buffer)
                 .auto_select_all(true)
                 .enter_returns_true(true)
+                .hint(self.placeholder)
                 .build()
             {
                 new_value = Some(
@@ -183,14 +187,14 @@ impl RawSetting for OptHomePath {
             ui.enabled(path.is_some(), || {
                 if ui.button("\u{f08e}") {
                     let path = &path.unwrap().0;
-                    let _ = opener::open(if self.is_folder {
+                    let _ = opener::open(if self.is_dir {
                         path
                     } else {
                         path.parent().unwrap_or(path)
                     });
                 }
                 if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
-                    ui.tooltip_text(if self.is_folder {
+                    ui.tooltip_text(if self.is_dir {
                         "Open folder"
                     } else {
                         "Open containing folder"
@@ -201,7 +205,7 @@ impl RawSetting for OptHomePath {
             ui.same_line();
 
             if ui.button("\u{f07c}") {
-                let path = if self.is_folder {
+                let path = if self.is_dir {
                     FileDialog::new().pick_folder()
                 } else {
                     FileDialog::new().pick_file()
@@ -609,32 +613,43 @@ impl<T: Clone + PartialEq + 'static> RawSetting for Combo<T> {
 }
 
 pub(super) trait Setting {
-    fn draw(&mut self, ui: &Ui, config: &mut Config, data: &SettingsData);
+    fn draw(
+        &mut self,
+        label_colon: &str,
+        label: &str,
+        help: &str,
+        ui: &Ui,
+        config: &mut Config,
+        data: &mut SettingsData,
+    );
 }
 
 pub struct NonOverridable<S: RawSetting> {
     pub inner: S,
-    pub label: &'static str,
     pub reset: fn(&mut Config),
 }
 
 impl<S: RawSetting> NonOverridable<S> {
-    pub fn new(label: &'static str, inner: S, reset: fn(&mut Config)) -> Self {
-        NonOverridable {
-            label,
-            inner,
-            reset,
-        }
+    pub fn new(inner: S, reset: fn(&mut Config)) -> Self {
+        NonOverridable { inner, reset }
     }
 }
 
 impl<S: RawSetting> Setting for NonOverridable<S> {
-    fn draw(&mut self, ui: &Ui, config: &mut Config, _data: &SettingsData) {
+    fn draw(
+        &mut self,
+        label_colon: &str,
+        label: &str,
+        help: &str,
+        ui: &Ui,
+        config: &mut Config,
+        data: &mut SettingsData,
+    ) {
         ui.table_next_row();
 
         ui.table_next_column();
         ui.align_text_to_frame_padding();
-        ui.text(self.label);
+        ui.text(label_colon);
 
         ui.table_next_column();
         let start = ui.cursor_pos();
@@ -650,13 +665,20 @@ impl<S: RawSetting> Setting for NonOverridable<S> {
         if ui.is_item_hovered() {
             ui.tooltip_text("Reset");
         }
+
+        ui.table_next_column();
+        if ui.button("\u{f059}") {
+            data.current_help_item = Some((label.to_string(), help.to_string()));
+        }
+        if ui.is_item_hovered() {
+            ui.tooltip_text("Help");
+        }
     }
 }
 
 pub struct Overridable<S: RawSetting> {
     pub global: S,
     pub game: S,
-    pub label: &'static str,
     pub game_override_enabled: fn(&Config) -> bool,
     pub set_game_override_enabled: fn(&mut Config, enabled: bool),
     pub reset_global: fn(&mut Config),
@@ -665,7 +687,6 @@ pub struct Overridable<S: RawSetting> {
 
 impl<S: RawSetting> Overridable<S> {
     pub fn new(
-        label: &'static str,
         (global, game): (S, S),
         game_override_enabled: fn(&Config) -> bool,
         set_game_override_enabled: fn(&mut Config, enabled: bool),
@@ -675,7 +696,6 @@ impl<S: RawSetting> Overridable<S> {
         Overridable {
             global,
             game,
-            label,
             game_override_enabled,
             set_game_override_enabled,
             reset_global,
@@ -685,18 +705,34 @@ impl<S: RawSetting> Overridable<S> {
 }
 
 impl<T: RawSetting> Setting for Overridable<T> {
-    fn draw(&mut self, ui: &Ui, config: &mut Config, data: &SettingsData) {
+    fn draw(
+        &mut self,
+        label_colon: &str,
+        label: &str,
+        help: &str,
+        ui: &Ui,
+        config: &mut Config,
+        data: &mut SettingsData,
+    ) {
         ui.table_next_row();
 
         ui.table_next_column();
         ui.align_text_to_frame_padding();
-        ui.text(self.label);
+        ui.text(label_colon);
 
         ui.table_next_column();
         {
             let _id = ui.push_id("global");
-            self.global
-                .draw(ui, config, "Global setting", ui.content_region_avail()[0]);
+            self.global.draw(
+                ui,
+                config,
+                if data.game_loaded {
+                    "Global setting"
+                } else {
+                    ""
+                },
+                ui.content_region_avail()[0],
+            );
         }
 
         ui.table_next_column();
@@ -740,5 +776,13 @@ impl<T: RawSetting> Setting for Overridable<T> {
                 }
             }
         );
+
+        ui.table_next_column();
+        if ui.button("\u{f059}") {
+            data.current_help_item = Some((label.to_string(), help.to_string()));
+        }
+        if ui.is_item_hovered() {
+            ui.tooltip_text("Help");
+        }
     }
 }

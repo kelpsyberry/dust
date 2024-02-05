@@ -1,3 +1,4 @@
+use crate::ui::utils::add2;
 use imgui::{StyleColor, Ui};
 
 pub fn regs_32_default_label(i: usize, max_digits: u32) -> String {
@@ -114,7 +115,7 @@ pub fn bitfield(
         macro_rules! show_field {
             ($bits: expr, $show_value: expr, $text_color: expr, $bg_color: expr) => {
                 let field_width = field_widths[field_i];
-                let upper_left = [0, 1].map(|i| window_pos[i] + cursor_pos[i]);
+                let upper_left = add2(window_pos, cursor_pos);
                 let draw_list = ui.get_window_draw_list();
                 draw_list
                     .add_rect(

@@ -1,7 +1,11 @@
 use crate::config::{self, File};
 use imgui::{StyleColor, Ui};
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, path::Path};
+use std::{
+    borrow::Cow,
+    ops::{Add, Mul, Sub},
+    path::Path,
+};
 
 macro_rules! location_str {
     ($path: expr) => {
@@ -73,82 +77,130 @@ pub fn scale_to_fit(aspect_ratio: f32, frame_size: [f32; 2]) -> ([f32; 2], [f32;
     let width = (frame_size[1] * aspect_ratio).min(frame_size[0]);
     let height = width / aspect_ratio;
     (
-        [
-            (frame_size[0] - width) * 0.5,
-            (frame_size[1] - height) * 0.5,
-        ],
+        mul2s(sub2(frame_size, [width, height]), 0.5),
         [width, height],
     )
 }
 
 pub fn scale_to_fit_rotated(
-    mut orig_size: [f32; 2],
+    orig_size: [f32; 2],
     integer_scale: bool,
     rot: f32,
     frame_size: [f32; 2],
 ) -> ([f32; 2], [[f32; 2]; 4]) {
-    let half_size = frame_size.map(|v| v * 0.5);
+    let half_frame_size = mul2s(frame_size, 0.5);
     let (sin, cos) = rot.sin_cos();
     let mut scale = f32::INFINITY;
     let rotate_and_get_scale = |[x, y]: [f32; 2]| {
         let rot_x = x * cos - y * sin;
         let rot_y = x * sin + y * cos;
         scale = scale
-            .min(half_size[0] / rot_x.abs())
-            .min(half_size[1] / rot_y.abs());
+            .min(half_frame_size[0] / rot_x.abs())
+            .min(half_frame_size[1] / rot_y.abs());
         [rot_x, rot_y]
     };
-    orig_size[0] *= 0.5;
-    orig_size[1] *= 0.5;
+    let half_size = mul2s(orig_size, 0.5);
     let rotated_rel_points = [
-        [-orig_size[0], -orig_size[1]],
-        [orig_size[0], -orig_size[1]],
-        orig_size,
-        [-orig_size[0], orig_size[1]],
+        [-half_size[0], -half_size[1]],
+        [half_size[0], -half_size[1]],
+        half_size,
+        [-half_size[0], half_size[1]],
     ]
     .map(rotate_and_get_scale);
     if integer_scale && scale > 1.0 {
         scale = scale.floor();
     }
     (
-        half_size,
-        rotated_rel_points.map(|point| {
-            [
-                point[0] * scale + half_size[0],
-                point[1] * scale + half_size[1],
-            ]
-        }),
+        half_frame_size,
+        rotated_rel_points.map(|point| add2(mul2s(point, scale), half_frame_size)),
     )
 }
 
-pub fn heading(ui: &Ui, text: &str, text_indent: f32, margin: f32) {
-    let start_x = ui.cursor_screen_pos()[0];
-    let window_x_bounds = [start_x, start_x + ui.content_region_avail()[0]];
+#[allow(clippy::too_many_arguments)]
+pub fn heading_options(
+    ui: &Ui,
+    text: &str,
+    text_indent: f32,
+    line_inner_margin: f32,
+    line_outer_margin_start: f32,
+    line_outer_margin_end: f32,
+    height: f32,
+    remove_item_spacing: bool,
+) {
+    let height = height.max(ui.text_line_height());
+
+    let mut cursor_pos = ui.cursor_screen_pos();
+    if remove_item_spacing {
+        cursor_pos[1] -= style!(ui, item_spacing)[1];
+    }
+    let mut end_pos = [cursor_pos[0], cursor_pos[1] + height];
+    if !remove_item_spacing {
+        end_pos[1] += style!(ui, item_spacing)[1];
+    }
+
+    let line_outer_bounds = [
+        cursor_pos[0] + line_outer_margin_start,
+        cursor_pos[0] + ui.content_region_avail()[0] - line_outer_margin_end,
+    ];
     let separator_color = ui.style_color(StyleColor::Separator);
 
-    let mut text_start_pos = ui.cursor_screen_pos();
-    text_start_pos[0] += text_indent;
-    ui.set_cursor_screen_pos(text_start_pos);
-    ui.text(text);
+    let line_y = cursor_pos[1] + height * 0.5;
+    let text_start_x = cursor_pos[0] + text_indent;
+    let text_start_y = line_y - ui.text_line_height() * 0.5;
+    let text_end_x = text_start_x + ui.calc_text_size(text)[0];
 
-    text_start_pos[1] += ui.text_line_height() * 0.5;
-    let text_end_x = text_start_pos[0] + ui.calc_text_size(text)[0];
+    ui.set_cursor_screen_pos([text_start_x, text_start_y]);
+    ui.text(text);
 
     let draw_list = ui.get_window_draw_list();
     draw_list
         .add_line(
-            [window_x_bounds[0], text_start_pos[1]],
-            [text_start_pos[0] - margin, text_start_pos[1]],
+            [line_outer_bounds[0], line_y],
+            [text_start_x - line_inner_margin, line_y],
             separator_color,
         )
         .build();
     draw_list
         .add_line(
-            [window_x_bounds[1], text_start_pos[1]],
-            [text_end_x + margin, text_start_pos[1]],
+            [line_outer_bounds[1], line_y],
+            [text_end_x + line_inner_margin, line_y],
             separator_color,
         )
         .build();
+    ui.set_cursor_screen_pos(end_pos);
+}
+
+pub fn heading_spacing(
+    ui: &Ui,
+    text: &str,
+    text_indent: f32,
+    line_inner_margin: f32,
+    spacing: f32,
+) {
+    ui.dummy([0.0, spacing]);
+    heading_options(
+        ui,
+        text,
+        text_indent,
+        line_inner_margin,
+        0.0,
+        0.0,
+        0.0,
+        true,
+    );
+}
+
+pub fn heading(ui: &Ui, text: &str, text_indent: f32, line_inner_margin: f32) {
+    heading_options(
+        ui,
+        text,
+        text_indent,
+        line_inner_margin,
+        0.0,
+        0.0,
+        0.0,
+        false,
+    );
 }
 
 pub fn combo_value<T: PartialEq + Clone, L: for<'a> Fn(&'a T) -> Cow<'a, str>>(
@@ -165,4 +217,19 @@ pub fn combo_value<T: PartialEq + Clone, L: for<'a> Fn(&'a T) -> Cow<'a, str>>(
     } else {
         false
     }
+}
+
+#[inline]
+pub fn add2<T: Add<Output = T>>([a0, a1]: [T; 2], [b0, b1]: [T; 2]) -> [T; 2] {
+    [a0 + b0, a1 + b1]
+}
+
+#[inline]
+pub fn sub2<T: Sub<Output = T>>([a0, a1]: [T; 2], [b0, b1]: [T; 2]) -> [T; 2] {
+    [a0 - b0, a1 - b1]
+}
+
+#[inline]
+pub fn mul2s<T: Mul<Output = T> + Copy>([a0, a1]: [T; 2], b: T) -> [T; 2] {
+    [a0 * b, a1 * b]
 }

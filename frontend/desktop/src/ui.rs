@@ -53,7 +53,7 @@ use std::{
     },
     thread,
 };
-use utils::scale_to_fit_rotated;
+use utils::{add2, scale_to_fit_rotated};
 
 #[cfg(feature = "xq-audio")]
 fn adjust_custom_sample_rate(sample_rate: Option<NonZeroU32>) -> Option<NonZeroU32> {
@@ -1753,8 +1753,7 @@ pub fn main() {
                             window_pos[0] + content_region_min[0],
                             window_pos[1] + content_region_min[1],
                         ];
-                        let abs_points =
-                            points.map(|[x, y]| [x + upper_left[0], y + upper_left[1]]);
+                        let abs_points = points.map(|point| add2(point, upper_left));
                         ui.get_window_draw_list()
                             .add_image_quad(
                                 state.fb_texture.id(),
