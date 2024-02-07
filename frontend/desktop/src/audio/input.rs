@@ -11,7 +11,6 @@ use std::{
 
 pub const OUTPUT_SAMPLE_RATE: u32 = SYS_CLOCK_RATE / 128;
 
-#[repr(C)]
 struct Buffer {
     write_pos: AtomicUsize,
     data: Box<UnsafeCell<[i16; MIC_SAMPLES_PER_FRAME * 2]>>,

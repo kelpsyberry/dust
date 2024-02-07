@@ -27,7 +27,6 @@ proc_bitfield::bitfield! {
     }
 }
 
-#[repr(C)]
 #[derive(Savestate)]
 pub struct Banks {
     pub a: OwnedBytesCellPtr<0x2_0000>,
@@ -41,7 +40,6 @@ pub struct Banks {
     pub i: OwnedBytesCellPtr<0x4000>,
 }
 
-#[repr(C)]
 #[derive(Savestate)]
 struct Map {
     // NOTE: The cells are an ugly hack to avoid macros but also work around simultaneous mutable
@@ -57,7 +55,6 @@ struct Map {
     arm7: [Cell<u8>; 2],
 }
 
-#[repr(C)]
 struct Writeback {
     // NOTE: Same as `Map`
     a_bg: UnsafeCell<[usize; 0x8_0000 / usize::BITS as usize]>,
@@ -77,7 +74,6 @@ pub struct Updates {
     pub oam: bool,             // One 1 KiB (0x400 bytes) region
 }
 
-#[repr(C)]
 #[derive(Savestate)]
 #[load(in_place_only, post = "self.post_load()")]
 #[store(pre = "self.flush_writeback()")]

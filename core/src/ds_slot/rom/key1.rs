@@ -1,7 +1,6 @@
 use crate::{cpu::arm7, utils::Bytes};
 
 #[derive(Clone)]
-#[repr(C)]
 pub struct KeyBuffer<const LEVEL_3: bool> {
     key_buf: [u32; 0x412],
     key_code: [u32; 3],

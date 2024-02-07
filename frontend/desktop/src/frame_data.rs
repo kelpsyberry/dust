@@ -2,7 +2,6 @@
 use crate::debug_views;
 use dust_core::gpu::Framebuffer;
 
-#[repr(C)]
 pub struct FrameData {
     pub fb: Box<Framebuffer>,
     pub fps: f32,

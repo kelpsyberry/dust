@@ -7,7 +7,6 @@ use dust_core::{
     utils::Bytes,
 };
 
-#[repr(C)]
 pub struct RenderingData {
     pub control: RenderingControl,
     pub w_buffering: bool,

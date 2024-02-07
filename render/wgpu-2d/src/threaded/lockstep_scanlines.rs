@@ -23,7 +23,6 @@ use dust_core::{
 };
 use std::{sync::Arc, thread};
 
-#[repr(C)]
 struct Vram<R: Role>
 where
     [(); R::BG_VRAM_LEN]: Sized,
@@ -37,7 +36,6 @@ where
     oam: Bytes<0x400>,
 }
 
-#[repr(C)]
 #[allow(clippy::type_complexity)]
 struct SharedData {
     stopped: AtomicBool,

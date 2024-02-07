@@ -4,7 +4,6 @@ use crate::{
     utils::Savestate,
 };
 
-#[repr(C)]
 #[derive(Clone, Debug, Savestate)]
 pub struct Regs {
     pub cur: [u32; 16],

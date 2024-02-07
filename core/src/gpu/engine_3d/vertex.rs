@@ -15,7 +15,6 @@ pub type InterpColor = u16x4;
 pub type ScreenCoords = u16x2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
-#[repr(C)]
 pub struct Vertex {
     pub coords: i32x4,
     pub uv: TexCoords,

@@ -163,7 +163,6 @@ proc_bitfield::bitfield! {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Savestate)]
-#[repr(C)]
 pub struct Polygon {
     pub verts: [VertexAddr; 10],
     pub depth_values: [u32; 10],

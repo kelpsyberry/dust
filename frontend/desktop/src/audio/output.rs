@@ -19,7 +19,6 @@ pub const DEFAULT_INPUT_SAMPLE_RATE: u32 = SYS_CLOCK_RATE >> 10;
 
 const BUFFER_BASE_CAPACITY: usize = 0x800;
 
-#[repr(C)]
 struct Buffer {
     read_pos: AtomicUsize,
     write_pos: AtomicUsize,

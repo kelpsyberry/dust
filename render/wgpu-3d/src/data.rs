@@ -41,7 +41,6 @@ impl GxData {
     }
 }
 
-#[repr(C)]
 pub struct RenderingData {
     pub control: RenderingControl,
 
@@ -120,7 +119,6 @@ impl RenderingData {
     }
 }
 
-#[repr(C)]
 pub struct FrameData {
     pub rendering: RenderingData,
     pub gx: GxData,
