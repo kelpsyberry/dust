@@ -1679,7 +1679,7 @@ menu",
                                         paused_framerate_limit,
                                         "Paused framerate limit",
                                         "The framerate limit to apply to the emulator when \
-                                         paused, in FPS. This will affect components that reads \
+                                         paused, in FPS. This will affect components that read \
                                          the emulator's state like debug views.",
                                     ),
                                     (
@@ -1835,14 +1835,6 @@ The firmware boot sequence will always be skipped if any system files are not pr
             });
     }
 
-    fn help_height(&self, ui: &Ui, padding: [f32; 2]) -> f32 {
-        let (help_path, help_message) = self.data.cur_help_item_or_default();
-        ui.calc_text_size_with_opts(help_path, false, ui.content_region_avail()[0])[1]
-            + style!(ui, item_spacing)[1] * 5.0
-            + ui.calc_text_size_with_opts(help_message, false, ui.content_region_avail()[0])[1]
-            + 2.0 * padding[1]
-    }
-
     fn draw_help(&self, ui: &Ui, height: f32, padding: [f32; 2], outer_cell_padding: [f32; 2]) {
         {
             let cursor_pos = ui.cursor_screen_pos();
@@ -1874,7 +1866,6 @@ The firmware boot sequence will always be skipped if any system files are not pr
                 ui.text_wrapped(help_path);
                 ui.dummy([0.0; 2]);
                 ui.text_wrapped(help_message);
-                ui.dummy([0.0; 2]);
                 ui.dummy([0.0; 2]);
             });
     }
@@ -1945,11 +1936,10 @@ The firmware boot sequence will always be skipped if any system files are not pr
 
                 let right_padding = [orig_cell_padding[0] * 2.0 - cell_padding[0], 0.0];
 
-                let mut help_height = self.help_height(ui, right_padding);
+                let help_plus_header_height =
+                    (ui.content_region_avail()[1] - style!(ui, cell_padding)[1]) * 0.3;
                 let help_header_height = ui.text_line_height().max(cell_padding[1] * 2.0);
-                let help_plus_header_height = (help_height + help_header_height)
-                    .min((ui.content_region_avail()[1] - style!(ui, cell_padding)[1]) * 0.3);
-                help_height = help_plus_header_height - help_header_height;
+                let help_height = help_plus_header_height - help_header_height;
 
                 if let Some(_tab_bar) = ui.tab_bar("tab") {
                     if ui.tab_item("Global").is_some() {
