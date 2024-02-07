@@ -164,7 +164,7 @@ impl GfxThreadChannels {
 struct FrameData {
     output_3d: Box<[Scanline<u32>; SCREEN_HEIGHT]>,
     framebuffer: Box<[[Scanline<BgObjPixel>; SCREEN_HEIGHT]; 2]>,
-    fb_scanline_flags: [[ScanlineFlags; SCREEN_HEIGHT]; 2],
+    fb_scanline_flags: Box<[[ScanlineFlags; SCREEN_HEIGHT]; 2]>,
     engine_3d_enabled: bool,
     frame_index: u64,
 }
@@ -175,7 +175,7 @@ impl Default for FrameData {
             FrameData {
                 output_3d: Box::new_zeroed().assume_init(),
                 framebuffer: Box::new_zeroed().assume_init(),
-                fb_scanline_flags: [[ScanlineFlags::default(); SCREEN_HEIGHT]; 2],
+                fb_scanline_flags: Box::new_zeroed().assume_init(),
                 engine_3d_enabled: false,
                 frame_index: 0,
             }

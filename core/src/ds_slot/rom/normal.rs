@@ -63,7 +63,7 @@ impl Normal {
             contents,
             rom_mask,
             chip_id,
-            key_buf: arm7_bios.map(|bios| Box::new(key1::KeyBuffer::new::<2>(game_code, bios))),
+            key_buf: arm7_bios.map(|bios| key1::KeyBuffer::new_boxed::<2>(game_code, bios)),
             stage: Stage::Initial,
         })
     }

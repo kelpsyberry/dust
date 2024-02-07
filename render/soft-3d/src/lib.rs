@@ -387,7 +387,7 @@ fn depth_test_less_back_facing(a: u32, b: u32, _: PixelAttrs) -> bool {
 impl Renderer {
     pub fn new() -> Self {
         Renderer {
-            color_buffer: Box::new(Scanline([Color::splat(0); 256])),
+            color_buffer: unsafe { Box::new_zeroed().assume_init() },
             depth_buffer: unsafe { Box::new_zeroed().assume_init() },
             attr_buffer: unsafe { Box::new_zeroed().assume_init() },
             polys: Vec::with_capacity(2048),

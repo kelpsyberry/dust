@@ -14,8 +14,7 @@ use emu_utils::triple_buffer;
 use parking_lot::RwLock;
 use std::{
     cell::UnsafeCell,
-    hint,
-    mem::{self, MaybeUninit},
+    hint, mem,
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         Arc,
@@ -43,7 +42,7 @@ struct FrameData {
 pub struct Tx {
     shared_data: Arc<SharedData>,
     frame_tx: triple_buffer::Sender<FrameData>,
-    last_gx_data: GxData,
+    last_gx_data: Box<GxData>,
     texture_dirty: [u8; 3],
     tex_pal_dirty: [u8; 3],
     cur_frame_index: u64,
@@ -249,7 +248,7 @@ pub fn init(
         Tx {
             shared_data: Arc::clone(&shared_data),
             frame_tx,
-            last_gx_data: unsafe { MaybeUninit::zeroed().assume_init() },
+            last_gx_data: unsafe { Box::new_zeroed().assume_init() },
             texture_dirty: [0; 3],
             tex_pal_dirty: [0; 3],
             cur_frame_index: 0,

@@ -546,7 +546,7 @@ struct ThreadData {
 
     fns: (FnPtrs<EngineA>, FnPtrs<EngineB>),
     buffers: [Buffers; 2],
-    fb_scanline_flags: [[ScanlineFlags; SCREEN_HEIGHT]; 2],
+    fb_scanline_flags: Box<[[ScanlineFlags; SCREEN_HEIGHT]; 2]>,
     gfx_data: GfxData,
 }
 
@@ -590,7 +590,7 @@ impl ThreadData {
 
                 fns: (FnPtrs::new(), FnPtrs::new()),
                 buffers: [buffers!(), buffers!()],
-                fb_scanline_flags: [[ScanlineFlags::default(); SCREEN_HEIGHT]; 2],
+                fb_scanline_flags: unsafe { Box::new_zeroed().assume_init() },
                 gfx_data,
             },
             color_output_view,

@@ -446,7 +446,7 @@ impl Engine3d {
             gx_status: GxStatus(0),
 
             gx_fifo_irq_requested: false,
-            gx_fifo: Box::new(Fifo::new()),
+            gx_fifo: unsafe { Box::new_zeroed().assume_init() },
             gx_pipe: Fifo::new(),
             cur_packed_commands: 0,
             remaining_command_params: 0,
@@ -507,7 +507,7 @@ impl Engine3d {
 
             vert_ram_level: 0,
             poly_ram_level: 0,
-            vert_ram: Box::new([ScreenVertex::new(); 6144]),
+            vert_ram: unsafe { Box::new_zeroed().assume_init() },
             poly_ram: unsafe { Box::new_zeroed().assume_init() },
 
             rendering_state: RenderingState {

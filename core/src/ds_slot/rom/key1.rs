@@ -1,19 +1,22 @@
 use crate::{cpu::arm7, utils::Bytes};
 
 #[derive(Clone)]
+#[repr(C)]
 pub struct KeyBuffer<const LEVEL_3: bool> {
     key_buf: [u32; 0x412],
     key_code: [u32; 3],
 }
 
 impl<const LEVEL_3: bool> KeyBuffer<LEVEL_3> {
-    pub fn new<const MODULO: usize>(id_code: u32, arm7_bios: &Bytes<{ arm7::BIOS_SIZE }>) -> Self {
-        let key_code = [id_code, id_code >> 1, id_code << 1];
-        let mut key_buf = [0; 0x412];
-        for (i, word) in key_buf.iter_mut().enumerate() {
+    pub fn new_boxed<const MODULO: usize>(
+        id_code: u32,
+        arm7_bios: &Bytes<{ arm7::BIOS_SIZE }>,
+    ) -> Box<Self> {
+        let mut result = unsafe { Box::<Self>::new_zeroed().assume_init() };
+        result.key_code = [id_code, id_code >> 1, id_code << 1];
+        for (i, word) in result.key_buf.iter_mut().enumerate() {
             *word = arm7_bios.read_le(0x30 + (i << 2));
         }
-        let mut result = KeyBuffer { key_buf, key_code };
         result.apply_key_code::<MODULO>();
         result.apply_key_code::<MODULO>();
         result
