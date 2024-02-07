@@ -37,7 +37,8 @@ macro_rules! def_config {
             overridable {
                 $(
                     $uo_ident: ident: $($uo_inner_ty: ty),* = $uo_global_default: expr,
-                    $uo_game_default: expr, resolve $uo_resolve: path, set $uo_set: path,
+                    $uo_game_default: expr, $uo_game_unset: expr, resolve $uo_resolve: path,
+                    set $uo_set: path,
                 )*
             }
             game {
@@ -51,7 +52,8 @@ macro_rules! def_config {
             overridable {
                 $(
                     $to_ident: ident: $($to_inner_ty: ty),* = $to_global_default: expr,
-                    $to_game_default: expr, resolve $to_resolve: path, set $to_set: path,
+                    $to_game_default: expr, $to_game_unset: expr, resolve $to_resolve: path,
+                    set $to_set: path,
                 )*
             }
             game {
@@ -98,9 +100,9 @@ macro_rules! def_config {
         impl Default for $game_config {
             fn default() -> Self {
                 $game_config {
-                    $($uo_ident: $uo_game_default,)*
+                    $($uo_ident: $uo_game_unset,)*
                     $($uga_ident: $uga_default,)*
-                    $($to_ident: $to_game_default,)*
+                    $($to_ident: $to_game_unset,)*
                     $($tga_ident: $tga_default,)*
                 }
             }
@@ -124,12 +126,13 @@ macro_rules! def_config {
                         $ug_default,
                     )),)*
                     $($uo_ident: {
-                        let game_default = $uo_game_default;
+                        let game_unset = $uo_game_unset;
                         Untracked::new(Overridable::new(
                             global.$uo_ident.clone(),
                             $uo_global_default,
-                            game_default.clone(),
-                            game_default,
+                            game_unset.clone(),
+                            $uo_game_default,
+                            game_unset,
                             $uo_resolve,
                             $uo_set,
                         ))
@@ -145,12 +148,13 @@ macro_rules! def_config {
                         NonOverridable::new(global.$tg_ident.clone(), $tg_default),
                     ),)*
                     $($to_ident: {
-                        let game_default = $to_game_default;
+                        let game_unset = $to_game_unset;
                         Tracked::new(Overridable::new(
                             global.$to_ident.clone(),
                             $to_global_default,
-                            game_default.clone(),
-                            game_default,
+                            game_unset.clone(),
+                            $to_game_default,
+                            game_unset,
                             $to_resolve,
                             $to_set,
                         ))
@@ -198,9 +202,9 @@ macro_rules! def_config {
             }
 
             pub fn unset_game(&mut self) {
-                $(self.$uo_ident.update(|value| value.set_default_game());)*
+                $(self.$uo_ident.update(|value| value.unset_game());)*
                 $(self.$uga_ident.set($lga_default);)*
-                $(self.$to_ident.update(|value| value.set_default_game());)*
+                $(self.$to_ident.update(|value| value.unset_game());)*
                 $(self.$tga_ident.set($tga_default);)*
             }
 
@@ -274,6 +278,17 @@ pub struct GameSysPaths {
     pub arm9_bios: Option<Option<HomePathBuf>>,
     #[serde(skip_serializing_if = "Option::is_none", with = "double_option")]
     pub firmware: Option<Option<HomePathBuf>>,
+}
+
+impl GameSysPaths {
+    fn empty() -> Self {
+        GameSysPaths {
+            dir: Some(None),
+            arm7_bios: Some(None),
+            arm9_bios: Some(None),
+            firmware: Some(None),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -407,25 +422,25 @@ def_config! {
             gdb_server_addr: SocketAddr = ([127_u8, 0, 0, 1], 12345_u16).into(),
         }
         overridable {
-            ds_slot_rom_in_memory_max_size: u32 = 32 * 1024 * 1024, None,
+            ds_slot_rom_in_memory_max_size: u32 = 32 * 1024 * 1024, Some(32 * 1024 * 1024), None,
                 resolve resolve_option, set set_option,
-            screen_rot: u16 = 0, None,
+            screen_rot: u16 = 0, Some(0), None,
                 resolve resolve_option, set set_option,
             sys_paths: ResolvedSysPaths, GlobalSysPaths, GameSysPaths, ()
-                = Default::default(), GameSysPaths::default(),
+                = Default::default(), GameSysPaths::empty(), GameSysPaths::default(),
                 resolve ResolvedSysPaths::resolve, set set_unreachable,
-            skip_firmware: bool = true, None,
+            skip_firmware: bool = true, Some(true), None,
                 resolve resolve_option, set set_option,
-            pause_on_launch: bool = false, None,
+            pause_on_launch: bool = false, Some(false), None,
                 resolve resolve_option, set set_option,
-            model: ModelConfig = ModelConfig::Auto, None,
+            model: ModelConfig = ModelConfig::Auto, Some(ModelConfig::Auto), None,
                 resolve resolve_option, set set_option,
-            prefer_hle_bios: bool = false, None,
+            prefer_hle_bios: bool = false, Some(false), None,
                 resolve resolve_option, set set_option,
-            input_map: input::Map, input::Map, input::Map, ()
-                = Default::default(), input::Map::empty(),
+            input_map: input::Map, input::GlobalMap, input::Map, ()
+                = Default::default(), Default::default(), input::Map::empty(),
                 resolve input::Map::resolve, set set_unreachable,
-            include_save_in_savestates: bool = true, None,
+            include_save_in_savestates: bool = true, Some(true), None,
                 resolve resolve_option, set set_option,
         }
         game {}
@@ -441,43 +456,47 @@ def_config! {
             savestate_dir_path: HomePathBuf = HomePathBuf(base_dirs().data.join("states")),
         }
         overridable {
-            full_window_screen: bool = true, None,
+            full_window_screen: bool = true, Some(true), None,
                 resolve resolve_option, set set_option,
-            imgui_log_history_capacity: u32 = 1024 * 1024, None,
+            imgui_log_history_capacity: u32 = 1024 * 1024, Some(1024 * 1024), None,
                 resolve resolve_option, set set_option,
-            discord_presence_enabled: bool = true, None,
+            discord_presence_enabled: bool = true, Some(true), None,
                 resolve resolve_option, set set_option,
-            framerate_ratio_limit: (bool, f32) = (true, 1.0), None,
+            framerate_ratio_limit: (bool, f32) = (true, 1.0), Some((true, 1.0)), None,
                 resolve resolve_option, set set_option,
-            paused_framerate_limit: f32 = 10.0, None,
+            paused_framerate_limit: f32 = 10.0, Some(10.0), None,
                 resolve resolve_option, set set_option,
-            sync_to_audio: bool = true, None,
+            sync_to_audio: bool = true, Some(true), None,
                 resolve resolve_option, set set_option,
-            audio_volume: f32 = 1.0, None,
+            audio_volume: f32 = 1.0, Some(1.0), None,
                 resolve resolve_option, set set_option,
-            audio_sample_chunk_size: u16 = 512, None,
+            audio_sample_chunk_size: u16 = 512, Some(512), None,
                 resolve resolve_option, set set_option,
             audio_output_interp_method: audio::InterpMethod
-                = audio::InterpMethod::Nearest, None,
+                = audio::InterpMethod::Nearest, Some(audio::InterpMethod::Nearest), None,
                 resolve resolve_option, set set_option,
-            audio_input_enabled: bool = false, None,
+            audio_input_enabled: bool = false, Some(false), None,
                 resolve resolve_option, set set_option,
             audio_input_interp_method: audio::InterpMethod
-                = audio::InterpMethod::Nearest, None,
+                = audio::InterpMethod::Nearest, Some(audio::InterpMethod::Nearest), None,
                 resolve resolve_option, set set_option,
-            audio_custom_sample_rate: Option<NonZeroU32>, u32 = 0, None,
+            audio_custom_sample_rate: Option<NonZeroU32>, u32 = 0, Some(0), None,
                 resolve resolve_opt_nonzero_u32, set set_opt_nonzero_u32,
-            audio_channel_interp_method: AudioChannelInterpMethod = AudioChannelInterpMethod::Nearest, None,
+            audio_channel_interp_method: AudioChannelInterpMethod
+                = AudioChannelInterpMethod::Nearest, Some(AudioChannelInterpMethod::Nearest), None,
                 resolve resolve_option, set set_option,
-            save_interval_ms: f32 = 1000.0, None,
+            save_interval_ms: f32 = 1000.0, Some(1000.0), None,
                 resolve resolve_option, set set_option,
-            rtc_time_offset_seconds: i64 = 0, None,
+            rtc_time_offset_seconds: i64 = 0, Some(0), None,
                 resolve resolve_option, set set_option,
-            renderer_2d_kind: Renderer2dKind = Renderer2dKind::SoftLockstepScanlines, None,
+            renderer_2d_kind: Renderer2dKind
+                = Renderer2dKind::SoftLockstepScanlines,
+                    Some(Renderer2dKind::SoftLockstepScanlines), None,
                 resolve resolve_option, set set_option,
-            renderer_3d_kind: Renderer3dKind = Renderer3dKind::Soft, None,
+            renderer_3d_kind: Renderer3dKind
+                = Renderer3dKind::Soft, Some(Renderer3dKind::Soft), None,
                 resolve resolve_option, set set_option,
-            resolution_scale_shift: u8 = 0, None,
+            resolution_scale_shift: u8 = 0, Some(0), None,
                 resolve resolve_option, set set_option,
         }
         game {

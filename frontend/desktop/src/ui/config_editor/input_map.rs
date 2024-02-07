@@ -1,4 +1,4 @@
-use super::SettingsData;
+use super::{SettingsData, Tab, BORDER_WIDTH};
 use crate::input::{
     trigger::{self, Trigger},
     Action, Map, PressedKey,
@@ -137,7 +137,7 @@ impl Editor {
                 if game {
                     inner.update_game(update);
                 } else {
-                    inner.update_global(update);
+                    inner.update_global(|map| update(&mut map.0));
                 }
             });
         }
@@ -150,6 +150,7 @@ impl Editor {
         selection: (Selection, bool),
         ui: &Ui,
         config: &mut Config,
+        tooltip: &str,
         width: f32,
     ) {
         let _button_color = (!self.state.is_manually_changing()
@@ -212,6 +213,12 @@ impl Editor {
                 }
             }
         }
+
+        if !tooltip.is_empty()
+            && ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED)
+        {
+            ui.tooltip_text(tooltip);
+        }
     }
 
     fn draw_entry(
@@ -226,11 +233,11 @@ impl Editor {
             let input_map = config.input_map.inner();
             match selection {
                 Selection::Keypad(key) => (
-                    input_map.global().keypad[&key].clone(),
+                    input_map.global().0.keypad[&key].clone(),
                     input_map.game().keypad.get(&key).cloned(),
                 ),
                 Selection::Hotkey(action) => (
-                    input_map.global().hotkeys[&action].clone(),
+                    input_map.global().0.hotkeys[&action].clone(),
                     input_map.game().hotkeys.get(&action).cloned(),
                 ),
             }
@@ -245,100 +252,110 @@ impl Editor {
         ui.text(format!("{name}:"));
 
         ui.table_next_column();
-        {
-            let _id = ui.push_id("global");
+
+        let tab_is_global = data.cur_tab == Tab::Global;
+        let game_override_enabled = game_trigger.is_some();
+
+        let button_width = ui.calc_text_size("\u{f055}")[0].max(ui.calc_text_size("\u{f056}")[0])
+            + style!(ui, frame_padding)[0] * 2.0;
+        let mut width = ui.content_region_avail()[0];
+        if !tab_is_global {
+            width -= button_width + style!(ui, item_spacing)[0];
+        }
+        if tab_is_global || !game_override_enabled {
+            ui.enabled(tab_is_global, || {
+                let _id = ui.push_id("global");
+                self.draw_input_button(
+                    global_trigger,
+                    (selection, false),
+                    ui,
+                    config,
+                    if tab_is_global { "" } else { "Global setting" },
+                    width,
+                );
+            });
+        } else {
+            let _id = ui.push_id("game");
             self.draw_input_button(
-                global_trigger,
-                (selection, false),
+                game_trigger.unwrap(),
+                (selection, true),
                 ui,
                 config,
-                ui.content_region_avail()[0],
+                "",
+                width,
             );
         }
-
-        ui.table_next_column();
-        {
-            let game_override_enabled = game_trigger.is_some();
-            let (button_text, tooltip) = if let Some(game_trigger) = game_trigger {
-                let width = ui.content_region_avail()[0]
-                    - (ui.calc_text_size("-")[0]
-                        + style!(ui, frame_padding)[0] * 2.0
-                        + style!(ui, item_spacing)[0]);
-                let _id = ui.push_id("game");
-                self.draw_input_button(game_trigger, (selection, true), ui, config, width);
-                ui.same_line();
-                ("-", "Remove game override")
+        if !tab_is_global {
+            ui.same_line();
+            let (label, tooltip) = if game_override_enabled {
+                ("\u{f056}", "Remove game override")
             } else {
-                ("+", "Add game override")
+                ("\u{f055}", "Add game override")
             };
-            ui.enabled(data.game_loaded, || {
-                if ui.button(button_text) {
-                    config.input_map.update(|inner| {
-                        inner.update_game(|map| {
-                            if game_override_enabled {
-                                match selection {
-                                    Selection::Keypad(key) => {
-                                        map.keypad.remove(&key);
-                                    }
-                                    Selection::Hotkey(action) => {
-                                        map.hotkeys.remove(&action);
-                                    }
-                                }
-                            } else {
-                                match selection {
-                                    Selection::Keypad(key) => {
-                                        map.keypad.insert(key, None);
-                                    }
-                                    Selection::Hotkey(action) => {
-                                        map.hotkeys.insert(action, None);
-                                    }
-                                }
-                            }
-                        })
-                    });
-                }
-                if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
-                    ui.tooltip_text(tooltip);
-                }
-            });
-        }
-
-        ui.table_next_column();
-        modify_configs_mask!(
-            ui,
-            icon_tooltip "\u{f1f8}", "Reset",
-            "reset",
-            true,
-            data.game_loaded,
-            |global, game| {
+            if ui.button_with_size(label, [button_width, 0.0]) {
                 config.input_map.update(|inner| {
-                    if global {
-                        inner.update_global(|map| {
-                            let mut default = Map::default();
-                            match selection {
-                                Selection::Keypad(key) => {
-                                    map.keypad.insert(key, default.keypad.remove(&key).unwrap());
-                                }
-                                Selection::Hotkey(action) => {
-                                    map.hotkeys
-                                        .insert(action, default.hotkeys.remove(&action).unwrap());
-                                }
-                            }
-                        });
-                    }
-                    if game {
+                    if game_override_enabled {
                         inner.update_game(|map| match selection {
                             Selection::Keypad(key) => {
-                                map.keypad.insert(key, None);
+                                map.keypad.remove(&key);
                             }
                             Selection::Hotkey(action) => {
-                                map.hotkeys.insert(action, None);
+                                map.hotkeys.remove(&action);
+                            }
+                        });
+                    } else {
+                        let trigger = match selection {
+                            Selection::Keypad(key) => inner.global().0.keypad[&key].clone(),
+                            Selection::Hotkey(action) => inner.global().0.hotkeys[&action].clone(),
+                        };
+                        inner.update_game(|map| match selection {
+                            Selection::Keypad(key) => {
+                                map.keypad.insert(key, trigger);
+                            }
+                            Selection::Hotkey(action) => {
+                                map.hotkeys.insert(action, trigger);
                             }
                         });
                     }
                 });
             }
-        );
+            if ui.is_item_hovered() {
+                ui.tooltip_text(tooltip);
+            }
+        }
+
+        ui.table_next_column();
+        ui.enabled(tab_is_global || game_override_enabled, || {
+            if ui.button("\u{f1f8}") {
+                let update = |map: &mut Map| {
+                    let mut default = Map::default();
+                    match selection {
+                        Selection::Keypad(key) => {
+                            map.keypad.insert(key, default.keypad.remove(&key).unwrap());
+                        }
+                        Selection::Hotkey(action) => {
+                            map.hotkeys
+                                .insert(action, default.hotkeys.remove(&action).unwrap());
+                        }
+                    }
+                };
+                match data.cur_tab {
+                    Tab::Global => {
+                        config.input_map.update(|inner| {
+                            inner.update_global(|map| update(&mut map.0));
+                        });
+                    }
+                    Tab::Game => {
+                        config.input_map.update(|inner| {
+                            inner.update_game(update);
+                        });
+                    }
+                }
+            }
+            if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
+                ui.tooltip_text("Set default");
+            }
+        });
     }
 
     pub(super) fn draw(&mut self, ui: &Ui, config: &mut Config, data: &SettingsData) {
@@ -357,7 +374,7 @@ impl Editor {
                     config.input_map.update(|inner| inner.set_default_global());
                 }
                 if game {
-                    config.input_map.update(|inner| inner.set_default_game());
+                    config.input_map.update(|inner| inner.unset_game());
                 }
             }
         );
@@ -412,13 +429,13 @@ impl Editor {
             export_map!(game)
         );
 
-        heading(ui, "Keypad", 16.0, 5.0);
+        heading(ui, "Keypad", 16.0, 5.0, BORDER_WIDTH);
 
         macro_rules! section {
             ($id: literal, $draw: expr) => {
                 if let Some(_table_token) = ui.begin_table_with_flags(
                     $id,
-                    4,
+                    3,
                     TableFlags::SIZING_STRETCH_SAME | TableFlags::NO_CLIP,
                 ) {
                     ui.table_setup_column_with(TableColumnSetup {
@@ -426,14 +443,6 @@ impl Editor {
                         ..TableColumnSetup::new("")
                     });
                     ui.table_setup_column("");
-                    ui.table_setup_column_with(TableColumnSetup {
-                        flags: if data.game_loaded {
-                            TableColumnFlags::empty()
-                        } else {
-                            TableColumnFlags::WIDTH_FIXED
-                        },
-                        ..TableColumnSetup::new("")
-                    });
                     ui.table_setup_column_with(TableColumnSetup {
                         flags: TableColumnFlags::WIDTH_FIXED,
                         ..TableColumnSetup::new("")
@@ -451,7 +460,7 @@ impl Editor {
         });
 
         ui.dummy([0.0, 8.0]);
-        heading(ui, "Hotkeys", 16.0, 5.0);
+        heading(ui, "Hotkeys", 16.0, 5.0, BORDER_WIDTH);
 
         section!("hotkeys", {
             for &(action, name) in ACTIONS {

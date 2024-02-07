@@ -4,6 +4,9 @@ pub trait Resolvable {
 
     fn get(&self) -> &Self::Resolved;
     fn set(&mut self, value: Self::Set);
+}
+
+pub trait Defaultable: Resolvable {
     fn set_default(&mut self);
 }
 
@@ -37,7 +40,9 @@ impl<T: Clone> Resolvable for NonOverridable<T> {
     fn set(&mut self, value: Self::Set) {
         self.value = value;
     }
+}
 
+impl<T: Clone> Defaultable for NonOverridable<T> {
     fn set_default(&mut self) {
         self.value = self.default.clone();
     }
@@ -57,6 +62,7 @@ pub struct Overridable<T, Gl: Clone = T, Ga: Clone + Default = Option<Gl>, S = T
     default_global: Gl,
     game: Ga,
     default_game: Ga,
+    unset_game: Ga,
     resolved: T,
     origin: Origin,
 
@@ -70,6 +76,7 @@ impl<T, Gl: Clone, Ga: Clone + Default, S> Overridable<T, Gl, Ga, S> {
         default_global: Gl,
         game: Ga,
         default_game: Ga,
+        unset_game: Ga,
         resolve: ResolveFn<T, Gl, Ga>,
         set: SetFn<Gl, Ga, S>,
     ) -> Self {
@@ -79,6 +86,7 @@ impl<T, Gl: Clone, Ga: Clone + Default, S> Overridable<T, Gl, Ga, S> {
             default_global,
             game,
             default_game,
+            unset_game,
             resolved,
             origin,
 
@@ -136,6 +144,11 @@ impl<T, Gl: Clone, Ga: Clone + Default, S> Overridable<T, Gl, Ga, S> {
         self.game = self.default_game.clone();
         self.resolve();
     }
+
+    pub fn unset_game(&mut self) {
+        self.game = self.unset_game.clone();
+        self.resolve();
+    }
 }
 
 pub trait OverridableTypes {
@@ -160,12 +173,6 @@ impl<T, Gl: Clone, Ga: Clone + Default, S> Resolvable for Overridable<T, Gl, Ga,
         (self.set)(&mut self.global, &mut self.game, value, self.origin);
         self.resolve();
     }
-
-    fn set_default(&mut self) {
-        self.global = self.default_global.clone();
-        self.game = self.default_game.clone();
-        self.resolve();
-    }
 }
 
 pub trait Setting {
@@ -183,7 +190,10 @@ pub trait Setting {
         self.update(|inner| inner.set(value));
     }
 
-    fn set_default(&mut self) {
+    fn set_default(&mut self)
+    where
+        Self::T: Defaultable,
+    {
         self.update(|inner| inner.set_default());
     }
 }

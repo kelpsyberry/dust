@@ -228,8 +228,8 @@ impl<'de> Deserialize<'de> for Map {
                     }
                 }
                 Ok(Map {
-                    keypad: keypad.unwrap_or_else(default_keypad_map),
-                    hotkeys: hotkeys.unwrap_or_else(default_hotkey_map),
+                    keypad: keypad.unwrap_or_default(),
+                    hotkeys: hotkeys.unwrap_or_default(),
                 })
             }
         }
@@ -239,18 +239,37 @@ impl<'de> Deserialize<'de> for Map {
 }
 
 impl Map {
-    pub fn resolve(global: &Self, game: &Self) -> (Self, SettingOrigin) {
-        let mut result = global.clone();
-        for (key, trigger) in &mut result.keypad {
-            if let Some(new_trigger) = game.keypad.get(key) {
-                *trigger = new_trigger.clone();
-            }
+    pub fn merge(mut self, b: Map) -> Map {
+        for (key, trigger) in b.keypad {
+            self.keypad.insert(key, trigger);
         }
-        for (action, trigger) in &mut result.hotkeys {
-            if let Some(new_trigger) = game.hotkeys.get(action) {
-                *trigger = new_trigger.clone();
-            }
+        for (action, trigger) in b.hotkeys {
+            self.hotkeys.insert(action, trigger);
         }
-        (result, SettingOrigin::Game)
+        self
+    }
+
+    pub fn resolve(global: &GlobalMap, game: &Map) -> (Self, SettingOrigin) {
+        (
+            Self::merge(global.0.clone(), game.clone()),
+            SettingOrigin::Game,
+        )
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct GlobalMap(pub Map);
+
+impl Serialize for GlobalMap {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for GlobalMap {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(GlobalMap(
+            Map::default().merge(Map::deserialize(deserializer)?),
+        ))
     }
 }

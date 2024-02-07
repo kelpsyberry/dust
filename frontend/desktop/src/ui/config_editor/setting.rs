@@ -1,6 +1,6 @@
-use super::SettingsData;
+use super::{SettingsData, Tab};
 use crate::{config::Config, ui::utils::combo_value, utils::HomePathBuf};
-use imgui::{internal::DataTypeKind, ItemHoveredFlags, SliderFlags, Ui};
+use imgui::{internal::DataTypeKind, ItemHoveredFlags, SliderFlags, Ui, WindowHoveredFlags};
 use rfd::FileDialog;
 use std::{
     borrow::Cow, net::SocketAddr as StdSocketAddr, num::NonZeroU32, string::String as StdString,
@@ -41,7 +41,9 @@ impl RawSetting for String {
             (self.set)(config, &self.buffer);
         }
 
-        if !tooltip.is_empty() && ui.is_item_hovered() {
+        if !tooltip.is_empty()
+            && ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED)
+        {
             ui.tooltip_text(tooltip);
         }
     }
@@ -65,60 +67,60 @@ impl HomePath {
 
 impl RawSetting for HomePath {
     fn draw(&mut self, ui: &Ui, config: &mut Config, tooltip: &str, width: f32) {
-        ui.group(|| {
-            let path = (self.get)(config);
-            self.buffer.clear();
-            self.buffer.push_str(
-                path.to_string()
-                    .unwrap_or_else(|| "<invalid UTF-8>".into())
-                    .as_ref(),
-            );
+        let path = (self.get)(config);
+        self.buffer.clear();
+        self.buffer.push_str(
+            path.to_string()
+                .unwrap_or_else(|| "<invalid UTF-8>".into())
+                .as_ref(),
+        );
 
-            let mut new_value = None;
+        let mut new_value = None;
 
-            ui.set_next_item_width(
-                width
-                    - (ui.calc_text_size("\u{f08e}")[0]
-                        + ui.calc_text_size("\u{f07c}")[0]
-                        + style!(ui, frame_padding)[0] * 4.0
-                        + style!(ui, item_spacing)[0] * 2.0),
-            );
-            if ui
-                .input_text("", &mut self.buffer)
-                .auto_select_all(true)
-                .enter_returns_true(true)
-                .build()
-            {
-                new_value = Some(HomePathBuf::from(self.buffer.as_str()));
-            }
+        ui.set_next_item_width(
+            width
+                - (ui.calc_text_size("\u{f08e}")[0]
+                    + ui.calc_text_size("\u{f07c}")[0]
+                    + style!(ui, frame_padding)[0] * 4.0
+                    + style!(ui, item_spacing)[0] * 2.0),
+        );
+        if ui
+            .input_text("", &mut self.buffer)
+            .auto_select_all(true)
+            .enter_returns_true(true)
+            .build()
+        {
+            new_value = Some(HomePathBuf::from(self.buffer.as_str()));
+        }
 
-            ui.same_line();
-
-            if ui.button("\u{f08e}") {
-                let _ = opener::open(&path.0);
-            }
-            if ui.is_item_hovered() {
-                ui.tooltip_text("Open");
-            }
-
-            ui.same_line();
-
-            if ui.button("\u{f07c}") {
-                if let Some(path) = FileDialog::new().pick_folder() {
-                    new_value = Some(HomePathBuf(path));
-                }
-            }
-            if ui.is_item_hovered() {
-                ui.tooltip_text("Browse...");
-            }
-
-            if let Some(new_value) = new_value {
-                (self.set)(config, new_value);
-            }
-        });
-
-        if !tooltip.is_empty() && ui.is_item_hovered() {
+        if !tooltip.is_empty()
+            && ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED)
+        {
             ui.tooltip_text(tooltip);
+        }
+
+        ui.same_line();
+
+        if ui.button("\u{f08e}") {
+            let _ = opener::open(&path.0);
+        }
+        if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
+            ui.tooltip_text("Open");
+        }
+
+        ui.same_line();
+
+        if ui.button("\u{f07c}") {
+            if let Some(path) = FileDialog::new().pick_folder() {
+                new_value = Some(HomePathBuf(path));
+            }
+        }
+        if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
+            ui.tooltip_text("Browse...");
+        }
+
+        if let Some(new_value) = new_value {
+            (self.set)(config, new_value);
         }
     }
 }
@@ -150,81 +152,80 @@ impl OptHomePath {
 
 impl RawSetting for OptHomePath {
     fn draw(&mut self, ui: &Ui, config: &mut Config, tooltip: &str, width: f32) {
-        ui.group(|| {
-            self.buffer.clear();
-            let path = (self.get)(config);
-            if let Some(path) = path {
-                self.buffer.push_str(
-                    path.to_string()
-                        .unwrap_or_else(|| "<invalid UTF-8>".into())
-                        .as_ref(),
-                );
-            }
-
-            let mut new_value = None;
-
-            ui.set_next_item_width(
-                width
-                    - (ui.calc_text_size("\u{f08e}")[0]
-                        + ui.calc_text_size("\u{f07c}")[0]
-                        + style!(ui, frame_padding)[0] * 4.0
-                        + style!(ui, item_spacing)[0] * 2.0),
+        self.buffer.clear();
+        let path = (self.get)(config);
+        if let Some(path) = path {
+            self.buffer.push_str(
+                path.to_string()
+                    .unwrap_or_else(|| "<invalid UTF-8>".into())
+                    .as_ref(),
             );
-            if ui
-                .input_text("", &mut self.buffer)
-                .auto_select_all(true)
-                .enter_returns_true(true)
-                .hint(self.placeholder)
-                .build()
-            {
-                new_value = Some(
-                    (!self.buffer.is_empty()).then(|| HomePathBuf::from(self.buffer.as_str())),
-                );
-            }
+        }
 
-            ui.same_line();
+        let mut new_value = None;
 
-            ui.enabled(path.is_some(), || {
-                if ui.button("\u{f08e}") {
-                    let path = &path.unwrap().0;
-                    let _ = opener::open(if self.is_dir {
-                        path
-                    } else {
-                        path.parent().unwrap_or(path)
-                    });
-                }
-                if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
-                    ui.tooltip_text(if self.is_dir {
-                        "Open folder"
-                    } else {
-                        "Open containing folder"
-                    });
-                }
-            });
+        ui.set_next_item_width(
+            width
+                - (ui.calc_text_size("\u{f08e}")[0]
+                    + ui.calc_text_size("\u{f07c}")[0]
+                    + style!(ui, frame_padding)[0] * 4.0
+                    + style!(ui, item_spacing)[0] * 2.0),
+        );
+        if ui
+            .input_text("", &mut self.buffer)
+            .auto_select_all(true)
+            .enter_returns_true(true)
+            .hint(self.placeholder)
+            .build()
+        {
+            new_value =
+                Some((!self.buffer.is_empty()).then(|| HomePathBuf::from(self.buffer.as_str())));
+        }
 
-            ui.same_line();
+        if !tooltip.is_empty()
+            && ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED)
+        {
+            ui.tooltip_text(tooltip);
+        }
 
-            if ui.button("\u{f07c}") {
-                let path = if self.is_dir {
-                    FileDialog::new().pick_folder()
+        ui.same_line();
+
+        ui.enabled(path.is_some(), || {
+            if ui.button("\u{f08e}") {
+                let path = &path.unwrap().0;
+                let _ = opener::open(if self.is_dir {
+                    path
                 } else {
-                    FileDialog::new().pick_file()
-                };
-                if let Some(path) = path {
-                    new_value = Some(Some(HomePathBuf(path)));
-                }
+                    path.parent().unwrap_or(path)
+                });
             }
-            if ui.is_item_hovered() {
-                ui.tooltip_text("Browse...");
-            }
-
-            if let Some(new_value) = new_value {
-                (self.set)(config, new_value);
+            if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
+                ui.tooltip_text(if self.is_dir {
+                    "Open folder"
+                } else {
+                    "Open containing folder"
+                });
             }
         });
 
-        if !tooltip.is_empty() && ui.is_item_hovered() {
-            ui.tooltip_text(tooltip);
+        ui.same_line();
+
+        if ui.button("\u{f07c}") {
+            let path = if self.is_dir {
+                FileDialog::new().pick_folder()
+            } else {
+                FileDialog::new().pick_file()
+            };
+            if let Some(path) = path {
+                new_value = Some(Some(HomePathBuf(path)));
+            }
+        }
+        if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
+            ui.tooltip_text("Browse...");
+        }
+
+        if let Some(new_value) = new_value {
+            (self.set)(config, new_value);
         }
     }
 }
@@ -272,7 +273,7 @@ impl RawSetting for SocketAddr {
                 updated = true;
             }
         }
-        hovered |= ui.is_item_hovered();
+        hovered |= ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED);
 
         let mut port = addr.port();
         ui.same_line();
@@ -281,7 +282,7 @@ impl RawSetting for SocketAddr {
             addr.set_port(port);
             updated = true;
         }
-        hovered |= ui.is_item_hovered();
+        hovered |= ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED);
 
         if updated {
             (self.set)(config, addr);
@@ -318,7 +319,9 @@ impl<T: DataTypeKind> RawSetting for Scalar<T> {
             (self.set)(config, value);
         }
 
-        if !tooltip.is_empty() && ui.is_item_hovered() {
+        if !tooltip.is_empty()
+            && ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED)
+        {
             ui.tooltip_text(tooltip);
         }
     }
@@ -368,7 +371,7 @@ impl RawSetting for OptNonZeroU32Slider {
             value = if active { Some(self.default) } else { None };
             updated = true;
         }
-        hovered |= ui.is_item_hovered();
+        hovered |= ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED);
 
         if active {
             let mut raw_value = value.unwrap().get();
@@ -382,7 +385,10 @@ impl RawSetting for OptNonZeroU32Slider {
                 value = Some(NonZeroU32::new(raw_value).unwrap());
                 updated = true;
             }
-            hovered |= ui.is_item_hovered();
+            hovered |= ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED);
+        } else if width > ui.frame_height() {
+            ui.same_line_with_spacing(0.0, 0.0);
+            ui.dummy([width - ui.frame_height(), 0.0]);
         }
 
         if updated {
@@ -434,7 +440,7 @@ impl<T: DataTypeKind> RawSetting for BoolAndValueSlider<T> {
         if ui.checkbox("##active", &mut active) {
             updated = true;
         }
-        hovered |= ui.is_item_hovered();
+        hovered |= ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED);
 
         if active {
             ui.same_line();
@@ -446,7 +452,10 @@ impl<T: DataTypeKind> RawSetting for BoolAndValueSlider<T> {
             {
                 updated = true;
             }
-            hovered |= ui.is_item_hovered();
+            hovered |= ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED);
+        } else if width > ui.frame_height() {
+            ui.same_line_with_spacing(0.0, 0.0);
+            ui.dummy([width - ui.frame_height(), 0.0]);
         }
 
         if updated {
@@ -499,7 +508,9 @@ impl<T: DataTypeKind> RawSetting for Slider<T> {
             (self.set)(config, value);
         }
 
-        if !tooltip.is_empty() && ui.is_item_hovered() {
+        if !tooltip.is_empty()
+            && ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED)
+        {
             ui.tooltip_text(tooltip);
         }
     }
@@ -545,7 +556,9 @@ impl<T: DataTypeKind> RawSetting for StringFormatSlider<T> {
             (self.set)(config, value);
         }
 
-        if !tooltip.is_empty() && ui.is_item_hovered() {
+        if !tooltip.is_empty()
+            && ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED)
+        {
             ui.tooltip_text(tooltip);
         }
     }
@@ -563,12 +576,19 @@ impl Bool {
 }
 
 impl RawSetting for Bool {
-    fn draw(&mut self, ui: &Ui, config: &mut Config, tooltip: &str, _width: f32) {
+    fn draw(&mut self, ui: &Ui, config: &mut Config, tooltip: &str, width: f32) {
         let mut value = (self.get)(config);
+
         if ui.checkbox("", &mut value) {
             (self.set)(config, value);
         }
-        if !tooltip.is_empty() && ui.is_item_hovered() {
+        let hovered = ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED);
+        if width > ui.frame_height() {
+            ui.same_line_with_spacing(0.0, 0.0);
+            ui.dummy([width - ui.frame_height(), 0.0]);
+        }
+
+        if !tooltip.is_empty() && hovered {
             ui.tooltip_text(tooltip);
         }
     }
@@ -606,10 +626,35 @@ impl<T: Clone + PartialEq + 'static> RawSetting for Combo<T> {
             (self.set)(config, value);
         }
 
-        if !tooltip.is_empty() && ui.is_item_hovered() {
+        if !tooltip.is_empty()
+            && ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED)
+        {
             ui.tooltip_text(tooltip);
         }
     }
+}
+
+fn is_row_hovered(ui: &Ui) -> bool {
+    use imgui::sys::*;
+
+    let rect_hovered = unsafe {
+        let table = &*igGetCurrentTable();
+        let mut row_rect = ImRect {
+            Min: ImVec2 {
+                x: table.WorkRect.Min.x,
+                y: table.RowPosY1,
+            },
+            Max: ImVec2 {
+                x: table.WorkRect.Max.x,
+                y: table.RowPosY2,
+            },
+        };
+        ImRect_ClipWith(&mut row_rect, table.BgClipRect);
+        igIsMouseHoveringRect(row_rect.Min, row_rect.Max, true)
+    };
+
+    rect_hovered
+        && ui.is_window_hovered_with_flags(WindowHoveredFlags::ALLOW_WHEN_BLOCKED_BY_ACTIVE_ITEM)
 }
 
 pub(super) trait Setting {
@@ -652,26 +697,37 @@ impl<S: RawSetting> Setting for NonOverridable<S> {
         ui.text(label_colon);
 
         ui.table_next_column();
-        let start = ui.cursor_pos();
-        ui.table_next_column();
-        let width = ui.cursor_pos()[0] - start[0] + ui.content_region_avail()[0];
-        ui.set_cursor_pos(start);
-        self.inner.draw(ui, config, "", width);
+        ui.enabled(data.cur_tab == Tab::Global, || {
+            self.inner.draw(
+                ui,
+                config,
+                if data.cur_tab == Tab::Global {
+                    ""
+                } else {
+                    "This setting can't be overridden"
+                },
+                ui.content_region_avail()[0],
+            );
 
-        ui.table_next_column();
-        if ui.button("\u{f1f8}") {
-            (self.reset)(config);
-        }
-        if ui.is_item_hovered() {
-            ui.tooltip_text("Reset");
-        }
+            ui.table_next_column();
+            if ui.button("\u{f1f8}") {
+                (self.reset)(config);
+            }
+            if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
+                ui.tooltip_text("Set default");
+            }
+        });
 
-        ui.table_next_column();
-        if ui.button("\u{f059}") {
-            data.current_help_item = Some((label.to_string(), help.to_string()));
-        }
-        if ui.is_item_hovered() {
-            ui.tooltip_text("Help");
+        if data.help_buttons_enabled {
+            ui.table_next_column();
+            if ui.button("\u{f059}") {
+                data.set_help_item(label, help);
+            }
+            if ui.is_item_hovered() {
+                ui.tooltip_text("Help");
+            }
+        } else if is_row_hovered(ui) {
+            data.set_help_item(label, help);
         }
     }
 }
@@ -721,68 +777,65 @@ impl<T: RawSetting> Setting for Overridable<T> {
         ui.text(label_colon);
 
         ui.table_next_column();
-        {
+
+        let tab_is_global = data.cur_tab == Tab::Global;
+        let game_override_enabled = (self.game_override_enabled)(config);
+        if tab_is_global {
             let _id = ui.push_id("global");
-            self.global.draw(
-                ui,
-                config,
-                if data.game_loaded {
-                    "Global setting"
-                } else {
-                    ""
-                },
-                ui.content_region_avail()[0],
-            );
-        }
-
-        ui.table_next_column();
-        {
-            let game_override_enabled = (self.game_override_enabled)(config);
-            let (button_text, tooltip) = if game_override_enabled {
-                let width = ui.content_region_avail()[0]
-                    - (ui.calc_text_size("-")[0]
-                        + style!(ui, frame_padding)[0] * 2.0
-                        + style!(ui, item_spacing)[0]);
+            self.global
+                .draw(ui, config, "", ui.content_region_avail()[0]);
+        } else {
+            let button_width = ui.calc_text_size("\u{f055}")[0]
+                .max(ui.calc_text_size("\u{f056}")[0])
+                + style!(ui, frame_padding)[0] * 2.0;
+            let width = ui.content_region_avail()[0] - (button_width + style!(ui, item_spacing)[0]);
+            if game_override_enabled {
                 let _id = ui.push_id("game");
-                self.game.draw(ui, config, "Game override", width);
-                ui.same_line();
-                ("-", "Remove game override")
+                self.game.draw(ui, config, "", width);
             } else {
-                ("+", "Add game override")
+                ui.enabled(false, || {
+                    let _id = ui.push_id("global");
+                    self.global.draw(ui, config, "Global setting", width);
+                });
+            }
+
+            ui.same_line();
+            let (label, tooltip) = if game_override_enabled {
+                ("\u{f056}", "Remove game override")
+            } else {
+                ("\u{f055}", "Add game override")
             };
-            ui.enabled(data.game_loaded, || {
-                if ui.button(button_text) {
-                    (self.set_game_override_enabled)(config, !game_override_enabled);
-                }
-                if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
-                    ui.tooltip_text(tooltip);
-                }
-            });
+            if ui.button_with_size(label, [button_width, 0.0]) {
+                (self.set_game_override_enabled)(config, !game_override_enabled);
+            }
+            if ui.is_item_hovered() {
+                ui.tooltip_text(tooltip);
+            }
         }
 
         ui.table_next_column();
-        modify_configs_mask!(
-            ui,
-            icon_tooltip "\u{f1f8}", "Reset",
-            "reset",
-            true,
-            data.game_loaded,
-            |global, game| {
-                if global {
-                    (self.reset_global)(config);
-                }
-                if game {
-                    (self.reset_game)(config);
+        ui.enabled(tab_is_global || game_override_enabled, || {
+            if ui.button("\u{f1f8}") {
+                match data.cur_tab {
+                    Tab::Global => (self.reset_global)(config),
+                    Tab::Game => (self.reset_game)(config),
                 }
             }
-        );
+            if ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED) {
+                ui.tooltip_text("Set default");
+            }
+        });
 
-        ui.table_next_column();
-        if ui.button("\u{f059}") {
-            data.current_help_item = Some((label.to_string(), help.to_string()));
-        }
-        if ui.is_item_hovered() {
-            ui.tooltip_text("Help");
+        if data.help_buttons_enabled {
+            ui.table_next_column();
+            if ui.button("\u{f059}") {
+                data.set_help_item(label, help);
+            }
+            if ui.is_item_hovered() {
+                ui.tooltip_text("Help");
+            }
+        } else if is_row_hovered(ui) {
+            data.set_help_item(label, help);
         }
     }
 }

@@ -1,6 +1,6 @@
 use super::{common::rgb5_to_rgba8, FrameDataSlot, InstanceableView, Messages, View};
 use crate::ui::{
-    utils::{add2, combo_value, scale_to_fit},
+    utils::{add2, combo_value, scale_to_fit, sub2s},
     window::Window,
 };
 use dust_core::{
@@ -639,26 +639,31 @@ impl View for BgMaps2d {
             let border_color = ui.style_color(StyleColor::Border);
 
             if self.show_grid_lines {
+                let line_thickness = 1.0;
+                let half_line_thickness = line_thickness * 0.5;
+
                 let draw_list = ui.get_window_draw_list();
                 let image_abs_end_pos = add2(image_abs_pos, image_size);
                 for x in 0..=tiles[0] {
                     let x_pos = image_abs_pos[0] + x as f32 * tile_size[0];
                     draw_list
                         .add_line(
-                            [x_pos, image_abs_pos[1]],
-                            [x_pos, image_abs_end_pos[1]],
+                            sub2s([x_pos, image_abs_pos[1]], half_line_thickness),
+                            sub2s([x_pos, image_abs_end_pos[1]], half_line_thickness),
                             border_color,
                         )
+                        .thickness(line_thickness)
                         .build();
                 }
                 for y in 0..=tiles[1] {
                     let y_pos = image_abs_pos[1] + y as f32 * tile_size[1];
                     draw_list
                         .add_line(
-                            [image_abs_pos[0], y_pos],
-                            [image_abs_end_pos[0], y_pos],
+                            sub2s([image_abs_pos[0], y_pos], half_line_thickness),
+                            sub2s([image_abs_end_pos[0], y_pos], half_line_thickness),
                             border_color,
                         )
+                        .thickness(line_thickness)
                         .build();
                 }
             }

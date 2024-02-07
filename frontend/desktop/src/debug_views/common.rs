@@ -15,6 +15,7 @@ mod scrollbar;
 use scrollbar::Scrollbar;
 mod y_pos;
 
+use crate::ui::utils::sub2s;
 use dust_core::cpu::psr::Mode;
 use imgui::{StyleColor, StyleVar, Ui};
 
@@ -53,24 +54,34 @@ pub fn psr_mode_to_str(mode: Mode) -> &'static str {
 }
 
 pub fn separator_with_width(ui: &Ui, width: f32) {
+    let thickness = 1.0;
+    let half_thickness = thickness * 0.5;
+
     let color = ui.style_color(StyleColor::Separator);
     let prev_cursor_pos = ui.cursor_pos();
     let window_pos = ui.window_pos();
-    let left = [
-        window_pos[0] + prev_cursor_pos[0],
-        window_pos[1] + prev_cursor_pos[1] - ui.scroll_y(),
-    ];
-    let right = [
-        left[0]
-            + if width > 0.0 {
-                width
-            } else {
-                ui.content_region_avail()[0] + width
-            },
-        left[1],
-    ];
+    let left = sub2s(
+        [
+            window_pos[0] + prev_cursor_pos[0],
+            window_pos[1] + prev_cursor_pos[1] - ui.scroll_y(),
+        ],
+        half_thickness,
+    );
+    let right = sub2s(
+        [
+            left[0]
+                + if width > 0.0 {
+                    width
+                } else {
+                    ui.content_region_avail()[0] + width
+                },
+            left[1],
+        ],
+        half_thickness,
+    );
     ui.get_window_draw_list()
         .add_line(left, right, color)
+        .thickness(thickness)
         .build();
     ui.dummy([0.0, 0.0]);
 }

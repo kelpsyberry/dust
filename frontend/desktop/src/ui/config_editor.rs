@@ -38,7 +38,10 @@ macro_rules! modify_configs_mask {
                     .menu_item_config("Global")
                     .enabled(global_enabled)
                     .build();
-                $game = $ui.menu_item_config("Game").enabled(game_enabled).build();
+                $game = $ui
+                    .menu_item_config("Game overrides")
+                    .enabled(game_enabled)
+                    .build();
                 let all = $ui.menu_item("All");
                 $global |= all;
                 $game |= (all && game_enabled);
@@ -89,7 +92,7 @@ macro_rules! modify_configs {
             }
             $ui.popup($id, || {
                 global = $ui.menu_item("Global");
-                if $ui.menu_item("Game") {
+                if $ui.menu_item("Game overrides") {
                     $process_game
                 }
             })
@@ -120,7 +123,9 @@ use crate::{
     audio,
     config::{self, saves, ModelConfig, Renderer2dKind, Renderer3dKind, Setting as _},
     ui::{
-        utils::{add2, combo_value, heading, heading_options, heading_spacing, sub2},
+        utils::{
+            add2, combo_value, heading_options, heading_spacing, sub2, sub2s, table_row_heading,
+        },
         Config, EmuState,
     },
     utils::HomePathBuf,
@@ -134,23 +139,6 @@ use setting::Setting;
 use std::borrow::Cow;
 #[cfg(feature = "xq-audio")]
 use std::num::NonZeroU32;
-
-struct SettingsData {
-    game_loaded: bool,
-    current_help_item: Option<(String, String)>,
-}
-
-impl SettingsData {
-    fn current_help_item_or_default(&self) -> (&str, &str) {
-        match &self.current_help_item {
-            Some((help_path, help_message)) => (help_path.as_str(), help_message.as_str()),
-            None => (
-                "No item selected",
-                "Help for the selected setting will display here.",
-            ),
-        }
-    }
-}
 
 macro_rules! home_path {
     (nonoverridable $id: ident) => {
@@ -420,8 +408,7 @@ macro_rules! overridable {
 macro_rules! sys_path {
     (
         $field: ident,
-        $placeholder_global: expr,
-        $placeholder_game: expr,
+        $placeholder: expr,
         $is_dir: expr
     ) => {
         setting::Overridable::new(
@@ -435,7 +422,7 @@ macro_rules! sys_path {
                             })
                         });
                     },
-                    $placeholder_global,
+                    $placeholder,
                     $is_dir,
                 ),
                 setting::OptHomePath::new(
@@ -456,22 +443,14 @@ macro_rules! sys_path {
                             })
                         });
                     },
-                    $placeholder_game,
+                    $placeholder,
                     $is_dir,
                 ),
             ),
             |config| config.sys_paths.inner().game().$field.is_some(),
             |config, enabled| {
                 let value = if enabled {
-                    Some(Some(
-                        config
-                            .sys_paths
-                            .inner()
-                            .global()
-                            .$field
-                            .clone()
-                            .unwrap_or_else(|| HomePathBuf::from("...")),
-                    ))
+                    Some(config.sys_paths.inner().global().$field.clone())
                 } else {
                     None
                 };
@@ -509,10 +488,10 @@ impl PathsSettings {
         PathsSettings {
             imgui_config_path: nonoverridable!(imgui_config_path, opt_home_path, "", false),
             game_db_path: nonoverridable!(game_db_path, opt_home_path, "", false),
-            sys_dir_path: sys_path!(dir, "", "", true),
-            arm7_bios_path: sys_path!(arm7_bios, "$sys_dir_path/biosnds7.bin", "", false),
-            arm9_bios_path: sys_path!(arm9_bios, "$sys_dir_path/biosnds9.bin", "", false),
-            firmware_path: sys_path!(firmware, "$sys_dir_path/firmware.bin", "", false),
+            sys_dir_path: sys_path!(dir, "", true),
+            arm7_bios_path: sys_path!(arm7_bios, "$sys_dir_path/biosnds7.bin", false),
+            arm9_bios_path: sys_path!(arm9_bios, "$sys_dir_path/biosnds9.bin", false),
+            firmware_path: sys_path!(firmware, "$sys_dir_path/firmware.bin", false),
         }
     }
 }
@@ -801,6 +780,24 @@ impl DiscordPresenceSettings {
     }
 }
 
+struct Settings {
+    paths: PathsSettings,
+    ui: UiSettings,
+    audio: AudioSettings,
+    saves: SavesSettings,
+    emulation: EmulationSettings,
+    #[cfg(any(feature = "logging", feature = "gdb-server"))]
+    debug: DebugSettings,
+    #[cfg(feature = "discord-presence")]
+    discord_presence: DiscordPresenceSettings,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Global,
+    Game,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Section {
     Paths,
@@ -815,16 +812,37 @@ enum Section {
     DiscordPresence,
 }
 
-struct Settings {
-    paths: PathsSettings,
-    ui: UiSettings,
-    audio: AudioSettings,
-    saves: SavesSettings,
-    emulation: EmulationSettings,
-    #[cfg(any(feature = "logging", feature = "gdb-server"))]
-    debug: DebugSettings,
-    #[cfg(feature = "discord-presence")]
-    discord_presence: DiscordPresenceSettings,
+struct SettingsData {
+    game_loaded: bool,
+    help_buttons_enabled: bool,
+    cur_tab: Tab,
+    cur_help_item: Option<(String, String)>,
+    next_help_item: Option<(String, String)>,
+}
+
+impl SettingsData {
+    fn set_help_item(&mut self, label: &str, help: &str) {
+        if let Some((label_, _)) = &self.cur_help_item {
+            if label_ == label {
+                return;
+            }
+        }
+        self.next_help_item = Some((label.to_string(), help.to_string()));
+    }
+
+    fn cur_help_item_or_default(&self) -> (&str, &str) {
+        match &self.cur_help_item {
+            Some((help_path, help_message)) => (help_path.as_str(), help_message.as_str()),
+            None => (
+                "No item selected",
+                if self.help_buttons_enabled {
+                    "Click on the \u{f059} button next to a setting to display its help here."
+                } else {
+                    "Hover over a setting with the cursor to display its help here."
+                },
+            ),
+        }
+    }
 }
 
 impl Settings {
@@ -850,6 +868,8 @@ pub(super) struct Editor {
     data: SettingsData,
 }
 
+const BORDER_WIDTH: f32 = 1.0;
+
 impl Editor {
     pub fn new() -> Self {
         Editor {
@@ -858,7 +878,10 @@ impl Editor {
             input_map_editor: None,
             data: SettingsData {
                 game_loaded: false,
-                current_help_item: None,
+                help_buttons_enabled: false,
+                cur_tab: Tab::Global,
+                cur_help_item: None,
+                next_help_item: None,
             },
         }
     }
@@ -1234,7 +1257,8 @@ impl Editor {
                     }
 
                     if ui.invisible_button(label, [width, height]) {
-                        self.data.current_help_item = None;
+                        self.data.cur_help_item = None;
+                        self.data.next_help_item = None;
                         self.cur_section = section;
                     }
 
@@ -1252,31 +1276,43 @@ impl Editor {
         config: &mut Config,
         emu_state: Option<&mut EmuState>,
         remaining_height: f32,
-        orig_cell_padding: [f32; 2],
+        padding: [f32; 2],
+        outer_cell_padding: [f32; 2],
     ) {
-        let outer_cell_padding = style!(ui, cell_padding);
-        let _cell_padding = ui.push_style_var(StyleVar::CellPadding(orig_cell_padding));
+        let _window_padding = ui.push_style_var(StyleVar::WindowPadding(padding));
         ui.child_window("section")
             .size([
                 0.0,
                 ui.content_region_avail()[1] - remaining_height - outer_cell_padding[1],
             ])
+            .always_use_window_padding(true)
             .build(|| {
+                drop(_window_padding);
                 self.data.game_loaded = emu_state.as_ref().map_or(false, |e| e.game_loaded);
+
+                let inner_cell_padding = [
+                    style!(ui, item_spacing)[0] * 0.5,
+                    style!(ui, cell_padding)[1]
+                ];
 
                 macro_rules! draw {
                     (
-                        $id: literal,
-                        $tab: ident,
-                        $parents: expr,
-                        [$(
-                            $(#[$attr: meta])*
-                            ($field: ident, $label: expr, $help: expr,)
-                        ),*]
-                    ) => {
+                        $section: expr,
+                        $section_struct: ident,
+                        [$((
+                            $(#[$subsection_attr: meta])*
+                            $subsection: literal,
+                            [$(
+                                $(#[$field_attr: meta])*
+                                ($field: ident, $label: literal, $help: expr,)
+                            ),*]
+                        )),*]
+                    ) => {{
+                        let _cell_padding =
+                            ui.push_style_var(StyleVar::CellPadding(inner_cell_padding));
                         if let Some(_table) = ui.begin_table_with_flags(
-                            $id,
-                            5,
+                            $section,
+                            3 + self.data.help_buttons_enabled as usize,
                             TableFlags::SIZING_STRETCH_SAME | TableFlags::NO_CLIP,
                         ) {
                             ui.table_setup_column_with(TableColumnSetup {
@@ -1285,37 +1321,57 @@ impl Editor {
                             });
                             ui.table_setup_column("");
                             ui.table_setup_column_with(TableColumnSetup {
-                                flags: if self.data.game_loaded {
-                                    TableColumnFlags::empty()
-                                } else {
-                                    TableColumnFlags::WIDTH_FIXED
-                                },
-                                ..TableColumnSetup::new("")
-                            });
-                            ui.table_setup_column_with(TableColumnSetup {
                                 flags: TableColumnFlags::WIDTH_FIXED,
                                 ..TableColumnSetup::new("")
                             });
-                            ui.table_setup_column_with(TableColumnSetup {
-                                flags: TableColumnFlags::WIDTH_FIXED,
-                                ..TableColumnSetup::new("")
-                            });
+                            if self.data.help_buttons_enabled {
+                                ui.table_setup_column_with(TableColumnSetup {
+                                    flags: TableColumnFlags::WIDTH_FIXED,
+                                    ..TableColumnSetup::new("")
+                                });
+                            }
+                            drop(_cell_padding);
+                            let mut spacing = 0.0;
                             $(
-                                $(#[$attr])*
+                                $(#[$subsection_attr])*
                                 {
-                                    let _id = ui.push_id(stringify!($field));
-                                    self.settings.$tab.$field.draw(
-                                        concat!($label, ": "),
-                                        concat!($parents, " > ", $label),
-                                        $help,
+                                    table_row_heading(
                                         ui,
-                                        &mut config.config,
-                                        &mut self.data
+                                        $subsection,
+                                        16.0,
+                                        5.0,
+                                        -inner_cell_padding[0],
+                                        BORDER_WIDTH,
+                                        spacing,
                                     );
+                                    $(
+                                        $(#[$field_attr])*
+                                        {
+                                            let _id = ui.push_id(stringify!($field));
+                                            self.settings.$section_struct.$field.draw(
+                                                concat!($label, ": "),
+                                                concat!(
+                                                    $section,
+                                                    " > ",
+                                                    $subsection,
+                                                    " > ",
+                                                    $label,
+                                                ),
+                                                $help,
+                                                ui,
+                                                &mut config.config,
+                                                &mut self.data
+                                            );
+                                        }
+                                    )*
+                                    #[allow(unused_assignments)]
+                                    {
+                                        spacing = 8.0;
+                                    }
                                 }
                             )*
                         }
-                    };
+                    }};
                 }
 
                 match self.cur_section {
@@ -1324,57 +1380,59 @@ impl Editor {
                         // game_db_path
                         // sys_paths
 
-                        heading(ui, "General", 16.0, 5.0);
                         draw!(
-                            "general",
+                            "Paths",
                             paths,
-                            "Paths > General",
                             [
                                 (
-                                    imgui_config_path,
-                                    "ImGui config path",
-                                    "Where to store the INI configuration file for ImGui, used to \
-                                     remember the window layout across launches.",
+                                    "General",
+                                    [
+                                        (
+                                            imgui_config_path,
+                                            "ImGui config",
+                                            "Where to store the INI configuration file for ImGui, \
+                                             used to remember the window layout across launches.",
+                                        ),
+                                        (
+                                            game_db_path,
+                                            "Game database",
+                                            "Where to read the JSON game database from, used to \
+                                             determine save types for games.",
+                                        )
+                                    ]
                                 ),
                                 (
-                                    game_db_path,
-                                    "Game database path",
-                                    "Where to read the JSON game database from, used to determine \
-                                     save types for games.",
-                                )
-                            ]
-                        );
-
-                        heading_spacing(ui, "System files", 16.0, 5.0, 8.0);
-                        draw!(
-                            "sys_files",
-                            paths,
-                            "Paths > System files",
-                            [
-                                (
-                                    sys_dir_path,
-                                    "System dir path",
-                                    "The directory containing the system files (biosnds7.bin, \
-                                     biosnds9.bin, firmware.bin); can be overridden by the below \
-                                     settings.",
-                                ),
-                                (
-                                    arm7_bios_path,
-                                    "ARM7 BIOS path",
-                                    "The path where the ARM7 BIOS binary is stored; will default \
-                                     to $sys_dir_path/biosnds7.bin if not specified.",
-                                ),
-                                (
-                                    arm9_bios_path,
-                                    "ARM9 BIOS path",
-                                    "The path where the ARM9 BIOS binary is stored; will default \
-                                     to $sys_dir_path/biosnds9.bin if not specified.",
-                                ),
-                                (
-                                    firmware_path,
-                                    "Firmware path",
-                                    "The path where the firmware binary is stored; will default \
-                                     to $sys_dir_path/firmware.bin if not specified.",
+                                    "System files",
+                                    [
+                                        (
+                                            sys_dir_path,
+                                            "System dir",
+                                            "The directory containing the system files \
+                                             (biosnds7.bin, biosnds9.bin, firmware.bin); can be \
+                                             overridden by the below settings.",
+                                        ),
+                                        (
+                                            arm7_bios_path,
+                                            "ARM7 BIOS",
+                                            "The path where the ARM7 BIOS binary is stored; will \
+                                             default to $sys_dir_path/biosnds7.bin if not \
+                                             specified.",
+                                        ),
+                                        (
+                                            arm9_bios_path,
+                                            "ARM9 BIOS",
+                                            "The path where the ARM9 BIOS binary is stored; will \
+                                             default to $sys_dir_path/biosnds9.bin if not \
+                                             specified.",
+                                        ),
+                                        (
+                                            firmware_path,
+                                            "Firmware",
+                                            "The path where the firmware binary is stored; will \
+                                             default to $sys_dir_path/firmware.bin if not \
+                                             specified.",
+                                        )
+                                    ]
                                 )
                             ]
                         );
@@ -1387,9 +1445,11 @@ impl Editor {
                         // screen_rot
 
                         draw!(
-                                    "general",
-                                    ui,
-                                    "UI",
+                            "UI",
+                            ui,
+                            [
+                                (
+                                    "General",
                                     [
                                         (
                                             title_bar_mode,
@@ -1424,7 +1484,9 @@ impl Editor {
                                              physical system to be rotated).",
                                         )
                                     ]
-                                );
+                                )
+                            ]
+                        );
                     }
 
                     Section::Audio => {
@@ -1434,89 +1496,79 @@ impl Editor {
                         // audio_channel_interp_method
                         // audio_interp_method
 
-                        heading(ui, "Output", 16.0, 5.0);
                         draw!(
-                            "general",
+                            "Audio",
                             audio,
-                            "Audio > Output",
                             [
                                 (
-                                    volume,
-                                    "Volume",
-                                    "Volume to play the console's audio output at.",
+                                    "Output",
+                                    [
+                                        (
+                                            volume,
+                                            "Volume",
+                                            "Volume to play the console's audio output at.",
+                                        ),
+                                        (
+                                            sample_chunk_size,
+                                            "Sample chunk size",
+                                            "(Advanced) How many samples to produce in the \
+                                             emulator's core before they're queued to be played \
+                                             back.",
+                                        )
+                                    ]
                                 ),
                                 (
-                                    sample_chunk_size,
-                                    "Sample chunk size",
-                                    "(Advanced) How many samples to produce in the emulator's \
-                                     core before they're queued to be played back.",
-                                )
-                            ]
-                        );
-
-                        #[cfg(feature = "xq-audio")]
-                        {
-                            heading_spacing(ui, "Backend output interpolation", 16.0, 5.0, 8.0);
-                            draw!(
-                                "backend_interp",
-                                audio,
-                                "Audio > Backend output interpolation",
-                                [
-                                    (
-                                        custom_sample_rate,
-                                        "Custom sample rate",
-                                        "A custom rate at which audio output samples should be \
-                                         produced by the console for playback, in Hz.",
-                                    ),
-                                    (
-                                        channel_interp_method,
-                                        "Channel interpolation method",
-                                        "The interpolation method to apply to the console's \
-                                         individual audio channels to map their samples to the \
-                                         console's (custom or default) sample rate:
+                                    #[cfg(feature = "xq-audio")]
+                                    "Backend output interpolation",
+                                    [
+                                        (
+                                            custom_sample_rate,
+                                            "Custom sample rate",
+                                            "A custom rate at which audio output samples should \
+                                             be produced by the console for playback, in Hz.",
+                                        ),
+                                        (
+                                            channel_interp_method,
+                                            "Channel interpolation method",
+                                            "The interpolation method to apply to the console's \
+                                             individual audio channels to map their samples to \
+                                             the console's (custom or default) sample rate:
 - Nearest: Don't apply any interpolation
 - Cubic: Apply cubic interpolation",
-                                    )
-                                ]
-                            );
-                        }
-
-                        heading_spacing(ui, "Frontend Output Interpolation", 16.0, 5.0, 8.0);
-                        draw!(
-                            "frontend_interp",
-                            audio,
-                            "Audio > Frontend Output Interpolation",
-                            [(
-                                output_interp_method,
-                                "Interpolation method",
-                                "The interpolation method to apply to the console's audio output \
-                                 samples to map them to the sample rate of the current audio \
-                                 output device:
-- Nearest: Don't apply any interpolation
-- Cubic: Apply cubic interpolation",
-                            )]
-                        );
-
-                        heading_spacing(ui, "Microphone Input", 16.0, 5.0, 8.0);
-                        draw!(
-                            "frontend_interp",
-                            audio,
-                            "Audio > Microphone Input",
-                            [
-                                (
-                                    input_enabled,
-                                    "Enabled",
-                                    "Whether to enable audio input (may ask for microphone \
-                                     permissions).",
+                                        )
+                                    ]
                                 ),
                                 (
-                                    input_interp_method,
-                                    "Interpolation method",
-                                    "The interpolation method to apply to the current audio input \
-                                     device to map its samples to the console's audio input \
-                                     sample rate:
+                                    "Frontend Output Interpolation",
+                                    [(
+                                        output_interp_method,
+                                        "Interpolation method",
+                                        "The interpolation method to apply to the console's audio \
+                                         output samples to map them to the sample rate of the \
+                                         current audio output device:
+    - Nearest: Don't apply any interpolation
+    - Cubic: Apply cubic interpolation",
+                                    )]
+                                ),
+                                (
+                                    "Microphone Input",
+                                    [
+                                        (
+                                            input_enabled,
+                                            "Enabled",
+                                            "Whether to enable audio input (may ask for \
+                                             microphone permissions).",
+                                        ),
+                                        (
+                                            input_interp_method,
+                                            "Interpolation method",
+                                            "The interpolation method to apply to the current \
+                                             audio input device to map its samples to the \
+                                             console's audio input sample rate:
 - Nearest: Don't apply any interpolation
 - Cubic: Apply cubic interpolation",
+                                        )
+                                    ]
                                 )
                             ]
                         );
@@ -1529,37 +1581,50 @@ impl Editor {
                         // save_dir_path
                         // save_path_config
 
-                        heading(ui, "General", 16.0, 5.0);
                         draw!(
-                            "general",
+                            "Saves",
                             saves,
-                            "Saves > General",
-                            [
-                                (
-                                    save_interval_ms,
-                                    "Save interval ms",
-                                    "The interval at which any new save file changes are \
-                                     committed to the filesystem.",
-                                ),
-                                (
-                                    reset_on_save_slot_switch,
-                                    "Restart on save slot switch",
-                                    "Whether to restart the emulator when switching save slots \
-                                     (not doing so could lead to save file corruption).",
-                                ),
-                                (
-                                    include_save_in_savestates,
-                                    "Include save in savestates",
-                                    "Whether to embed the current version of the save file in \
-                                     savestates (not doing so could lead to save file corruption \
-                                     due to inconsistencies when loading a savestate).",
-                                ),
-                                (save_dir_path, "Save directory path", "TODO",),
-                                (savestate_dir_path, "Savestate directory path", "TODO",)
-                            ]
+                            [(
+                                "General",
+                                [
+                                    (
+                                        save_interval_ms,
+                                        "Save interval ms",
+                                        "The interval at which any new save file changes are \
+                                         committed to the filesystem.",
+                                    ),
+                                    (
+                                        reset_on_save_slot_switch,
+                                        "Restart on save slot switch",
+                                        "Whether to restart the emulator when switching save \
+                                         slots (not doing so could lead to save file corruption).",
+                                    ),
+                                    (
+                                        include_save_in_savestates,
+                                        "Include save in savestates",
+                                        "Whether to embed the current version of the save file in \
+                                         savestates (not doing so could lead to save file \
+                                         corruption due to inconsistencies when loading a \
+                                         savestate).",
+                                    ),
+                                    (save_dir_path, "Save directory path", "TODO",),
+                                    (savestate_dir_path, "Savestate directory path", "TODO",)
+                                ]
+                            )]
                         );
 
-                        heading_spacing(ui, "Game", 16.0, 5.0, 8.0);
+                        heading_spacing(
+                            ui,
+                            &if self.data.game_loaded {
+                                format!("Game saves - {}", emu_state.as_deref().unwrap().title)
+                            } else {
+                                "Game saves".to_string()
+                            },
+                            16.0,
+                            5.0,
+                            BORDER_WIDTH,
+                            8.0,
+                        );
                         if self.data.game_loaded {
                             self.draw_game_saves_config(ui, config, emu_state.unwrap());
                         } else {
@@ -1582,27 +1647,29 @@ impl Editor {
                         // resolution_scale_shift
 
                         draw!(
-                            "general",
-                            emulation,
                             "Emulation",
-                            [
-                                (framerate_ratio_limit, "Framerate limit", "TODO",),
-                                (paused_framerate_limit, "Paused framerate limit", "TODO",),
-                                (sync_to_audio, "Sync to audio", "TODO",),
-                                (pause_on_launch, "Pause on launch", "TODO",),
-                                (skip_firmware, "Skip firmware", "TODO",),
-                                (prefer_hle_bios, "Prefer HLE BIOS", "TODO",),
-                                (model, "Model", "TODO",),
-                                (
-                                    ds_slot_rom_in_memory_max_size,
-                                    "DS slot ROM in-memory max size",
-                                    "TODO",
-                                ),
-                                (rtc_time_offset_seconds, "RTC time offset seconds", "TODO",),
-                                (renderer_2d_kind, "2D renderer kind", "TODO",),
-                                (renderer_3d_kind, "3D renderer kind", "TODO",),
-                                (resolution_scale_shift, "3D HW resolution scale", "TODO",)
-                            ]
+                            emulation,
+                            [(
+                                "General",
+                                [
+                                    (framerate_ratio_limit, "Framerate limit", "TODO",),
+                                    (paused_framerate_limit, "Paused framerate limit", "TODO",),
+                                    (sync_to_audio, "Sync to audio", "TODO",),
+                                    (pause_on_launch, "Pause on launch", "TODO",),
+                                    (skip_firmware, "Skip firmware", "TODO",),
+                                    (prefer_hle_bios, "Prefer HLE BIOS", "TODO",),
+                                    (model, "Model", "TODO",),
+                                    (
+                                        ds_slot_rom_in_memory_max_size,
+                                        "DS slot ROM in-memory max size",
+                                        "TODO",
+                                    ),
+                                    (rtc_time_offset_seconds, "RTC time offset seconds", "TODO",),
+                                    (renderer_2d_kind, "2D renderer kind", "TODO",),
+                                    (renderer_3d_kind, "3D renderer kind", "TODO",),
+                                    (resolution_scale_shift, "3D HW resolution scale", "TODO",)
+                                ]
+                            )]
                         );
                     }
 
@@ -1618,51 +1685,40 @@ impl Editor {
                         // imgui_log_history_capacity
                         // gdb_server_addr
 
-                        #[cfg(feature = "logging")]
-                        {
-                            heading(ui, "Logging", 16.0, 5.0);
-                            draw!(
-                                "logging",
-                                debug,
-                                "Debug > Logging",
-                                [
-                                    (
-                                        logging_kind,
-                                        "Kind",
-                                        "Whether to show the collected logs inside the terminal \
-                                         that launched the emulator or in an Imgui window \
-                                         (accessed through Debug > Log)",
-                                    ),
-                                    (
-                                        imgui_log_history_capacity,
-                                        "ImGui log history capacity",
-                                        "How many log messages to store in the Imgui log window \
-                                         before clearing the oldest ones.",
-                                    )
-                                ]
-                            );
-                        }
-
-                        #[cfg(feature = "gdb-server")]
-                        {
-                            heading_spacing(
-                                ui,
-                                "GDB server",
-                                16.0,
-                                5.0,
-                                (cfg!(feature = "logging") as u8 * 4) as f32,
-                            );
-                            draw!(
-                                "gdb_server",
-                                debug,
-                                "Debug > GDB server",
-                                [(
-                                    gdb_server_addr,
-                                    "GDB server address",
-                                    "The address to expose the GDB server at once started.",
-                                )]
-                            );
-                        }
+                        draw!(
+                            "Debug",
+                            debug,
+                            [
+                                (
+                                    #[cfg(feature = "logging")]
+                                    "Logging",
+                                    [
+                                        (
+                                            logging_kind,
+                                            "Kind",
+                                            "Whether to show the collected logs inside the \
+                                             terminal that launched the emulator or in an Imgui \
+                                             window (accessed through Debug > Log)",
+                                        ),
+                                        (
+                                            imgui_log_history_capacity,
+                                            "ImGui log history capacity",
+                                            "How many log messages to store in the Imgui log \
+                                             window before clearing the oldest ones.",
+                                        )
+                                    ]
+                                ),
+                                (
+                                    #[cfg(feature = "gdb-server")]
+                                    "GDB server",
+                                    [(
+                                        gdb_server_addr,
+                                        "GDB server address",
+                                        "The address to expose the GDB server at once started.",
+                                    )]
+                                )
+                            ]
+                        );
                     }
 
                     #[cfg(feature = "discord-presence")]
@@ -1670,14 +1726,17 @@ impl Editor {
                         // discord_presence_enabled
 
                         draw!(
-                            "general",
-                            discord_presence,
                             "Discord presence",
+                            discord_presence,
                             [(
-                                enabled,
-                                "Enabled",
-                                "Whether to enable Discord Rich Presence. If enabled, the current \
-                                 game and its playtime will be shown in the Discord status.",
+                                "General",
+                                [(
+                                    enabled,
+                                    "Enabled",
+                                    "Whether to enable Discord Rich Presence. If enabled, the \
+                                     current game and its playtime will be shown in the Discord \
+                                     status.",
+                                )]
                             )]
                         );
                     }
@@ -1689,24 +1748,23 @@ impl Editor {
             });
     }
 
-    fn help_height(&self, ui: &Ui) -> f32 {
-        let (help_path, help_message) = self.data.current_help_item_or_default();
+    fn help_height(&self, ui: &Ui, padding: [f32; 2]) -> f32 {
+        let (help_path, help_message) = self.data.cur_help_item_or_default();
         ui.calc_text_size_with_opts(help_path, false, ui.content_region_avail()[0])[1]
             + style!(ui, item_spacing)[1] * 5.0
             + ui.calc_text_size_with_opts(help_message, false, ui.content_region_avail()[0])[1]
+            + 2.0 * padding[1]
     }
 
-    fn draw_help(&self, ui: &Ui) {
-        let cell_padding = style!(ui, cell_padding);
-
+    fn draw_help(&self, ui: &Ui, height: f32, padding: [f32; 2], outer_cell_padding: [f32; 2]) {
         {
             let cursor_pos = ui.cursor_screen_pos();
             let min = [
-                cursor_pos[0] - cell_padding[0],
-                cursor_pos[1] - cell_padding[1].max(ui.text_line_height() * 0.5),
+                cursor_pos[0] - outer_cell_padding[0],
+                cursor_pos[1] - outer_cell_padding[1].max(ui.text_line_height() * 0.5),
             ];
             let mut max = add2(cursor_pos, ui.content_region_avail());
-            max[0] += cell_padding[0];
+            max[0] += outer_cell_padding[0];
             ui.get_window_draw_list()
                 .add_rect(min, max, [0.5, 0.5, 0.5, 0.2])
                 .filled(true)
@@ -1718,10 +1776,13 @@ impl Editor {
                 .build();
         }
 
+        let _window_padding = ui.push_style_var(StyleVar::WindowPadding(padding));
         ui.child_window("help")
-            .size([0.0, self.help_height(ui)])
+            .size([0.0, height])
+            .always_use_window_padding(true)
             .build(|| {
-                let (help_path, help_message) = self.data.current_help_item_or_default();
+                drop(_window_padding);
+                let (help_path, help_message) = self.data.cur_help_item_or_default();
                 ui.dummy([0.0; 2]);
                 ui.text_wrapped(help_path);
                 ui.dummy([0.0; 2]);
@@ -1751,7 +1812,6 @@ impl Editor {
                 TableFlags::BORDERS_INNER_V | TableFlags::PAD_OUTER_X,
             ) {
                 let cell_padding = style!(ui, cell_padding);
-                let border_width = 1.0;
 
                 ui.table_setup_column_with(TableColumnSetup {
                     flags: TableColumnFlags::WIDTH_FIXED,
@@ -1769,14 +1829,17 @@ impl Editor {
                 let (separator_p1, separator_p2) = {
                     let mut cursor_pos = ui.cursor_screen_pos();
                     cursor_pos[1] -= style!(ui, item_spacing)[1];
-                    let height = cell_padding[1] * 2.0 + border_width;
+                    let height = cell_padding[1] * 2.0 + BORDER_WIDTH;
                     let x = cursor_pos[0] - cell_padding[0];
-                    let y = cursor_pos[1] + height * 0.5;
+                    let y = cursor_pos[1] + cell_padding[1];
                     cursor_pos[1] += height;
                     ui.set_cursor_screen_pos(cursor_pos);
                     (
-                        [x, y],
-                        [x + ui.content_region_avail()[0] + cell_padding[0] * 2.0, y],
+                        sub2s([x, y], BORDER_WIDTH),
+                        sub2s(
+                            [x + ui.content_region_avail()[0] + cell_padding[0] * 2.0, y],
+                            BORDER_WIDTH,
+                        ),
                     )
                 };
 
@@ -1788,34 +1851,71 @@ impl Editor {
                         separator_p2,
                         ui.style_color(StyleColor::Separator),
                     )
-                    .thickness(border_width)
+                    .thickness(BORDER_WIDTH)
                     .build();
 
                 ui.table_next_column();
 
-                let help_plus_header_height =
-                    self.help_height(ui) + ui.text_line_height().max(cell_padding[1] * 2.0);
+                let right_padding = [orig_cell_padding[0] * 2.0 - cell_padding[0], 0.0];
 
-                self.draw_section(
-                    ui,
-                    config,
-                    emu_state,
-                    help_plus_header_height,
-                    orig_cell_padding,
-                );
+                let mut help_height = self.help_height(ui, right_padding);
+                let help_header_height = ui.text_line_height().max(cell_padding[1] * 2.0);
+                let help_plus_header_height = (help_height + help_header_height)
+                    .min((ui.content_region_avail()[1] - style!(ui, cell_padding)[1]) * 0.3);
+                help_height = help_plus_header_height - help_header_height;
 
-                heading_options(
-                    ui,
-                    "Help",
-                    16.0,
-                    5.0,
-                    -cell_padding[0],
-                    -cell_padding[0],
-                    2.0 * cell_padding[1],
-                    true,
-                );
+                if let Some(_tab_bar) = ui.tab_bar("tab") {
+                    if ui.tab_item("Global").is_some() {
+                        self.data.cur_tab = Tab::Global;
+                    }
+                    ui.enabled(self.data.game_loaded, || {
+                        if if let Some(title) = emu_state.as_deref().and_then(|emu_state| {
+                            emu_state
+                                .game_loaded
+                                .then(|| format!("Game overrides - {}", emu_state.title))
+                        }) {
+                            ui.tab_item(&title)
+                        } else {
+                            ui.tab_item("Game overrides")
+                        }
+                        .is_some()
+                        {
+                            self.data.cur_tab = Tab::Game;
+                        }
+                    });
+                }
 
-                self.draw_help(ui);
+                {
+                    let _cell_padding = ui.push_style_var(StyleVar::CellPadding(orig_cell_padding));
+
+                    self.draw_section(
+                        ui,
+                        config,
+                        emu_state,
+                        help_plus_header_height,
+                        right_padding,
+                        cell_padding,
+                    );
+
+                    heading_options(
+                        ui,
+                        "Help",
+                        16.0,
+                        5.0,
+                        -cell_padding[0],
+                        -cell_padding[0],
+                        BORDER_WIDTH,
+                        ui.content_region_avail()[0],
+                        2.0 * cell_padding[1],
+                        true,
+                    );
+
+                    self.draw_help(ui, help_height, right_padding, cell_padding);
+
+                    if let Some(help_item) = self.data.next_help_item.take() {
+                        self.data.cur_help_item = Some(help_item);
+                    }
+                }
             }
         });
     }

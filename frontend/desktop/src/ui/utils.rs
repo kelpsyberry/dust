@@ -124,9 +124,13 @@ pub fn heading_options(
     line_inner_margin: f32,
     line_outer_margin_start: f32,
     line_outer_margin_end: f32,
+    line_thickness: f32,
+    width: f32,
     height: f32,
     remove_item_spacing: bool,
 ) {
+    let half_line_thickness = line_thickness * 0.5;
+
     let height = height.max(ui.text_line_height());
 
     let mut cursor_pos = ui.cursor_screen_pos();
@@ -138,16 +142,20 @@ pub fn heading_options(
         end_pos[1] += style!(ui, item_spacing)[1];
     }
 
-    let line_outer_bounds = [
-        cursor_pos[0] + line_outer_margin_start,
-        cursor_pos[0] + ui.content_region_avail()[0] - line_outer_margin_end,
-    ];
+    let line_outer_bounds = sub2s(
+        [
+            cursor_pos[0] + line_outer_margin_start,
+            cursor_pos[0] + width - line_outer_margin_end,
+        ],
+        half_line_thickness,
+    );
     let separator_color = ui.style_color(StyleColor::Separator);
 
-    let line_y = cursor_pos[1] + height * 0.5;
+    let mid_y = cursor_pos[1] + height * 0.5;
     let text_start_x = cursor_pos[0] + text_indent;
-    let text_start_y = line_y - ui.text_line_height() * 0.5;
+    let text_start_y = mid_y - ui.text_line_height() * 0.5;
     let text_end_x = text_start_x + ui.calc_text_size(text)[0];
+    let line_y = mid_y - half_line_thickness;
 
     ui.set_cursor_screen_pos([text_start_x, text_start_y]);
     ui.text(text);
@@ -156,18 +164,56 @@ pub fn heading_options(
     draw_list
         .add_line(
             [line_outer_bounds[0], line_y],
-            [text_start_x - line_inner_margin, line_y],
+            [
+                text_start_x - line_inner_margin - half_line_thickness,
+                line_y,
+            ],
             separator_color,
         )
+        .thickness(line_thickness)
         .build();
     draw_list
         .add_line(
             [line_outer_bounds[1], line_y],
-            [text_end_x + line_inner_margin, line_y],
+            [text_end_x + line_inner_margin - half_line_thickness, line_y],
             separator_color,
         )
+        .thickness(line_thickness)
         .build();
     ui.set_cursor_screen_pos(end_pos);
+}
+
+pub fn table_row_heading(
+    ui: &Ui,
+    text: &str,
+    text_indent: f32,
+    line_inner_margin: f32,
+    line_outer_margin: f32,
+    line_thickness: f32,
+    spacing: f32,
+) {
+    ui.table_next_row();
+    ui.table_set_column_index(ui.table_column_count() - 1);
+    let end_x = ui.cursor_screen_pos()[0] + ui.content_region_avail()[0];
+    ui.table_set_column_index(0);
+
+    let mut cursor_pos = ui.cursor_screen_pos();
+    cursor_pos[1] += spacing;
+    ui.set_cursor_screen_pos(cursor_pos);
+    let width = end_x - cursor_pos[0];
+
+    heading_options(
+        ui,
+        text,
+        text_indent,
+        line_inner_margin,
+        line_outer_margin,
+        line_outer_margin,
+        line_thickness,
+        width,
+        0.0,
+        false,
+    );
 }
 
 pub fn heading_spacing(
@@ -175,9 +221,13 @@ pub fn heading_spacing(
     text: &str,
     text_indent: f32,
     line_inner_margin: f32,
+    line_thickness: f32,
     spacing: f32,
 ) {
-    ui.dummy([0.0, spacing]);
+    let mut cursor_pos = ui.cursor_screen_pos();
+    cursor_pos[1] += spacing;
+    ui.set_cursor_screen_pos(cursor_pos);
+
     heading_options(
         ui,
         text,
@@ -185,21 +235,21 @@ pub fn heading_spacing(
         line_inner_margin,
         0.0,
         0.0,
+        line_thickness,
+        ui.content_region_avail()[0],
         0.0,
-        true,
+        false,
     );
 }
 
-pub fn heading(ui: &Ui, text: &str, text_indent: f32, line_inner_margin: f32) {
-    heading_options(
+pub fn heading(ui: &Ui, text: &str, text_indent: f32, line_inner_margin: f32, line_thickness: f32) {
+    heading_spacing(
         ui,
         text,
         text_indent,
         line_inner_margin,
+        line_thickness,
         0.0,
-        0.0,
-        0.0,
-        false,
     );
 }
 
@@ -227,6 +277,11 @@ pub fn add2<T: Add<Output = T>>([a0, a1]: [T; 2], [b0, b1]: [T; 2]) -> [T; 2] {
 #[inline]
 pub fn sub2<T: Sub<Output = T>>([a0, a1]: [T; 2], [b0, b1]: [T; 2]) -> [T; 2] {
     [a0 - b0, a1 - b1]
+}
+
+#[inline]
+pub fn sub2s<T: Sub<Output = T> + Copy>([a0, a1]: [T; 2], b: T) -> [T; 2] {
+    [a0 - b, a1 - b]
 }
 
 #[inline]

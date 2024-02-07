@@ -1,5 +1,5 @@
 mod map;
-pub use map::Map;
+pub use map::{GlobalMap, Map};
 mod state;
 pub use state::{Changes, State};
 pub mod key_codes;
