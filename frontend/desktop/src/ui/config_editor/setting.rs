@@ -298,11 +298,22 @@ pub struct Scalar<T: DataTypeKind> {
     pub get: fn(&Config) -> T,
     pub set: fn(&mut Config, T),
     pub step: Option<T>,
+    pub display_format: &'static str,
 }
 
 impl<T: DataTypeKind> Scalar<T> {
-    pub const fn new(get: fn(&Config) -> T, set: fn(&mut Config, T), step: Option<T>) -> Self {
-        Scalar { get, set, step }
+    pub const fn new(
+        get: fn(&Config) -> T,
+        set: fn(&mut Config, T),
+        step: Option<T>,
+        display_format: &'static str,
+    ) -> Self {
+        Scalar {
+            get,
+            set,
+            step,
+            display_format,
+        }
     }
 }
 
@@ -311,7 +322,9 @@ impl<T: DataTypeKind> RawSetting for Scalar<T> {
         let mut value = (self.get)(config);
 
         ui.set_next_item_width(width);
-        let mut input = ui.input_scalar("", &mut value);
+        let mut input = ui
+            .input_scalar("", &mut value)
+            .display_format(self.display_format);
         if let Some(step) = self.step {
             input = input.step(step);
         }

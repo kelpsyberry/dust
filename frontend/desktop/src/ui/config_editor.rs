@@ -171,24 +171,27 @@ macro_rules! socket_addr {
 }
 
 macro_rules! scalar {
-    (nonoverridable $id: ident, $step: expr) => {
+    (nonoverridable $id: ident, $step: expr, $display_format: expr) => {
         setting::Scalar::new(
             |config| config!(config, $id),
             |config, value| set_config!(config, $id, value),
             $step,
+            $display_format,
         )
     };
-    (overridable $id: ident, $step: expr) => {
+    (overridable $id: ident, $step: expr, $display_format: expr) => {
         (
             setting::Scalar::new(
                 |config| *config.$id.inner().global(),
                 |config, value| config.$id.update(|inner| inner.set_global(value)),
                 $step,
+                $display_format,
             ),
             setting::Scalar::new(
                 |config| config.$id.inner().game().unwrap(),
                 |config, value| config.$id.update(|inner| inner.set_game(Some(value))),
                 $step,
+                $display_format,
             ),
         )
     };
@@ -548,7 +551,7 @@ impl AudioSettings {
     fn new() -> Self {
         AudioSettings {
             volume: overridable!(audio_volume, slider, 0.0, 100.0, "%.02f%%", 100.0),
-            sample_chunk_size: overridable!(audio_sample_chunk_size, scalar, Some(128)),
+            sample_chunk_size: overridable!(audio_sample_chunk_size, scalar, Some(128), "%d"),
             #[cfg(feature = "xq-audio")]
             custom_sample_rate: overridable!(
                 audio_custom_sample_rate,
@@ -619,7 +622,7 @@ struct SavesSettings {
 impl SavesSettings {
     fn new() -> Self {
         SavesSettings {
-            save_interval_ms: overridable!(save_interval_ms, scalar, Some(100.0)),
+            save_interval_ms: overridable!(save_interval_ms, scalar, Some(100.0), "%.02f ms"),
             reset_on_save_slot_switch: nonoverridable!(reset_on_save_slot_switch, bool),
             include_save_in_savestates: overridable!(include_save_in_savestates, bool),
             save_dir_path: nonoverridable!(save_dir_path, home_path),
@@ -689,9 +692,10 @@ impl EmulationSettings {
             ds_slot_rom_in_memory_max_size: overridable!(
                 ds_slot_rom_in_memory_max_size,
                 scalar,
-                Some(1024 * 1024)
+                Some(1024 * 1024),
+                "%d B"
             ),
-            rtc_time_offset_seconds: overridable!(rtc_time_offset_seconds, scalar, Some(1)),
+            rtc_time_offset_seconds: overridable!(rtc_time_offset_seconds, scalar, Some(1), "%d s"),
             renderer_2d_kind: overridable!(
                 renderer_2d_kind,
                 combo,
@@ -758,7 +762,8 @@ impl DebugSettings {
             imgui_log_history_capacity: overridable!(
                 imgui_log_history_capacity,
                 scalar,
-                Some(1024)
+                Some(1024),
+                "%d"
             ),
             #[cfg(feature = "gdb-server")]
             gdb_server_addr: nonoverridable!(gdb_server_addr, socket_addr),
@@ -1292,7 +1297,7 @@ impl Editor {
 
                 let inner_cell_padding = [
                     style!(ui, item_spacing)[0] * 0.5,
-                    style!(ui, cell_padding)[1]
+                    style!(ui, cell_padding)[1],
                 ];
 
                 macro_rules! draw {
@@ -1390,14 +1395,15 @@ impl Editor {
                                         (
                                             imgui_config_path,
                                             "ImGui config",
-                                            "Where to store the INI configuration file for ImGui, \
-                                             used to remember the window layout across launches.",
+                                            "The location where the INI configuration file for \
+                                             ImGui will be written, used to remember the window \
+                                             layout across launches.",
                                         ),
                                         (
                                             game_db_path,
                                             "Game database",
-                                            "Where to read the JSON game database from, used to \
-                                             determine save types for games.",
+                                            "The location where the JSON game database is stored, \
+                                             used to determine save types for games.",
                                         )
                                     ]
                                 ),
@@ -1407,29 +1413,29 @@ impl Editor {
                                         (
                                             sys_dir_path,
                                             "System dir",
-                                            "The directory containing the system files \
-                                             (biosnds7.bin, biosnds9.bin, firmware.bin); can be \
-                                             overridden by the below settings.",
+                                            "The location of the directory containing the system \
+                                             files (biosnds7.bin, biosnds9.bin, firmware.bin); \
+                                             can be overridden by the below settings.",
                                         ),
                                         (
                                             arm7_bios_path,
                                             "ARM7 BIOS",
-                                            "The path where the ARM7 BIOS binary is stored; will \
-                                             default to $sys_dir_path/biosnds7.bin if not \
+                                            "The location where the ARM7 BIOS binary is stored; \
+                                             will default to $sys_dir_path/biosnds7.bin if not \
                                              specified.",
                                         ),
                                         (
                                             arm9_bios_path,
                                             "ARM9 BIOS",
-                                            "The path where the ARM9 BIOS binary is stored; will \
-                                             default to $sys_dir_path/biosnds9.bin if not \
+                                            "The location where the ARM9 BIOS binary is stored; \
+                                             will default to $sys_dir_path/biosnds9.bin if not \
                                              specified.",
                                         ),
                                         (
                                             firmware_path,
                                             "Firmware",
-                                            "The path where the firmware binary is stored; will \
-                                             default to $sys_dir_path/firmware.bin if not \
+                                            "The location where the firmware binary is stored; \
+                                             will default to $sys_dir_path/firmware.bin if not \
                                              specified.",
                                         )
                                     ]
@@ -1447,45 +1453,42 @@ impl Editor {
                         draw!(
                             "UI",
                             ui,
-                            [
-                                (
-                                    "General",
-                                    [
-                                        (
-                                            title_bar_mode,
-                                            "Title bar mode",
-                                            "How to display the title bar:
+                            [(
+                                "General",
+                                [
+                                    (
+                                        title_bar_mode,
+                                        "Title bar mode",
+                                        "How to display the title bar:
 - System: will use the system title bar and display the emulator's menu under it
 - Mixed: will blend the emulator's menu with the transparent system title bar, used to display the \
- title and FPS
+title and FPS
 - Imgui: will completely hide the system title bar and render the title and FPS as part of the \
- menu",
-                                        ),
-                                        (
-                                            full_window_screen,
-                                            "Full-window screen",
-                                            "Whether the screen should be fill the entire \
-                                             emulator window background, instead of being \
-                                             rendered as its own Imgui window.",
-                                        ),
-                                        (
-                                            screen_integer_scale,
-                                            "Limit screen size to integer scales",
-                                            "Whether the screen should be shrunk down to limit \
-                                             its displayed size to multiples of 256x384 (intended \
-                                             to prevent uneven pixel scaling at lower \
-                                             resolutions).",
-                                        ),
-                                        (
-                                            screen_rot,
-                                            "Screen rotation",
-                                            "The clockwise rotation to apply to the screen in \
-                                             degrees (intended for games that require the \
-                                             physical system to be rotated).",
-                                        )
-                                    ]
-                                )
-                            ]
+menu",
+                                    ),
+                                    (
+                                        full_window_screen,
+                                        "Full-window screen",
+                                        "Whether the screen should be fill the entire emulator \
+                                         window background, instead of being rendered as its own \
+                                         Imgui window.",
+                                    ),
+                                    (
+                                        screen_integer_scale,
+                                        "Limit screen size to integer scales",
+                                        "Whether the screen should be shrunk down to limit its \
+                                         displayed size to multiples of 256x384 (intended to \
+                                         prevent uneven pixel scaling at lower resolutions).",
+                                    ),
+                                    (
+                                        screen_rot,
+                                        "Screen rotation",
+                                        "The clockwise rotation to apply to the screen in degrees \
+                                         (intended for games that require the physical system to \
+                                         be rotated).",
+                                    )
+                                ]
+                            )]
                         );
                     }
 
@@ -1589,7 +1592,7 @@ impl Editor {
                                 [
                                     (
                                         save_interval_ms,
-                                        "Save interval ms",
+                                        "Save interval",
                                         "The interval at which any new save file changes are \
                                          committed to the filesystem.",
                                     ),
@@ -1607,8 +1610,19 @@ impl Editor {
                                          corruption due to inconsistencies when loading a \
                                          savestate).",
                                     ),
-                                    (save_dir_path, "Save directory path", "TODO",),
-                                    (savestate_dir_path, "Savestate directory path", "TODO",)
+                                    (
+                                        save_dir_path,
+                                        "Save directory path",
+                                        "The location of the directory where save files for games \
+                                         will be stored (unless the specific game is customized \
+                                         not to use the global save directory).",
+                                    ),
+                                    (
+                                        savestate_dir_path,
+                                        "Savestate directory path",
+                                        "The location of the directory where created savestate \
+                                         files for games will be stored.",
+                                    )
                                 ]
                             )]
                         );
@@ -1652,22 +1666,94 @@ impl Editor {
                             [(
                                 "General",
                                 [
-                                    (framerate_ratio_limit, "Framerate limit", "TODO",),
-                                    (paused_framerate_limit, "Paused framerate limit", "TODO",),
-                                    (sync_to_audio, "Sync to audio", "TODO",),
-                                    (pause_on_launch, "Pause on launch", "TODO",),
-                                    (skip_firmware, "Skip firmware", "TODO",),
-                                    (prefer_hle_bios, "Prefer HLE BIOS", "TODO",),
-                                    (model, "Model", "TODO",),
+                                    (
+                                        framerate_ratio_limit,
+                                        "Framerate limit",
+                                        "The framerate limit to apply to the emulator when \
+                                         running, as a percentage of the console's native \
+                                         framerate (~60 FPS). I.e., 200% will run emulation at \
+                                         120 FPS, or 2x native speed.",
+                                    ),
+                                    (
+                                        paused_framerate_limit,
+                                        "Paused framerate limit",
+                                        "The framerate limit to apply to the emulator when \
+                                         paused, in FPS. This will affect components that reads \
+                                         the emulator's state like debug views.",
+                                    ),
+                                    (
+                                        sync_to_audio,
+                                        "Sync to audio",
+                                        "Whether to sync the emulator to the audio stream's \
+                                         playback; this will always limit the emulator to at most \
+                                         the console's native speed (or less if a lower framerate \
+                                         limit is active).",
+                                    ),
+                                    (
+                                        pause_on_launch,
+                                        "Pause on launch",
+                                        "Whether to pause the emulator immediately after starting \
+                                         a game, requiring it to be resumed manually.",
+                                    ),
+                                    (
+                                        skip_firmware,
+                                        "Skip firmware",
+                                        "Whether to skip the firmware game selection menu and \
+                                         immediately boot the game (required for some homebrew \
+                                         titles that don't get recognized by the firmware).
+The firmware boot sequence will always be skipped if any system files are not provided.",
+                                    ),
+                                    (
+                                        prefer_hle_bios,
+                                        "Prefer HLE BIOS",
+                                        "Whether to use the HLE BIOS implementation even if BIOS \
+                                         files are provided.",
+                                    ),
+                                    (
+                                        model,
+                                        "Model",
+                                        "What model of Nintendo DS to emulate (currently only DS \
+                                         and DS Lite are functional).",
+                                    ),
                                     (
                                         ds_slot_rom_in_memory_max_size,
                                         "DS slot ROM in-memory max size",
-                                        "TODO",
+                                        "The maximum size that a DS Slot ROM file can have to get \
+                                         directly loaded into memory, before falling back to \
+                                         streaming from the filesystem.",
                                     ),
-                                    (rtc_time_offset_seconds, "RTC time offset seconds", "TODO",),
-                                    (renderer_2d_kind, "2D renderer kind", "TODO",),
-                                    (renderer_3d_kind, "3D renderer kind", "TODO",),
-                                    (resolution_scale_shift, "3D HW resolution scale", "TODO",)
+                                    (
+                                        rtc_time_offset_seconds,
+                                        "RTC time offset",
+                                        "The offset to apply to the RTC time reported to the \
+                                         console compared to the device's local time.",
+                                    ),
+                                    (
+                                        renderer_2d_kind,
+                                        "2D renderer kind",
+                                        "Which 2D renderer to use:
+- Software, sync: render everything synchronously on the emulation thread
+- Software, async, per-scanline: render individual scanlines asynchronously on a worker thread
+- EXPERIMENTAL: Hardware, async, per-scanline: render individual scanline components \
+                                         asynchronously on a worker thread and apply blending, \
+                                         layering and color effects using hardware acceleration \
+                                         (required when using the hardware 3D renderer)",
+                                    ),
+                                    (
+                                        renderer_3d_kind,
+                                        "3D renderer kind",
+                                        "Which 3D renderer to use:
+- Software: render 3D content asynchronously on a worker thread in software
+- EXPERIMENTAL: Hardware, async, per-scanline: render 3D content using hardware acceleration, at a \
+                                         higher resolution if selected",
+                                    ),
+                                    (
+                                        resolution_scale_shift,
+                                        "3D HW resolution scale",
+                                        "With the hardware 3D renderer enabled, the scale at \
+                                         which 3D graphics should be rendered compared to the \
+                                         native resolution.",
+                                    )
                                 ]
                             )]
                         );
