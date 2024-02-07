@@ -44,7 +44,7 @@ jobs:
         targets: ${{ matrix.target }}
     
     - name: Cache Cargo registry
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/registry/index
@@ -54,7 +54,7 @@ jobs:
         enableCrossOsArchive: true
 
     - name: Cache build directory
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: target/
         key: ${{ matrix.target }}-release-${{ steps.toolchain.outputs.cachekey }}
