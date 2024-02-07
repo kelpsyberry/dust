@@ -1456,6 +1456,7 @@ impl Editor {
                             [(
                                 "General",
                                 [
+                                    #[cfg(target_os = "macos")]
                                     (
                                         title_bar_mode,
                                         "Title bar mode",
