@@ -388,8 +388,8 @@ impl UiState {
                         Renderer3dKind::Wgpu => {
                             let (tx_3d, rx_3d, renderer_3d_channels, rx_3d_2d_data) =
                                 dust_wgpu_3d::threaded::init(
-                                    Arc::clone(window.gfx().device()),
-                                    Arc::clone(window.gfx().queue()),
+                                    Arc::clone(window.gfx_device()),
+                                    Arc::clone(window.gfx_queue()),
                                     resolution_scale_shift,
                                 );
                             (
@@ -407,8 +407,8 @@ impl UiState {
 
                     let (renderer_2d, color_output_view, renderer_2d_data) =
                         dust_wgpu_2d::threaded::lockstep_scanlines::Renderer::new(
-                            Arc::clone(window.gfx().device()),
-                            Arc::clone(window.gfx().queue()),
+                            Arc::clone(window.gfx_device()),
+                            Arc::clone(window.gfx_queue()),
                             resolution_scale_shift,
                             rx_3d_2d_data,
                         );
@@ -812,7 +812,7 @@ struct FbTexture {
 
 impl FbTexture {
     fn create_owned(window: &window::Window) -> imgui::TextureId {
-        window.imgui.gfx.create_and_add_owned_texture(
+        window.imgui_gfx.create_and_add_owned_texture(
             Some("Framebuffer".into()),
             imgui_wgpu::TextureDescriptor {
                 width: SCREEN_WIDTH as u32,
@@ -828,7 +828,7 @@ impl FbTexture {
     }
 
     fn create_view(window: &window::Window, view: wgpu::TextureView) -> imgui::TextureId {
-        window.imgui.gfx.create_and_add_texture_view(
+        window.imgui_gfx.create_and_add_texture_view(
             Some("Framebuffer".into()),
             view,
             imgui_wgpu::SamplerDescriptor {
@@ -851,7 +851,7 @@ impl FbTexture {
         if !self.is_view {
             return;
         }
-        window.imgui.gfx.remove_texture(self.id);
+        window.imgui_gfx.remove_texture(self.id);
         self.id = Self::create_owned(window);
         self.is_view = false;
     }
@@ -859,13 +859,12 @@ impl FbTexture {
     fn set_view(&mut self, window: &window::Window, view: wgpu::TextureView) {
         if self.is_view {
             window
-                .imgui
-                .gfx
+                .imgui_gfx
                 .texture_mut(self.id)
                 .unwrap_view_mut()
                 .set_texture_view(view);
         } else {
-            window.imgui.gfx.remove_texture(self.id);
+            window.imgui_gfx.remove_texture(self.id);
             self.id = Self::create_view(window, view);
             self.is_view = true;
         }
@@ -882,13 +881,12 @@ impl FbTexture {
             data[i] = 0xFF;
         }
         window
-            .imgui
-            .gfx
+            .imgui_gfx
             .texture(self.id)
             .unwrap_owned_ref()
             .set_data(
-                window.gfx().device(),
-                window.gfx().queue(),
+                window.gfx_device(),
+                window.gfx_queue(),
                 &data[..],
                 imgui_wgpu::TextureSetRange::default(),
             );
@@ -896,13 +894,12 @@ impl FbTexture {
 
     fn set_data(&self, window: &window::Window, data: &Framebuffer) {
         window
-            .imgui
-            .gfx
+            .imgui_gfx
             .texture(self.id)
             .unwrap_owned_ref()
             .set_data(
-                window.gfx().device(),
-                window.gfx().queue(),
+                window.gfx_device(),
+                window.gfx_queue(),
                 unsafe {
                     slice::from_raw_parts(
                         data.as_ptr() as *const u8,
@@ -961,58 +958,60 @@ pub fn main() {
         FrameData::default(),
     ]);
 
-    let fb_texture = FbTexture::new(&window_builder.window);
-
-    let mut state = UiState {
-        game_db: Lazy::new(),
-
-        emu: None,
-
-        fb_texture,
-        frame_tx: Some(frame_tx),
-        frame_rx,
-        fps_fixed: None,
-
-        show_menu_bar: true,
-        screen_focused: true,
-
-        input: input::State::new(),
-
-        config_editor: None,
-
-        save_slot_editor: SaveSlotEditor::new(),
-        savestate_editor: SavestateEditor::new(),
-
-        audio_channel,
-
-        #[cfg(target_os = "windows")]
-        icon_update: None,
-
-        #[cfg(feature = "logging")]
-        log,
-
-        #[cfg(feature = "debug-views")]
-        debug_views: debug_views::UiState::new(),
-
-        #[cfg(feature = "discord-presence")]
-        discord_presence: if config!(config.config, discord_presence_enabled) {
-            Some(DiscordPresence::new())
-        } else {
-            None
-        },
-    };
-
     #[cfg(feature = "discord-presence")]
     if let Some(discord_presence) = &mut state.discord_presence {
         discord_presence.stop();
     }
 
-    if let Some(rom_path) = env::args_os().nth(1) {
-        state.load_from_rom_path(Path::new(&rom_path), &mut config, &window_builder.window);
-    }
-
     window_builder.run(
-        (config, state),
+        move |window| {
+            let fb_texture = FbTexture::new(window);
+
+            let mut state = UiState {
+                game_db: Lazy::new(),
+
+                emu: None,
+
+                fb_texture,
+                frame_tx: Some(frame_tx),
+                frame_rx,
+                fps_fixed: None,
+
+                show_menu_bar: true,
+                screen_focused: true,
+
+                input: input::State::new(),
+
+                config_editor: None,
+
+                save_slot_editor: SaveSlotEditor::new(),
+                savestate_editor: SavestateEditor::new(),
+
+                audio_channel,
+
+                #[cfg(target_os = "windows")]
+                icon_update: None,
+
+                #[cfg(feature = "logging")]
+                log,
+
+                #[cfg(feature = "debug-views")]
+                debug_views: debug_views::UiState::new(),
+
+                #[cfg(feature = "discord-presence")]
+                discord_presence: if config!(config.config, discord_presence_enabled) {
+                    Some(DiscordPresence::new())
+                } else {
+                    None
+                },
+            };
+
+            if let Some(rom_path) = env::args_os().nth(1) {
+                state.load_from_rom_path(Path::new(&rom_path), &mut config, window);
+            }
+
+            (config, state)
+        },
         |window, (config, state), event| {
             use winit::event::{Event, WindowEvent};
 

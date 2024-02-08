@@ -112,7 +112,7 @@ impl View for BgMaps2d {
     type EmuState = Selection;
 
     fn new(window: &mut Window) -> Self {
-        let tex_id = window.imgui.gfx.create_and_add_owned_texture(
+        let tex_id = window.imgui_gfx.create_and_add_owned_texture(
             Some("BG map".into()),
             imgui_wgpu::TextureDescriptor {
                 width: 1024,
@@ -144,7 +144,7 @@ impl View for BgMaps2d {
     }
 
     fn destroy(self, window: &mut Window) {
-        window.imgui.gfx.remove_texture(self.tex_id);
+        window.imgui_gfx.remove_texture(self.tex_id);
     }
 
     fn emu_state(&self) -> Self::EmuState {
@@ -874,13 +874,12 @@ impl View for BgMaps2d {
         }
 
         window
-            .imgui
-            .gfx
+            .imgui_gfx
             .texture(self.tex_id)
             .unwrap_owned_ref()
             .set_data(
-                window.gfx().device(),
-                window.gfx().queue(),
+                window.gfx_device(),
+                window.gfx_queue(),
                 unsafe {
                     slice::from_raw_parts(self.pixel_buffer.as_ptr() as *const u8, 1024 * 1024 * 4)
                 },

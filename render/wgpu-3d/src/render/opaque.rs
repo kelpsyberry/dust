@@ -81,7 +81,7 @@ fn fs_main(
     {texture_get_color}
     {toon_get_color}
     {get_output_color}
-    if output.color.a < 1.0 {{
+    if output.color.a < 0.5 {{
         discard;
     }}
     return output;

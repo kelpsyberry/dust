@@ -37,7 +37,7 @@ struct Entry {
 
 impl Savestate {
     unsafe fn create_texture(window: &Window, framebuffer: &Framebuffer) -> TextureId {
-        let texture = window.imgui.gfx.create_owned_texture(
+        let texture = window.imgui_gfx.create_owned_texture(
             Some("Savestate framebuffer".into()),
             imgui_wgpu::TextureDescriptor {
                 width: SCREEN_WIDTH as u32,
@@ -51,8 +51,8 @@ impl Savestate {
             },
         );
         texture.set_data(
-            window.gfx().device(),
-            window.gfx().queue(),
+            window.gfx_device(),
+            window.gfx_queue(),
             slice::from_raw_parts(
                 framebuffer.as_ptr() as *const u8,
                 2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT,
@@ -60,8 +60,7 @@ impl Savestate {
             imgui_wgpu::TextureSetRange::default(),
         );
         window
-            .imgui
-            .gfx
+            .imgui_gfx
             .add_texture(imgui_wgpu::Texture::Owned(texture))
     }
 
@@ -179,7 +178,7 @@ impl Savestate {
     }
 
     fn delete(self, name: &str, savestate_dir: &Path, window: &Window) -> io::Result<()> {
-        window.imgui.gfx.remove_texture(self.texture_id);
+        window.imgui_gfx.remove_texture(self.texture_id);
         fs::remove_file(savestate_dir.join(format!("{name}.state")))
     }
 
@@ -217,7 +216,7 @@ impl Editor {
 
         for entry in self.entries.drain(..) {
             if let EntryKind::Savestate(savestate) = entry.kind {
-                window.imgui.gfx.remove_texture(savestate.texture_id);
+                window.imgui_gfx.remove_texture(savestate.texture_id);
             }
         }
 
