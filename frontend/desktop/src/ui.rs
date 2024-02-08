@@ -76,6 +76,8 @@ enum Renderer3dData {
 struct EmuState {
     playing: bool,
     title: String,
+    #[cfg(target_os = "macos")]
+    path: Option<PathBuf>,
     game_loaded: bool,
     save_path_update: Option<emu::SavePathUpdate>,
     #[cfg(feature = "gdb-server")]
@@ -217,8 +219,8 @@ pub struct UiState {
 
     audio_channel: Option<audio::output::Channel>,
 
-    #[cfg(target_os = "windows")]
-    icon_update: Option<Option<[u32; 32 * 32]>>,
+    #[cfg(target_os = "macos")]
+    shown_file_path: Option<PathBuf>,
 
     #[cfg(feature = "logging")]
     log: Log,
@@ -499,7 +501,7 @@ impl UiState {
         let (ds_slot_rom, _ds_slot_rom_path) = ds_slot_rom.unzip();
         #[allow(unused_mut, clippy::bind_instead_of_map)]
         let ds_slot = ds_slot_rom.and_then(|mut rom| {
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             {
                 use dust_core::{ds_slot, utils::Bytes};
                 let mut header_bytes = Bytes::new([0; 0x170]);
@@ -508,7 +510,14 @@ impl UiState {
                     // NOTE: The ROM file's size is ensured beforehand, this should never occur.
                     .expect("couldn't read DS slot ROM header");
                 let icon_title_offset = header.icon_title_offset() as usize;
-                self.icon_update = Some(ds_slot::rom::icon::decode(icon_title_offset, &mut rom));
+                let icon_pixels = ds_slot::rom::icon::decode(icon_title_offset, &mut rom);
+                window.set_icon(icon_pixels.and_then(|icon_pixels| {
+                    let mut rgba = Vec::with_capacity(32 * 32 * 4);
+                    for pixel in icon_pixels {
+                        rgba.extend_from_slice(&pixel.to_le_bytes());
+                    }
+                    winit::window::Icon::from_rgba(rgba, 32, 32).ok()
+                }));
             }
 
             let game_code = rom.game_code();
@@ -658,6 +667,8 @@ impl UiState {
         self.emu = Some(EmuState {
             playing,
             title,
+            #[cfg(target_os = "macos")]
+            path: _ds_slot_rom_path.map(Path::to_path_buf),
             game_loaded,
             save_path_update: None,
             #[cfg(feature = "gdb-server")]
@@ -725,9 +736,9 @@ impl UiState {
             },
         );
 
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         {
-            self.icon_update = Some(None);
+            window.set_icon(None);
         }
 
         #[cfg(feature = "discord-presence")]
@@ -749,10 +760,8 @@ impl UiState {
         }
 
         #[cfg(target_os = "macos")]
-        {
-            if let Some(mode) = config_changed_value!(config, title_bar_mode) {
-                _window.set_macos_title_bar_hidden(mode.system_title_bar_is_hidden());
-            }
+        if let Some(mode) = config_changed_value!(config, title_bar_mode) {
+            _window.set_macos_title_bar_transparent(mode.system_title_bar_is_transparent());
         }
     }
 
@@ -789,19 +798,26 @@ impl UiState {
         buffer
     }
 
-    fn update_title(&self, _config: &config::Config, window: &window::Window) {
-        #[cfg(target_os = "macos")]
-        if match config!(_config, title_bar_mode) {
-            TitleBarMode::System => false,
-            TitleBarMode::Mixed => !self.show_menu_bar,
-            TitleBarMode::Imgui => true,
-        } {
-            window.window().set_title("");
-            return;
+    #[cfg(not(target_os = "macos"))]
+    fn update_title_bar(&mut self, _config: &config::Config, window: &window::Window) {
+        window.set_title(&self.title(TitleComponents::all()));
+    }
+
+    #[cfg(target_os = "macos")]
+    fn update_title_bar(&mut self, _config: &config::Config, window: &window::Window) {
+        let show_system_title_bar =
+            config!(_config, title_bar_mode).should_show_system_title_bar(self.show_menu_bar);
+        let shown_file_path = if show_system_title_bar {
+            window.set_title(&self.title(TitleComponents::all()));
+            self.emu.as_ref().and_then(|emu| emu.path.as_deref())
+        } else {
+            window.set_title("");
+            None
+        };
+        if shown_file_path != self.shown_file_path.as_deref() {
+            self.shown_file_path = shown_file_path.map(Path::to_path_buf);
+            window.set_file_path(shown_file_path);
         }
-        window
-            .window()
-            .set_title(&self.title(TitleComponents::all()));
     }
 }
 
@@ -934,7 +950,7 @@ pub fn main() {
         config.config.window_size,
         window::SrgbMode::None,
         #[cfg(target_os = "macos")]
-        config!(config.config, title_bar_mode).system_title_bar_is_hidden(),
+        config!(config.config, title_bar_mode).system_title_bar_is_transparent(),
     ));
     // TODO: Allow custom styles
     window_builder.apply_default_imgui_style();
@@ -985,8 +1001,8 @@ pub fn main() {
 
                 audio_channel,
 
-                #[cfg(target_os = "windows")]
-                icon_update: None,
+                #[cfg(target_os = "macos")]
+                shown_file_path: None,
 
                 #[cfg(feature = "logging")]
                 log,
@@ -1024,7 +1040,9 @@ pub fn main() {
                 state.load_from_rom_path(path, config, window);
             }
 
-            state.input.process_event(event, state.screen_focused);
+            state
+                .input
+                .process_event(event, window.scale_factor(), state.screen_focused);
 
             if let Some(config_editor) = &mut state.config_editor {
                 config_editor.process_event(event, config);
@@ -1680,7 +1698,7 @@ pub fn main() {
                 }
             }
 
-            let window_size = window.window().inner_size();
+            let window_size = window.inner_size();
             let screen_integer_scale = config!(config.config, screen_integer_scale);
             let screen_rot = (config!(config.config, screen_rot) as f32).to_radians();
             if config!(config.config, full_window_screen) {
@@ -1688,10 +1706,7 @@ pub fn main() {
                     [SCREEN_WIDTH as f32, (2 * SCREEN_HEIGHT) as f32],
                     screen_integer_scale,
                     screen_rot,
-                    [
-                        (window_size.width as f64 / window.scale_factor()) as f32,
-                        (window_size.height as f64 / window.scale_factor()) as f32,
-                    ],
+                    window_size.into(),
                 );
                 ui.get_background_draw_list()
                     .add_image_quad(
@@ -1704,12 +1719,9 @@ pub fn main() {
                     .build();
                 state.screen_focused =
                     !ui.is_window_focused_with_flags(imgui::WindowFocusedFlags::ANY_WINDOW);
-                state.input.set_touchscreen_bounds_from_points(
-                    center,
-                    &points,
-                    screen_rot,
-                    window.scale_factor(),
-                );
+                state
+                    .input
+                    .set_touchscreen_bounds_from_points(center, &points, screen_rot);
             } else {
                 let _window_padding = ui.push_style_var(imgui::StyleVar::WindowPadding([0.0; 2]));
                 let title_bar_height = style!(ui, frame_padding)[1] * 2.0 + ui.current_font_size();
@@ -1725,8 +1737,8 @@ pub fn main() {
                     )
                     .position(
                         [
-                            (window_size.width as f64 * 0.5 / window.scale_factor()) as f32,
-                            (window_size.height as f64 * 0.5 / window.scale_factor()) as f32,
+                            (window_size.width * 0.5) as f32,
+                            (window_size.height * 0.5) as f32,
                         ],
                         imgui::Condition::FirstUseEver,
                     )
@@ -1769,26 +1781,12 @@ pub fn main() {
                             [center[0] + upper_left[0], center[1] + upper_left[1]],
                             &abs_points,
                             screen_rot,
-                            window.scale_factor(),
                         );
                     });
             };
 
-            // Process icon and title changes
-            #[cfg(target_os = "windows")]
-            if let Some(icon) = state.icon_update.take() {
-                window
-                    .window()
-                    .set_window_icon(icon.and_then(|icon_pixels| {
-                        let mut rgba = Vec::with_capacity(32 * 32 * 4);
-                        for pixel in icon_pixels {
-                            rgba.extend_from_slice(&pixel.to_le_bytes());
-                        }
-                        winit::window::Icon::from_rgba(rgba, 32, 32).ok()
-                    }));
-            }
-
-            state.update_title(&config.config, window);
+            // Process title bar changes
+            state.update_title_bar(&config.config, window);
 
             window::ControlFlow::Continue
         },
@@ -1829,11 +1827,7 @@ pub fn main() {
         move |window, (mut config, mut state)| {
             state.stop_emu(&mut config);
 
-            config.config.window_size = window
-                .window()
-                .inner_size()
-                .to_logical::<u32>(window.scale_factor())
-                .into();
+            config.config.window_size = window.inner_size().into();
 
             if let Some(path) = config.global_path {
                 let global_config = config::File {

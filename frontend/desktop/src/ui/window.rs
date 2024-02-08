@@ -8,6 +8,8 @@ use cocoa::{
 };
 use copypasta::{ClipboardContext, ClipboardProvider};
 use emu_utils::resource;
+#[cfg(target_os = "macos")]
+use std::path::Path;
 use std::{
     hint::unreachable_unchecked,
     iter,
@@ -15,6 +17,8 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+use winit::window::Icon;
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
     event::{Event, StartCause, WindowEvent},
@@ -362,13 +366,46 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn window(&self) -> &WinitWindow {
-        &self.window
+    #[inline]
+    pub fn inner_size(&self) -> LogicalSize<f64> {
+        self.window.inner_size().to_logical(self.scale_factor)
     }
 
     #[inline]
     pub fn scale_factor(&self) -> f64 {
         self.scale_factor
+    }
+
+    #[inline]
+    pub fn set_title(&self, title: &str) {
+        self.window.set_title(title)
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn set_file_path(&self, file_path: Option<&Path>) {
+        let Some(ns_window) = self.ns_window() else {
+            return;
+        };
+        unsafe {
+            let string: id = msg_send![class!(NSString), alloc];
+            ns_window.setRepresentedFilename_(match file_path {
+                Some(path) => {
+                    const UTF8_ENCODING: usize = 4;
+                    let bytes = path.as_os_str().as_encoded_bytes();
+                    msg_send![string,
+                              initWithBytes:bytes.as_ptr()
+                              length:bytes.len()
+                              encoding:UTF8_ENCODING as id]
+                }
+                None => msg_send![string, init],
+            });
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[inline]
+    pub fn set_icon(&self, icon: Option<Icon>) {
+        self.window.set_window_icon(icon)
     }
 
     #[inline]
@@ -382,6 +419,7 @@ impl Window {
     }
 
     #[cfg(target_os = "macos")]
+    #[inline]
     fn ns_window(&self) -> Option<id> {
         if let RawWindowHandle::AppKit(window) =
             RawWindowHandle::from(self.window.window_handle().ok()?)
@@ -400,7 +438,7 @@ impl Window {
     }
 
     #[cfg(target_os = "macos")]
-    pub fn set_macos_title_bar_hidden(&mut self, hidden: bool) {
+    pub fn set_macos_title_bar_transparent(&mut self, hidden: bool) {
         let Some(ns_window) = self.ns_window() else {
             return;
         };

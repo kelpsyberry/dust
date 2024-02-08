@@ -317,15 +317,9 @@ impl Editor {
             let frame_rounding = style!(ui, frame_rounding);
             let text_line_height = ui.text_line_height();
             let frame_height = ui.frame_height();
-            let image_width = (window
-                .window()
-                .inner_size()
-                .to_logical::<f32>(window.scale_factor())
-                .width
-                * 0.25
-                - cell_padding[0]
-                - frame_padding[0] * 2.0)
-                .min(SCREEN_WIDTH as f32 * 0.6);
+            let image_width =
+                (ui.io().display_size[0] * 0.25 - cell_padding[0] - frame_padding[0] * 2.0)
+                    .min(SCREEN_WIDTH as f32 * 0.6);
             let image_height = image_width * (SCREEN_HEIGHT as f32 * 2.0) / SCREEN_WIDTH as f32;
             let cell_width = image_width + frame_padding[0] * 2.0;
 

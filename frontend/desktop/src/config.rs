@@ -376,8 +376,17 @@ pub enum TitleBarMode {
 
 impl TitleBarMode {
     #[cfg(target_os = "macos")]
-    pub fn system_title_bar_is_hidden(&self) -> bool {
+    pub fn system_title_bar_is_transparent(&self) -> bool {
         *self != TitleBarMode::System
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn should_show_system_title_bar(&self, show_menu_bar: bool) -> bool {
+        match self {
+            TitleBarMode::System => true,
+            TitleBarMode::Mixed => show_menu_bar,
+            TitleBarMode::Imgui => false,
+        }
     }
 }
 

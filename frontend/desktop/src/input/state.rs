@@ -3,18 +3,18 @@ use crate::ui::utils::mul2s;
 use ahash::AHashSet as HashSet;
 use dust_core::emu::input::Keys as EmuKeys;
 use winit::{
-    dpi::{PhysicalPosition, PhysicalSize},
+    dpi::{LogicalPosition, LogicalSize},
     event::{Event, KeyEvent, MouseButton, WindowEvent},
 };
 
 pub struct State {
     pressed_keys: HashSet<PressedKey>,
-    touchscreen_center: PhysicalPosition<f64>,
-    touchscreen_size: PhysicalSize<f64>,
-    touchscreen_half_size: PhysicalSize<f64>,
+    touchscreen_center: LogicalPosition<f64>,
+    touchscreen_size: LogicalSize<f64>,
+    touchscreen_half_size: LogicalSize<f64>,
     touchscreen_rot: (f64, f64),
-    touchscreen_rot_center: PhysicalPosition<f64>,
-    mouse_pos: PhysicalPosition<f64>,
+    touchscreen_rot_center: LogicalPosition<f64>,
+    mouse_pos: LogicalPosition<f64>,
     touch_pos: Option<[u16; 2]>,
     prev_touch_pos: Option<[u16; 2]>,
     pressed_emu_keys: EmuKeys,
@@ -50,7 +50,6 @@ impl State {
         center: [f32; 2],
         points: &[[f32; 2]; 4],
         rot: f32,
-        scale_factor: f64,
     ) {
         fn distance(a: [f32; 2], b: [f32; 2]) -> f32 {
             let x = b[0] - a[0];
@@ -58,10 +57,9 @@ impl State {
             (x * x + y * y).sqrt()
         }
 
-        let center = center.map(|v| v as f64 * scale_factor);
         let size = [
-            distance(points[0], points[1]) as f64 * scale_factor,
-            (distance(points[1], points[2]) * 0.5) as f64 * scale_factor,
+            distance(points[0], points[1]),
+            distance(points[1], points[2]) * 0.5,
         ];
         self.set_touchscreen_bounds(
             center.into(),
@@ -73,9 +71,9 @@ impl State {
 
     pub fn set_touchscreen_bounds(
         &mut self,
-        rot_center: PhysicalPosition<f64>,
-        center: PhysicalPosition<f64>,
-        size: PhysicalSize<f64>,
+        rot_center: LogicalPosition<f64>,
+        center: LogicalPosition<f64>,
+        size: LogicalSize<f64>,
         rot: f64,
     ) {
         self.touchscreen_center = center;
@@ -117,7 +115,12 @@ impl State {
         ]);
     }
 
-    pub fn process_event<T: 'static>(&mut self, event: &Event<T>, catch_new: bool) {
+    pub fn process_event<T: 'static>(
+        &mut self,
+        event: &Event<T>,
+        scale_factor: f64,
+        catch_new: bool,
+    ) {
         if let Event::WindowEvent { event, .. } = event {
             match event {
                 WindowEvent::KeyboardInput {
@@ -142,7 +145,7 @@ impl State {
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
-                    self.mouse_pos = *position;
+                    self.mouse_pos = position.to_logical(scale_factor);
                     if self.touch_pos.is_some() {
                         self.recalculate_touch_pos::<true>();
                     }

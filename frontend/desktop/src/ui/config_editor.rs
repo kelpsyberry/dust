@@ -124,7 +124,8 @@ use crate::{
     config::{self, saves, ModelConfig, Renderer2dKind, Renderer3dKind, Setting as _},
     ui::{
         utils::{
-            add2, combo_value, heading_options, heading_spacing, sub2, sub2s, table_row_heading,
+            add2, combo_value, heading_options, heading_spacing, mul2s, sub2, sub2s,
+            table_row_heading,
         },
         Config, EmuState,
     },
@@ -1880,120 +1881,128 @@ The firmware boot sequence will always be skipped if any system files are not pr
         self.data.game_loaded = emu_state.as_ref().map_or(false, |e| e.game_loaded);
 
         let _window_padding = ui.push_style_var(StyleVar::WindowPadding([0.0; 2]));
-        ui.window("Configuration").opened(opened).build(|| {
-            drop(_window_padding);
-            let orig_cell_padding = style!(ui, cell_padding);
-            let _cell_padding = ui.push_style_var(StyleVar::CellPadding([orig_cell_padding[0]; 2]));
-            if let Some(_table) = ui.begin_table_with_flags(
-                "##layout",
-                2,
-                TableFlags::BORDERS_INNER_V | TableFlags::PAD_OUTER_X,
-            ) {
-                let cell_padding = style!(ui, cell_padding);
+        ui.window("Configuration")
+            .size(
+                mul2s(ui.io().display_size, 0.5),
+                imgui::Condition::FirstUseEver,
+            )
+            .opened(opened)
+            .build(|| {
+                drop(_window_padding);
+                let orig_cell_padding = style!(ui, cell_padding);
+                let _cell_padding =
+                    ui.push_style_var(StyleVar::CellPadding([orig_cell_padding[0]; 2]));
+                if let Some(_table) = ui.begin_table_with_flags(
+                    "##layout",
+                    2,
+                    TableFlags::BORDERS_INNER_V | TableFlags::PAD_OUTER_X,
+                ) {
+                    let cell_padding = style!(ui, cell_padding);
 
-                ui.table_setup_column_with(TableColumnSetup {
-                    flags: TableColumnFlags::WIDTH_FIXED,
-                    ..TableColumnSetup::new("")
-                });
-                ui.table_setup_column("");
-
-                ui.table_next_row();
-                ui.table_next_column();
-
-                // ui.table_set_bg_color(TableBgTarget::CELL_BG, [0.5, 0.5, 0.5, 0.4]);
-
-                self.draw_control_buttons(ui, config, emu_state.as_deref());
-
-                let (separator_p1, separator_p2) = {
-                    let mut cursor_pos = ui.cursor_screen_pos();
-                    cursor_pos[1] -= style!(ui, item_spacing)[1];
-                    let height = cell_padding[1] * 2.0 + BORDER_WIDTH;
-                    let x = cursor_pos[0] - cell_padding[0];
-                    let y = cursor_pos[1] + cell_padding[1];
-                    cursor_pos[1] += height;
-                    ui.set_cursor_screen_pos(cursor_pos);
-                    (
-                        sub2s([x, y], BORDER_WIDTH),
-                        sub2s(
-                            [x + ui.content_region_avail()[0] + cell_padding[0] * 2.0, y],
-                            BORDER_WIDTH,
-                        ),
-                    )
-                };
-
-                self.draw_section_list(ui);
-
-                ui.get_window_draw_list()
-                    .add_line(
-                        separator_p1,
-                        separator_p2,
-                        ui.style_color(StyleColor::Separator),
-                    )
-                    .thickness(BORDER_WIDTH)
-                    .build();
-
-                ui.table_next_column();
-
-                let right_padding = [orig_cell_padding[0] * 2.0 - cell_padding[0], 0.0];
-
-                let help_plus_header_height =
-                    (ui.content_region_avail()[1] - style!(ui, cell_padding)[1]) * 0.3;
-                let help_header_height = ui.text_line_height().max(cell_padding[1] * 2.0);
-                let help_height = help_plus_header_height - help_header_height;
-
-                if let Some(_tab_bar) = ui.tab_bar("tab") {
-                    if ui.tab_item("Global").is_some() {
-                        self.data.cur_tab = Tab::Global;
-                    }
-                    ui.enabled(self.data.game_loaded, || {
-                        if if let Some(title) = emu_state.as_deref().and_then(|emu_state| {
-                            emu_state
-                                .game_loaded
-                                .then(|| format!("Game overrides - {}", emu_state.title))
-                        }) {
-                            ui.tab_item(&title)
-                        } else {
-                            ui.tab_item("Game overrides")
-                        }
-                        .is_some()
-                        {
-                            self.data.cur_tab = Tab::Game;
-                        }
+                    ui.table_setup_column_with(TableColumnSetup {
+                        flags: TableColumnFlags::WIDTH_FIXED,
+                        ..TableColumnSetup::new("")
                     });
-                }
+                    ui.table_setup_column("");
 
-                {
-                    let _cell_padding = ui.push_style_var(StyleVar::CellPadding(orig_cell_padding));
+                    ui.table_next_row();
+                    ui.table_next_column();
 
-                    self.draw_section(
-                        ui,
-                        config,
-                        emu_state,
-                        help_plus_header_height,
-                        right_padding,
-                        cell_padding,
-                    );
+                    // ui.table_set_bg_color(TableBgTarget::CELL_BG, [0.5, 0.5, 0.5, 0.4]);
 
-                    heading_options(
-                        ui,
-                        "Help",
-                        16.0,
-                        5.0,
-                        -cell_padding[0],
-                        -cell_padding[0],
-                        BORDER_WIDTH,
-                        ui.content_region_avail()[0],
-                        2.0 * cell_padding[1],
-                        true,
-                    );
+                    self.draw_control_buttons(ui, config, emu_state.as_deref());
 
-                    self.draw_help(ui, help_height, right_padding, cell_padding);
+                    let (separator_p1, separator_p2) = {
+                        let mut cursor_pos = ui.cursor_screen_pos();
+                        cursor_pos[1] -= style!(ui, item_spacing)[1];
+                        let height = cell_padding[1] * 2.0 + BORDER_WIDTH;
+                        let x = cursor_pos[0] - cell_padding[0];
+                        let y = cursor_pos[1] + cell_padding[1];
+                        cursor_pos[1] += height;
+                        ui.set_cursor_screen_pos(cursor_pos);
+                        (
+                            sub2s([x, y], BORDER_WIDTH),
+                            sub2s(
+                                [x + ui.content_region_avail()[0] + cell_padding[0] * 2.0, y],
+                                BORDER_WIDTH,
+                            ),
+                        )
+                    };
 
-                    if let Some(help_item) = self.data.next_help_item.take() {
-                        self.data.cur_help_item = Some(help_item);
+                    self.draw_section_list(ui);
+
+                    ui.get_window_draw_list()
+                        .add_line(
+                            separator_p1,
+                            separator_p2,
+                            ui.style_color(StyleColor::Separator),
+                        )
+                        .thickness(BORDER_WIDTH)
+                        .build();
+
+                    ui.table_next_column();
+
+                    let right_padding = [orig_cell_padding[0] * 2.0 - cell_padding[0], 0.0];
+
+                    let help_plus_header_height =
+                        (ui.content_region_avail()[1] - style!(ui, cell_padding)[1]) * 0.3;
+                    let help_header_height = ui.text_line_height().max(cell_padding[1] * 2.0);
+                    let help_height = help_plus_header_height - help_header_height;
+
+                    if let Some(_tab_bar) = ui.tab_bar("tab") {
+                        if ui.tab_item("Global").is_some() {
+                            self.data.cur_tab = Tab::Global;
+                        }
+                        ui.enabled(self.data.game_loaded, || {
+                            if if let Some(title) = emu_state.as_deref().and_then(|emu_state| {
+                                emu_state
+                                    .game_loaded
+                                    .then(|| format!("Game overrides - {}", emu_state.title))
+                            }) {
+                                ui.tab_item(&title)
+                            } else {
+                                ui.tab_item("Game overrides")
+                            }
+                            .is_some()
+                            {
+                                self.data.cur_tab = Tab::Game;
+                            }
+                        });
+                    }
+
+                    {
+                        let _cell_padding =
+                            ui.push_style_var(StyleVar::CellPadding(orig_cell_padding));
+
+                        self.draw_section(
+                            ui,
+                            config,
+                            emu_state,
+                            help_plus_header_height,
+                            right_padding,
+                            cell_padding,
+                        );
+
+                        heading_options(
+                            ui,
+                            "Help",
+                            16.0,
+                            5.0,
+                            -cell_padding[0],
+                            -cell_padding[0],
+                            BORDER_WIDTH,
+                            ui.content_region_avail()[0],
+                            2.0 * cell_padding[1],
+                            true,
+                        );
+
+                        self.draw_help(ui, help_height, right_padding, cell_padding);
+
+                        if let Some(help_item) = self.data.next_help_item.take() {
+                            self.data.cur_help_item = Some(help_item);
+                        }
                     }
                 }
-            }
-        });
+            });
     }
 }
