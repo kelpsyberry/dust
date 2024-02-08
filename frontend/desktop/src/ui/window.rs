@@ -1,3 +1,5 @@
+pub use imgui_wgpu::SrgbMode;
+
 #[cfg(target_os = "macos")]
 use cocoa::{
     appkit::{NSWindow, NSWindowStyleMask},
@@ -44,6 +46,7 @@ impl GfxState {
         window: &WinitWindow,
         features: wgpu::Features,
         adapter: AdapterSelection,
+        srgb_mode: SrgbMode,
     ) -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -97,12 +100,11 @@ impl GfxState {
                 let preferred = formats
                     .first()
                     .expect("couldn't get surface preferred format");
-                #[cfg(target_os = "macos")]
-                {
-                    *formats.iter().find(|f| !f.is_srgb()).unwrap_or(preferred)
+                if srgb_mode == SrgbMode::Srgb {
+                    preferred.add_srgb_suffix()
+                } else {
+                    preferred.remove_srgb_suffix()
                 }
-                #[cfg(not(target_os = "macos"))]
-                *preferred
             },
             width: size.width,
             height: size.height,
@@ -154,8 +156,8 @@ impl GfxState {
 
     fn rebuild_swapchain(&mut self, size: PhysicalSize<u32>) {
         self.sc_needs_rebuild = false;
-        self.surface_config.width = size.width;
-        self.surface_config.height = size.height;
+        self.surface_config.width = size.width.max(1);
+        self.surface_config.height = size.height.max(1);
         if size.width != 0 && size.height != 0 {
             self.surface.configure(&self.device, &self.surface_config);
         }
@@ -215,6 +217,7 @@ impl ImGuiState {
         gfx_state: &GfxState,
         scale_factor: f64,
         imgui: &mut imgui::Context,
+        srgb_mode: SrgbMode,
     ) -> Self {
         struct ClipboardBackend(ClipboardContext);
 
@@ -233,7 +236,7 @@ impl ImGuiState {
             imgui.set_clipboard_backend(ClipboardBackend(ctx));
         }
         let imgui_io = imgui.io_mut();
-        imgui_io.config_flags |= imgui::ConfigFlags::IS_SRGB | imgui::ConfigFlags::DOCKING_ENABLE;
+        imgui_io.config_flags |= imgui::ConfigFlags::DOCKING_ENABLE;
         imgui_io.config_windows_move_from_title_bar_only = true;
         imgui_io.font_global_scale = (1.0 / scale_factor) as f32;
 
@@ -309,20 +312,12 @@ impl ImGuiState {
             }),
         }]);
 
-        if gfx_state.surface_config.format.is_srgb() {
-            let style = imgui.style_mut();
-            for color in &mut style.colors {
-                for component in &mut color[..3] {
-                    *component = component.powf(2.2);
-                }
-            }
-        }
-
         let gfx = imgui_wgpu::Renderer::new(
             &gfx_state.device,
             &gfx_state.queue,
             imgui,
             gfx_state.surface_config.format,
+            srgb_mode,
         );
 
         let mut winit = imgui_winit_support::WinitPlatform::init(imgui);
@@ -458,6 +453,7 @@ impl Builder {
         features: wgpu::Features,
         adapter: AdapterSelection,
         default_logical_size: (u32, u32),
+        srgb_mode: SrgbMode,
         #[cfg(target_os = "macos")] macos_title_bar_hidden: bool,
     ) -> Self {
         let event_loop = EventLoop::new().expect("couldn't create event loop");
@@ -482,10 +478,10 @@ impl Builder {
             .expect("couldn't create window");
         let scale_factor = window.scale_factor();
 
-        let gfx = GfxState::new(&window, features, adapter).await;
+        let gfx = GfxState::new(&window, features, adapter, srgb_mode).await;
 
         let mut imgui = imgui::Context::create();
-        let imgui_state = ImGuiState::new(&window, &gfx, scale_factor, &mut imgui);
+        let imgui_state = ImGuiState::new(&window, &gfx, scale_factor, &mut imgui, srgb_mode);
 
         #[allow(unused_mut)]
         let mut window = Window {

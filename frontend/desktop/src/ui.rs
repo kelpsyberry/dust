@@ -934,6 +934,7 @@ pub fn main() {
         wgpu::Features::empty(),
         window::AdapterSelection::Auto(wgpu::PowerPreference::LowPower),
         config.config.window_size,
+        window::SrgbMode::None,
         #[cfg(target_os = "macos")]
         config!(config.config, title_bar_mode).system_title_bar_is_hidden(),
     ));
