@@ -919,6 +919,7 @@ pub fn main() {
             "Encountered unexpected panic: {}\n\nThe emulator will now quit.", info
         );
         panic_hook(info);
+        std::process::exit(1);
     }));
 
     let mut config = Config::new();

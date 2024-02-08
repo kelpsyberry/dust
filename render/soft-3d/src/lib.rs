@@ -699,14 +699,13 @@ impl Renderer {
             let mut edges = [&poly.edges[0], &poly.edges[1]];
             let mut ranges = [edges[0].line_x_range(y), edges[1].line_x_range(y)];
 
-            if ranges[1].1 <= ranges[0].0 {
+            if ranges[1].0 < ranges[0].0 {
                 edges.swap(0, 1);
                 ranges.swap(0, 1);
             }
 
             let x_span_start = ranges[0].0;
-            let x_span_end = ranges[1].1;
-            let x_span_len = x_span_end + 1 - x_span_start;
+            let x_span_len = ranges[0].1.max(ranges[1].1) + 1 - x_span_start;
             let wireframe = poly.alpha == 0;
 
             let fill_all_edges = wireframe
@@ -719,7 +718,7 @@ impl Renderer {
                     || edges[1].x_incr() == 0,
             ];
 
-            let edge_mask = (y == poly.top_y) as u8 | (y == poly.bot_y - 1) as u8;
+            let edge_mask = (y == poly.top_y) as u8 | (y + 1 == poly.bot_y) as u8;
 
             macro_rules! interp_edge {
                 ($i: expr, $x: expr) => {{
@@ -736,7 +735,7 @@ impl Renderer {
             }
 
             let [(l_vert_color, l_uv, l_depth, l_w), (r_vert_color, r_uv, r_depth, r_w)] =
-                [interp_edge!(0, x_span_start), interp_edge!(1, x_span_end)];
+                [interp_edge!(0, x_span_start), interp_edge!(1, ranges[1].1)];
 
             let x_interp = InterpLineData::<false>::new(l_w, r_w);
 
