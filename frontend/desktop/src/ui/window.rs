@@ -772,6 +772,9 @@ impl Builder {
                     ..
                 } => {
                     window.is_occluded = is_occluded;
+                    if !is_occluded {
+                        window.window.request_redraw();
+                    }
                 }
 
                 Event::WindowEvent {
