@@ -959,11 +959,6 @@ pub fn main() {
         FrameData::default(),
     ]);
 
-    #[cfg(feature = "discord-presence")]
-    if let Some(discord_presence) = &mut state.discord_presence {
-        discord_presence.stop();
-    }
-
     window_builder.run(
         move |window| {
             let fb_texture = FbTexture::new(window);
@@ -1006,6 +1001,11 @@ pub fn main() {
                     None
                 },
             };
+
+            #[cfg(feature = "discord-presence")]
+            if let Some(discord_presence) = &mut state.discord_presence {
+                discord_presence.stop();
+            }
 
             if let Some(rom_path) = env::args_os().nth(1) {
                 state.load_from_rom_path(Path::new(&rom_path), &mut config, window);
