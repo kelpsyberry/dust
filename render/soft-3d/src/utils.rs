@@ -227,14 +227,6 @@ impl Edge {
     }
 }
 
-trait InterpDir {}
-
-pub enum YDir {}
-impl InterpDir for YDir {}
-
-pub enum XDir {}
-impl InterpDir for XDir {}
-
 #[derive(Clone, Copy, Debug)]
 pub struct InterpLineData<const EDGE: bool> {
     force_linear: bool,
