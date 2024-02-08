@@ -587,8 +587,6 @@ impl Builder {
                     window
                 };
 
-                window.window.set_visible(true);
-
                 let gfx_surface =
                     GfxSurface::new(&window.window, &window.gfx_device, window.srgb_mode);
                 let imgui_gfx = imgui_wgpu::Renderer::new(
@@ -704,6 +702,7 @@ impl Builder {
             match event {
                 Event::NewEvents(StartCause::Init) => {
                     redraw();
+                    window.window.set_visible(true);
                 }
 
                 Event::WindowEvent {
