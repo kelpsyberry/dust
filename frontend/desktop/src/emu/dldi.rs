@@ -257,7 +257,7 @@ impl FsProvider {
             return Ok(());
         }
         let mut chunk_manager = ChunkManager {
-            temp_dir: TempDir::new("dust")?,
+            temp_dir: TempDir::new("dust-dldi")?,
             cur_addr: 0,
             fs_max_size: 1 << 30,
             chunk_size_shift: 22,

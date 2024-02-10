@@ -19,9 +19,6 @@ pub trait RendererTx {
     fn skip_rendering(&mut self);
 }
 
-// TODO: Use the SCREEN_WIDTH/SCREEN_HEIGHT constants, can't right now due to a compiler bug making
-//       the trait stop being object-safe in that case.
-
 pub trait SoftRendererRx {
     fn start_frame(&mut self);
     fn read_scanline(&mut self) -> &Scanline<u32>;

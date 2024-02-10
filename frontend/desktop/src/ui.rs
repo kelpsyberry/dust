@@ -6,14 +6,14 @@ mod save_slot_editor;
 use save_slot_editor::Editor as SaveSlotEditor;
 mod savestate_editor;
 use savestate_editor::Editor as SavestateEditor;
+mod title_menu_bar;
+use title_menu_bar::TitleMenuBarState;
 
 #[cfg(feature = "logging")]
 mod log;
 #[allow(dead_code)]
 pub mod window;
 
-#[cfg(target_os = "macos")]
-use crate::config::TitleBarMode;
 #[cfg(feature = "debug-views")]
 use crate::debug_views;
 use crate::{
@@ -42,9 +42,7 @@ use std::num::NonZeroU32;
 #[cfg(feature = "discord-presence")]
 use std::time::SystemTime;
 use std::{
-    env,
-    fmt::Write,
-    fs, io, panic,
+    env, fs, io, panic,
     path::{Path, PathBuf},
     slice,
     sync::{
@@ -76,8 +74,6 @@ enum Renderer3dData {
 struct EmuState {
     playing: bool,
     title: String,
-    #[cfg(target_os = "macos")]
-    path: Option<PathBuf>,
     game_loaded: bool,
     save_path_update: Option<emu::SavePathUpdate>,
     #[cfg(feature = "gdb-server")]
@@ -205,9 +201,9 @@ pub struct UiState {
     fb_texture: FbTexture,
     frame_tx: Option<triple_buffer::Sender<FrameData>>,
     frame_rx: triple_buffer::Receiver<FrameData>,
-    fps_fixed: Option<u64>,
 
-    show_menu_bar: bool,
+    title_menu_bar: TitleMenuBarState,
+
     screen_focused: bool,
 
     input: input::State,
@@ -218,9 +214,6 @@ pub struct UiState {
     savestate_editor: SavestateEditor,
 
     audio_channel: Option<audio::output::Channel>,
-
-    #[cfg(target_os = "macos")]
-    shown_file_path: Option<PathBuf>,
 
     #[cfg(feature = "logging")]
     log: Log,
@@ -248,15 +241,6 @@ impl UiState {
         if let Some(emu) = &mut self.emu {
             emu.send_message(emu::Message::Reset);
         }
-    }
-}
-
-bitflags::bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    struct TitleComponents: u8 {
-        const EMU_NAME = 1 << 0;
-        const GAME_TITLE = 1 << 1;
-        const FPS = 1 << 2;
     }
 }
 
@@ -479,8 +463,6 @@ impl UiState {
         ds_slot_rom: Option<(DsSlotRom, &Path)>,
         window: &window::Window,
     ) {
-        self.show_menu_bar = !config!(config.config, full_window_screen);
-
         #[cfg(feature = "discord-presence")]
         if let Some(presence) = &mut self.discord_presence {
             presence.start(&title);
@@ -498,28 +480,17 @@ impl UiState {
         #[cfg(feature = "logging")]
         let logger = self.log.logger().clone();
 
-        let (ds_slot_rom, _ds_slot_rom_path) = ds_slot_rom.unzip();
+        let (mut ds_slot_rom, ds_slot_rom_path) = ds_slot_rom.unzip();
+
+        self.title_menu_bar.start_game(
+            ds_slot_rom.as_mut(),
+            ds_slot_rom_path,
+            &config.config,
+            window,
+        );
+
         #[allow(unused_mut, clippy::bind_instead_of_map)]
         let ds_slot = ds_slot_rom.and_then(|mut rom| {
-            #[cfg(any(target_os = "linux", target_os = "windows"))]
-            {
-                use dust_core::{ds_slot, utils::Bytes};
-                let mut header_bytes = Bytes::new([0; 0x170]);
-                rom.read_header(&mut header_bytes);
-                let header = ds_slot::rom::header::Header::new(header_bytes.as_byte_slice())
-                    // NOTE: The ROM file's size is ensured beforehand, this should never occur.
-                    .expect("couldn't read DS slot ROM header");
-                let icon_title_offset = header.icon_title_offset() as usize;
-                let icon_pixels = ds_slot::rom::icon::decode(icon_title_offset, &mut rom);
-                window.set_icon(icon_pixels.and_then(|icon_pixels| {
-                    let mut rgba = Vec::with_capacity(32 * 32 * 4);
-                    for pixel in icon_pixels {
-                        rgba.extend_from_slice(&pixel.to_le_bytes());
-                    }
-                    winit::window::Icon::from_rgba(rgba, 32, 32).ok()
-                }));
-            }
-
             let game_code = rom.game_code();
 
             let save_type = self
@@ -574,7 +545,10 @@ impl UiState {
             })
         });
 
-        let frame_tx = self.frame_tx.take().unwrap();
+        let frame_tx = self
+            .frame_tx
+            .take()
+            .expect("expected frame_tx to be Some while the emulator is stopped");
 
         // TODO: False positive
         #[allow(clippy::useless_asref)]
@@ -612,7 +586,7 @@ impl UiState {
             sys_files: launch_config.sys_files,
             ds_slot,
             #[cfg(feature = "dldi")]
-            dldi: _ds_slot_rom_path.and_then(|rom_path| {
+            dldi: ds_slot_rom_path.and_then(|rom_path| {
                 Some(emu::Dldi {
                     root_path: rom_path.parent()?.to_path_buf(),
                     skip_path: rom_path.to_path_buf(),
@@ -667,8 +641,6 @@ impl UiState {
         self.emu = Some(EmuState {
             playing,
             title,
-            #[cfg(target_os = "macos")]
-            path: _ds_slot_rom_path.map(Path::to_path_buf),
             game_loaded,
             save_path_update: None,
             #[cfg(feature = "gdb-server")]
@@ -723,7 +695,12 @@ impl UiState {
         self.debug_views.clear_frame_data();
 
         triple_buffer::reset(
-            (self.frame_tx.as_mut().unwrap(), &mut self.frame_rx),
+            (
+                self.frame_tx
+                    .as_mut()
+                    .expect("expected frame_tx to be Some while the emulator is stopped"),
+                &mut self.frame_rx,
+            ),
             |frame_data| {
                 for data in frame_data {
                     for fb in &mut data.fb[..] {
@@ -736,10 +713,7 @@ impl UiState {
             },
         );
 
-        #[cfg(any(target_os = "linux", target_os = "windows"))]
-        {
-            window.set_icon(None);
-        }
+        self.title_menu_bar.stop_game(&config.config, window);
 
         #[cfg(feature = "discord-presence")]
         if let Some(presence) = &mut self.discord_presence {
@@ -752,72 +726,6 @@ impl UiState {
 
     fn playing(&self) -> bool {
         self.emu.as_ref().map_or(false, |emu| emu.playing)
-    }
-
-    fn update_menu_bar(&mut self, config: &config::Config, _window: &mut window::Window) {
-        if config_changed!(config, full_window_screen) {
-            self.show_menu_bar |= !config!(config, full_window_screen);
-        }
-
-        #[cfg(target_os = "macos")]
-        if let Some(mode) = config_changed_value!(config, title_bar_mode) {
-            _window.set_macos_title_bar_transparent(mode.system_title_bar_is_transparent());
-        }
-    }
-
-    fn title(&self, components: TitleComponents) -> String {
-        let mut needs_separator = false;
-        let mut buffer = if components.contains(TitleComponents::EMU_NAME) {
-            needs_separator = true;
-            "Dust".to_string()
-        } else {
-            String::new()
-        };
-        if let Some(emu) = &self.emu {
-            if components.contains(TitleComponents::GAME_TITLE) {
-                if needs_separator {
-                    buffer.push_str(" - ");
-                }
-                buffer.push_str(&emu.title);
-                needs_separator = true;
-            }
-            if components.contains(TitleComponents::FPS) {
-                if let Some(fps_fixed) = self.fps_fixed {
-                    if needs_separator {
-                        buffer.push_str(" - ");
-                    }
-                    let _ = write!(buffer, "{:.01} FPS", fps_fixed as f32 / 10.0);
-                }
-            }
-        } else if components.contains(TitleComponents::GAME_TITLE) {
-            if needs_separator {
-                buffer.push_str(" - ");
-            }
-            buffer.push_str("No game loaded");
-        }
-        buffer
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    fn update_title_bar(&mut self, _config: &config::Config, window: &window::Window) {
-        window.set_title(&self.title(TitleComponents::all()));
-    }
-
-    #[cfg(target_os = "macos")]
-    fn update_title_bar(&mut self, _config: &config::Config, window: &window::Window) {
-        let show_system_title_bar =
-            config!(_config, title_bar_mode).should_show_system_title_bar(self.show_menu_bar);
-        let shown_file_path = if show_system_title_bar {
-            window.set_title(&self.title(TitleComponents::all()));
-            self.emu.as_ref().and_then(|emu| emu.path.as_deref())
-        } else {
-            window.set_title("");
-            None
-        };
-        if shown_file_path != self.shown_file_path.as_deref() {
-            self.shown_file_path = shown_file_path.map(Path::to_path_buf);
-            window.set_file_path(shown_file_path);
-        }
     }
 }
 
@@ -987,9 +895,9 @@ pub fn main() {
                 fb_texture,
                 frame_tx: Some(frame_tx),
                 frame_rx,
-                fps_fixed: None,
 
-                show_menu_bar: true,
+                title_menu_bar: TitleMenuBarState::new(&config.config),
+
                 screen_focused: true,
 
                 input: input::State::new(),
@@ -1000,9 +908,6 @@ pub fn main() {
                 savestate_editor: SavestateEditor::new(),
 
                 audio_channel,
-
-                #[cfg(target_os = "macos")]
-                shown_file_path: None,
 
                 #[cfg(feature = "logging")]
                 log,
@@ -1082,7 +987,7 @@ pub fn main() {
 
             // Process configuration changes
             {
-                state.update_menu_bar(&config.config, window);
+                state.title_menu_bar.update_config(&config.config, window);
 
                 #[cfg(feature = "logging")]
                 if state.log.update(&config.config) {
@@ -1328,20 +1233,14 @@ pub fn main() {
                     state.fb_texture.set_data(window, &frame.fb);
                 }
 
-                let fps_fixed = (frame.fps * 10.0).round() as u64;
-                if Some(fps_fixed) != state.fps_fixed {
-                    state.fps_fixed = Some(fps_fixed);
-                }
+                state.title_menu_bar.update_fps(frame.fps);
             }
 
             // Draw menu bar
-            if config!(config.config, full_window_screen)
-                && ui.is_key_pressed(imgui::Key::Escape)
-                && !ui.is_any_item_focused()
-            {
-                state.show_menu_bar = !state.show_menu_bar;
+            if ui.is_key_pressed(imgui::Key::Escape) && !ui.is_any_item_focused() {
+                state.title_menu_bar.toggle_menu_bar(&config.config);
             }
-            if state.show_menu_bar {
+            if state.title_menu_bar.menu_bar_is_visible() {
                 window.main_menu_bar(ui, |window| {
                     macro_rules! icon {
                         ($tooltip: expr, $inner: expr) => {{
@@ -1506,18 +1405,15 @@ pub fn main() {
                         });
 
                         macro_rules! draw_config_toggle {
-                            ($ident: ident, $desc: literal$(, $update: expr)?) => {{
+                            ($ident: ident, $desc: literal) => {{
                                 let mut value = config!(config.config, $ident);
                                 if ui.menu_item_config($desc).build_with_ref(&mut value) {
                                     set_config!(config.config, $ident, value);
-                                    $($update)*
                                 }
                             }};
                         }
 
-                        draw_config_toggle!(full_window_screen, "\u{f31e} Full-window screen", {
-                            state.show_menu_bar |= !config!(config.config, full_window_screen);
-                        });
+                        draw_config_toggle!(full_window_screen, "\u{f31e} Full-window screen");
 
                         ui.separator();
 
@@ -1622,46 +1518,12 @@ pub fn main() {
                         }
                     }
 
-                    #[cfg(target_os = "macos")]
-                    if config!(config.config, title_bar_mode) == TitleBarMode::Imgui {
-                        // TODO: When imgui-rs provides RenderTextEllipsis, use it; for now, the
-                        //       title just gets replaced by the FPS and then hidden.
-                        let item_spacing = style!(ui, item_spacing)[0];
-
-                        let draw_title = move |text: &str| {
-                            let width = ui.calc_text_size(text)[0] + item_spacing;
-                            let orig_cursor_pos = ui.cursor_pos();
-
-                            let mut cursor_x = orig_cursor_pos[0] + item_spacing;
-                            if right_title_limit - cursor_x < width {
-                                return false;
-                            }
-
-                            let centered_start_x = ui.window_size()[0] * 0.5 - width * 0.5;
-                            cursor_x = cursor_x.max(centered_start_x);
-                            if cursor_x + width > right_title_limit {
-                                cursor_x = right_title_limit - width;
-                            }
-
-                            ui.set_cursor_pos(orig_cursor_pos);
-                            ui.separator();
-                            ui.set_cursor_pos([cursor_x, orig_cursor_pos[1]]);
-                            ui.text(text);
-
-                            true
-                        };
-
-                        for components in [
-                            TitleComponents::all(),
-                            TitleComponents::GAME_TITLE | TitleComponents::FPS,
-                            TitleComponents::FPS,
-                        ] {
-                            let title = state.title(components);
-                            if title.is_empty() || draw_title(&title) {
-                                break;
-                            }
-                        }
-                    }
+                    state.title_menu_bar.draw_imgui_title(
+                        right_title_limit,
+                        ui,
+                        &state.emu,
+                        &config.config,
+                    );
                 });
             }
 
@@ -1786,7 +1648,9 @@ pub fn main() {
             };
 
             // Process title bar changes
-            state.update_title_bar(&config.config, window);
+            state
+                .title_menu_bar
+                .update_system_title_bar(&state.emu, &config.config, window);
 
             window::ControlFlow::Continue
         },

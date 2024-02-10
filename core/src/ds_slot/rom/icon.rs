@@ -1,8 +1,7 @@
-use super::Contents;
+use super::{header::Header, Contents};
 use crate::utils::Bytes;
 
-#[inline]
-pub fn decode(
+pub fn decode_to_rgba8(
     icon_title_offset: usize,
     rom_contents: &mut impl Contents,
 ) -> Option<[u32; 32 * 32]> {
@@ -33,4 +32,12 @@ pub fn decode(
         }
     }
     Some(pixels)
+}
+
+pub fn read_header_and_decode_to_rgba8(rom_contents: &mut impl Contents) -> Option<[u32; 32 * 32]> {
+    let mut header_bytes = Bytes::new([0; 0x170]);
+    rom_contents.read_header(&mut header_bytes);
+    let header = Header::new(header_bytes.as_byte_slice())?;
+    let icon_title_offset = header.icon_title_offset() as usize;
+    decode_to_rgba8(icon_title_offset, rom_contents)
 }

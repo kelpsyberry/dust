@@ -390,6 +390,14 @@ impl TitleBarMode {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GameIconMode {
+    None,
+    File,
+    Game,
+}
+
 fn resolve_opt_nonzero_u32(
     global: &u32,
     game: &Option<u32>,
@@ -457,6 +465,7 @@ def_config! {
     tracked {
         global {
             title_bar_mode: TitleBarMode = TitleBarMode::System,
+            game_icon_mode: GameIconMode = GameIconMode::Game,
             game_db_path: Option<HomePathBuf> = Some(
                 HomePathBuf(base_dirs().data.join("game_db.json"))
             ),

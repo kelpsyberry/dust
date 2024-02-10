@@ -1,11 +1,7 @@
 pub use imgui_wgpu::SrgbMode;
 
 #[cfg(target_os = "macos")]
-use cocoa::{
-    appkit::{NSWindow, NSWindowStyleMask},
-    base::id,
-    foundation::NSRect,
-};
+use cocoa::base::id;
 use copypasta::{ClipboardContext, ClipboardProvider};
 use emu_utils::resource;
 #[cfg(target_os = "macos")]
@@ -360,7 +356,7 @@ pub struct Window {
 
     is_occluded: bool,
     #[cfg(target_os = "macos")]
-    macos_title_bar_is_hidden: bool,
+    macos_title_bar_is_transparent: bool,
     #[cfg(target_os = "macos")]
     macos_title_bar_height: f32,
 }
@@ -383,6 +379,7 @@ impl Window {
 
     #[cfg(target_os = "macos")]
     pub fn set_file_path(&self, file_path: Option<&Path>) {
+        use cocoa::appkit::NSWindow;
         let Some(ns_window) = self.ns_window() else {
             return;
         };
@@ -432,26 +429,41 @@ impl Window {
 
     #[cfg(target_os = "macos")]
     fn compute_macos_title_bar_height(&self, ns_window: id) -> f32 {
+        use cocoa::foundation::NSRect;
         let content_layout_rect: NSRect = unsafe { msg_send![ns_window, contentLayoutRect] };
         (self.window.outer_size().height as f64 / self.scale_factor
             - content_layout_rect.size.height) as f32
     }
 
     #[cfg(target_os = "macos")]
-    pub fn set_macos_title_bar_transparent(&mut self, hidden: bool) {
+    fn update_macos_title_bar_height(&mut self) {
+        self.macos_title_bar_height =
+            if self.macos_title_bar_is_transparent && self.window.fullscreen().is_none() {
+                if let Some(ns_window) = self.ns_window() {
+                    self.compute_macos_title_bar_height(ns_window)
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn set_macos_title_bar_transparent(&mut self, transparent: bool) {
+        use cocoa::{
+            appkit::{NSWindow, NSWindowStyleMask},
+            base::BOOL,
+        };
+        self.macos_title_bar_is_transparent = transparent;
+        self.update_macos_title_bar_height();
         let Some(ns_window) = self.ns_window() else {
             return;
         };
-        self.macos_title_bar_is_hidden = hidden;
-        self.macos_title_bar_height = if hidden {
-            self.compute_macos_title_bar_height(ns_window)
-        } else {
-            0.0
-        };
         unsafe {
-            ns_window.setTitlebarAppearsTransparent_(hidden as cocoa::base::BOOL);
+            ns_window.setTitlebarAppearsTransparent_(transparent as BOOL);
             let prev_style_mask = ns_window.styleMask();
-            ns_window.setStyleMask_(if hidden {
+            ns_window.setStyleMask_(if transparent {
                 prev_style_mask | NSWindowStyleMask::NSFullSizeContentViewWindowMask
             } else {
                 prev_style_mask & !NSWindowStyleMask::NSFullSizeContentViewWindowMask
@@ -461,7 +473,16 @@ impl Window {
 
     pub fn main_menu_bar(&mut self, ui: &imgui::Ui, f: impl FnOnce(&mut Self)) {
         #[cfg(target_os = "macos")]
-        let frame_padding = if self.macos_title_bar_is_hidden {
+        if (self.macos_title_bar_height != 0.0)
+            != (self.macos_title_bar_is_transparent
+                && self.window.fullscreen().is_none()
+                && self.ns_window().is_some())
+        {
+            self.update_macos_title_bar_height();
+        }
+
+        #[cfg(target_os = "macos")]
+        let frame_padding = if self.macos_title_bar_height != 0.0 {
             Some(ui.push_style_var(imgui::StyleVar::FramePadding([
                 0.0,
                 0.5 * (self.macos_title_bar_height - ui.text_line_height()),
@@ -474,7 +495,7 @@ impl Window {
             #[cfg(target_os = "macos")]
             {
                 drop(frame_padding);
-                if self.macos_title_bar_is_hidden && self.window.fullscreen().is_none() {
+                if self.macos_title_bar_height != 0.0 {
                     // TODO: There has to be some way to compute this width instead of
                     //       hardcoding it.
                     ui.dummy([68.0, 0.0]);
@@ -646,18 +667,13 @@ impl Builder {
                     imgui_gfx,
                     is_occluded: false,
                     #[cfg(target_os = "macos")]
-                    macos_title_bar_is_hidden: window.macos_title_bar_is_hidden,
+                    macos_title_bar_is_transparent: window.macos_title_bar_is_hidden,
                     #[cfg(target_os = "macos")]
                     macos_title_bar_height: 0.0,
                 };
 
                 #[cfg(target_os = "macos")]
-                if window.macos_title_bar_is_hidden {
-                    if let Some(ns_window) = window.ns_window() {
-                        window.macos_title_bar_height =
-                            window.compute_macos_title_bar_height(ns_window);
-                    }
-                }
+                window.update_macos_title_bar_height();
 
                 state_ = ManuallyDrop::new(Some(unsafe { ManuallyDrop::take(&mut init_state) }(
                     &mut window,

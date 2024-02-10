@@ -121,7 +121,9 @@ use crate::config::LoggingKind;
 use crate::config::TitleBarMode;
 use crate::{
     audio,
-    config::{self, saves, ModelConfig, Renderer2dKind, Renderer3dKind, Setting as _},
+    config::{
+        self, saves, GameIconMode, ModelConfig, Renderer2dKind, Renderer3dKind, Setting as _,
+    },
     ui::{
         utils::{
             add2, combo_value, heading_options, heading_spacing, mul2s, sub2, sub2s,
@@ -503,6 +505,8 @@ impl PathsSettings {
 struct UiSettings {
     #[cfg(target_os = "macos")]
     title_bar_mode: setting::NonOverridable<setting::Combo<TitleBarMode>>,
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    game_icon_mode: setting::NonOverridable<setting::Combo<GameIconMode>>,
     full_window_screen: setting::Overridable<setting::Bool>,
     screen_integer_scale: setting::NonOverridable<setting::Bool>,
     screen_rot: setting::Overridable<setting::Slider<u16>>,
@@ -525,6 +529,25 @@ impl UiSettings {
                         TitleBarMode::System => "System",
                         TitleBarMode::Mixed => "Mixed",
                         TitleBarMode::Imgui => "Imgui",
+                    }
+                    .into()
+                }
+            ),
+            #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+            game_icon_mode: nonoverridable!(
+                game_icon_mode,
+                combo,
+                &[
+                    GameIconMode::None,
+                    #[cfg(target_os = "macos")]
+                    GameIconMode::File,
+                    GameIconMode::Game,
+                ],
+                |game_icon_mode| {
+                    match game_icon_mode {
+                        GameIconMode::None => "None",
+                        GameIconMode::File => "File",
+                        GameIconMode::Game => "Game",
                     }
                     .into()
                 }
@@ -1467,6 +1490,16 @@ impl Editor {
 title and FPS
 - Imgui: will completely hide the system title bar and render the title and FPS as part of the \
 menu",
+                                    ),
+                                    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+                                    (
+                                        game_icon_mode,
+                                        "Game icon mode",
+                                        "How to display the currently running game's icon:
+- None: won't display any icon
+- File (macOS only): will display the system icon of the game file that was booted (won't work \
+with the Imgui title bar mode)
+- Game: will display the game's 32x32 icon provided in its binary",
                                     ),
                                     (
                                         full_window_screen,
