@@ -838,10 +838,14 @@ impl FbTexture {
 pub fn main() {
     let panic_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        let thread_name = thread.name().unwrap_or("<unnamed>");
+
         error!(
             "Unexpected panic",
-            "Encountered unexpected panic: {}\n\nThe emulator will now quit.", info
+            "Thread \"{thread_name}\" {info}\n\nThe emulator will now quit."
         );
+
         panic_hook(info);
         std::process::exit(1);
     }));
