@@ -186,13 +186,13 @@ macro_rules! scalar {
         (
             setting::Scalar::new(
                 |config| *config.$id.inner().global(),
-                |config, value| config.$id.update(|inner| inner.set_global(value)),
+                |config, value| config.$id.inner_mut().set_global(value),
                 $step,
                 $display_format,
             ),
             setting::Scalar::new(
                 |config| config.$id.inner().game().unwrap(),
-                |config, value| config.$id.update(|inner| inner.set_game(Some(value))),
+                |config, value| config.$id.inner_mut().set_game(Some(value)),
                 $step,
                 $display_format,
             ),
@@ -209,7 +209,8 @@ macro_rules! opt_nonzero_u32_slider {
                 |config, value| {
                     config
                         .$id
-                        .update(|inner| inner.set_global(value.map_or(0, |v| v.get())))
+                        .inner_mut()
+                        .set_global(value.map_or(0, |v| v.get()))
                 },
                 $default,
                 $min,
@@ -221,7 +222,8 @@ macro_rules! opt_nonzero_u32_slider {
                 |config, value| {
                     config
                         .$id
-                        .update(|inner| inner.set_game(Some(value.map_or(0, |v| v.get()))))
+                        .inner_mut()
+                        .set_game(Some(value.map_or(0, |v| v.get())))
                 },
                 $default,
                 $min,
@@ -240,8 +242,8 @@ macro_rules! bool_and_value_slider {
                     let (active, value) = *config.$id.inner().global();
                     (active, value$(* $scale)*)
                 },
-                |config, (active, value)| config.$id.update(
-                    |inner| inner.set_global((active, value$(/ $scale)*)),
+                |config, (active, value)| config.$id.inner_mut().set_global(
+                    (active, value$(/ $scale)*),
                 ),
                 $min,
                 $max,
@@ -252,8 +254,8 @@ macro_rules! bool_and_value_slider {
                     let (active, value) = config.$id.inner().game().unwrap();
                     (active, value$(* $scale)*)
                 },
-                |config, (active, value)| config.$id.update(
-                    |inner| inner.set_game(Some((active, value$(/ $scale)*))),
+                |config, (active, value)| config.$id.inner_mut().set_game(
+                    Some((active, value$(/ $scale)*)),
                 ),
                 $min,
                 $max,
@@ -283,14 +285,14 @@ macro_rules! slider {
         (
             setting::Slider::new(
                 |config| *config.$id.inner().global() $(* $scale)*,
-                |config, value| config.$id.update(|inner| inner.set_global(value $(/ $scale)*)),
+                |config, value| config.$id.inner_mut().set_global(value $(/ $scale)*),
                 $min,
                 $max,
                 $display_format,
             ),
             setting::Slider::new(
                 |config| config.$id.inner().game().unwrap() $(* $scale)*,
-                |config, value| config.$id.update(|inner| inner.set_game(Some(value $(/ $scale)*))),
+                |config, value| config.$id.inner_mut().set_game(Some(value $(/ $scale)*)),
                 $min,
                 $max,
                 $display_format,
@@ -319,14 +321,14 @@ macro_rules! string_format_slider {
         (
             setting::StringFormatSlider::new(
                 |config| *config.$id.inner().global() $(* $scale)*,
-                |config, value| config.$id.update(|inner| inner.set_global(value $(/ $scale)*)),
+                |config, value| config.$id.inner_mut().set_global(value $(/ $scale)*),
                 $min,
                 $max,
                 $display_format,
             ),
             setting::StringFormatSlider::new(
                 |config| config.$id.inner().game().unwrap() $(* $scale)*,
-                |config, value| config.$id.update(|inner| inner.set_game(Some(value $(/ $scale)*))),
+                |config, value| config.$id.inner_mut().set_game(Some(value $(/ $scale)*)),
                 $min,
                 $max,
                 $display_format,
@@ -346,11 +348,11 @@ macro_rules! bool {
         (
             setting::Bool::new(
                 |config| *config.$id.inner().global(),
-                |config, value| config.$id.update(|inner| inner.set_global(value)),
+                |config, value| config.$id.inner_mut().set_global(value),
             ),
             setting::Bool::new(
                 |config| config.$id.inner().game().unwrap(),
-                |config, value| config.$id.update(|inner| inner.set_game(Some(value))),
+                |config, value| config.$id.inner_mut().set_game(Some(value)),
             ),
         )
     };
@@ -369,13 +371,13 @@ macro_rules! combo {
         (
             setting::Combo::new(
                 |config| *config.$id.inner().global(),
-                |config, value| config.$id.update(|inner| inner.set_global(value)),
+                |config, value| config.$id.inner_mut().set_global(value),
                 $items,
                 $label,
             ),
             setting::Combo::new(
                 |config| config.$id.inner().game().unwrap(),
-                |config, value| config.$id.update(|inner| inner.set_game(Some(value))),
+                |config, value| config.$id.inner_mut().set_game(Some(value)),
                 $items,
                 $label,
             ),
@@ -403,10 +405,10 @@ macro_rules! overridable {
                 } else {
                     None
                 };
-                config.$id.update(|inner| inner.set_game(value));
+                config.$id.inner_mut().set_game(value);
             },
-            |config| config.$id.update(|inner| inner.set_default_global()),
-            |config| config.$id.update(|inner| inner.set_default_game()),
+            |config| config.$id.inner_mut().set_default_global(),
+            |config| config.$id.inner_mut().set_default_game(),
         )
     };
 }
@@ -422,10 +424,8 @@ macro_rules! sys_path {
                 setting::OptHomePath::new(
                     |config| config.sys_paths.inner().global().$field.as_ref(),
                     |config, value| {
-                        config.sys_paths.update(|inner| {
-                            inner.update_global(|global| {
-                                global.$field = value;
-                            })
+                        config.sys_paths.inner_mut().update_global(|global| {
+                            global.$field = value;
                         });
                     },
                     $placeholder,
@@ -443,10 +443,8 @@ macro_rules! sys_path {
                             .as_ref()
                     },
                     |config, value| {
-                        config.sys_paths.update(|inner| {
-                            inner.update_game(|game| {
-                                game.$field = Some(value);
-                            })
+                        config.sys_paths.inner_mut().update_game(|game| {
+                            game.$field = Some(value);
                         });
                     },
                     $placeholder,
@@ -462,19 +460,22 @@ macro_rules! sys_path {
                 };
                 config
                     .sys_paths
-                    .update(|inner| inner.update_game(|game| game.$field = value));
+                    .inner_mut()
+                    .update_game(|game| game.$field = value);
             },
             |config| {
                 let value = config.sys_paths.inner().default_global().$field.clone();
                 config
                     .sys_paths
-                    .update(|inner| inner.update_global(|global| global.$field = value));
+                    .inner_mut()
+                    .update_global(|global| global.$field = value);
             },
             |config| {
                 let value = config.sys_paths.inner().default_game().$field.clone();
                 config
                     .sys_paths
-                    .update(|inner| inner.update_game(|game| game.$field = value));
+                    .inner_mut()
+                    .update_game(|game| game.$field = value);
             },
         )
     };

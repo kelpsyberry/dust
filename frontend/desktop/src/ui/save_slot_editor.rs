@@ -27,11 +27,9 @@ impl Editor {
                 if let Some(path_config) = config!(config, &save_path_config) {
                     macro_rules! update_path_config {
                         (|$path_config: ident| $inner: expr) => {
-                            config.save_path_config.update(|inner| {
-                                inner.update(|path_config| {
-                                    let $path_config = path_config.as_mut().unwrap();
-                                    $inner
-                                })
+                            config.save_path_config.inner_mut().update(|path_config| {
+                                let $path_config = path_config.as_mut().unwrap();
+                                $inner
                             });
                         };
                     }

@@ -251,6 +251,7 @@ impl TryFrom<NativeKeyCode> for ScanCode {
     }
 }
 
+#[allow(clippy::to_string_trait_impl)]
 impl ToString for ScanCode {
     fn to_string(&self) -> String {
         match self.0 {

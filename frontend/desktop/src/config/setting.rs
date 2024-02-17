@@ -180,21 +180,21 @@ pub trait Setting {
 
     fn inner(&self) -> &Self::T;
 
+    fn inner_mut(&mut self) -> &mut Self::T;
+
     fn get(&self) -> &<Self::T as Resolvable>::Resolved {
         self.inner().get()
     }
 
-    fn update(&mut self, f: impl FnOnce(&mut Self::T));
-
     fn set(&mut self, value: <Self::T as Resolvable>::Set) {
-        self.update(|inner| inner.set(value));
+        self.inner_mut().set(value);
     }
 
     fn set_default(&mut self)
     where
         Self::T: Defaultable,
     {
-        self.update(|inner| inner.set_default());
+        self.inner_mut().set_default();
     }
 }
 
@@ -215,8 +215,8 @@ impl<T: Resolvable> Setting for Untracked<T> {
         &self.inner
     }
 
-    fn update(&mut self, f: impl FnOnce(&mut T)) {
-        f(&mut self.inner);
+    fn inner_mut(&mut self) -> &mut Self::T {
+        &mut self.inner
     }
 }
 
@@ -249,9 +249,9 @@ impl<T: Resolvable> Setting for Tracked<T> {
         &self.inner
     }
 
-    fn update(&mut self, f: impl FnOnce(&mut Self::T)) {
-        f(&mut self.inner);
+    fn inner_mut(&mut self) -> &mut Self::T {
         self.changed = true;
+        &mut self.inner
     }
 }
 

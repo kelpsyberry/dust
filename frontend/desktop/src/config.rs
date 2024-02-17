@@ -1,7 +1,10 @@
 pub mod saves;
 #[allow(dead_code)]
 mod setting;
-pub use setting::{Origin as SettingOrigin, Resolvable, Setting};
+pub use setting::{
+    NonOverridable, Origin as SettingOrigin, Overridable, OverridableTypes, Resolvable, Setting,
+    Tracked, Untracked,
+};
 
 use crate::{
     audio, input,
@@ -15,10 +18,7 @@ use dust_core::{
     Model,
 };
 use serde::{Deserialize, Serialize};
-use setting::{
-    resolve_option, set_option, set_unreachable, NonOverridable, Overridable, OverridableTypes,
-    Tracked, Untracked,
-};
+use setting::{resolve_option, set_option, set_unreachable};
 use std::{
     fmt, fs,
     io::{self, Read},
@@ -179,9 +179,9 @@ macro_rules! def_config {
 
             pub fn deserialize_global(&mut self, global: &$global_config) {
                 $(self.$ug_ident.set(global.$ug_ident.clone());)*
-                $(self.$uo_ident.update(|value| value.set_global(global.$uo_ident.clone()));)*
+                $(self.$uo_ident.inner_mut().set_global(global.$uo_ident.clone());)*
                 $(self.$tg_ident.set(global.$tg_ident.clone());)*
-                $(self.$to_ident.update(|value| value.set_global(global.$to_ident.clone()));)*
+                $(self.$to_ident.inner_mut().set_global(global.$to_ident.clone());)*
                 $(self.$ui_ident = global.$ui_ident.clone();)*
             }
 
@@ -195,16 +195,16 @@ macro_rules! def_config {
             }
 
             pub fn deserialize_game(&mut self, game: &$game_config) {
-                $(self.$uo_ident.update(|value| value.set_game(game.$uo_ident.clone()));)*
+                $(self.$uo_ident.inner_mut().set_game(game.$uo_ident.clone());)*
                 $(self.$uga_ident.set(game.$uga_ident.clone());)*
-                $(self.$to_ident.update(|value| value.set_game(game.$to_ident.clone()));)*
+                $(self.$to_ident.inner_mut().set_game(game.$to_ident.clone());)*
                 $(self.$tga_ident.set(game.$tga_ident.clone());)*
             }
 
             pub fn unset_game(&mut self) {
-                $(self.$uo_ident.update(|value| value.unset_game());)*
+                $(self.$uo_ident.inner_mut().unset_game();)*
                 $(self.$uga_ident.set($lga_default);)*
-                $(self.$to_ident.update(|value| value.unset_game());)*
+                $(self.$to_ident.inner_mut().unset_game();)*
                 $(self.$tga_ident.set($tga_default);)*
             }
 
@@ -589,6 +589,14 @@ impl<T: Default + Serialize + for<'de> Deserialize<'de>> File<T> {
         } else {
             Ok(())
         }
+    }
+
+    pub fn write_value(contents: &T, path: &Path) -> Result<(), FileError> {
+        fs::write(
+            path,
+            serde_json::to_vec_pretty(contents).map_err(FileError::Json)?,
+        )
+        .map_err(FileError::Io)
     }
 }
 

@@ -60,6 +60,7 @@ impl Trigger {
     }
 }
 
+#[allow(clippy::to_string_trait_impl)]
 impl ToString for Trigger {
     fn to_string(&self) -> String {
         fn write_trigger(result: &mut String, trigger: &Trigger, needs_parens_if_multiple: bool) {

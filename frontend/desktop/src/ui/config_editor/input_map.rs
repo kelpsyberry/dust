@@ -1,7 +1,7 @@
 use super::{SettingsData, Tab, BORDER_WIDTH};
 use crate::input::{
     trigger::{self, Trigger},
-    Action, Map, PressedKey,
+    Action, GlobalMap, Map, PressedKey,
 };
 use crate::{
     config::{self, Config, Setting},
@@ -96,6 +96,22 @@ static ACTIONS: &[(Action, &str)] = &[
     (Action::ToggleFullWindowScreen, "Toggle full-window screen"),
 ];
 
+type InputMap = config::Overridable<Map, GlobalMap, Map, ()>;
+
+fn global_trigger(selection: Selection, input_map: &InputMap) -> &Option<Trigger> {
+    match selection {
+        Selection::Keypad(key) => &input_map.global().0.keypad[&key],
+        Selection::Hotkey(action) => &input_map.global().0.hotkeys[&action],
+    }
+}
+
+fn game_trigger(selection: Selection, input_map: &InputMap) -> Option<&Option<Trigger>> {
+    match selection {
+        Selection::Keypad(key) => input_map.game().keypad.get(&key),
+        Selection::Hotkey(action) => input_map.game().hotkeys.get(&action),
+    }
+}
+
 impl Editor {
     pub fn new() -> Self {
         Editor {
@@ -112,7 +128,7 @@ impl Editor {
         }
     }
 
-    fn finalize(&mut self, config: &mut Config) {
+    fn finalize(&mut self, input_map: &mut InputMap) {
         if let Some((trigger, (selection, game))) = match self.state {
             State::None => None,
             State::Capturing { selection, .. } => self
@@ -125,34 +141,37 @@ impl Editor {
                     .map(|trigger| (trigger, selection))
             }
         } {
-            config.input_map.update(|inner| {
-                let update = |map: &mut Map| match selection {
-                    Selection::Keypad(key) => {
-                        map.keypad.insert(key, trigger);
-                    }
-                    Selection::Hotkey(action) => {
-                        map.hotkeys.insert(action, trigger);
-                    }
-                };
-                if game {
-                    inner.update_game(update);
-                } else {
-                    inner.update_global(|map| update(&mut map.0));
+            let update = |map: &mut Map| match selection {
+                Selection::Keypad(key) => {
+                    map.keypad.insert(key, trigger);
                 }
-            });
+                Selection::Hotkey(action) => {
+                    map.hotkeys.insert(action, trigger);
+                }
+            };
+            if game {
+                input_map.update_game(update);
+            } else {
+                input_map.update_global(|map| update(&mut map.0));
+            }
         }
         self.state = State::None;
     }
 
     fn draw_input_button(
         &mut self,
-        trigger: Option<Trigger>,
         selection: (Selection, bool),
         ui: &Ui,
-        config: &mut Config,
+        input_map: &mut InputMap,
         tooltip: &str,
         width: f32,
     ) {
+        let trigger = if selection.1 {
+            global_trigger(selection.0, input_map)
+        } else {
+            game_trigger(selection.0, input_map).unwrap()
+        };
+
         let _button_color = (!self.state.is_manually_changing()
             && trigger
                 .as_ref()
@@ -188,21 +207,21 @@ impl Editor {
             };
 
             if finished {
-                self.finalize(config);
+                self.finalize(input_map);
             }
         } else {
-            let trigger_string = trigger.map(|trigger| trigger.to_string());
+            let trigger_string = trigger.as_ref().map(Trigger::to_string);
             if ui.button_with_size(
                 format!("{}###", trigger_string.as_deref().unwrap_or("\u{f00d}")),
                 [width, 0.0],
             ) {
-                self.finalize(config);
+                self.finalize(input_map);
                 self.state = State::Capturing {
                     selection,
                     needs_focus: true,
                 };
             } else if ui.is_item_clicked_with_button(MouseButton::Right) {
-                self.finalize(config);
+                self.finalize(input_map);
                 self.state = State::ManuallyChanging {
                     selection,
                     needs_focus: true,
@@ -226,23 +245,9 @@ impl Editor {
         name: &str,
         selection: Selection,
         ui: &Ui,
-        config: &mut Config,
+        input_map: &mut InputMap,
         data: &SettingsData,
     ) {
-        let (global_trigger, game_trigger) = {
-            let input_map = config.input_map.inner();
-            match selection {
-                Selection::Keypad(key) => (
-                    input_map.global().0.keypad[&key].clone(),
-                    input_map.game().keypad.get(&key).cloned(),
-                ),
-                Selection::Hotkey(action) => (
-                    input_map.global().0.hotkeys[&action].clone(),
-                    input_map.game().hotkeys.get(&action).cloned(),
-                ),
-            }
-        };
-
         let _id = ui.push_id(name);
 
         ui.table_next_row();
@@ -254,7 +259,7 @@ impl Editor {
         ui.table_next_column();
 
         let tab_is_global = data.cur_tab == Tab::Global;
-        let game_override_enabled = game_trigger.is_some();
+        let game_override_enabled = game_trigger(selection, input_map).is_some();
 
         let button_width = ui.calc_text_size("\u{f055}")[0].max(ui.calc_text_size("\u{f056}")[0])
             + style!(ui, frame_padding)[0] * 2.0;
@@ -266,24 +271,16 @@ impl Editor {
             ui.enabled(tab_is_global, || {
                 let _id = ui.push_id("global");
                 self.draw_input_button(
-                    global_trigger,
                     (selection, false),
                     ui,
-                    config,
+                    input_map,
                     if tab_is_global { "" } else { "Global setting" },
                     width,
                 );
             });
         } else {
             let _id = ui.push_id("game");
-            self.draw_input_button(
-                game_trigger.unwrap(),
-                (selection, true),
-                ui,
-                config,
-                "",
-                width,
-            );
+            self.draw_input_button((selection, true), ui, input_map, "", width);
         }
         if !tab_is_global {
             ui.same_line();
@@ -293,31 +290,26 @@ impl Editor {
                 ("\u{f055}", "Add game override")
             };
             if ui.button_with_size(label, [button_width, 0.0]) {
-                config.input_map.update(|inner| {
-                    if game_override_enabled {
-                        inner.update_game(|map| match selection {
-                            Selection::Keypad(key) => {
-                                map.keypad.remove(&key);
-                            }
-                            Selection::Hotkey(action) => {
-                                map.hotkeys.remove(&action);
-                            }
-                        });
-                    } else {
-                        let trigger = match selection {
-                            Selection::Keypad(key) => inner.global().0.keypad[&key].clone(),
-                            Selection::Hotkey(action) => inner.global().0.hotkeys[&action].clone(),
-                        };
-                        inner.update_game(|map| match selection {
-                            Selection::Keypad(key) => {
-                                map.keypad.insert(key, trigger);
-                            }
-                            Selection::Hotkey(action) => {
-                                map.hotkeys.insert(action, trigger);
-                            }
-                        });
-                    }
-                });
+                if game_override_enabled {
+                    input_map.update_game(|map| match selection {
+                        Selection::Keypad(key) => {
+                            map.keypad.remove(&key);
+                        }
+                        Selection::Hotkey(action) => {
+                            map.hotkeys.remove(&action);
+                        }
+                    });
+                } else {
+                    let trigger = global_trigger(selection, input_map).clone();
+                    input_map.update_game(|map| match selection {
+                        Selection::Keypad(key) => {
+                            map.keypad.insert(key, trigger);
+                        }
+                        Selection::Hotkey(action) => {
+                            map.hotkeys.insert(action, trigger);
+                        }
+                    });
+                }
             }
             if ui.is_item_hovered() {
                 ui.tooltip_text(tooltip);
@@ -341,14 +333,10 @@ impl Editor {
                 };
                 match data.cur_tab {
                     Tab::Global => {
-                        config.input_map.update(|inner| {
-                            inner.update_global(|map| update(&mut map.0));
-                        });
+                        input_map.update_global(|map| update(&mut map.0));
                     }
                     Tab::Game => {
-                        config.input_map.update(|inner| {
-                            inner.update_game(update);
-                        });
+                        input_map.update_game(update);
                     }
                 }
             }
@@ -359,6 +347,8 @@ impl Editor {
     }
 
     pub(super) fn draw(&mut self, ui: &Ui, config: &mut Config, data: &SettingsData) {
+        let input_map = config.input_map.inner_mut();
+
         if !ui.is_window_focused() {
             self.pressed_keys.clear();
         }
@@ -371,10 +361,10 @@ impl Editor {
             data.game_loaded,
             |global, game| {
                 if global {
-                    config.input_map.update(|inner| inner.set_default_global());
+                    input_map.set_default_global();
                 }
                 if game {
-                    config.input_map.update(|inner| inner.unset_game());
+                    input_map.unset_game();
                 }
             }
         );
@@ -386,9 +376,7 @@ impl Editor {
                     .pick_file()
                     .and_then(|path| config::File::read(&path, false).ok())
                 {
-                    config
-                        .input_map
-                        .update(|inner| inner.$set(map_file.contents));
+                    input_map.$set(map_file.contents);
                 }
             };
         }
@@ -410,11 +398,7 @@ impl Editor {
                     .set_file_name("keymap.json")
                     .save_file()
                 {
-                    let _ = config::File {
-                        contents: config.input_map.inner().$get().clone(),
-                        path: Some(path),
-                    }
-                    .write();
+                    let _ = config::File::write_value(input_map.$get(), &path);
                 }
             };
         }
@@ -455,7 +439,7 @@ impl Editor {
 
         section!("keypad", {
             for &(key, name) in KEYS {
-                self.draw_entry(name, Selection::Keypad(key), ui, config, data);
+                self.draw_entry(name, Selection::Keypad(key), ui, input_map, data);
             }
         });
 
@@ -464,7 +448,7 @@ impl Editor {
 
         section!("hotkeys", {
             for &(action, name) in ACTIONS {
-                self.draw_entry(name, Selection::Hotkey(action), ui, config, data);
+                self.draw_entry(name, Selection::Hotkey(action), ui, input_map, data);
             }
         });
     }
@@ -522,7 +506,7 @@ impl Editor {
                 self.pressed_keys.remove(&key);
 
                 if self.state.is_capturing() {
-                    self.finalize(config);
+                    self.finalize(config.input_map.inner_mut());
                 }
             }
         }
