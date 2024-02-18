@@ -703,7 +703,7 @@ impl UiState {
             ),
             |frame_data| {
                 for data in frame_data {
-                    for fb in &mut data.fb[..] {
+                    for fb in data.fb.iter_mut() {
                         fb.fill(0);
                     }
                     data.fps = 0.0;
@@ -811,7 +811,7 @@ impl FbTexture {
             .set_data(
                 window.gfx_device(),
                 window.gfx_queue(),
-                &data[..],
+                &*data,
                 imgui_wgpu::TextureSetRange::default(),
             );
     }

@@ -1,5 +1,5 @@
 use crate::{
-    utils::{BoxedByteSlice, ByteMutSlice, ByteSlice, Savestate},
+    utils::{mem_prelude::*, BoxedByteSlice, Savestate},
     SaveContents, SaveReloadContents,
 };
 
@@ -126,18 +126,18 @@ impl Eeprom4k {
 }
 
 impl super::SpiDevice for Eeprom4k {
-    fn contents(&self) -> ByteSlice {
-        self.contents.as_byte_slice()
+    fn contents(&self) -> &[u8] {
+        &self.contents
     }
 
-    fn contents_mut(&mut self) -> ByteMutSlice {
-        self.contents.as_byte_mut_slice()
+    fn contents_mut(&mut self) -> &mut [u8] {
+        &mut self.contents
     }
 
     fn reload_contents(&mut self, contents: SaveReloadContents) {
         match contents {
             SaveReloadContents::Existing(contents) => {
-                self.contents[..contents.len()].copy_from_slice(&contents[..]);
+                self.contents[..contents.len()].copy_from_slice(&contents);
                 self.contents[contents.len()..].fill(0);
             }
             SaveReloadContents::New => self.contents.fill(0xFF),

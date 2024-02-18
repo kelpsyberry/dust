@@ -96,19 +96,19 @@ impl Flash {
 }
 
 impl super::SpiDevice for Flash {
-    fn contents(&self) -> emu_utils::ByteSlice {
+    fn contents(&self) -> &[u8] {
         self.contents.contents()
     }
 
-    fn contents_mut(&mut self) -> emu_utils::ByteMutSlice {
+    fn contents_mut(&mut self) -> &mut [u8] {
         self.contents.contents_mut()
     }
 
     fn reload_contents(&mut self, contents: SaveReloadContents) {
         match contents {
             SaveReloadContents::Existing(contents) => {
-                let mut contents_ = self.contents.contents_mut();
-                contents_[..contents.len()].copy_from_slice(&contents[..]);
+                let contents_ = self.contents.contents_mut();
+                contents_[..contents.len()].copy_from_slice(&contents);
                 contents_[contents.len()..].fill(0);
             }
             SaveReloadContents::New => self.contents.contents_mut().fill(0xFF),

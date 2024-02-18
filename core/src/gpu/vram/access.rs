@@ -1,5 +1,5 @@
 use super::Vram;
-use crate::utils::{zero, MemValue};
+use crate::utils::{mem_prelude::*, zero};
 use core::{
     mem,
     ops::{BitOr, BitOrAssign},
@@ -601,7 +601,7 @@ impl Vram {
     where
         [(); mem::size_of::<T>()]: Sized,
     {
-        if self.b_bg_ext_pal_ptr != self.zero_buffer.as_ptr() {
+        if self.b_bg_ext_pal_ptr != self.zero_buffer.as_mut_ptr() {
             unsafe {
                 value.write_le_aligned(
                     self.b_bg_ext_pal_ptr
@@ -651,7 +651,7 @@ impl Vram {
     where
         [(); mem::size_of::<T>()]: Sized,
     {
-        if self.b_obj_ext_pal_ptr != self.zero_buffer.as_ptr() {
+        if self.b_obj_ext_pal_ptr != self.zero_buffer.as_mut_ptr() {
             unsafe {
                 value.write_le_aligned(
                     self.b_obj_ext_pal_ptr

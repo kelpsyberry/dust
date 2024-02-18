@@ -22,8 +22,8 @@ impl dust_core::audio::Backend for Backend {
         }
         let _ = self.callback.call2(
             &wasm_bindgen::JsValue::UNDEFINED,
-            &Float32Array::from(&l_buf[..]),
-            &Float32Array::from(&r_buf[..]),
+            &Float32Array::from(&*l_buf),
+            &Float32Array::from(&*r_buf),
         );
     }
 }

@@ -750,7 +750,7 @@ impl Launch {
                         let mut buf = unsafe {
                             Box::<Bytes<{ arm7::BIOS_SIZE }>>::new_zeroed().assume_init()
                         };
-                        file.read_exact(&mut buf[..])?;
+                        file.read_exact(&mut **buf)?;
                         Some(buf)
                     } else {
                         errors.push(LaunchError::InvalidSysFileLength {
@@ -771,7 +771,7 @@ impl Launch {
                         let mut buf = unsafe {
                             Box::<Bytes<{ arm9::BIOS_SIZE }>>::new_zeroed().assume_init()
                         };
-                        file.read_exact(&mut buf[..])?;
+                        file.read_exact(&mut **buf)?;
                         Some(buf)
                     } else {
                         errors.push(LaunchError::InvalidSysFileLength {
@@ -788,7 +788,7 @@ impl Launch {
             open_file!(&config.sys_paths.get().firmware, Firmware, |file| {
                 let len = file.metadata()?.len() as usize;
                 let mut buf = BoxedByteSlice::new_zeroed(len);
-                file.read_exact(&mut buf[..])?;
+                file.read_exact(&mut buf)?;
                 Some(buf)
             }),
         );
@@ -809,7 +809,7 @@ impl Launch {
             ModelConfig::Auto => firmware
                 .as_ref()
                 .and_then(|firmware| {
-                    firmware::detect_model(firmware.as_byte_slice())
+                    firmware::detect_model(firmware)
                         // NOTE: The firmware's size was already checked, this should never occur
                         .expect("couldn't detect firmware model")
                 })
@@ -822,7 +822,7 @@ impl Launch {
         };
 
         if let Some(firmware) = &firmware {
-            if let Err(error) = firmware::verify(firmware.as_byte_slice(), model) {
+            if let Err(error) = firmware::verify(firmware, model) {
                 warnings.push(LaunchWarning::InvalidFirmware(error));
             }
         }

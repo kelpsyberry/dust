@@ -1,5 +1,5 @@
 use super::super::RomOutputLen;
-use crate::utils::{ByteMutSlice, Bytes, Savestate};
+use crate::utils::{mem_prelude::*, Bytes, Savestate};
 
 #[derive(Savestate)]
 pub struct Empty {
@@ -25,7 +25,7 @@ impl Empty {
 }
 
 impl super::RomDevice for Empty {
-    fn read(&mut self, _addr: u32, mut output: ByteMutSlice) {
+    fn read(&mut self, _addr: u32, output: &mut [u8]) {
         output.fill(0xFF);
     }
 

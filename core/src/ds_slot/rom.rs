@@ -7,7 +7,7 @@ pub mod normal;
 
 use super::RomOutputLen;
 use crate::{
-    utils::{BoxedByteSlice, ByteMutSlice, Bytes, Savestate},
+    utils::{mem_prelude::*, BoxedByteSlice, Bytes, Savestate},
     Model,
 };
 
@@ -17,44 +17,43 @@ pub trait Contents {
 
     fn game_code(&self) -> u32;
 
-    fn secure_area_mut(&mut self) -> Option<ByteMutSlice>;
-    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<ByteMutSlice>;
+    fn secure_area_mut(&mut self) -> Option<&mut [u8]>;
+    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<&mut [u8]>;
 
     fn read_header(&mut self, buf: &mut Bytes<0x170>);
-    fn read_slice(&mut self, addr: usize, output: ByteMutSlice);
+    fn read_slice(&mut self, addr: usize, output: &mut [u8]);
 }
 
 impl Contents for BoxedByteSlice {
     fn len(&self) -> usize {
-        self.as_byte_slice().len()
+        (**self).len()
     }
 
     fn game_code(&self) -> u32 {
         self.read_le::<u32>(0xC)
     }
 
-    fn secure_area_mut(&mut self) -> Option<ByteMutSlice> {
+    fn secure_area_mut(&mut self) -> Option<&mut [u8]> {
         let arm9_rom_offset = self.read_le::<u32>(0x20) as usize;
         self.get_mut(arm9_rom_offset..arm9_rom_offset + 0x800)
-            .map(ByteMutSlice::new)
     }
 
-    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<ByteMutSlice> {
-        self.get_mut(addr..addr + len).map(ByteMutSlice::new)
+    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<&mut [u8]> {
+        self.get_mut(addr..addr + len)
     }
 
     fn read_header(&mut self, buf: &mut Bytes<0x170>) {
         buf.copy_from_slice(&self[..0x170]);
     }
 
-    fn read_slice(&mut self, addr: usize, mut output: ByteMutSlice) {
+    fn read_slice(&mut self, addr: usize, output: &mut [u8]) {
         let end_addr = addr + output.len();
         output.copy_from_slice(&self[addr..end_addr]);
     }
 }
 
 trait RomDevice {
-    fn read(&mut self, addr: u32, output: ByteMutSlice);
+    fn read(&mut self, addr: u32, output: &mut [u8]);
     fn read_header(&mut self, buf: &mut Bytes<0x170>);
     fn chip_id(&self) -> u32;
     fn setup(&mut self, direct_boot: bool) -> Result<(), ()>;
@@ -74,7 +73,7 @@ pub enum Rom {
 }
 
 impl Rom {
-    pub fn read(&mut self, addr: u32, output: ByteMutSlice) {
+    pub fn read(&mut self, addr: u32, output: &mut [u8]) {
         forward_to_variants!(Rom; Normal, Empty; self, read(addr, output));
     }
 

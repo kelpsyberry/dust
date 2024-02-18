@@ -6,11 +6,14 @@ use crate::common::{
     rgb5_to_rgb6_64, BgObjPixel, ObjPixel, WindowPixel,
 };
 use core::cell::UnsafeCell;
-use dust_core::gpu::{
-    engine_2d::{Engine2d, EngineA, EngineB, Renderer as RendererTrait, Role},
-    engine_3d,
-    vram::Vram,
-    Framebuffer, Scanline, SCREEN_HEIGHT, SCREEN_WIDTH,
+use dust_core::{
+    gpu::{
+        engine_2d::{Engine2d, EngineA, EngineB, Renderer as RendererTrait, Role},
+        engine_3d,
+        vram::Vram,
+        Framebuffer, Scanline, SCREEN_HEIGHT, SCREEN_WIDTH,
+    },
+    utils::mem_prelude::*,
 };
 
 struct Buffers {

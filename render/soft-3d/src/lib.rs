@@ -6,12 +6,15 @@ pub use data::RenderingData;
 mod utils;
 
 use core::simd::{cmp::SimdOrd, num::SimdUint};
-use dust_core::gpu::{
-    engine_3d::{
-        Color, InterpColor, PolyAddr, PolyVertIndex, RenderingPolygonAttrs, TexCoords,
-        TextureParams,
+use dust_core::{
+    gpu::{
+        engine_3d::{
+            Color, InterpColor, PolyAddr, PolyVertIndex, RenderingPolygonAttrs, TexCoords,
+            TextureParams,
+        },
+        Scanline,
     },
-    Scanline,
+    utils::mem_prelude::*,
 };
 use utils::{
     dec_poly_vert_index, decode_rgb5, expand_depth, inc_poly_vert_index, rgb5_to_rgb6, Edge,

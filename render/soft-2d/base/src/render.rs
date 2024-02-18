@@ -3,10 +3,13 @@ pub mod effects;
 pub mod objs;
 
 use super::rgb5_to_rgb6;
-use dust_core::gpu::{
-    self,
-    engine_2d::{Engine2d, Role},
-    Scanline,
+use dust_core::{
+    gpu::{
+        self,
+        engine_2d::{Engine2d, Role},
+        Scanline,
+    },
+    utils::mem_prelude::*,
 };
 
 #[macro_export]

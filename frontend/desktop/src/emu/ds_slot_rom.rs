@@ -1,6 +1,6 @@
 use dust_core::{
     ds_slot::rom::{self, Contents},
-    utils::{BoxedByteSlice, ByteMutSlice, Bytes},
+    utils::{mem_prelude::*, BoxedByteSlice, Bytes},
     Model,
 };
 use std::{
@@ -30,21 +30,21 @@ impl Contents for File {
         self.game_code
     }
 
-    fn secure_area_mut(&mut self) -> Option<ByteMutSlice> {
+    fn secure_area_mut(&mut self) -> Option<&mut [u8]> {
         self.secure_area
             .get_or_insert_with(|| {
                 let mut buf = unsafe { Box::<Bytes<0x800>>::new_zeroed().assume_init() };
                 self.file
                     .seek(SeekFrom::Start(self.secure_area_start as u64))
-                    .and_then(|_| self.file.read_exact(&mut buf[..]))
+                    .and_then(|_| self.file.read_exact(&mut **buf))
                     .ok()
                     .map(|_| buf)
             })
             .as_mut()
-            .map(|secure_area| ByteMutSlice::new(&mut secure_area[..]))
+            .map(|bytes| bytes.as_mut_slice())
     }
 
-    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<ByteMutSlice> {
+    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<&mut [u8]> {
         self.dldi_area
             .get_or_insert_with(|| {
                 self.dldi_area_start = addr;
@@ -52,23 +52,23 @@ impl Contents for File {
                 let mut buf = BoxedByteSlice::new_zeroed(len);
                 self.file
                     .seek(SeekFrom::Start(self.dldi_area_start as u64))
-                    .and_then(|_| self.file.read_exact(&mut buf[..]))
+                    .and_then(|_| self.file.read_exact(&mut buf))
                     .ok()
                     .map(|_| buf)
             })
             .as_mut()
-            .map(|dldi_area| ByteMutSlice::new(&mut dldi_area[..]))
+            .map(|dldi_area| &mut **dldi_area)
     }
 
     fn read_header(&mut self, buf: &mut Bytes<0x170>) {
         self.file
             .seek(SeekFrom::Start(0))
-            .and_then(|_| self.file.read_exact(&mut buf[..]))
+            .and_then(|_| self.file.read_exact(&mut **buf))
             // NOTE: The ROM file's size is ensured beforehand, this should never occur.
             .expect("couldn't read DS slot ROM header");
     }
 
-    fn read_slice(&mut self, addr: usize, mut output: ByteMutSlice) {
+    fn read_slice(&mut self, addr: usize, output: &mut [u8]) {
         self.file
             .seek(SeekFrom::Start(addr as u64))
             .and_then(|_| {
@@ -136,7 +136,7 @@ impl DsSlotRom {
             DsSlotRom::Memory(bytes)
         } else {
             let mut header_bytes = Bytes::new([0; 0x170]);
-            file.read_exact(&mut header_bytes[..])?;
+            file.read_exact(&mut *header_bytes)?;
 
             let game_code = header_bytes.read_le::<u32>(0x0C);
             let secure_area_start = header_bytes.read_le::<u32>(0x20) as usize;
@@ -175,11 +175,11 @@ impl Contents for DsSlotRom {
         forward_to_variants!(DsSlotRom; File, Memory; self, game_code())
     }
 
-    fn secure_area_mut(&mut self) -> Option<ByteMutSlice> {
+    fn secure_area_mut(&mut self) -> Option<&mut [u8]> {
         forward_to_variants!(DsSlotRom; File, Memory; self, secure_area_mut())
     }
 
-    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<ByteMutSlice> {
+    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<&mut [u8]> {
         forward_to_variants!(DsSlotRom; File, Memory; self, dldi_area_mut(addr, len))
     }
 
@@ -187,7 +187,7 @@ impl Contents for DsSlotRom {
         forward_to_variants!(DsSlotRom; File, Memory; self, read_header(buf));
     }
 
-    fn read_slice(&mut self, addr: usize, output: ByteMutSlice) {
+    fn read_slice(&mut self, addr: usize, output: &mut [u8]) {
         forward_to_variants!(DsSlotRom; File, Memory; self, read_slice(addr, output));
     }
 }

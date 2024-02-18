@@ -6,7 +6,7 @@ use crate::{
         CoreData, Engine, Schedule,
     },
     emu::Emu,
-    utils::Savestate,
+    utils::{mem_prelude::*, Savestate},
 };
 
 static SINE_TABLE: [u16; 0x40] = [

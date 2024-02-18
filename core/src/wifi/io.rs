@@ -1,5 +1,5 @@
 use super::WiFi;
-use crate::cpu::bus::AccessType;
+use crate::{cpu::bus::AccessType, utils::mem_prelude::*};
 
 #[allow(clippy::extra_unused_type_parameters)]
 impl WiFi {

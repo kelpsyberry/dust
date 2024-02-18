@@ -19,17 +19,17 @@ pub fn run(
         let capture_width_shift = 7 + (capture_control.size() != 0) as u8;
 
         let dst_bank = match dst_bank_index {
-            0 => vram.banks.a.as_ptr(),
-            1 => vram.banks.b.as_ptr(),
-            2 => vram.banks.c.as_ptr(),
-            _ => vram.banks.d.as_ptr(),
+            0 => vram.banks.a.as_mut_ptr(),
+            1 => vram.banks.b.as_mut_ptr(),
+            2 => vram.banks.c.as_mut_ptr(),
+            _ => vram.banks.d.as_mut_ptr(),
         };
 
         let dst_offset = (((capture_control.dst_offset_raw() as usize) << 15)
             + ((line as usize) << (1 + capture_width_shift)))
             & 0x1_FFFE;
 
-        let dst_line = unsafe { dst_bank.add(dst_offset) as *mut u16 };
+        let dst_line = unsafe { dst_bank.add(dst_offset).cast::<u16>() };
 
         let capture_source = capture_control.src();
         let factor_a = capture_control.factor_a().min(16) as u16;
@@ -57,7 +57,7 @@ pub fn run(
                             & 0x1_FFFE
                     };
 
-                    Some(unsafe { src_bank.add(src_offset) as *const u16 })
+                    Some(unsafe { src_bank.add(src_offset).cast::<u16>() })
                 } else {
                     None
                 }

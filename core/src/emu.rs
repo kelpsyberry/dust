@@ -22,7 +22,7 @@ use crate::{
     rtc::{self, Rtc},
     spi,
     utils::{
-        schedule::RawTimestamp, BoxedByteSlice, ByteMutSlice, Bytes, OwnedBytesCellPtr,
+        mem_prelude::*, schedule::RawTimestamp, BoxedByteSlice, Bytes, OwnedBytesCellPtr,
         ReadSavestate, Savestate, WriteSavestate,
     },
     wifi::WiFi,
@@ -130,7 +130,7 @@ impl<E: cpu::Engine> Emu<E> {
         } else {
             self.main_mem_mask = MainMemMask::new(0x3F_FFFF);
             save.load_into(unsafe {
-                &mut *self.main_mem.as_bytes_ptr().cast::<Bytes<0x40_0000>>()
+                &mut *self.main_mem.as_bytes_mut_ptr().cast::<Bytes<0x40_0000>>()
             })?;
         }
 
@@ -152,7 +152,7 @@ impl<E: cpu::Engine> Emu<E> {
         if self.is_debugger {
             save.store(&mut self.main_mem)
         } else {
-            save.store(unsafe { &mut *self.main_mem.as_bytes_ptr().cast::<Bytes<0x40_0000>>() })
+            save.store(unsafe { &mut *self.main_mem.as_bytes_mut_ptr().cast::<Bytes<0x40_0000>>() })
         }
     }
 }
@@ -278,7 +278,7 @@ impl Builder {
             arm9_engine_data,
             self.arm9_bios.map(|bios| {
                 let buf = OwnedBytesCellPtr::new_zeroed();
-                (unsafe { buf.as_byte_mut_slice() })[..arm9::BIOS_SIZE].copy_from_slice(&bios[..]);
+                (unsafe { buf.as_mut_arr() })[..arm9::BIOS_SIZE].copy_from_slice(&**bios);
                 buf
             }),
             #[cfg(feature = "log")]
@@ -380,7 +380,7 @@ impl<E: cpu::Engine> Emu<E> {
 
         let mut header_bytes = Bytes::new([0; 0x170]);
         self.ds_slot.rom.read_header(&mut header_bytes);
-        let header = ds_slot::rom::header::Header::new(header_bytes.as_byte_slice())
+        let header = ds_slot::rom::header::Header::new(&*header_bytes)
             // NOTE: The ROM file's size is ensured beforehand, this should never occur.
             .expect("couldn't read DS slot ROM header");
         let chip_id = self.ds_slot.rom.chip_id();
@@ -394,8 +394,7 @@ impl<E: cpu::Engine> Emu<E> {
             };
             (copy $range_start: literal..$range_end: literal, $slice: expr) => {
                 unsafe {
-                    self.main_mem.as_byte_mut_slice()[($range_start
-                        & self.main_mem_mask.get() as usize)
+                    self.main_mem.as_mut_arr()[($range_start & self.main_mem_mask.get() as usize)
                         ..($range_end & self.main_mem_mask.get() as usize)]
                         .copy_from_slice($slice);
                 }
@@ -483,10 +482,10 @@ impl<E: cpu::Engine> Emu<E> {
         // Newest firmware user settings copy
         write_main_mem!(
             copy 0x7F_FC80..0x7F_FCF0,
-            &spi::firmware::newest_user_settings(&self.spi.firmware.contents())[..0x70]
+            &spi::firmware::newest_user_settings(self.spi.firmware.contents())[..0x70]
         );
 
-        write_main_mem!(copy 0x7F_FE00..0x7F_FF70, &header_bytes[..]);
+        write_main_mem!(copy 0x7F_FE00..0x7F_FF70, &*header_bytes);
 
         // –––––––––––––––– ARM7 WRAM init values ––––––––––––––––
 
@@ -510,20 +509,18 @@ impl<E: cpu::Engine> Emu<E> {
         // ––––––––––––––––    Game boot code     ––––––––––––––––
 
         let mut arm7_loaded_data = BoxedByteSlice::new_zeroed(header.arm7_size() as usize);
-        self.ds_slot.rom.read(
-            header.arm7_rom_offset(),
-            ByteMutSlice::new(&mut arm7_loaded_data[..]),
-        );
+        self.ds_slot
+            .rom
+            .read(header.arm7_rom_offset(), &mut arm7_loaded_data);
         for (&byte, addr) in arm7_loaded_data.iter().zip(header.arm7_ram_addr()..) {
             arm7::bus::write_8::<CpuAccess, _>(self, addr, byte);
         }
         E::Arm7Data::setup_direct_boot(self, header.arm7_entry_addr());
 
         let mut arm9_loaded_data = BoxedByteSlice::new_zeroed(header.arm9_size() as usize);
-        self.ds_slot.rom.read(
-            header.arm9_rom_offset(),
-            ByteMutSlice::new(&mut arm9_loaded_data[..]),
-        );
+        self.ds_slot
+            .rom
+            .read(header.arm9_rom_offset(), &mut arm9_loaded_data);
         for (&byte, addr) in arm9_loaded_data.iter().zip(header.arm9_ram_addr()..) {
             arm9::bus::write_8::<CpuAccess, _>(self, addr, byte);
         }

@@ -6,7 +6,7 @@ use crate::{
         arm9::{bus::ptrs::mask as ptr_mask, Arm9},
     },
     gpu::engine_3d::Engine3d,
-    utils::OwnedBytesCellPtr,
+    utils::{mem_prelude::*, OwnedBytesCellPtr},
 };
 use core::{iter::once, mem::size_of, ops::Range};
 
@@ -23,7 +23,7 @@ macro_rules! map_cpu_visible {
             let region_base_addr = mirror_base_addr | ($region as u32) << $region_shift;
             $cpu.map_sys_bus_ptr_range(
                 $mask,
-                $usage.as_ptr().add($region << $region_shift),
+                $usage.as_mut_ptr().add($region << $region_shift),
                 1 << $region_shift,
                 (
                     region_base_addr,
@@ -43,8 +43,8 @@ unsafe fn copy_slice_wrapping_unchecked_with_dst_range<
     src: &OwnedBytesCellPtr<SRC_LEN>,
     dst_range: Range<usize>,
 ) {
-    let mut dst = dst.as_byte_mut_slice();
-    let src = src.as_byte_slice();
+    let dst = dst.as_mut_arr();
+    let src = src.as_arr();
     let src_base_addr = dst_range.start & SRC_MASK;
     let copy_len = ((dst_range.end - 1) & SRC_MASK) - src_base_addr + 1;
     for dst_base_addr in dst_range.step_by(copy_len) {
@@ -143,9 +143,9 @@ macro_rules! map_region {
                             let bank_base_addr = usage_addr_range.start & $mask;
                             let copy_len =
                                 ((usage_addr_range.end - 1) & $mask) - bank_base_addr + 1;
-                            $self.banks.$mappable_bank.as_byte_mut_slice()
+                            $self.banks.$mappable_bank.as_mut_arr()
                                 .get_unchecked_mut(bank_base_addr..bank_base_addr + copy_len)
-                                .copy_from_slice($self.$usage.as_byte_slice().get_unchecked(
+                                .copy_from_slice($self.$usage.as_arr().get_unchecked(
                                     usage_addr_range.start..usage_addr_range.start + copy_len
                                 ));
                             break 'writeback_to_prev_bank;
@@ -197,7 +197,7 @@ macro_rules! unmap_region {
         $self.map.$usage[$region].set(new);
         let usage_addr_range = $region << $region_shift..($region + 1) << $region_shift;
         if new == 0 {
-            $self.$usage.as_byte_mut_slice().get_unchecked_mut(usage_addr_range).fill(0);
+            $self.$usage.as_mut_arr().get_unchecked_mut(usage_addr_range).fill(0);
         } else {
             for usage_addr in usage_addr_range.step_by(size_of::<usize>()) {
                 let mut value = 0_usize;
@@ -244,14 +244,12 @@ macro_rules! unmap_region {
         #[allow(clippy::bad_bit_mask)]
         if new == 0 {
             if !$is_mirror {
-                $bank.as_byte_mut_slice().get_unchecked_mut(
+                $bank.as_mut_arr().get_unchecked_mut(
                     usage_addr_range.start & $bank_mask
                         ..=(usage_addr_range.end - 1) & $bank_mask
-                ).copy_from_slice(
-                    &$self.$usage.as_byte_slice().get_unchecked(usage_addr_range.clone())
-                );
+                ).copy_from_slice(&$self.$usage.as_arr().get_unchecked(usage_addr_range.clone()));
             }
-            $self.$usage.as_byte_mut_slice().get_unchecked_mut(usage_addr_range).fill(0);
+            $self.$usage.as_mut_arr().get_unchecked_mut(usage_addr_range).fill(0);
             if prev & $mirrored_banks_mask == 0 $(&& $self.$bg_obj_updates.is_none())* {
                 map_cpu_visible!(
                     $cpu, $cpu_r_mask, $cpu_start_addr, $cpu_end_addr,
@@ -330,11 +328,11 @@ impl Vram {
                                             & $mask;
                                         let usage_end =
                                             usage_addr_range.start + (bank_end - bank_start);
-                                        self.banks.$bank.as_byte_mut_slice().get_unchecked_mut(
+                                        self.banks.$bank.as_mut_arr().get_unchecked_mut(
                                             bank_start..=bank_end,
                                         ).copy_from_slice(
                                             &self.$usage
-                                                .as_byte_slice()
+                                                .as_arr()
                                                 .get_unchecked(usage_addr_range.start..=usage_end)
                                         );
                                         break 'flush_bank;
@@ -514,7 +512,7 @@ impl Vram {
                             arm9,
                             $regions_lower_bound,
                             $regions_upper_bound,
-                            self.banks.$bank.as_ptr(),
+                            self.banks.$bank.as_mut_ptr(),
                         );
                     } else {
                         self.unmap_lcdc(arm9, $regions_lower_bound, $regions_upper_bound);
@@ -539,16 +537,16 @@ impl Vram {
 
         self.b_bg_ext_pal_ptr = if self.bank_control[7].enabled() && self.bank_control[7].mst() == 2
         {
-            self.banks.h.as_ptr()
+            self.banks.h.as_mut_ptr()
         } else {
-            self.zero_buffer.as_ptr()
+            self.zero_buffer.as_mut_ptr()
         };
 
         self.b_obj_ext_pal_ptr =
             if self.bank_control[8].enabled() && self.bank_control[8].mst() == 3 {
-                self.banks.i.as_ptr()
+                self.banks.i.as_mut_ptr()
             } else {
-                self.zero_buffer.as_ptr()
+                self.zero_buffer.as_mut_ptr()
             };
 
         macro_rules! restore_region {
@@ -564,7 +562,7 @@ impl Vram {
                     let usage_addr_range = region << $region_shift..(region + 1) << $region_shift;
                     let mask = if mapped == 0 {
                         self.$usage
-                            .as_byte_mut_slice()
+                            .as_mut_arr()
                             .get_unchecked_mut(usage_addr_range.clone())
                             .fill(0);
                         $cpu_r_mask
@@ -589,7 +587,7 @@ impl Vram {
                         }
                     } else {
                         self.$usage
-                            .as_byte_mut_slice()
+                            .as_mut_arr()
                             .get_unchecked_mut(usage_addr_range.clone())
                             .fill(0);
                         $(
@@ -617,7 +615,7 @@ impl Vram {
                     let mapped = mapped.get();
                     let usage_addr_range = region << $region_shift..(region + 1) << $region_shift;
                     if mapped == 0 {
-                        self.$usage.as_byte_mut_slice().get_unchecked_mut(usage_addr_range).fill(0);
+                        self.$usage.as_mut_arr().get_unchecked_mut(usage_addr_range).fill(0);
                     } else if mapped & (mapped - 1) == 0 {
                         $(
                             if mapped & 1 << $bit != 0 {
@@ -631,7 +629,7 @@ impl Vram {
                         )*
                     } else {
                         self.$usage
-                            .as_byte_mut_slice()
+                            .as_mut_arr()
                             .get_unchecked_mut(usage_addr_range.clone())
                             .fill(0);
                         $(
@@ -777,13 +775,13 @@ impl Vram {
         let upper_bound = 0x0680_0000 | (regions_upper_bound as u32) << 14 | 0x3FFF;
         for region in regions_lower_bound..=regions_upper_bound {
             self.lcdc_r_ptrs[region] = self.zero_buffer.as_ptr();
-            self.lcdc_w_ptrs[region] = self.ignore_buffer.as_ptr();
+            self.lcdc_w_ptrs[region] = self.ignore_buffer.as_mut_ptr();
         }
         for mirror_base in (0..0x80_0000).step_by(0x10_0000) {
             unsafe {
                 arm9.map_sys_bus_ptr_range(
                     ptr_mask::R,
-                    self.zero_buffer.as_ptr(),
+                    self.zero_buffer.as_mut_ptr(),
                     0x8000,
                     (mirror_base | lower_bound, mirror_base | upper_bound),
                 );
@@ -1230,7 +1228,7 @@ impl Vram {
             }
             if value.enabled() {
                 match value.mst() & 3 {
-                    0 => self.map_lcdc(arm9, 0, 7, self.banks.a.as_ptr()),
+                    0 => self.map_lcdc(arm9, 0, 7, self.banks.a.as_mut_ptr()),
                     1 => {
                         let base_region = (value.offset() as usize) << 3;
                         self.map_a_bg::<_, _, _, 0x1_FFFF, 0>(
@@ -1298,7 +1296,7 @@ impl Vram {
             }
             if value.enabled() {
                 match value.mst() & 3 {
-                    0 => self.map_lcdc(arm9, 8, 0xF, self.banks.b.as_ptr()),
+                    0 => self.map_lcdc(arm9, 8, 0xF, self.banks.b.as_mut_ptr()),
                     1 => {
                         let base_region = (value.offset() as usize) << 3;
                         self.map_a_bg::<_, _, _, 0x1_FFFF, 1>(
@@ -1371,7 +1369,7 @@ impl Vram {
             if value.enabled() {
                 match value.mst() {
                     0 => {
-                        self.map_lcdc(arm9, 0x10, 0x17, self.banks.c.as_ptr());
+                        self.map_lcdc(arm9, 0x10, 0x17, self.banks.c.as_mut_ptr());
                     }
                     1 => {
                         let base_region = (value.offset() as usize) << 3;
@@ -1445,7 +1443,7 @@ impl Vram {
             }
             if value.enabled() {
                 match value.mst() {
-                    0 => self.map_lcdc(arm9, 0x18, 0x1F, self.banks.d.as_ptr()),
+                    0 => self.map_lcdc(arm9, 0x18, 0x1F, self.banks.d.as_mut_ptr()),
                     1 => {
                         let base_region = (value.offset() as usize) << 3;
                         self.map_a_bg::<_, _, _, 0x1_FFFF, 3>(
@@ -1503,7 +1501,7 @@ impl Vram {
             }
             if value.enabled() {
                 match value.mst() {
-                    0 => self.map_lcdc(arm9, 0x20, 0x23, self.banks.e.as_ptr()),
+                    0 => self.map_lcdc(arm9, 0x20, 0x23, self.banks.e.as_mut_ptr()),
                     1 => self.map_a_bg::<_, _, _, 0xFFFF, 4>(arm9, &self.banks.e, 0..4),
                     2 => self.map_a_obj::<_, _, _, 0xFFFF, 2>(arm9, &self.banks.e, 0..4),
                     3 => {
@@ -1583,7 +1581,7 @@ impl Vram {
             }
             if value.enabled() {
                 match value.mst() {
-                    0 => self.map_lcdc(arm9, 0x24, 0x24, self.banks.f.as_ptr()),
+                    0 => self.map_lcdc(arm9, 0x24, 0x24, self.banks.f.as_mut_ptr()),
                     1 => {
                         let base_region =
                             ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
@@ -1684,7 +1682,7 @@ impl Vram {
             }
             if value.enabled() {
                 match value.mst() {
-                    0 => self.map_lcdc(arm9, 0x25, 0x25, self.banks.g.as_ptr()),
+                    0 => self.map_lcdc(arm9, 0x25, 0x25, self.banks.g.as_mut_ptr()),
                     1 => {
                         let base_region =
                             ((value.offset() & 1) | (value.offset() & 2) << 1) as usize;
@@ -1743,7 +1741,7 @@ impl Vram {
                         self.unmap_b_bg::<_, _, _, 0x7FFF, true, 1>(arm9, &self.banks.h, once(2));
                     }
                     2 => {
-                        self.b_bg_ext_pal_ptr = self.zero_buffer.as_ptr();
+                        self.b_bg_ext_pal_ptr = self.zero_buffer.as_mut_ptr();
                         modify_bg_obj_updates!(self, 1, |updates| {
                             updates.bg_ext_palette = 3;
                         });
@@ -1755,10 +1753,10 @@ impl Vram {
             }
             if value.enabled() {
                 match value.mst() & 3 {
-                    0 => self.map_lcdc(arm9, 0x26, 0x27, self.banks.h.as_ptr()),
+                    0 => self.map_lcdc(arm9, 0x26, 0x27, self.banks.h.as_mut_ptr()),
                     1 => self.map_b_bg::<_, _, _, 0x7FFF, 1>(arm9, &self.banks.h, [0, 2]),
                     2 => {
-                        self.b_bg_ext_pal_ptr = self.banks.h.as_ptr();
+                        self.b_bg_ext_pal_ptr = self.banks.h.as_mut_ptr();
                         modify_bg_obj_updates!(self, 1, |updates| {
                             updates.bg_ext_palette = 3;
                         });
@@ -1797,10 +1795,10 @@ impl Vram {
                         if self.map.b_bg[1].get() == 1 << 2 {
                             self.map.b_bg[1].set(0);
                             self.map.b_bg[3].set(0);
-                            let mut b_bg = self.b_bg.as_byte_mut_slice();
+                            let b_bg = self.b_bg.as_mut_arr();
                             self.banks
                                 .i
-                                .as_byte_mut_slice()
+                                .as_mut_arr()
                                 .copy_from_slice(&b_bg[0x8000..0xC000]);
                             b_bg[0x8000..0x1_0000].fill(0);
                             b_bg[0x1_8000..0x2_0000].fill(0);
@@ -1859,22 +1857,21 @@ impl Vram {
                         if new == 0 {
                             self.banks
                                 .i
-                                .as_byte_mut_slice()
-                                .copy_from_slice(&self.b_obj.as_byte_slice()[..0x4000]);
-                            self.b_obj.as_byte_mut_slice()[..0x2_0000].fill(0);
+                                .as_mut_arr()
+                                .copy_from_slice(&self.b_obj.as_arr()[..0x4000]);
+                            self.b_obj.as_mut_arr()[..0x2_0000].fill(0);
                         } else {
                             if self.bg_obj_updates.is_none() {
                                 arm9.map_sys_bus_ptr_range(
                                     ptr_mask::R | ptr_mask::W_16_32,
-                                    self.b_obj.as_ptr(),
+                                    self.b_obj.as_mut_ptr(),
                                     0x2_0000,
                                     (0x0660_0000, 0x0680_0000),
                                 );
                             }
                             let writeback_arr = self.writeback.b_obj.get_mut();
-                            for (usage_addr, byte) in self.b_obj.as_byte_mut_slice()[..0x2_0000]
-                                .iter_mut()
-                                .enumerate()
+                            for (usage_addr, byte) in
+                                self.b_obj.as_mut_arr()[..0x2_0000].iter_mut().enumerate()
                             {
                                 if writeback_arr[usage_addr / usize::BITS as usize]
                                     & 1 << (usage_addr & (usize::BITS - 1) as usize)
@@ -1888,7 +1885,7 @@ impl Vram {
                         }
                     }
                     _ => {
-                        self.b_obj_ext_pal_ptr = self.zero_buffer.as_ptr();
+                        self.b_obj_ext_pal_ptr = self.zero_buffer.as_mut_ptr();
                         modify_bg_obj_updates!(self, 1, |updates| {
                             updates.obj_ext_palette = true;
                         });
@@ -1897,11 +1894,11 @@ impl Vram {
             }
             if value.enabled() {
                 match value.mst() & 3 {
-                    0 => self.map_lcdc(arm9, 0x28, 0x28, self.banks.i.as_ptr()),
+                    0 => self.map_lcdc(arm9, 0x28, 0x28, self.banks.i.as_mut_ptr()),
                     1 => self.map_b_bg::<_, _, _, 0x3FFF, 2>(arm9, &self.banks.i, [1, 3]),
                     2 => self.map_b_obj::<_, _, 0x3FFF, 1>(arm9, &self.banks.i),
                     _ => {
-                        self.b_obj_ext_pal_ptr = self.banks.i.as_ptr();
+                        self.b_obj_ext_pal_ptr = self.banks.i.as_mut_ptr();
                         modify_bg_obj_updates!(self, 1, |updates| {
                             updates.obj_ext_palette = true;
                         });

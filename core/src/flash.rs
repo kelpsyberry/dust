@@ -1,5 +1,5 @@
 use crate::{
-    utils::{BoxedByteSlice, ByteMutSlice, ByteSlice, Savestate},
+    utils::{mem_prelude::*, BoxedByteSlice, Savestate},
     SaveContents,
 };
 
@@ -100,13 +100,13 @@ impl Flash {
     }
 
     #[inline]
-    pub fn contents(&self) -> ByteSlice {
-        self.contents.as_byte_slice()
+    pub fn contents(&self) -> &[u8] {
+        &self.contents
     }
 
     #[inline]
-    pub fn contents_mut(&mut self) -> ByteMutSlice {
-        self.contents.as_byte_mut_slice()
+    pub fn contents_mut(&mut self) -> &mut [u8] {
+        &mut self.contents
     }
 
     #[inline]

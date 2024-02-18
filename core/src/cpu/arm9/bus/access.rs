@@ -5,7 +5,7 @@ use crate::{
         bus::AccessType,
     },
     emu::Emu,
-    utils::MemValue,
+    utils::mem_prelude::*,
 };
 
 macro_rules! check_tcm_read {

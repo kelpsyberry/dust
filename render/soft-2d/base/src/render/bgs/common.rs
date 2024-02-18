@@ -70,7 +70,7 @@ where
                 tiles.0.as_mut_ptr().add(32) as *mut usize,
                 64 / mem::size_of::<usize>(),
             );
-            MaybeUninit::slice_assume_init_ref(&tiles.0[..])
+            MaybeUninit::slice_assume_init_ref(&tiles.0)
         }
     }
 }

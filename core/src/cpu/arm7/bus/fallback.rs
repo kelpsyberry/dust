@@ -1,11 +1,10 @@
 use super::super::{IrqFlags, BIOS_SIZE};
-#[cfg(any(feature = "bft-r", feature = "bft-w"))]
-use crate::utils::MemValue;
 use crate::{
     cpu::{bus::AccessType, dma, timers, CoreData, Engine},
     ds_slot,
     emu::{input::KeyIrqControl, AudioWifiPowerControl, Emu, LocalExMemControl},
     gpu, ipc, rtc, spi,
+    utils::mem_prelude::*,
 };
 
 // TODO:

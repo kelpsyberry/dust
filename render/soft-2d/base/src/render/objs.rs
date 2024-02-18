@@ -1,5 +1,8 @@
 use crate::{Buffers, ObjPixel, RenderingData, Vram};
-use dust_core::gpu::engine_2d::{OamAttr0, OamAttr1, OamAttr2, Role};
+use dust_core::{
+    gpu::engine_2d::{OamAttr0, OamAttr1, OamAttr2, Role},
+    utils::mem_prelude::*,
+};
 
 pub fn prerender_objs<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
     buffers: &B,

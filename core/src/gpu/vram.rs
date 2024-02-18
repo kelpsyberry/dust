@@ -154,15 +154,15 @@ impl Vram {
             bg_obj_updates: bg_obj_vram_tracking.then(UnsafeCell::default),
 
             lcdc_r_ptrs: [zero_buffer.as_ptr(); 0x40],
-            lcdc_w_ptrs: [ignore_buffer.as_ptr(); 0x40],
+            lcdc_w_ptrs: [ignore_buffer.as_mut_ptr(); 0x40],
             a_bg: OwnedBytesCellPtr::new_zeroed(),
             a_obj: OwnedBytesCellPtr::new_zeroed(),
             a_bg_ext_pal: OwnedBytesCellPtr::new_zeroed(),
             a_obj_ext_pal: OwnedBytesCellPtr::new_zeroed(),
             b_bg: OwnedBytesCellPtr::new_zeroed(),
             b_obj: OwnedBytesCellPtr::new_zeroed(),
-            b_bg_ext_pal_ptr: zero_buffer.as_ptr(),
-            b_obj_ext_pal_ptr: zero_buffer.as_ptr(),
+            b_bg_ext_pal_ptr: zero_buffer.as_mut_ptr(),
+            b_obj_ext_pal_ptr: zero_buffer.as_mut_ptr(),
             texture: OwnedBytesCellPtr::new_zeroed(),
             tex_pal: OwnedBytesCellPtr::new_zeroed(),
             arm7: OwnedBytesCellPtr::new_zeroed(),
@@ -228,7 +228,7 @@ impl Vram {
         unsafe {
             ptrs.map_range(
                 arm7::bus::ptrs::mask::R,
-                self.arm7.as_ptr(),
+                self.arm7.as_mut_ptr(),
                 0x4_0000,
                 (0x0600_0000, 0x06FF_FFFF),
             );
@@ -239,31 +239,31 @@ impl Vram {
         unsafe {
             ptrs.map_range(
                 arm9::bus::ptrs::mask::R,
-                self.a_bg.as_ptr(),
+                self.a_bg.as_mut_ptr(),
                 0x8_0000,
                 (0x0600_0000, 0x061F_FFFF),
             );
             ptrs.map_range(
                 arm9::bus::ptrs::mask::R,
-                self.b_bg.as_ptr(),
+                self.b_bg.as_mut_ptr(),
                 0x2_0000,
                 (0x0620_0000, 0x063F_FFFF),
             );
             ptrs.map_range(
                 arm9::bus::ptrs::mask::R,
-                self.a_obj.as_ptr(),
+                self.a_obj.as_mut_ptr(),
                 0x4_0000,
                 (0x0640_0000, 0x065F_FFFF),
             );
             ptrs.map_range(
                 arm9::bus::ptrs::mask::R,
-                self.b_obj.as_ptr(),
+                self.b_obj.as_mut_ptr(),
                 0x2_0000,
                 (0x0660_0000, 0x067F_FFFF),
             );
             ptrs.map_range(
                 arm9::bus::ptrs::mask::R,
-                self.zero_buffer.as_ptr(),
+                self.zero_buffer.as_mut_ptr(),
                 0x8000,
                 (0x0680_0000, 0x06FF_FFFF),
             );

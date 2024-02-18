@@ -2,7 +2,7 @@ use super::{fallback, ptrs::Ptrs};
 use crate::{
     cpu::{bus::AccessType, Engine},
     emu::Emu,
-    utils::MemValue,
+    utils::mem_prelude::*,
 };
 
 #[inline]

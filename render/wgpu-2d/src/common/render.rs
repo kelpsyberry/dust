@@ -3,10 +3,13 @@ pub mod bgs;
 pub use dust_soft_2d_base::render::*;
 
 use super::BgObjPixel;
-use dust_core::gpu::{
-    self,
-    engine_2d::{Engine2d, Role},
-    Scanline,
+use dust_core::{
+    gpu::{
+        self,
+        engine_2d::{Engine2d, Role},
+        Scanline,
+    },
+    utils::mem_prelude::*,
 };
 use dust_soft_2d_base::rgb5_to_rgb6_64;
 

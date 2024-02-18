@@ -6,7 +6,7 @@ use crate::ui::{utils::combo_value, window::Window};
 use dust_core::{
     cpu,
     emu::Emu,
-    utils::{ByteSlice, Bytes},
+    utils::{mem_prelude::*, Bytes},
 };
 use imgui::{StyleVar, TableFlags, Ui};
 
@@ -109,13 +109,13 @@ impl View for Palettes2d {
                 Palette::Bg => {
                     let base = ((emu_state.engine == Engine2d::B) as usize) << 10;
                     palette_data.data[..0x200]
-                        .copy_from_slice(&emu.gpu.vram.palette.as_byte_slice()[base..base + 0x200]);
+                        .copy_from_slice(&emu.gpu.vram.palette.as_arr()[base..base + 0x200]);
                 }
 
                 Palette::Obj => {
                     let base = ((emu_state.engine == Engine2d::B) as usize) << 10 | 0x200;
                     palette_data.data[..0x200]
-                        .copy_from_slice(&emu.gpu.vram.palette.as_byte_slice()[base..base + 0x200]);
+                        .copy_from_slice(&emu.gpu.vram.palette.as_arr()[base..base + 0x200]);
                 }
 
                 Palette::ExtBg => match emu_state.engine {
@@ -259,7 +259,7 @@ impl View for Palettes2d {
         ) {
             fn color_table(
                 ui: &Ui,
-                colors: ByteSlice,
+                colors: &[u8],
                 cur_color_index: &mut u16,
                 cur_color: &mut [f32; 3],
             ) {
@@ -283,21 +283,21 @@ impl View for Palettes2d {
             match self.cur_selection.palette {
                 Palette::ExtBg => color_table(
                     ui,
-                    self.data.data.as_byte_slice(),
+                    &**self.data.data,
                     &mut self.cur_color_index,
                     &mut self.cur_color,
                 ),
 
                 Palette::ExtObj => color_table(
                     ui,
-                    ByteSlice::new(&self.data.data[..0x2000]),
+                    &self.data.data[..0x2000],
                     &mut self.cur_color_index,
                     &mut self.cur_color,
                 ),
 
                 _ => color_table(
                     ui,
-                    ByteSlice::new(&self.data.data[..0x200]),
+                    &self.data.data[..0x200],
                     &mut self.cur_color_index,
                     &mut self.cur_color,
                 ),

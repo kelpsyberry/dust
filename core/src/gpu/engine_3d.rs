@@ -1430,8 +1430,8 @@ impl Engine3d {
         if self.rendering_enabled {
             unsafe {
                 self.renderer_tx.start_rendering(
-                    &*vram.texture.as_bytes_ptr(),
-                    &*vram.tex_pal.as_bytes_ptr(),
+                    vram.texture.as_bytes(),
+                    vram.tex_pal.as_bytes(),
                     &self.rendering_state,
                 );
             }

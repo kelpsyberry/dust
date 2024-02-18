@@ -1,5 +1,5 @@
 use super::{header::Header, Contents};
-use crate::utils::Bytes;
+use crate::utils::{mem_prelude::*, Bytes};
 
 pub fn decode_to_rgba8(
     icon_title_offset: usize,
@@ -9,7 +9,7 @@ pub fn decode_to_rgba8(
     if icon_title_offset + 0x240 > rom_contents.len() {
         return None;
     }
-    rom_contents.read_slice(icon_title_offset + 0x20, icon_data.as_byte_mut_slice());
+    rom_contents.read_slice(icon_title_offset + 0x20, &mut *icon_data);
 
     let mut palette = [0; 16];
     for (i, color) in palette.iter_mut().enumerate().skip(1) {
@@ -37,7 +37,7 @@ pub fn decode_to_rgba8(
 pub fn read_header_and_decode_to_rgba8(rom_contents: &mut impl Contents) -> Option<[u32; 32 * 32]> {
     let mut header_bytes = Bytes::new([0; 0x170]);
     rom_contents.read_header(&mut header_bytes);
-    let header = Header::new(header_bytes.as_byte_slice())?;
+    let header = Header::new(&*header_bytes)?;
     let icon_title_offset = header.icon_title_offset() as usize;
     decode_to_rgba8(icon_title_offset, rom_contents)
 }

@@ -10,7 +10,7 @@ use dust_core::{
         engine_2d::{self, BgIndex, Role},
         vram::Vram,
     },
-    utils::{ByteMutSlice, Bytes},
+    utils::{mem_prelude::*, Bytes},
 };
 use imgui::{Image, MouseButton, SliderFlags, StyleColor, TextureId, Ui, WindowHoveredFlags};
 use std::slice;
@@ -278,7 +278,7 @@ impl View for BgMaps2d {
                 Vram::read_b_bg_slice::<usize>
             };
 
-            let read_bg_slice_wrapping = |vram, mut addr, mut result: ByteMutSlice| {
+            let read_bg_slice_wrapping = |vram, mut addr, result: &mut [u8]| {
                 let mut dst_base = 0;
                 while dst_base != result.len() {
                     let len = ((R::BG_VRAM_MASK + 1 - addr) as usize).min(result.len() - dst_base);
@@ -342,11 +342,7 @@ impl View for BgMaps2d {
                         } else {
                             5
                         };
-                    read_bg_slice_wrapping(
-                        vram,
-                        map_base,
-                        ByteMutSlice::new(&mut data.tiles[..tiles_len]),
-                    );
+                    read_bg_slice_wrapping(vram, map_base, &mut data.tiles[..tiles_len]);
                 }
 
                 BgDisplayMode::ExtendedBitmap256
@@ -370,11 +366,7 @@ impl View for BgMaps2d {
                 BgDisplayMode::ExtendedBitmapDirect => (data_base, pixels_len * 2),
                 BgDisplayMode::LargeBitmap => (0, pixels_len),
             };
-            read_bg_slice_wrapping(
-                vram,
-                base_addr,
-                ByteMutSlice::new(&mut data.tile_bitmap_data[..data_len]),
-            );
+            read_bg_slice_wrapping(vram, base_addr, &mut data.tile_bitmap_data[..data_len]);
 
             if data.cur_bg.display_mode != BgDisplayMode::ExtendedBitmapDirect {
                 unsafe {
@@ -400,9 +392,8 @@ impl View for BgMaps2d {
                         }
                     } else {
                         let pal_base = (!R::IS_A as usize) << 10;
-                        data.palette[..0x200].copy_from_slice(
-                            &vram.palette.as_byte_slice()[pal_base..pal_base + 0x200],
-                        );
+                        data.palette[..0x200]
+                            .copy_from_slice(&vram.palette.as_arr()[pal_base..pal_base + 0x200]);
                     }
                 }
             }

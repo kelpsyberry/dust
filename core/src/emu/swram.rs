@@ -95,7 +95,7 @@ impl Swram {
         #[cfg(any(feature = "bft-r", feature = "bft-w"))]
         match self.control.0 & 3 {
             0 => {
-                self.arm7_ptr = arm7.wram.as_ptr();
+                self.arm7_ptr = arm7.wram.as_mut_ptr();
                 self.arm7_mask = 0xFFFF;
                 #[cfg(feature = "bft-r")]
                 {
@@ -103,12 +103,12 @@ impl Swram {
                 }
                 #[cfg(feature = "bft-w")]
                 {
-                    self.arm9_w_ptr = self.contents.as_ptr();
+                    self.arm9_w_ptr = self.contents.as_mut_ptr();
                 }
                 self.arm9_mask = 0x7FFF;
             }
             1 => {
-                self.arm7_ptr = self.contents.as_ptr();
+                self.arm7_ptr = self.contents.as_mut_ptr();
                 self.arm7_mask = 0x3FFF;
                 #[cfg(feature = "bft-r")]
                 {
@@ -116,12 +116,12 @@ impl Swram {
                 }
                 #[cfg(feature = "bft-w")]
                 {
-                    self.arm9_w_ptr = self.contents.as_ptr().wrapping_add(0x4000);
+                    self.arm9_w_ptr = self.contents.as_mut_ptr().wrapping_add(0x4000);
                 }
                 self.arm9_mask = 0x3FFF;
             }
             2 => {
-                self.arm7_ptr = self.contents.as_ptr().wrapping_add(0x4000);
+                self.arm7_ptr = self.contents.as_mut_ptr().wrapping_add(0x4000);
                 self.arm7_mask = 0x3FFF;
                 #[cfg(feature = "bft-r")]
                 {
@@ -129,12 +129,12 @@ impl Swram {
                 }
                 #[cfg(feature = "bft-w")]
                 {
-                    self.arm9_w_ptr = self.contents.as_ptr();
+                    self.arm9_w_ptr = self.contents.as_mut_ptr();
                 }
                 self.arm9_mask = 0x3FFF;
             }
             _ => {
-                self.arm7_ptr = self.contents.as_ptr();
+                self.arm7_ptr = self.contents.as_mut_ptr();
                 self.arm7_mask = 0x7FFF;
                 #[cfg(feature = "bft-r")]
                 {
@@ -142,7 +142,7 @@ impl Swram {
                 }
                 #[cfg(feature = "bft-w")]
                 {
-                    self.arm9_w_ptr = self.ignore_buffer.as_ptr();
+                    self.arm9_w_ptr = self.ignore_buffer.as_mut_ptr();
                 }
                 self.arm9_mask = 0;
             }

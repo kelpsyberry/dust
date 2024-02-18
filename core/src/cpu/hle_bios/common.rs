@@ -1,4 +1,4 @@
-use crate::{cpu::Engine, emu::Emu};
+use crate::{cpu::Engine, emu::Emu, utils::mem_prelude::*};
 
 pub fn div(numer: u32, denom: u32) -> (u32, u32, u32) {
     if denom == 0 {

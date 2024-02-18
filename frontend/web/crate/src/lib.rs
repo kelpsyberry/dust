@@ -151,11 +151,11 @@ impl EmuState {
     }
 
     pub fn load_save(&mut self, ram_arr: Uint8Array) {
-        ram_arr.copy_to(&mut self.emu.as_mut().unwrap().ds_slot.spi.contents_mut()[..])
+        ram_arr.copy_to(self.emu.as_mut().unwrap().ds_slot.spi.contents_mut())
     }
 
     pub fn export_save(&self) -> Uint8Array {
-        Uint8Array::from(&self.emu.as_ref().unwrap().ds_slot.spi.contents()[..])
+        Uint8Array::from(self.emu.as_ref().unwrap().ds_slot.spi.contents())
     }
 
     pub fn update_input(&mut self, pressed: u32, released: u32) {
@@ -207,13 +207,13 @@ pub fn create_emu_state(
 
     let arm7_bios = arm7_bios_arr.map(|arr| {
         let mut buf = unsafe { Box::<Bytes<{ arm7::BIOS_SIZE }>>::new_zeroed().assume_init() };
-        arr.copy_to(&mut buf[..]);
+        arr.copy_to(&mut **buf);
         buf
     });
 
     let arm9_bios = arm9_bios_arr.map(|arr| {
         let mut buf = unsafe { Box::<Bytes<{ arm9::BIOS_SIZE }>>::new_zeroed().assume_init() };
-        arr.copy_to(&mut buf[..]);
+        arr.copy_to(&mut **buf);
         buf
     });
 
@@ -222,7 +222,7 @@ pub fn create_emu_state(
     let firmware = firmware_arr
         .map(|arr| {
             let mut buf = BoxedByteSlice::new_zeroed(arr.length() as usize);
-            arr.copy_to(&mut buf[..]);
+            arr.copy_to(&mut buf);
             buf
         })
         .unwrap_or_else(|| firmware::default(model));
@@ -235,7 +235,7 @@ pub fn create_emu_state(
 
     let save_contents = save_contents_arr.map(|save_contents_arr| {
         let mut save_contents = BoxedByteSlice::new_zeroed(save_contents_arr.length() as usize);
-        save_contents_arr.copy_to(&mut save_contents[..]);
+        save_contents_arr.copy_to(&mut save_contents);
         save_contents
     });
 

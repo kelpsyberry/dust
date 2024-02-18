@@ -24,7 +24,7 @@ impl LoadedChunk {
     fn load(base_path: &Path, index: u64, chunk_size_shift: u8) -> io::Result<Self> {
         let mut contents = BoxedByteSlice::new_zeroed(1 << chunk_size_shift);
         match fs::File::open(Self::path(base_path, index)) {
-            Ok(mut file) => file.read_exact(&mut contents[..])?,
+            Ok(mut file) => file.read_exact(&mut contents)?,
             Err(err) => {
                 if err.kind() != io::ErrorKind::NotFound {
                     return Err(err);
@@ -43,7 +43,7 @@ impl LoadedChunk {
             return Ok(());
         }
 
-        fs::write(Self::path(base_path, self.index), &self.contents[..])?;
+        fs::write(Self::path(base_path, self.index), &*self.contents)?;
         self.is_dirty = false;
         Ok(())
     }
@@ -311,7 +311,7 @@ impl Provider for FsProvider {
         chunk_manager
             .seek(SeekFrom::Start((sector as u64) << 9))
             .is_ok()
-            && chunk_manager.read_exact(&mut buffer[..]).is_ok()
+            && chunk_manager.read_exact(&mut **buffer).is_ok()
     }
 
     fn write_sector(&mut self, sector: u32, buffer: &Bytes<0x200>) -> bool {
@@ -321,6 +321,6 @@ impl Provider for FsProvider {
         chunk_manager
             .seek(SeekFrom::Start((sector as u64) << 9))
             .is_ok()
-            && chunk_manager.write_all(&buffer[..]).is_ok()
+            && chunk_manager.write_all(&**buffer).is_ok()
     }
 }

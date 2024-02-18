@@ -1,7 +1,4 @@
-use crate::{
-    utils::{ByteMutSlice, ByteSlice, Savestate},
-    SaveReloadContents,
-};
+use crate::{utils::Savestate, SaveReloadContents};
 
 #[derive(Clone, Savestate)]
 #[load(in_place_only)]
@@ -29,12 +26,12 @@ impl Empty {
 }
 
 impl super::SpiDevice for Empty {
-    fn contents(&self) -> ByteSlice {
-        ByteSlice::new(&[])
+    fn contents(&self) -> &[u8] {
+        &[]
     }
 
-    fn contents_mut(&mut self) -> ByteMutSlice {
-        ByteMutSlice::new(&mut [])
+    fn contents_mut(&mut self) -> &mut [u8] {
+        &mut []
     }
 
     fn reload_contents(&mut self, _contents: SaveReloadContents) {}

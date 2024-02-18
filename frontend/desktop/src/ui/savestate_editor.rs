@@ -3,7 +3,7 @@ use crate::{config::Config, emu};
 use chrono::DateTime;
 use dust_core::{
     gpu::{Framebuffer, SCREEN_HEIGHT, SCREEN_WIDTH},
-    utils::{BoxedByteSlice, ByteSlice, MemValue},
+    utils::{mem_prelude::*, BoxedByteSlice},
 };
 use imgui::{Image, StyleColor, TableFlags, TextureId, Ui, WindowHoveredFlags};
 use miniz_oxide::{
@@ -91,7 +91,7 @@ impl Savestate {
             buffer
         };
 
-        let save_info: u32 = ByteSlice::new(&contents[contents.len() - 4..]).read_le(0);
+        let save_info: u32 = contents[contents.len() - 4..].read_le(0);
         let save = if save_info & 0x8000_0000 != 0 {
             let len = (save_info & 0x7FFF_FFFF) as usize;
             let mut buffer = BoxedByteSlice::new_zeroed(len);

@@ -69,7 +69,7 @@ impl<E: Engine> Arm7<E> {
             hle_bios: hle_bios::arm7::State::new(bios.is_none()),
             bios: bios.unwrap_or_else(|| {
                 let buf = OwnedBytesCellPtr::new_zeroed();
-                unsafe { buf.as_byte_mut_slice() }.copy_from_slice(&hle_bios::arm7::BIOS);
+                unsafe { buf.as_mut_arr() }.copy_from_slice(&hle_bios::arm7::BIOS);
                 buf
             }),
             wram: OwnedBytesCellPtr::new_zeroed(),
@@ -320,7 +320,7 @@ impl<E: Engine> Arm7<E> {
 
     #[inline]
     pub fn bios(&self) -> &Bytes<BIOS_SIZE> {
-        unsafe { &*self.bios.as_bytes_ptr() }
+        unsafe { self.bios.as_bytes() }
     }
 
     #[inline]
@@ -383,13 +383,13 @@ impl<E: Engine> Arm7<E> {
         unsafe {
             emu.arm7.bus_ptrs.map_range(
                 bus::ptrs::mask::ALL,
-                emu.main_mem().as_ptr(),
+                emu.main_mem().as_mut_ptr(),
                 emu.main_mem_mask().get() as usize + 1,
                 (0x0200_0000, 0x02FF_FFFF),
             );
             emu.arm7.bus_ptrs.map_range(
                 bus::ptrs::mask::ALL,
-                emu.arm7.wram.as_ptr(),
+                emu.arm7.wram.as_mut_ptr(),
                 0x1_0000,
                 (0x0380_0000, 0x03FF_FFFF),
             );
@@ -404,7 +404,7 @@ impl<E: Engine> Arm7<E> {
                 0 => {
                     self.map_sys_bus_ptr_range(
                         bus::ptrs::mask::ALL,
-                        self.wram.as_ptr(),
+                        self.wram.as_mut_ptr(),
                         0x1_0000,
                         (0x0300_0000, 0x037F_FFFF),
                     );
@@ -412,7 +412,7 @@ impl<E: Engine> Arm7<E> {
                 1 => {
                     self.map_sys_bus_ptr_range(
                         bus::ptrs::mask::ALL,
-                        swram.contents().as_ptr(),
+                        swram.contents().as_mut_ptr(),
                         0x4000,
                         (0x0300_0000, 0x037F_FFFF),
                     );
@@ -420,7 +420,7 @@ impl<E: Engine> Arm7<E> {
                 2 => {
                     self.map_sys_bus_ptr_range(
                         bus::ptrs::mask::ALL,
-                        swram.contents().as_ptr().add(0x4000),
+                        swram.contents().as_mut_ptr().add(0x4000),
                         0x4000,
                         (0x0300_0000, 0x037F_FFFF),
                     );
@@ -428,7 +428,7 @@ impl<E: Engine> Arm7<E> {
                 _ => {
                     self.map_sys_bus_ptr_range(
                         bus::ptrs::mask::ALL,
-                        swram.contents().as_ptr(),
+                        swram.contents().as_mut_ptr(),
                         0x8000,
                         (0x0300_0000, 0x037F_FFFF),
                     );

@@ -101,20 +101,20 @@ impl<R: Role> VramTrait<R> for Vram {
 
     fn bg_ext_palette(&self) -> &Bytes<0x8006> {
         unsafe {
-            &*if R::IS_A {
-                self.a_bg_ext_pal.as_bytes_ptr()
+            if R::IS_A {
+                self.a_bg_ext_pal.as_bytes()
             } else {
-                self.b_bg_ext_pal_ptr as *const Bytes<0x8006>
+                &*(self.b_bg_ext_pal_ptr as *const Bytes<0x8006>)
             }
         }
     }
 
     fn obj_ext_palette(&self) -> &Bytes<0x2006> {
         unsafe {
-            &*if R::IS_A {
-                self.a_obj_ext_pal.as_bytes_ptr()
+            if R::IS_A {
+                self.a_obj_ext_pal.as_bytes()
             } else {
-                self.b_obj_ext_pal_ptr as *const Bytes<0x2006>
+                &*(self.b_obj_ext_pal_ptr as *const Bytes<0x2006>)
             }
         }
     }

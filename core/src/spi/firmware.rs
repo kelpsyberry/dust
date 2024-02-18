@@ -2,7 +2,7 @@ mod default;
 pub use default::default;
 
 use super::Model;
-use crate::utils::ByteSlice;
+use crate::utils::mem_prelude::*;
 use core::ops::Range;
 
 static CRC16_VALUES: [u16; 8] = [
@@ -50,7 +50,7 @@ pub enum VerificationError {
 }
 
 fn check_crc(
-    firmware: ByteSlice,
+    firmware: &[u8],
     region: VerificationRegion,
     init_value: u16,
     range: Range<usize>,
@@ -74,7 +74,7 @@ fn check_crc(
 //    is not among real consoles' firmware sizes (a power of two between 0x20000 and 0x80000 bytes).
 //  - [`VerificationError::IncorrectCrc16`](VerificationError::IncorrectCrc16): the specified
 //    region's CRC16 checksum does not match with the one stored in the firmware.
-pub fn verify(firmware: ByteSlice, model: Model) -> Result<(), VerificationError> {
+pub fn verify(firmware: &[u8], model: Model) -> Result<(), VerificationError> {
     let has_ique_regions = matches!(model, Model::Ique | Model::IqueLite | Model::Dsi);
     let expected_len = match model {
         Model::Dsi => 0x2_0000,
@@ -179,7 +179,7 @@ pub fn is_valid_size(firmware_len: usize) -> bool {
 ///   among real consoles' firmware sizes (a power of two between 0x20000 and 0x80000 bytes).
 /// - [`DetectionError::UnknownModel`](DetectionError::UnknownModel): the DS model could not be
 ///   detected based on the contents of the firmware.
-pub fn detect_model(firmware: ByteSlice) -> Result<Option<Model>, ModelDetectionError> {
+pub fn detect_model(firmware: &[u8]) -> Result<Option<Model>, ModelDetectionError> {
     if !is_valid_size(firmware.len()) {
         return Err(ModelDetectionError::IncorrectSize);
     }
@@ -193,13 +193,13 @@ pub fn detect_model(firmware: ByteSlice) -> Result<Option<Model>, ModelDetection
     }
 }
 
-pub fn newest_user_settings<'a>(firmware: &'a ByteSlice<'_>) -> ByteSlice<'a> {
+pub fn newest_user_settings(firmware: &[u8]) -> &[u8] {
     let user_settings_offset = (firmware.read_le::<u16>(0x20) as usize) << 3;
     let count_0 = firmware.read_le::<u16>(user_settings_offset + 0x70);
     let count_1 = firmware.read_le::<u16>(user_settings_offset + 0x170);
     if count_1 == (count_0 + 1) & 0x7F {
-        ByteSlice::new(&firmware[user_settings_offset + 0x100..user_settings_offset + 0x200])
+        &firmware[user_settings_offset + 0x100..user_settings_offset + 0x200]
     } else {
-        ByteSlice::new(&firmware[user_settings_offset..user_settings_offset + 0x100])
+        &firmware[user_settings_offset..user_settings_offset + 0x100]
     }
 }

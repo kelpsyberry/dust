@@ -1,4 +1,7 @@
-use crate::{cpu::arm7, utils::Bytes};
+use crate::{
+    cpu::arm7,
+    utils::{mem_prelude::*, Bytes},
+};
 
 #[derive(Clone)]
 pub struct KeyBuffer<const LEVEL_3: bool> {

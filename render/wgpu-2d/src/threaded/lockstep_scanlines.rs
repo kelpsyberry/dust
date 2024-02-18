@@ -19,7 +19,7 @@ use dust_core::{
         },
         vram, Framebuffer, Scanline, SCREEN_HEIGHT, SCREEN_WIDTH,
     },
-    utils::Bytes,
+    utils::{mem_prelude::*, Bytes},
 };
 use std::{sync::Arc, thread};
 

@@ -386,7 +386,7 @@ impl Cp15 {
                 unsafe {
                     self.ptrs.map_cpu_local_subrange(
                         map_mask,
-                        self.dtcm.as_ptr(),
+                        self.dtcm.as_mut_ptr(),
                         0x4000,
                         self.dtcm_bounds,
                         bounds,
@@ -408,7 +408,7 @@ impl Cp15 {
             unsafe {
                 self.ptrs.map_cpu_local_subrange(
                     map_mask,
-                    self.itcm.as_ptr(),
+                    self.itcm.as_mut_ptr(),
                     0x8000,
                     (0, self.itcm_upper_bound),
                     bounds,
@@ -545,7 +545,7 @@ impl Cp15 {
             unsafe {
                 emu.arm9.cp15.ptrs.map_cpu_local_subrange(
                     map_mask,
-                    emu.arm9.cp15.dtcm.as_ptr(),
+                    emu.arm9.cp15.dtcm.as_mut_ptr(),
                     0x4000,
                     emu.arm9.cp15.dtcm_bounds,
                     bounds,
@@ -566,7 +566,7 @@ impl Cp15 {
             unsafe {
                 emu.arm9.cp15.ptrs.map_cpu_local_subrange(
                     map_mask,
-                    emu.arm9.cp15.itcm.as_ptr(),
+                    emu.arm9.cp15.itcm.as_mut_ptr(),
                     0x8000,
                     (0, emu.arm9.cp15.itcm_upper_bound),
                     bounds,
@@ -880,20 +880,20 @@ impl Cp15 {
                 let itcm_bounds = (0, emu.arm9.cp15.itcm_upper_bound);
                 emu.arm9.cp15.ptrs.map_cpu_local_subrange(
                     itcm_map_mask,
-                    emu.arm9.cp15.itcm.as_ptr(),
+                    emu.arm9.cp15.itcm.as_mut_ptr(),
                     0x8000,
                     itcm_bounds,
                     prev_bounds,
                 );
                 emu.arm9.cp15.ptrs.map_cpu_local_range(
                     dtcm_map_mask,
-                    emu.arm9.cp15.dtcm.as_ptr(),
+                    emu.arm9.cp15.dtcm.as_mut_ptr(),
                     0x4000,
                     dtcm_bounds,
                 );
                 emu.arm9.cp15.ptrs.map_cpu_local_subrange(
                     itcm_map_mask,
-                    emu.arm9.cp15.itcm.as_ptr(),
+                    emu.arm9.cp15.itcm.as_mut_ptr(),
                     0x8000,
                     itcm_bounds,
                     dtcm_bounds,
@@ -901,7 +901,7 @@ impl Cp15 {
             } else {
                 emu.arm9.cp15.ptrs.map_cpu_local_range(
                     dtcm_map_mask,
-                    emu.arm9.cp15.dtcm.as_ptr(),
+                    emu.arm9.cp15.dtcm.as_mut_ptr(),
                     0x4000,
                     dtcm_bounds,
                 );
@@ -975,7 +975,7 @@ impl Cp15 {
                 let dtcm_bounds = emu.arm9.cp15.dtcm_bounds;
                 emu.arm9.cp15.ptrs.map_cpu_local_subrange(
                     dtcm_map_mask,
-                    emu.arm9.cp15.dtcm.as_ptr(),
+                    emu.arm9.cp15.dtcm.as_mut_ptr(),
                     0x4000,
                     dtcm_bounds,
                     prev_bounds,
@@ -983,7 +983,7 @@ impl Cp15 {
             }
             emu.arm9.cp15.ptrs.map_cpu_local_range(
                 itcm_map_mask,
-                emu.arm9.cp15.itcm.as_ptr(),
+                emu.arm9.cp15.itcm.as_mut_ptr(),
                 0x8000,
                 itcm_bounds,
             );

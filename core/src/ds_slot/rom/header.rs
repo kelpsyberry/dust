@@ -1,8 +1,7 @@
-use crate::ds_slot::RomControl;
-use crate::utils::ByteSlice;
+use crate::{ds_slot::RomControl, utils::mem_prelude::*};
 
 #[derive(Clone, Copy)]
-pub struct Header<'a>(ByteSlice<'a>);
+pub struct Header<'a>(&'a [u8]);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnitCode {
@@ -26,7 +25,7 @@ pub enum Region {
 
 impl<'a> Header<'a> {
     #[inline]
-    pub fn new(bytes: ByteSlice<'a>) -> Option<Self> {
+    pub fn new(bytes: &'a [u8]) -> Option<Self> {
         if bytes.len() < 0x170 {
             return None;
         }

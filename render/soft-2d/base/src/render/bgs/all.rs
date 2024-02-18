@@ -1,8 +1,11 @@
 use super::common::{read_bg_text_tiles, TextTiles};
 use crate::{rgb5_to_rgb6_64, BgObjPixel, Buffers, RenderingData, Vram};
-use dust_core::gpu::{
-    engine_2d::{AffineBgIndex, BgIndex, Role},
-    Scanline, SCREEN_WIDTH,
+use dust_core::{
+    gpu::{
+        engine_2d::{AffineBgIndex, BgIndex, Role},
+        Scanline, SCREEN_WIDTH,
+    },
+    utils::mem_prelude::*,
 };
 
 pub fn render_scanline_bgs_and_objs<

@@ -22,7 +22,10 @@ use core::{
     simd::num::SimdUint,
     slice,
 };
-use dust_core::gpu::engine_3d::{Color, Polygon, RenderingControl, ScreenVertex, TextureParams};
+use dust_core::{
+    gpu::engine_3d::{Color, Polygon, RenderingControl, ScreenVertex, TextureParams},
+    utils::mem_prelude::*,
+};
 use std::sync::Arc;
 use utils::{color_to_wgpu_f64, decode_rgb5, round_up_to_alignment};
 use wgpu::util::DeviceExt;

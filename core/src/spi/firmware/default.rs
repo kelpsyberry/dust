@@ -1,6 +1,6 @@
 use super::crc16;
 use crate::{
-    utils::{BoxedByteSlice, ByteMutSlice},
+    utils::{mem_prelude::*, BoxedByteSlice},
     Model,
 };
 
@@ -47,8 +47,7 @@ pub fn default(model: Model) -> BoxedByteSlice {
         .into_iter()
         .enumerate()
     {
-        let mut user_settings =
-            ByteMutSlice::new(&mut firmware[user_settings_bounds.0..user_settings_bounds.1]);
+        let user_settings = &mut firmware[user_settings_bounds.0..user_settings_bounds.1];
 
         user_settings.write_le(0x00, 5_u16);
 

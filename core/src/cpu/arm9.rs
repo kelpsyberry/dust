@@ -87,7 +87,7 @@ impl<E: Engine> Arm9<E> {
             hle_bios: hle_bios::arm9::State::new(bios.is_none()),
             bios: bios.unwrap_or_else(|| {
                 let buf = OwnedBytesCellPtr::new_zeroed();
-                (unsafe { buf.as_byte_mut_slice() })[..hle_bios::arm9::BIOS.len()]
+                (unsafe { buf.as_mut_arr() })[..hle_bios::arm9::BIOS.len()]
                     .copy_from_slice(&hle_bios::arm9::BIOS);
                 buf
             }),
@@ -394,7 +394,7 @@ impl<E: Engine> Arm9<E> {
 
     #[inline]
     pub fn bios(&self) -> &Bytes<BIOS_BUFFER_SIZE> {
-        unsafe { &*self.bios.as_bytes_ptr() }
+        unsafe { self.bios.as_bytes() }
     }
 
     #[inline]
@@ -448,14 +448,14 @@ impl<E: Engine> Arm9<E> {
         unsafe {
             emu.arm9.bus_ptrs.map_range(
                 bus::ptrs::mask::ALL,
-                emu.main_mem().as_ptr(),
+                emu.main_mem().as_mut_ptr(),
                 emu.main_mem_mask().get() as usize + 1,
                 (0x0200_0000, 0x02FF_FFFF),
             );
             emu.gpu.vram.setup_arm9_bus_ptrs(&mut emu.arm9.bus_ptrs);
             emu.arm9.bus_ptrs.map_range(
                 bus::ptrs::mask::R,
-                emu.arm9.bios.as_ptr(),
+                emu.arm9.bios.as_mut_ptr(),
                 0x4000,
                 (0xFFFF_0000, 0xFFFF_0000 + (emu.arm9.bios.len() - 1) as u32),
             );
@@ -469,7 +469,7 @@ impl<E: Engine> Arm9<E> {
                 0 => {
                     self.map_sys_bus_ptr_range(
                         bus::ptrs::mask::ALL,
-                        swram.contents().as_ptr(),
+                        swram.contents().as_mut_ptr(),
                         0x8000,
                         (0x0300_0000, 0x03FF_FFFF),
                     );
@@ -477,7 +477,7 @@ impl<E: Engine> Arm9<E> {
                 1 => {
                     self.map_sys_bus_ptr_range(
                         bus::ptrs::mask::ALL,
-                        swram.contents().as_ptr().add(0x4000),
+                        swram.contents().as_mut_ptr().add(0x4000),
                         0x4000,
                         (0x0300_0000, 0x03FF_FFFF),
                     );
@@ -485,7 +485,7 @@ impl<E: Engine> Arm9<E> {
                 2 => {
                     self.map_sys_bus_ptr_range(
                         bus::ptrs::mask::ALL,
-                        swram.contents().as_ptr(),
+                        swram.contents().as_mut_ptr(),
                         0x4000,
                         (0x0300_0000, 0x03FF_FFFF),
                     );

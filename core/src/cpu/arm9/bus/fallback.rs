@@ -1,7 +1,5 @@
 use super::super::{Engine, IrqFlags};
 
-#[cfg(any(feature = "bft-r", feature = "bft-w"))]
-use crate::utils::MemValue;
 use crate::{
     cpu::{
         arm9::{div_engine, sqrt_engine},
@@ -12,6 +10,7 @@ use crate::{
     emu::{input::KeyIrqControl, swram, Emu, GlobalExMemControl, LocalExMemControl},
     gpu::{self, engine_3d},
     ipc,
+    utils::mem_prelude::*,
 };
 
 // TODO:

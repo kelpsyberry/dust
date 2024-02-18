@@ -1,7 +1,7 @@
 use super::{super::RomOutputLen, is_valid_size, key1, Contents};
 use crate::{
     cpu::arm7,
-    utils::{make_zero, zero, ByteMutSlice, Bytes, Savestate},
+    utils::{make_zero, mem_prelude::*, zero, Bytes, Savestate},
     Model,
 };
 
@@ -86,7 +86,7 @@ impl Normal {
 }
 
 impl super::RomDevice for Normal {
-    fn read(&mut self, addr: u32, mut output: ByteMutSlice) {
+    fn read(&mut self, addr: u32, output: &mut [u8]) {
         let addr = (addr & self.rom_mask) as usize;
         let rom_len = self.rom_mask as usize + 1;
         let first_read_max_len = rom_len - addr;
@@ -94,12 +94,11 @@ impl super::RomDevice for Normal {
             self.contents.read_slice(addr, output);
         } else {
             self.contents
-                .read_slice(addr, ByteMutSlice::new(&mut output[..first_read_max_len]));
+                .read_slice(addr, &mut output[..first_read_max_len]);
             let mut i = first_read_max_len;
             while i < output.len() {
                 let end_i = (i + rom_len).min(output.len());
-                self.contents
-                    .read_slice(0, ByteMutSlice::new(&mut output[i..end_i]));
+                self.contents.read_slice(0, &mut output[i..end_i]);
                 i += rom_len;
             }
         }
@@ -124,7 +123,7 @@ impl super::RomDevice for Normal {
             if is_homebrew {
                 return Ok(());
             }
-            let Some(mut secure_area) = self.contents.secure_area_mut() else {
+            let Some(secure_area) = self.contents.secure_area_mut() else {
                 return Ok(());
             };
             if secure_area.read_le::<u64>(0) != 0xE7FF_DEFF_E7FF_DEFF {
@@ -145,7 +144,7 @@ impl super::RomDevice for Normal {
                 }
             }
         } else {
-            let Some(mut secure_area) = self.contents.secure_area_mut() else {
+            let Some(secure_area) = self.contents.secure_area_mut() else {
                 return Ok(());
             };
             let key_buf = self
@@ -191,10 +190,8 @@ impl super::RomDevice for Normal {
                         if cmd.read_be::<u64>(0) & 0x00FF_FFFF_FFFF_FFFF == 0 {
                             for start_i in (0..output_len.get() as usize).step_by(0x1000) {
                                 let len = 0x1000.min(output_len.get() as usize - start_i);
-                                self.contents.read_slice(
-                                    0,
-                                    ByteMutSlice::new(&mut output[start_i..start_i + len]),
-                                );
+                                self.contents
+                                    .read_slice(0, &mut output[start_i..start_i + len]);
                             }
                             return;
                         }
@@ -271,10 +268,8 @@ impl super::RomDevice for Normal {
                         let start_addr = 0x4000 | (cmd[2] as usize & 0x30) << 8;
                         for start_i in (0..output_len.get() as usize).step_by(0x1000) {
                             let len = (output_len.get() as usize - start_i).min(0x1000);
-                            self.contents.read_slice(
-                                start_addr,
-                                ByteMutSlice::new(&mut output[start_i..start_i + len]),
-                            );
+                            self.contents
+                                .read_slice(start_addr, &mut output[start_i..start_i + len]);
                         }
                         return;
                     }
@@ -318,10 +313,8 @@ impl super::RomDevice for Normal {
                         let mut start_i = 0;
                         while start_i < output_len.get() as usize {
                             let len = (page_end - addr).min(output_len.get() as usize - start_i);
-                            self.contents.read_slice(
-                                addr,
-                                ByteMutSlice::new(&mut output[start_i..start_i + len]),
-                            );
+                            self.contents
+                                .read_slice(addr, &mut output[start_i..start_i + len]);
                             addr = page_start;
                             start_i += len;
                         }

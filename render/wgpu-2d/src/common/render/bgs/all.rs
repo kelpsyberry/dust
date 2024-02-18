@@ -1,8 +1,11 @@
 use dust_soft_2d_base::render::bgs::all::*;
 
-use dust_core::gpu::{
-    engine_2d::{AffineBgIndex, BgIndex, Role},
-    SCREEN_WIDTH,
+use dust_core::{
+    gpu::{
+        engine_2d::{AffineBgIndex, BgIndex, Role},
+        SCREEN_WIDTH,
+    },
+    utils::mem_prelude::*,
 };
 use dust_soft_2d_base::{rgb5_to_rgb6_64, BgObjPixel, Buffers, RenderingData, Vram};
 

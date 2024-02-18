@@ -487,7 +487,7 @@ pub(super) fn run(
                         .parent()
                         .map(|parent| fs::create_dir_all(parent).is_ok())
                         .unwrap_or(true)
-                    && fs::write(save_path, &emu.ds_slot.spi.contents()[..]).is_ok()
+                    && fs::write(save_path, emu.ds_slot.spi.contents()).is_ok()
                 {
                     emu.ds_slot.spi.mark_contents_flushed();
                 }
@@ -538,7 +538,7 @@ pub(super) fn run(
                                 save: if include_save {
                                     let spi_contents = emu.ds_slot.spi.contents();
                                     let mut save = BoxedByteSlice::new_zeroed(spi_contents.len());
-                                    save.copy_from_slice(&spi_contents[..]);
+                                    save.copy_from_slice(spi_contents);
                                     Some(save)
                                 } else {
                                     None
@@ -803,7 +803,7 @@ pub(super) fn run(
         if !renderer_2d_is_accel {
             frame
                 .fb
-                .copy_from_slice(&emu.gpu.renderer_2d().framebuffer()[..]);
+                .copy_from_slice(emu.gpu.renderer_2d().framebuffer());
         }
 
         #[cfg(feature = "debug-views")]

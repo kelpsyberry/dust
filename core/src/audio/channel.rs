@@ -6,7 +6,7 @@ use crate::utils::schedule::RawTimestamp;
 use crate::{
     cpu::{self, arm7, bus::DmaAccess},
     emu::Emu,
-    utils::{Bytes, MemValue, Savestate},
+    utils::{mem_prelude::*, Bytes, Savestate},
 };
 use core::mem;
 

@@ -3,7 +3,7 @@ use crate::{
     cpu::{arm7::bus as arm7_bus, arm9::bus as arm9_bus, bus::CpuAccess},
     ds_slot,
     emu::Emu,
-    utils::{make_zero, zeroed_box, ByteMutSlice, Bytes},
+    utils::{make_zero, mem_prelude::*, zeroed_box, Bytes},
 };
 
 pub trait Provider {
@@ -45,16 +45,13 @@ impl Dldi {
             let mut magic_string_buffer = zeroed_box::<Bytes<12>>();
             for addr in (0..ds_rom.len().checked_sub(TOTAL_DRIVER_LEN)?).step_by(4) {
                 if addr & 0x3FF == 0 {
-                    ds_rom.read_slice(
-                        addr,
-                        ByteMutSlice::new(&mut block_buffer[..0x400.min(ds_rom.len() - addr)]),
-                    );
+                    ds_rom.read_slice(addr, &mut block_buffer[..0x400.min(ds_rom.len() - addr)]);
                 }
                 let value = unsafe { block_buffer.read_le_aligned::<u32>(addr & 0x3FC) };
                 // Look for the DLDI magic string
                 if value == 0xBF8D_A5ED {
-                    ds_rom.read_slice(addr, magic_string_buffer.as_byte_mut_slice());
-                    if magic_string_buffer[4..12] == b" Chishm\0"[..] {
+                    ds_rom.read_slice(addr, &mut **magic_string_buffer);
+                    if magic_string_buffer[4..12] == *b" Chishm\0" {
                         break 'search addr;
                     }
                 }
@@ -63,7 +60,7 @@ impl Dldi {
             return None;
         };
 
-        let mut dldi_area = ds_rom.dldi_area_mut(rom_offset, TOTAL_DRIVER_LEN)?;
+        let dldi_area = ds_rom.dldi_area_mut(rom_offset, TOTAL_DRIVER_LEN)?;
 
         // If the driver can't fit into the allocated space, exit
         let driver_size_shift = TOTAL_DRIVER_LEN.next_power_of_two().trailing_zeros() as u8;
