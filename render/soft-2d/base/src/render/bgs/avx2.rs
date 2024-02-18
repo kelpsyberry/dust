@@ -3,9 +3,12 @@
 use super::common::{read_bg_text_tiles, TextTiles};
 use crate::{rgb5_to_rgb6_64, BgObjPixel, Buffers, RenderingData, Vram};
 use core::{arch::x86_64::*, mem::transmute, simd::u64x4};
-use dust_core::gpu::{
-    engine_2d::{AffineBgIndex, BgIndex, Role},
-    Scanline, SCREEN_WIDTH,
+use dust_core::{
+    gpu::{
+        engine_2d::{AffineBgIndex, BgIndex, Role},
+        Scanline, SCREEN_WIDTH,
+    },
+    utils::mem_prelude::*,
 };
 
 #[target_feature(enable = "sse4.1,sse4.2,avx,avx2")]

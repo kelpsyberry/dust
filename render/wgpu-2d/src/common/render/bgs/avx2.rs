@@ -3,9 +3,12 @@
 use dust_soft_2d_base::render::bgs::avx2::*;
 
 use core::arch::x86_64::*;
-use dust_core::gpu::{
-    engine_2d::{AffineBgIndex, BgIndex, Role},
-    SCREEN_WIDTH,
+use dust_core::{
+    gpu::{
+        engine_2d::{AffineBgIndex, BgIndex, Role},
+        SCREEN_WIDTH,
+    },
+    utils::mem_prelude::*,
 };
 use dust_soft_2d_base::{BgObjPixel, Buffers, RenderingData, Vram};
 
