@@ -1,8 +1,5 @@
 use crate::Vram;
-use core::{
-    mem::{self, MaybeUninit},
-    ptr,
-};
+use core::mem::{self, MaybeUninit};
 use dust_core::gpu::engine_2d::{BgControl, Control, Role};
 
 #[repr(align(64))]
@@ -54,20 +51,18 @@ where
 
     let bg_vram = vram.bg();
     unsafe {
-        ptr::copy_nonoverlapping(
+        (tiles.0.as_mut_ptr() as *mut usize).copy_from_nonoverlapping(
             bg_vram.as_ptr().add(map_base as usize) as *const usize,
-            tiles.0.as_mut_ptr() as *mut usize,
             64 / mem::size_of::<usize>(),
         );
         if bg_control.size_key() & 1 == 0 {
             MaybeUninit::slice_assume_init_ref(&tiles.0[..32])
         } else {
-            ptr::copy_nonoverlapping(
+            (tiles.0.as_mut_ptr().add(32) as *mut usize).copy_from_nonoverlapping(
                 bg_vram
                     .as_ptr()
                     .add(((map_base + 0x800) & R::BG_VRAM_MASK) as usize)
                     as *const usize,
-                tiles.0.as_mut_ptr().add(32) as *mut usize,
                 64 / mem::size_of::<usize>(),
             );
             MaybeUninit::slice_assume_init_ref(&tiles.0)

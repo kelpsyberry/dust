@@ -1,5 +1,7 @@
 use super::super::RomOutputLen;
-use crate::utils::{mem_prelude::*, Bytes, Savestate};
+#[cfg(feature = "log")]
+use crate::utils::mem_prelude::*;
+use crate::utils::{Bytes, Savestate};
 
 #[derive(Savestate)]
 pub struct Empty {

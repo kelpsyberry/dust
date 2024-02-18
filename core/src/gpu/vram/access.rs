@@ -3,7 +3,6 @@ use crate::utils::{mem_prelude::*, zero};
 use core::{
     mem,
     ops::{BitOr, BitOrAssign},
-    ptr,
 };
 
 macro_rules! set_writeback {
@@ -197,9 +196,8 @@ impl Vram {
     /// - `addr + result.len()` must be less than or equal to `0x8_0000`
     #[inline]
     pub unsafe fn read_a_bg_slice<T: MemValue>(&self, addr: u32, len: usize, result: *mut T) {
-        ptr::copy_nonoverlapping(
+        result.copy_from_nonoverlapping(
             self.a_bg.as_ptr().add(addr as usize).cast(),
-            result,
             len / mem::size_of::<T>(),
         );
     }
@@ -327,9 +325,8 @@ impl Vram {
     /// - `addr + result.len()` must be less than or equal to `0x2_0000`
     #[inline]
     pub unsafe fn read_b_bg_slice<T: MemValue>(&self, addr: u32, len: usize, result: *mut T) {
-        ptr::copy_nonoverlapping(
+        result.copy_from_nonoverlapping(
             self.b_bg.as_ptr().add(addr as usize).cast(),
-            result,
             len / mem::size_of::<T>(),
         );
     }
@@ -499,9 +496,8 @@ impl Vram {
         len: usize,
         result: *mut T,
     ) {
-        ptr::copy_nonoverlapping(
+        result.copy_from_nonoverlapping(
             self.a_bg_ext_pal.as_ptr().add(addr as usize).cast(),
-            result,
             len / mem::size_of::<T>(),
         );
     }
@@ -542,9 +538,8 @@ impl Vram {
         len: usize,
         result: *mut T,
     ) {
-        ptr::copy_nonoverlapping(
+        result.copy_from_nonoverlapping(
             self.a_obj_ext_pal.as_ptr().add(addr as usize).cast(),
-            result,
             len / mem::size_of::<T>(),
         );
     }
@@ -589,9 +584,8 @@ impl Vram {
         result: *mut T,
     ) {
         // NOTE: As for LCDC, the pointer will never be null
-        ptr::copy_nonoverlapping(
+        result.copy_from_nonoverlapping(
             self.b_bg_ext_pal_ptr.add(addr as usize).cast(),
-            result,
             len / mem::size_of::<T>(),
         );
     }
@@ -639,9 +633,8 @@ impl Vram {
         result: *mut T,
     ) {
         // NOTE: As for LCDC, the pointer will never be null
-        ptr::copy_nonoverlapping(
+        result.copy_from_nonoverlapping(
             self.b_obj_ext_pal_ptr.add(addr as usize).cast(),
-            result,
             len / mem::size_of::<T>(),
         );
     }
@@ -671,9 +664,8 @@ impl Vram {
     /// - `addr + result.len()` must be less than or equal to `0x8_0000`
     #[inline]
     pub unsafe fn read_texture_slice<T: MemValue>(&self, addr: u32, len: usize, result: *mut T) {
-        ptr::copy_nonoverlapping(
+        result.copy_from_nonoverlapping(
             self.texture.as_ptr().add(addr as usize).cast(),
-            result,
             len / mem::size_of::<T>(),
         );
     }
@@ -684,9 +676,8 @@ impl Vram {
     /// - `addr + result.len()` must be less than or equal to `0x1_8000`
     #[inline]
     pub unsafe fn read_tex_pal_slice<T: MemValue>(&self, addr: u32, len: usize, result: *mut T) {
-        ptr::copy_nonoverlapping(
+        result.copy_from_nonoverlapping(
             self.tex_pal.as_ptr().add(addr as usize).cast(),
-            result,
             len / mem::size_of::<T>(),
         );
     }

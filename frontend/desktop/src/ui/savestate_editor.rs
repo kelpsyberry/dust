@@ -8,10 +8,10 @@ use dust_core::{
 use imgui::{Image, StyleColor, TableFlags, TextureId, Ui, WindowHoveredFlags};
 use miniz_oxide::{
     deflate::{compress_to_vec, CompressionLevel},
-    inflate::decompress_to_vec,
+    inflate::{decompress_to_vec, DecompressError},
 };
 use std::{
-    fs, io, mem,
+    fmt, fs, io, mem,
     path::{Path, PathBuf},
     slice,
     time::SystemTime,
@@ -35,8 +35,47 @@ struct Entry {
     kind: EntryKind,
 }
 
+#[derive(Debug)]
+pub enum SavestateError {
+    Io(io::Error),
+    Decompression(DecompressError),
+    InvalidData,
+}
+
+impl From<io::Error> for SavestateError {
+    fn from(value: io::Error) -> Self {
+        SavestateError::Io(value)
+    }
+}
+
+impl From<DecompressError> for SavestateError {
+    fn from(value: DecompressError) -> Self {
+        SavestateError::Decompression(value)
+    }
+}
+
+impl fmt::Display for SavestateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SavestateError::Io(err) => write!(f, "I/O error: {err}"),
+            SavestateError::Decompression(err) => write!(f, "decompression error: {err}"),
+            SavestateError::InvalidData => f.write_str("invalid data"),
+        }
+    }
+}
+const SCREEN_SIZE: usize = SCREEN_WIDTH * SCREEN_HEIGHT;
+
+proc_bitfield::bitfield! {
+    #[derive(Clone, Copy)]
+    struct SavestateInfo(pub u32) {
+        save_len: u32 @ 0..=27,
+        fb_is_le: bool @ 30,
+        has_save: bool @ 31,
+    }
+}
+
 impl Savestate {
-    unsafe fn create_texture(window: &Window, framebuffer: &Framebuffer) -> TextureId {
+    fn create_texture(window: &Window, framebuffer: &Framebuffer) -> TextureId {
         let texture = window.imgui_gfx.create_owned_texture(
             Some("Savestate framebuffer".into()),
             imgui_wgpu::TextureDescriptor {
@@ -54,10 +93,9 @@ impl Savestate {
         texture.set_data(
             window.gfx_device(),
             window.gfx_queue(),
-            slice::from_raw_parts(
-                framebuffer.as_ptr() as *const u8,
-                2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT,
-            ),
+            unsafe {
+                slice::from_raw_parts(framebuffer.as_ptr().cast::<u8>(), 2 * 4 * SCREEN_SIZE)
+            },
             imgui_wgpu::TextureSetRange::default(),
         );
         window
@@ -65,52 +103,66 @@ impl Savestate {
             .add_texture(imgui_wgpu::Texture::Owned(texture))
     }
 
-    fn load(path: &Path, window: &Window) -> io::Result<Self> {
+    fn load(path: &Path, window: &Window) -> Result<Self, SavestateError> {
         let compressed_contents = fs::read(path)?;
-        let mut contents = decompress_to_vec(&compressed_contents).map_err(|_err| {
-            io::Error::new(io::ErrorKind::InvalidData, "couldn't decompress savestate")
-        })?;
+        let mut contents = decompress_to_vec(&compressed_contents)?;
+
+        let info = {
+            let pos = contents
+                .len()
+                .checked_sub(4)
+                .ok_or(SavestateError::InvalidData)?;
+            let value = SavestateInfo(contents[pos..].read_le(0));
+            contents.truncate(pos);
+            value
+        };
 
         let framebuffer = {
             let mut buffer: Box<Framebuffer> = unsafe { Box::new_zeroed().assume_init() };
-            let src_start_i = contents
+            let start_pos = contents
                 .len()
-                .checked_sub(2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT)
-                .unwrap();
+                .checked_sub(2 * 4 * SCREEN_SIZE)
+                .ok_or(SavestateError::InvalidData)?;
             unsafe {
-                let mut ptr = contents.as_ptr().add(src_start_i) as *const u32;
-                for pixel in &mut buffer[0] {
-                    *pixel = u32::read_le(ptr);
-                    ptr = ptr.add(1);
-                }
-                for pixel in &mut buffer[1] {
-                    *pixel = u32::read_le(ptr);
-                    ptr = ptr.add(1);
+                let [buffer_0, buffer_1] = &mut *buffer;
+                let mut src = contents.as_ptr().add(start_pos).cast::<u32>();
+                if info.fb_is_le() == cfg!(target_endian = "little") {
+                    for pixel in buffer_0.iter_mut().chain(buffer_1) {
+                        *pixel = src.read_unaligned();
+                        src = src.add(1);
+                    }
+                } else {
+                    for pixel in buffer_0.iter_mut().chain(buffer_1) {
+                        *pixel = src.read_unaligned().swap_bytes();
+                        src = src.add(1);
+                    }
                 }
             }
-            contents.truncate(src_start_i);
+            contents.truncate(start_pos);
             buffer
         };
 
-        let save_info: u32 = contents[contents.len() - 4..].read_le(0);
-        let save = if save_info & 0x8000_0000 != 0 {
-            let len = (save_info & 0x7FFF_FFFF) as usize;
-            let mut buffer = BoxedByteSlice::new_zeroed(len);
-            let src_start_i = contents.len().checked_sub(len + 4).unwrap();
+        let save = if info.has_save() {
+            let save_len = info.save_len() as usize;
+            let mut buffer = BoxedByteSlice::new_zeroed(save_len);
+            let start_pos = contents
+                .len()
+                .checked_sub(save_len)
+                .ok_or(SavestateError::InvalidData)?;
             unsafe {
-                contents
-                    .as_ptr()
-                    .add(src_start_i)
-                    .copy_to_nonoverlapping(buffer.as_mut_ptr(), len);
+                buffer
+                    .as_mut_ptr()
+                    .copy_from_nonoverlapping(contents.as_ptr().add(start_pos), save_len);
             }
-            contents.truncate(src_start_i);
+            contents.truncate(start_pos);
             Some(buffer)
         } else {
-            contents.truncate(contents.len() - 4);
             None
         };
 
-        let texture_id = unsafe { Self::create_texture(window, &framebuffer) };
+        contents.shrink_to_fit();
+
+        let texture_id = Self::create_texture(window, &framebuffer);
 
         Ok(Savestate {
             contents,
@@ -122,39 +174,44 @@ impl Savestate {
 
     fn create(
         name: &str,
-        contents: Vec<u8>,
+        mut contents: Vec<u8>,
         save: Option<BoxedByteSlice>,
         framebuffer: Box<Framebuffer>,
         savestate_dir: &Path,
         window: &Window,
     ) -> io::Result<Self> {
-        {
-            let mut contents = contents.clone();
+        let orig_len = contents.len();
 
-            unsafe {
-                if let Some(save) = &save {
-                    contents.extend_from_slice(save);
-                    contents.extend_from_slice(&(0x8000_0000 | save.len() as u32).to_le_bytes());
-                } else {
-                    contents.extend_from_slice(&0_u32.to_le_bytes());
-                }
-
-                contents.reserve(2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT);
-                let mut ptr = contents.as_mut_ptr().add(contents.len()) as *mut u32;
-                contents.set_len(contents.len() + 2 * 4 * SCREEN_WIDTH * SCREEN_HEIGHT);
-                for pixel in framebuffer[0].iter().chain(&framebuffer[1]) {
-                    pixel.write_le(ptr);
-                    ptr = ptr.add(1);
-                }
-            }
-
-            fs::write(
-                savestate_dir.join(format!("{name}.state")),
-                compress_to_vec(&contents, CompressionLevel::BestSpeed as u8),
-            )?;
+        let mut info = SavestateInfo(0).with_fb_is_le(cfg!(target_endian = "little"));
+        if let Some(save) = &save {
+            contents.extend_from_slice(save);
+            info.set_has_save(true);
+            info.set_save_len(save.len() as u32);
         }
 
-        let texture_id = unsafe { Self::create_texture(window, &framebuffer) };
+        contents.reserve(2 * 4 * SCREEN_SIZE);
+
+        unsafe {
+            let prev_len = contents.len();
+            let mut dest = contents.as_mut_ptr().add(prev_len).cast::<u32>();
+            for pixel in framebuffer[0].iter().chain(&framebuffer[1]) {
+                dest.write_unaligned(*pixel);
+                dest = dest.add(1);
+            }
+            contents.set_len(prev_len + 2 * 4 * SCREEN_SIZE);
+        }
+
+        contents.extend_from_slice(&info.0.to_le_bytes());
+
+        fs::write(
+            savestate_dir.join(format!("{name}.state")),
+            compress_to_vec(&contents, CompressionLevel::BestSpeed as u8),
+        )?;
+
+        contents.truncate(orig_len);
+        contents.shrink_to_fit();
+
+        let texture_id = Self::create_texture(window, &framebuffer);
 
         Ok(Savestate {
             contents,
