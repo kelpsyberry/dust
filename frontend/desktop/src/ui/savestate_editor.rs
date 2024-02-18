@@ -46,6 +46,7 @@ impl Savestate {
                 ..Default::default()
             },
             imgui_wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Nearest,
                 min_filter: wgpu::FilterMode::Linear,
                 ..Default::default()
             },

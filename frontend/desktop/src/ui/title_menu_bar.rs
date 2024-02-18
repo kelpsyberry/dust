@@ -217,6 +217,7 @@ impl TitleMenuBarState {
             imgui_wgpu::TextureDescriptor {
                 width: 32,
                 height: 32,
+                format: wgpu::TextureFormat::Rgba8Unorm,
                 ..Default::default()
             },
             imgui_wgpu::SamplerDescriptor {

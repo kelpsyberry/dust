@@ -745,6 +745,7 @@ impl FbTexture {
                 ..Default::default()
             },
             imgui_wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Nearest,
                 min_filter: wgpu::FilterMode::Linear,
                 ..Default::default()
             },
@@ -756,6 +757,7 @@ impl FbTexture {
             Some("Framebuffer".into()),
             view,
             imgui_wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Nearest,
                 min_filter: wgpu::FilterMode::Linear,
                 ..Default::default()
             },
