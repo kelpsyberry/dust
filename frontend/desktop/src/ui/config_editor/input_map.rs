@@ -167,9 +167,9 @@ impl Editor {
         width: f32,
     ) {
         let trigger = if selection.1 {
-            global_trigger(selection.0, input_map)
-        } else {
             game_trigger(selection.0, input_map).unwrap()
+        } else {
+            global_trigger(selection.0, input_map)
         };
 
         let _button_color = (!self.state.is_manually_changing()
