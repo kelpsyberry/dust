@@ -795,8 +795,16 @@ impl<T: RawSetting> Setting for Overridable<T> {
         let game_override_enabled = (self.game_override_enabled)(config);
         if tab_is_global {
             let _id = ui.push_id("global");
-            self.global
-                .draw(ui, config, "", ui.content_region_avail()[0]);
+            self.global.draw(
+                ui,
+                config,
+                if game_override_enabled {
+                    "NOTE: Overridden for the current game"
+                } else {
+                    ""
+                },
+                ui.content_region_avail()[0],
+            );
         } else {
             let button_width = ui.calc_text_size("\u{f055}")[0]
                 .max(ui.calc_text_size("\u{f056}")[0])
