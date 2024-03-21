@@ -52,6 +52,9 @@ jobs:
         cp -R frontend/desktop/fonts Dust.app/Contents/Resources
         cp -R render/wgpu-2d/src/common/shaders Dust.app/Contents/Resources
 
+    - name: Update dependencies
+      run: cargo update
+
     - name: Build release bundle (no debugging features)
       run: >
         cargo build

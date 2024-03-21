@@ -45,6 +45,9 @@ jobs:
         path: target/
         key: web-release-${{ steps.toolchain.outputs.cachekey }}
 
+    - name: Update dependencies
+      run: cargo update
+
     - name: Build
       working-directory: frontend/web
       run: |

@@ -43,6 +43,9 @@ jobs:
         sudo apt-get update
         sudo apt-get install libgtk-3-dev libasound2-dev
 
+    - name: Update dependencies
+      run: cargo update
+
     - name: Run clippy (no default features)
       uses: actions-rs/clippy-check@v1
       with:
