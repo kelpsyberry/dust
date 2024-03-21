@@ -50,8 +50,8 @@ proc_bitfield::bitfield! {
         pub edge_mask: u8 @ 0..=3,
         pub top_edge: bool @ 0,
         pub bottom_edge: bool @ 1,
-        pub right_edge: bool @ 2,
-        pub left_edge: bool @ 3,
+        pub left_edge: bool @ 2,
+        pub right_edge: bool @ 3,
 
         pub translucent: bool @ 13,
         pub front_facing: bool @ 14,
@@ -67,13 +67,18 @@ proc_bitfield::bitfield! {
 
 impl PixelAttrs {
     #[inline]
-    fn from_opaque_poly_attrs(poly: &RenderingPolygon) -> Self {
-        PixelAttrs(poly.attrs.raw() & 0x3F00_8000).with_front_facing(poly.attrs.is_front_facing())
+    fn from_opaque_poly_attrs(poly: &RenderingPolygon, edge_mask: u32) -> Self {
+        PixelAttrs((poly.attrs.raw() & 0x3F00_8000) | edge_mask)
+            .with_front_facing(poly.attrs.is_front_facing())
     }
 
     #[inline]
-    fn from_translucent_poly_attrs(poly: &RenderingPolygon, opaque: PixelAttrs) -> Self {
-        PixelAttrs(opaque.0 & 0x3F00_8000)
+    fn from_translucent_poly_attrs(
+        poly: &RenderingPolygon,
+        opaque: PixelAttrs,
+        edge_mask: u32,
+    ) -> Self {
+        PixelAttrs((opaque.0 & 0x3F00_8000 & (poly.attrs.raw() | !0x0000_8000)) | edge_mask)
             .with_translucent(true)
             .with_front_facing(poly.attrs.is_front_facing())
             .with_translucent_id(poly.id | 0x40)
@@ -721,7 +726,7 @@ impl Renderer {
                     || edges[1].x_incr() == 0,
             ];
 
-            let is_y_edge = (y == poly.top_y) || (y + 1 == poly.bot_y);
+            let y_edge_mask = (y == poly.top_y) as u32 | ((y + 1 == poly.bot_y) as u32) << 1;
 
             macro_rules! interp_edge {
                 ($i: expr, $x: expr) => {{
@@ -743,8 +748,9 @@ impl Renderer {
             let x_interp = InterpLineData::<false>::new(l_w, r_w);
 
             macro_rules! render_pixel {
-                ($x: expr) => {{
+                ($x: expr, $edge_mask: expr) => {{
                     let x = $x;
+                    let edge_mask = $edge_mask;
 
                     if poly.is_shadow && !self.attr_buffer.0[x as usize].stencil() {
                         continue;
@@ -763,7 +769,8 @@ impl Renderer {
                             if alpha == 0x1F {
                                 self.color_buffer.0[x] = color.cast();
                                 self.depth_buffer.0[x] = depth;
-                                self.attr_buffer.0[x] = PixelAttrs::from_opaque_poly_attrs(poly);
+                                self.attr_buffer.0[x] =
+                                    PixelAttrs::from_opaque_poly_attrs(poly, edge_mask);
                             } else {
                                 let prev_attrs = self.attr_buffer.0[x];
                                 if prev_attrs.translucent_id() != poly.id | 0x40 {
@@ -781,8 +788,9 @@ impl Renderer {
                                     if poly.attrs.update_depth_for_translucent() {
                                         self.depth_buffer.0[x] = depth;
                                     }
-                                    self.attr_buffer.0[x] =
-                                        PixelAttrs::from_translucent_poly_attrs(poly, prev_attrs);
+                                    self.attr_buffer.0[x] = PixelAttrs::from_translucent_poly_attrs(
+                                        poly, prev_attrs, edge_mask,
+                                    );
                                 }
                             }
                         }
@@ -793,14 +801,62 @@ impl Renderer {
             for i in 0..2 {
                 if fill_edges[i] {
                     for x in ranges[i].0..=ranges[i].1 {
-                        render_pixel!(x);
+                        render_pixel!(x, y_edge_mask | 4 << i);
                     }
                 }
             }
 
-            if !wireframe || is_y_edge {
+            if !wireframe || y_edge_mask != 0 {
                 for x in ranges[0].1 + 1..ranges[1].0 {
-                    render_pixel!(x);
+                    render_pixel!(x, y_edge_mask);
+                }
+            }
+        }
+
+        if rendering_data.control.fog_enabled() {
+            macro_rules! fog_density {
+                ($x: expr) => {{
+                    let z = self.depth_buffer.0[$x];
+                    let offset = if z < rendering_data.fog_offset {
+                        0
+                    } else {
+                        ((z - rendering_data.fog_offset) >> 2
+                            << rendering_data.control.fog_depth_shift())
+                        .min(32 << 17)
+                    };
+                    let index = (offset >> 17) as usize;
+                    let fract = offset & 0x1_FFFF;
+                    ((rendering_data.fog_densities[index] as u32 * (0x2_0000 - fract)
+                        + rendering_data.fog_densities[index + 1] as u32 * fract)
+                        >> 17) as u16
+                }};
+            }
+
+            let fog_color = rgb5_to_rgb6(rendering_data.fog_color.cast());
+            if rendering_data.control.fog_only_alpha() {
+                let fog_alpha = fog_color[3];
+                for x in 0..256 {
+                    let attrs = self.attr_buffer.0[x];
+                    if !attrs.fog_enabled() {
+                        continue;
+                    }
+                    let density = fog_density!(x);
+                    let alpha = self.color_buffer.0[x][3] as u16;
+                    self.color_buffer.0[x][3] =
+                        ((fog_alpha * density + alpha * (0x80 - density)) >> 7) as u8;
+                }
+            } else {
+                for x in 0..256 {
+                    let attrs = self.attr_buffer.0[x];
+                    if !attrs.fog_enabled() {
+                        continue;
+                    }
+                    let density = fog_density!(x);
+                    let color = self.color_buffer.0[x].cast::<u16>();
+                    self.color_buffer.0[x] = ((fog_color * InterpColor::splat(density)
+                        + color * InterpColor::splat(0x80 - density))
+                        >> 7)
+                        .cast();
                 }
             }
         }

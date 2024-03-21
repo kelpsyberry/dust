@@ -17,8 +17,8 @@ pub struct RenderingData {
     pub clear_image_offset: [u8; 2],
     pub clear_depth: u32,
 
-    pub fog_offset: u16,
-    pub fog_densities: [u8; 0x20],
+    pub fog_offset: u32,
+    pub fog_densities: [u8; 0x22],
     pub rear_plane_fog_enabled: bool,
 
     pub clear_color: Color,
@@ -54,8 +54,10 @@ impl RenderingData {
         self.edge_colors = state.edge_colors;
 
         self.fog_color = state.fog_color;
-        self.fog_densities = state.fog_densities;
-        self.fog_offset = state.fog_offset;
+        self.fog_densities[0] = state.fog_densities[0];
+        self.fog_densities[0x21] = state.fog_densities[0x1F];
+        self.fog_densities[1..0x21].copy_from_slice(&state.fog_densities);
+        self.fog_offset = expand_depth(state.fog_offset);
         self.rear_plane_fog_enabled = state.rear_plane_fog_enabled;
     }
 

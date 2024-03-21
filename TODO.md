@@ -87,7 +87,11 @@
 - IO register unused bit behavior
 
 # Missing functionality
-- Finished 3D rendering
+- Finished 3D rendering:
+    - Shadow polygons
+    - Fog (HW only)
+    - Edge marking
+    - Antialiasing
 - Wi-Fi
 - RTC alarms
 - ARM7 regular open bus (the ARM9 seems to always return 0)

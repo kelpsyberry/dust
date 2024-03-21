@@ -524,9 +524,7 @@ impl Engine3d {
                 edge_colors: [Color::from_array([0, 0, 0, 0x1F]); 8],
 
                 fog_color: Color::splat(0),
-
                 fog_densities: [0; 0x20],
-
                 fog_offset: 0,
                 rear_plane_fog_enabled: false,
 
