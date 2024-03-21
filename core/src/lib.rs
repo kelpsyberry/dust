@@ -27,7 +27,8 @@
     clippy::wildcard_imports,
     clippy::must_use_candidate,
     clippy::missing_errors_doc,
-    clippy::inline_always
+    clippy::inline_always,
+    clippy::new_without_default
 )]
 
 pub extern crate emu_utils as utils;

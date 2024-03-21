@@ -3,7 +3,7 @@ use crate::{config::Config, emu};
 use chrono::DateTime;
 use dust_core::{
     gpu::{Framebuffer, SCREEN_HEIGHT, SCREEN_WIDTH},
-    utils::{mem_prelude::*, BoxedByteSlice},
+    utils::mem_prelude::*,
 };
 use imgui::{Image, StyleColor, TableFlags, TextureId, Ui, WindowHoveredFlags};
 use miniz_oxide::{

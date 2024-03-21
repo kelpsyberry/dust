@@ -27,7 +27,7 @@ pub mod spi;
 use crate::{
     cpu::{arm7, arm9, Engine, Schedule as _},
     emu::{Emu, Timestamp},
-    utils::{mem_prelude::*, schedule::RawTimestamp, Bytes, Savestate},
+    utils::{mem_prelude::*, schedule::RawTimestamp, Savestate},
 };
 
 proc_bitfield::bitfield! {

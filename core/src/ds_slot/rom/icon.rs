@@ -1,5 +1,5 @@
 use super::{header::Header, Contents};
-use crate::utils::{mem_prelude::*, Bytes};
+use crate::utils::mem_prelude::*;
 
 pub fn decode_to_rgba8(
     icon_title_offset: usize,

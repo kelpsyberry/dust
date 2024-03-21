@@ -1,7 +1,7 @@
 use super::{super::RomOutputLen, is_valid_size, key1, Contents};
 use crate::{
     cpu::arm7,
-    utils::{make_zero, mem_prelude::*, zero, Bytes, Savestate},
+    utils::{make_zero, mem_prelude::*, zero, Savestate},
     Model,
 };
 

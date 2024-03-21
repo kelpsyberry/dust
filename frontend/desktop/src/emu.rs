@@ -443,8 +443,8 @@ pub(super) fn run(
         logger.clone(),
     );
 
-    emu_builder.arm7_bios = sys_files.arm7_bios.clone();
-    emu_builder.arm9_bios = sys_files.arm9_bios.clone();
+    emu_builder.arm7_bios.clone_from(&sys_files.arm7_bios);
+    emu_builder.arm9_bios.clone_from(&sys_files.arm9_bios);
 
     emu_builder.model = model;
     emu_builder.direct_boot = skip_firmware;
@@ -743,8 +743,8 @@ pub(super) fn run(
                 logger.clone(),
             );
 
-            emu_builder.arm7_bios = sys_files.arm7_bios.clone();
-            emu_builder.arm9_bios = sys_files.arm9_bios.clone();
+            emu_builder.arm7_bios.clone_from(&sys_files.arm7_bios);
+            emu_builder.arm9_bios.clone_from(&sys_files.arm9_bios);
 
             emu_builder.model = model;
             emu_builder.direct_boot = skip_firmware;

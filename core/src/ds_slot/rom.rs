@@ -7,7 +7,7 @@ pub mod normal;
 
 use super::RomOutputLen;
 use crate::{
-    utils::{mem_prelude::*, BoxedByteSlice, Bytes, Savestate},
+    utils::{mem_prelude::*, Savestate},
     Model,
 };
 

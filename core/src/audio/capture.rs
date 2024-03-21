@@ -1,7 +1,7 @@
 use crate::{
     cpu::{self, arm7, bus::DmaAccess},
     emu::Emu,
-    utils::{mem_prelude::*, Bytes, Savestate},
+    utils::{mem_prelude::*, Savestate},
 };
 
 // TODO: The capture units could actually need a higher resolution than the mixer (capturing

@@ -6,7 +6,7 @@ use crate::{
         arm9::{bus::ptrs::mask as ptr_mask, Arm9},
     },
     gpu::engine_3d::Engine3d,
-    utils::{mem_prelude::*, OwnedBytesCellPtr},
+    utils::mem_prelude::*,
 };
 use core::{iter::once, mem::size_of, ops::Range};
 

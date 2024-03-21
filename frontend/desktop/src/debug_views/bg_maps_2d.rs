@@ -10,7 +10,7 @@ use dust_core::{
         engine_2d::{self, BgIndex, Role},
         vram::Vram,
     },
-    utils::{mem_prelude::*, Bytes},
+    utils::mem_prelude::*,
 };
 use imgui::{Image, MouseButton, SliderFlags, StyleColor, TextureId, Ui, WindowHoveredFlags};
 use std::slice;

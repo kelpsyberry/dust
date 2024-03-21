@@ -100,4 +100,11 @@
 # Non-essential but wanted additions
 
 ## Frontends
+
+### Desktop
 - General UI polish
+- Add game controller support using [`gilrs`](https://docs.rs/gilrs)
+
+### Web
+- Rework the entire frontend to expose more advanced functionality
+- GPU-accelerated 3D and 2D rendering

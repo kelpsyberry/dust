@@ -3,7 +3,7 @@ use crate::{
     cpu::{arm7::bus as arm7_bus, arm9::bus as arm9_bus, bus::CpuAccess},
     ds_slot,
     emu::Emu,
-    utils::{make_zero, mem_prelude::*, zeroed_box, Bytes},
+    utils::{make_zero, mem_prelude::*, zeroed_box},
 };
 
 pub trait Provider {

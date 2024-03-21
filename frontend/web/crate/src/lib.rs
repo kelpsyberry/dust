@@ -141,8 +141,8 @@ impl EmuState {
             self.logger.clone(),
         );
 
-        emu_builder.arm7_bios = self.arm7_bios.clone();
-        emu_builder.arm9_bios = self.arm9_bios.clone();
+        emu_builder.arm7_bios.clone_from(&self.arm7_bios);
+        emu_builder.arm9_bios.clone_from(&self.arm9_bios);
 
         emu_builder.model = self.model;
         emu_builder.direct_boot = true;
@@ -386,8 +386,8 @@ pub fn create_emu_state(
         logger.clone(),
     );
 
-    emu_builder.arm7_bios = arm7_bios.clone();
-    emu_builder.arm9_bios = arm9_bios.clone();
+    emu_builder.arm7_bios.clone_from(&arm7_bios);
+    emu_builder.arm9_bios.clone_from(&arm9_bios);
 
     emu_builder.model = model;
     emu_builder.direct_boot = true;

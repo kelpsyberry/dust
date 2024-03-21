@@ -1,5 +1,5 @@
 use crate::{
-    utils::{mem_prelude::*, BoxedByteSlice, Savestate},
+    utils::{mem_prelude::*, Savestate},
     SaveContents, SaveReloadContents,
 };
 

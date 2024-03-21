@@ -260,7 +260,10 @@ pub fn combo_value<T: PartialEq + Clone, L: for<'a> Fn(&'a T) -> Cow<'a, str>>(
     items: &[T],
     label_fn: L,
 ) -> bool {
-    let mut i = items.iter().position(|i| i == current_item).unwrap();
+    let mut i = items
+        .iter()
+        .position(|item| item == current_item)
+        .unwrap_or(usize::MAX);
     if ui.combo(label, &mut i, items, label_fn) {
         *current_item = items[i].clone();
         true

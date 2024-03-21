@@ -1,8 +1,5 @@
 use super::crc16;
-use crate::{
-    utils::{mem_prelude::*, BoxedByteSlice},
-    Model,
-};
+use crate::{utils::mem_prelude::*, Model};
 
 pub fn default(model: Model) -> BoxedByteSlice {
     let len = match model {

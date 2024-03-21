@@ -21,10 +21,7 @@ use crate::{
     ipc::Ipc,
     rtc::{self, Rtc},
     spi,
-    utils::{
-        mem_prelude::*, schedule::RawTimestamp, BoxedByteSlice, Bytes, OwnedBytesCellPtr,
-        ReadSavestate, Savestate, WriteSavestate,
-    },
+    utils::{mem_prelude::*, schedule::RawTimestamp, ReadSavestate, Savestate, WriteSavestate},
     wifi::WiFi,
     Model,
 };

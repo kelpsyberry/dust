@@ -2,7 +2,7 @@ macro_rules! str_buf {
     ($buf: expr, $($args: tt)*) => {{
         use std::fmt::Write;
         $buf.clear();
-        write!($buf, $($args)*).unwrap();
+        let _ = write!($buf, $($args)*);
         &$buf
     }};
 }

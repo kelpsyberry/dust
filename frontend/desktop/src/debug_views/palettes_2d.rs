@@ -3,11 +3,7 @@ use super::{
     FrameDataSlot, InstanceableView, Messages, View,
 };
 use crate::ui::{utils::combo_value, window::Window};
-use dust_core::{
-    cpu,
-    emu::Emu,
-    utils::{mem_prelude::*, Bytes},
-};
+use dust_core::{cpu, emu::Emu, utils::mem_prelude::*};
 use imgui::{StyleVar, TableFlags, Ui};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
