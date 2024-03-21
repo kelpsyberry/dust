@@ -9,7 +9,7 @@ pub struct Backend {
 impl Backend {
     pub fn new(time_offset_secondss: i64) -> Self {
         Backend {
-            time_offset: Duration::seconds(time_offset_secondss),
+            time_offset: Duration::try_seconds(time_offset_secondss).unwrap(),
         }
     }
 
@@ -18,7 +18,7 @@ impl Backend {
     }
 
     pub fn set_time_offset_seconds(&mut self, value: i64) {
-        self.time_offset = Duration::seconds(value);
+        self.time_offset = Duration::try_seconds(value).unwrap();
     }
 }
 
