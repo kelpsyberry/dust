@@ -721,7 +721,7 @@ impl Renderer {
                     || edges[1].x_incr() == 0,
             ];
 
-            let edge_mask = (y == poly.top_y) as u8 | (y + 1 == poly.bot_y) as u8;
+            let is_y_edge = (y == poly.top_y) || (y + 1 == poly.bot_y);
 
             macro_rules! interp_edge {
                 ($i: expr, $x: expr) => {{
@@ -742,60 +742,10 @@ impl Renderer {
 
             let x_interp = InterpLineData::<false>::new(l_w, r_w);
 
-            for i in 0..2 {
-                if fill_edges[i] {
-                    for x in ranges[i].0..=ranges[i].1 {
-                        if poly.is_shadow && !self.attr_buffer.0[x as usize].stencil() {
-                            continue;
-                        }
+            macro_rules! render_pixel {
+                ($x: expr) => {{
+                    let x = $x;
 
-                        let interp = x_interp.set_x(x - x_span_start, x_span_len);
-                        let x = x as usize;
-                        let depth = interp.depth(l_depth, r_depth, rendering_data.w_buffering);
-                        if (poly.depth_test)(depth, self.depth_buffer.0[x], self.attr_buffer.0[x]) {
-                            let vert_color = interp.color(l_vert_color, r_vert_color);
-                            let uv = interp.uv(l_uv, r_uv);
-                            let mut color =
-                                (poly.process_pixel)(rendering_data, poly, uv, vert_color);
-                            let alpha = color[3];
-                            if alpha > rendering_data.alpha_test_ref as u16 {
-                                if alpha == 0x1F {
-                                    self.color_buffer.0[x] = color.cast();
-                                    self.depth_buffer.0[x] = depth;
-                                    self.attr_buffer.0[x] =
-                                        PixelAttrs::from_opaque_poly_attrs(poly);
-                                } else {
-                                    let prev_attrs = self.attr_buffer.0[x];
-                                    if prev_attrs.translucent_id() != poly.id | 0x40 {
-                                        if rendering_data.control.alpha_blending_enabled() {
-                                            let prev_color = self.color_buffer.0[x].cast();
-                                            let prev_alpha = prev_color[3];
-                                            if prev_alpha != 0 {
-                                                color = ((color * InterpColor::splat(alpha + 1))
-                                                    + (prev_color
-                                                        * InterpColor::splat(31 - alpha)))
-                                                    >> InterpColor::splat(5);
-                                                color[3] = alpha.max(prev_alpha);
-                                            }
-                                        }
-                                        self.color_buffer.0[x] = color.cast();
-                                        if poly.attrs.update_depth_for_translucent() {
-                                            self.depth_buffer.0[x] = depth;
-                                        }
-                                        self.attr_buffer.0[x] =
-                                            PixelAttrs::from_translucent_poly_attrs(
-                                                poly, prev_attrs,
-                                            );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !wireframe || edge_mask != 0 {
-                for x in ranges[0].1 + 1..ranges[1].0 {
                     if poly.is_shadow && !self.attr_buffer.0[x as usize].stencil() {
                         continue;
                     }
@@ -837,6 +787,20 @@ impl Renderer {
                             }
                         }
                     }
+                }};
+            }
+
+            for i in 0..2 {
+                if fill_edges[i] {
+                    for x in ranges[i].0..=ranges[i].1 {
+                        render_pixel!(x);
+                    }
+                }
+            }
+
+            if !wireframe || is_y_edge {
+                for x in ranges[0].1 + 1..ranges[1].0 {
+                    render_pixel!(x);
                 }
             }
         }

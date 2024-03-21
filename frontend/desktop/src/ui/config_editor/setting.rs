@@ -379,15 +379,18 @@ impl RawSetting for OptNonZeroU32Slider {
         let checkbox_width = ui.frame_height();
         let input_width = width - checkbox_width - style!(ui, item_spacing)[0];
 
-        let mut active = value.is_some();
-        if ui.checkbox("##active", &mut active) {
-            value = if active { Some(self.default) } else { None };
+        if ui.checkbox("##active", &mut value.is_some()) {
+            value = if value.is_some() {
+                None
+            } else {
+                Some(self.default)
+            };
             updated = true;
         }
         hovered |= ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED);
 
-        if active {
-            let mut raw_value = value.unwrap().get();
+        if let Some(value_) = value {
+            let mut raw_value = value_.get();
             ui.same_line();
             ui.set_next_item_width(input_width);
             if ui
@@ -442,7 +445,7 @@ impl<T: DataTypeKind> BoolAndValueSlider<T> {
 
 impl<T: DataTypeKind> RawSetting for BoolAndValueSlider<T> {
     fn draw(&mut self, ui: &Ui, config: &mut Config, tooltip: &str, width: f32) {
-        let (mut active, mut value) = (self.get)(config);
+        let (mut is_active, mut value) = (self.get)(config);
 
         let mut updated = false;
         let mut hovered = false;
@@ -450,12 +453,12 @@ impl<T: DataTypeKind> RawSetting for BoolAndValueSlider<T> {
         let checkbox_width = ui.frame_height();
         let input_width = width - checkbox_width - style!(ui, item_spacing)[0];
 
-        if ui.checkbox("##active", &mut active) {
+        if ui.checkbox("##active", &mut is_active) {
             updated = true;
         }
         hovered |= ui.is_item_hovered_with_flags(ItemHoveredFlags::ALLOW_WHEN_DISABLED);
 
-        if active {
+        if is_active {
             ui.same_line();
             ui.set_next_item_width(input_width);
             if ui
@@ -472,7 +475,7 @@ impl<T: DataTypeKind> RawSetting for BoolAndValueSlider<T> {
         }
 
         if updated {
-            (self.set)(config, (active, value));
+            (self.set)(config, (is_active, value));
         }
 
         if !tooltip.is_empty() && hovered {
