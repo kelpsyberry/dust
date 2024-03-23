@@ -187,6 +187,7 @@ impl GfxDevice {
                     required_features: features,
                     required_limits: wgpu::Limits {
                         max_texture_dimension_2d: 4096,
+                        max_bind_groups: 5,
                         ..wgpu::Limits::downlevel_webgl2_defaults()
                     },
                 },

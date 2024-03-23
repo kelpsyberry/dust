@@ -832,9 +832,8 @@ impl Renderer {
                 }};
             }
 
-            let fog_color = rgb5_to_rgb6(rendering_data.fog_color.cast());
             if rendering_data.control.fog_only_alpha() {
-                let fog_alpha = fog_color[3];
+                let fog_alpha = rendering_data.fog_color[3] as u16;
                 for x in 0..256 {
                     let attrs = self.attr_buffer.0[x];
                     if !attrs.fog_enabled() {
@@ -846,6 +845,7 @@ impl Renderer {
                         ((fog_alpha * density + alpha * (0x80 - density)) >> 7) as u8;
                 }
             } else {
+                let fog_color = rgb5_to_rgb6(rendering_data.fog_color.cast());
                 for x in 0..256 {
                     let attrs = self.attr_buffer.0[x];
                     if !attrs.fog_enabled() {

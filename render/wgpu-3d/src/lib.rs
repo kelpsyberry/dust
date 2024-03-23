@@ -10,7 +10,7 @@
 #![warn(clippy::all)]
 
 mod data;
-pub use data::{FrameData, GxData, RenderingData};
+pub use data::{FogData, FrameData, GxData, RenderingData};
 mod render;
 #[cfg(feature = "threaded")]
 pub mod threaded;
@@ -27,7 +27,7 @@ use dust_core::{
     utils::mem_prelude::*,
 };
 use std::sync::Arc;
-use utils::{color_to_wgpu_f64, decode_rgb5, round_up_to_alignment};
+use utils::{color_to_wgpu_f64, decode_rgb5, expand_depth, round_up_to_alignment};
 use wgpu::util::DeviceExt;
 
 proc_bitfield::bitfield! {
@@ -36,18 +36,17 @@ proc_bitfield::bitfield! {
         pub texture_mapping_enabled: bool @ 0,
         pub highlight_shading_enabled: bool @ 1,
         pub alpha_blending_enabled: bool @ 3,
+        // TODO
         // pub antialiasing_enabled: bool @ 4,
-
-        // TODO: These may require other special handling
         // pub edge_marking_enabled: bool @ 5,
-        // pub fog_only_alpha: bool @ 6,
-        // pub fog_enabled: bool @ 7,
+        pub attrs_enabled: bool @ 6,
+        pub fog_enabled: bool @ 7,
     }
 }
 
 impl From<RenderingControl> for ControlFlags {
     fn from(other: RenderingControl) -> Self {
-        ControlFlags(other.0 as u8 & 0xB)
+        ControlFlags(other.0 as u8 & 0x8B).with_attrs_enabled(other.fog_enabled())
     }
 }
 
@@ -98,6 +97,8 @@ proc_bitfield::bitfield! {
         pub mode: u8 @ 3..=4,
         pub is_shadow: bool @ 5,
         pub w_buffering: bool @ 6,
+        pub attrs_enabled: bool @ 7,
+        pub fog_enabled: bool @ 8,
     }
 }
 
@@ -109,22 +110,26 @@ enum BatchKind {
     Opaque {
         pipeline: PipelineKey,
         texture: Option<(TextureKey, SamplerKey)>,
+        fog_enabled: bool,
     },
     Translucent {
         pipeline: PipelineKey,
         texture: Option<(TextureKey, SamplerKey)>,
         id: u8,
         alpha_and_ref: (u8, u8),
+        fog_enabled: bool,
     },
     TranslucentNoDepthUpdate {
         pipeline: PipelineKey,
         texture: Option<(TextureKey, SamplerKey)>,
         id: u8,
         alpha_and_ref: (u8, u8),
+        fog_enabled: bool,
     },
     Wireframe {
         pipeline: PipelineKey,
         texture: Option<(TextureKey, SamplerKey)>,
+        fog_enabled: bool,
     },
 }
 
@@ -139,6 +144,7 @@ impl BatchKind {
         } else {
             let texture_mapping_enabled =
                 control.texture_mapping_enabled() && poly.tex_params.format() != 0;
+            let global_fog_enabled = control.fog_enabled();
             let pipeline = PipelineKey(0)
                 .with_texture_mapping_enabled(texture_mapping_enabled)
                 .with_alpha_blending_enabled(
@@ -155,7 +161,9 @@ impl BatchKind {
                     }
                 })
                 .with_is_shadow(is_shadow)
-                .with_w_buffering(w_buffering);
+                .with_w_buffering(w_buffering)
+                .with_attrs_enabled(control.attrs_enabled())
+                .with_fog_enabled(global_fog_enabled);
             let texture = texture_mapping_enabled.then(|| {
                 (
                     TextureKey::new(poly.tex_params, poly.tex_palette_base),
@@ -172,6 +180,7 @@ impl BatchKind {
                         texture,
                         id,
                         alpha_and_ref: (alpha, alpha_ref),
+                        fog_enabled: global_fog_enabled && poly.attrs.fog_enabled(),
                     }
                 } else {
                     BatchKind::TranslucentNoDepthUpdate {
@@ -179,12 +188,21 @@ impl BatchKind {
                         texture,
                         id,
                         alpha_and_ref: (alpha, alpha_ref),
+                        fog_enabled: global_fog_enabled && poly.attrs.fog_enabled(),
                     }
                 }
             } else if alpha == 0 {
-                BatchKind::Wireframe { pipeline, texture }
+                BatchKind::Wireframe {
+                    pipeline,
+                    texture,
+                    fog_enabled: global_fog_enabled && poly.attrs.fog_enabled(),
+                }
             } else {
-                BatchKind::Opaque { pipeline, texture }
+                BatchKind::Opaque {
+                    pipeline,
+                    texture,
+                    fog_enabled: global_fog_enabled && poly.attrs.fog_enabled(),
+                }
             }
         }
     }
@@ -202,26 +220,34 @@ enum PreparedBatchKind {
         depth_test_equal: bool,
     },
     Opaque {
-        pipeline: Option<PipelineKey>,
+        pipeline_changed: bool,
+        pipeline: PipelineKey,
+        fog_enabled: Option<Option<(bool, u8)>>,
         texture: Option<Option<((TextureKey, SamplerKey), u8)>>,
+        toon_bg_index: Option<Option<u8>>,
     },
     Translucent {
-        pipeline_changed: bool,
         pipeline: PipelineKey,
-        texture: Option<Option<((TextureKey, SamplerKey), u8)>>,
         id: Option<u8>,
         alpha_and_ref: Option<(u8, u8)>,
+        fog_enabled: Option<Option<(bool, u8)>>,
+        texture: Option<Option<((TextureKey, SamplerKey), u8)>>,
+        toon_bg_index: Option<Option<u8>>,
     },
     TranslucentNoDepthUpdate {
-        pipeline_changed: bool,
         pipeline: PipelineKey,
-        texture: Option<Option<((TextureKey, SamplerKey), u8)>>,
         id: Option<u8>,
         alpha_and_ref: Option<(u8, u8)>,
+        fog_enabled: Option<Option<(bool, u8)>>,
+        texture: Option<Option<((TextureKey, SamplerKey), u8)>>,
+        toon_bg_index: Option<Option<u8>>,
     },
     Wireframe {
-        pipeline: Option<PipelineKey>,
+        pipeline_changed: bool,
+        pipeline: PipelineKey,
+        fog_enabled: Option<Option<(bool, u8)>>,
         texture: Option<Option<((TextureKey, SamplerKey), u8)>>,
+        toon_bg_index: Option<Option<u8>>,
     },
 }
 
@@ -586,32 +612,50 @@ fn create_sampler(device: &wgpu::Device, sampler_key: SamplerKey) -> wgpu::Sampl
 }
 
 struct OutputAttachments {
-    color: wgpu::Texture,
-    color_view: wgpu::TextureView,
+    color: [(wgpu::Texture, wgpu::TextureView, wgpu::BindGroup); 2],
     depth_view: wgpu::TextureView,
+    attrs_view: wgpu::TextureView,
+    depth_attrs_bg: wgpu::BindGroup,
 }
 
 impl OutputAttachments {
-    fn new(device: &wgpu::Device, resolution_scale_shift: u8) -> Self {
+    fn new(
+        device: &wgpu::Device,
+        resolution_scale_shift: u8,
+        color_bg_layout: &wgpu::BindGroupLayout,
+        depth_attrs_bg_layout: &wgpu::BindGroupLayout,
+    ) -> Self {
         let resolution_scale = 1 << resolution_scale_shift;
 
-        let color = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("3D renderer color"),
-            size: wgpu::Extent3d {
-                width: 256 * resolution_scale,
-                height: 192 * resolution_scale,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let color_view = color.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("3D renderer color view"),
-            ..wgpu::TextureViewDescriptor::default()
+        let color = [0, 1].map(|_| {
+            let color = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("3D renderer color"),
+                size: wgpu::Extent3d {
+                    width: 256 * resolution_scale,
+                    height: 192 * resolution_scale,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            let color_view = color.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("3D renderer color view"),
+                ..wgpu::TextureViewDescriptor::default()
+            });
+            let color_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("3D renderer color bind group"),
+                layout: color_bg_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&color_view),
+                }],
+            });
+            (color, color_view, color_bg)
         });
 
         let depth = device.create_texture(&wgpu::TextureDescriptor {
@@ -625,7 +669,7 @@ impl OutputAttachments {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth24PlusStencil8,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
         let depth_view = depth.create_view(&wgpu::TextureViewDescriptor {
@@ -633,12 +677,64 @@ impl OutputAttachments {
             ..wgpu::TextureViewDescriptor::default()
         });
 
+        let attrs = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("3D renderer attributes"),
+            size: wgpu::Extent3d {
+                width: 256 * resolution_scale,
+                height: 192 * resolution_scale,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let attrs_view = attrs.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("3D renderer attributes view"),
+            ..wgpu::TextureViewDescriptor::default()
+        });
+
+        let depth_attrs_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("3D renderer depth/attrs bind group"),
+            layout: depth_attrs_bg_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&depth.create_view(
+                        &wgpu::TextureViewDescriptor {
+                            label: Some("3D renderer depth only view"),
+                            aspect: wgpu::TextureAspect::DepthOnly,
+                            ..wgpu::TextureViewDescriptor::default()
+                        },
+                    )),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&attrs_view),
+                },
+            ],
+        });
+
         OutputAttachments {
             color,
-            color_view,
             depth_view,
+            attrs_view,
+            depth_attrs_bg,
         }
     }
+}
+
+struct BgLayouts {
+    color: wgpu::BindGroupLayout,
+    depth_attrs: wgpu::BindGroupLayout,
+    id: wgpu::BindGroupLayout,
+    alpha_and_ref: wgpu::BindGroupLayout,
+    fog_enabled: wgpu::BindGroupLayout,
+    texture: wgpu::BindGroupLayout,
+    toon: wgpu::BindGroupLayout,
+    fog_data: wgpu::BindGroupLayout,
 }
 
 pub struct Renderer {
@@ -647,6 +743,7 @@ pub struct Renderer {
 
     resolution_scale_shift: u8,
     // hi_res_coords_mask: u16x2,
+    color_output_index: u8,
     output_attachments: OutputAttachments,
 
     vtx_buffer: wgpu::Buffer,
@@ -654,30 +751,36 @@ pub struct Renderer {
     idx_buffer: wgpu::Buffer,
     idx_buffer_contents: Vec<u16>,
 
-    toon_colors: [Color; 0x20],
-    toon_buffer: wgpu::Buffer,
-    toon_bg_layout: wgpu::BindGroupLayout,
-    toon_bg: wgpu::BindGroup,
+    bg_layouts: BgLayouts,
 
-    // rear_plane_texture: wgpu::Texture,
-    // render_rear_plane_bitmap_pipeline: Pipeline,
-    pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
-    trans_pipelines: HashMap<PipelineKey, [wgpu::RenderPipeline; 2]>,
-    trans_no_depth_update_pipelines: HashMap<PipelineKey, [wgpu::RenderPipeline; 2]>,
-    textures: HashMap<TextureKey, Texture>,
-    samplers: [Option<wgpu::Sampler>; 0x10],
-    texture_bg_layout: wgpu::BindGroupLayout,
-    texture_bgs: HashMap<(TextureKey, SamplerKey), wgpu::BindGroup>,
-
-    id_bg_layout: wgpu::BindGroupLayout,
     id_bg: wgpu::BindGroup,
     id_bg_elem_size: usize,
 
-    alpha_and_ref_bg_layout: wgpu::BindGroupLayout,
     alpha_and_ref_bg: wgpu::BindGroup,
     alpha_and_ref_bg_elem_size: usize,
 
+    fog_enabled_bg: wgpu::BindGroup,
+    fog_enabled_bg_elem_size: usize,
+
+    textures: HashMap<TextureKey, Texture>,
+    // rear_plane_texture: wgpu::Texture,
+    samplers: [Option<wgpu::Sampler>; 0x10],
+    texture_bgs: HashMap<(TextureKey, SamplerKey), wgpu::BindGroup>,
     texture_decode_buffer: Vec<u32>,
+
+    toon_colors: [Color; 0x20],
+    toon_buffer: wgpu::Buffer,
+    toon_bg: wgpu::BindGroup,
+
+    fog_data: FogData,
+    fog_data_buffer: wgpu::Buffer,
+    fog_data_bg: wgpu::BindGroup,
+
+    opaque_pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
+    trans_pipelines: HashMap<PipelineKey, [wgpu::RenderPipeline; 2]>,
+    trans_no_depth_update_pipelines: HashMap<PipelineKey, [wgpu::RenderPipeline; 2]>,
+    // rear_plane_bitmap_pipeline: Pipeline,
+    fog_pipelines: [wgpu::RenderPipeline; 2],
     batches: Vec<PreparedBatch>,
 }
 
@@ -691,8 +794,6 @@ impl Renderer {
         let min_uniform_buffer_offset_alignment = device_limits.min_uniform_buffer_offset_alignment;
 
         // let hi_res_coords_mask = u16x2::splat(!(0x10 >> resolution_scale_shift.min(4)) - 1);
-
-        let output_attachments = OutputAttachments::new(&device, resolution_scale_shift);
 
         let vert_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("3D renderer vertices"),
@@ -708,61 +809,48 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
-        let toon_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("3D renderer toon table"),
-            size: 0x200,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
-            mapped_at_creation: false,
-        });
-        let toon_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("3D renderer toon table bind group layout"),
+        let color_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("3D renderer color bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(0x200),
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
                 },
                 count: None,
             }],
         });
-        let toon_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("3D renderer toon table bind group"),
-            layout: &toon_bg_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &toon_buffer,
-                    offset: 0,
-                    size: wgpu::BufferSize::new(0x200),
-                }),
-            }],
-        });
 
-        let texture_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("3D renderer texture bind group layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+        let depth_attrs_bg_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("3D renderer depth/attrs bind group layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Depth,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                ],
+            });
 
-        macro_rules! uniform_bind_group {
+        macro_rules! constant_buffer_bg {
             ($label: literal, $shader_stages: expr, $binding_size: expr, $contents: expr) => {{
                 let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some(concat!("3D renderer ", $label, " bind group layout")),
@@ -803,7 +891,7 @@ impl Renderer {
 
         let id_bg_elem_size =
             round_up_to_alignment(4, min_uniform_buffer_offset_alignment as usize);
-        let (id_bg_layout, id_bg) = uniform_bind_group!("ID", wgpu::ShaderStages::FRAGMENT, 4, {
+        let (id_bg_layout, id_bg) = constant_buffer_bg!("ID", wgpu::ShaderStages::FRAGMENT, 4, {
             let mut buffer_contents = vec![0; id_bg_elem_size * 0x40];
             let mut addr = 0;
             for i in 0..0x40 {
@@ -815,7 +903,7 @@ impl Renderer {
 
         let alpha_and_ref_bg_elem_size =
             round_up_to_alignment(8, min_uniform_buffer_offset_alignment as usize);
-        let (alpha_and_ref_bg_layout, alpha_and_ref_bg) = uniform_bind_group!(
+        let (alpha_and_ref_bg_layout, alpha_and_ref_bg) = constant_buffer_bg!(
             "alpha",
             wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
             8,
@@ -836,12 +924,136 @@ impl Renderer {
             }
         );
 
+        let fog_enabled_bg_elem_size =
+            round_up_to_alignment(4, min_uniform_buffer_offset_alignment as usize);
+        let (fog_enabled_bg_layout, fog_enabled_bg) =
+            constant_buffer_bg!("fog enabled", wgpu::ShaderStages::FRAGMENT, 4, {
+                let mut buffer_contents = vec![0; fog_enabled_bg_elem_size * 2];
+                let mut addr = 0;
+                for attrs in [0_u8, 1] {
+                    buffer_contents[addr..addr + 4].copy_from_slice(&(attrs as u32).to_ne_bytes());
+                    addr += fog_enabled_bg_elem_size;
+                }
+                buffer_contents
+            });
+
+        let texture_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("3D renderer texture bind group layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let toon_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("3D renderer toon table"),
+            size: 0x200,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+            mapped_at_creation: false,
+        });
+        let toon_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("3D renderer toon table bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(0x200),
+                },
+                count: None,
+            }],
+        });
+        let toon_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("3D renderer toon table bind group"),
+            layout: &toon_bg_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &toon_buffer,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(0x200),
+                }),
+            }],
+        });
+
+        let fog_data_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("3D renderer fog data"),
+            size: 0x90 << 2,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+            mapped_at_creation: false,
+        });
+        let fog_data_bg_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("3D renderer fog data bind group layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(0x90 << 2),
+                    },
+                    count: None,
+                }],
+            });
+        let fog_data_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("3D renderer fog data bind group"),
+            layout: &fog_data_bg_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &fog_data_buffer,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(0x90 << 2),
+                }),
+            }],
+        });
+
+        let output_attachments = OutputAttachments::new(
+            &device,
+            resolution_scale_shift,
+            &color_bg_layout,
+            &depth_attrs_bg_layout,
+        );
+
+        let bg_layouts = BgLayouts {
+            color: color_bg_layout,
+            depth_attrs: depth_attrs_bg_layout,
+            id: id_bg_layout,
+            alpha_and_ref: alpha_and_ref_bg_layout,
+            fog_enabled: fog_enabled_bg_layout,
+            texture: texture_bg_layout,
+            toon: toon_bg_layout,
+            fog_data: fog_data_bg_layout,
+        };
+
+        let fog_pipelines = [
+            render::fog::create_pipeline(false, &device, &bg_layouts),
+            render::fog::create_pipeline(true, &device, &bg_layouts),
+        ];
+
         Renderer {
             device,
             queue,
 
             resolution_scale_shift,
             // hi_res_coords_mask,
+            color_output_index: 0,
             output_attachments,
 
             vtx_buffer: vert_buffer,
@@ -849,29 +1061,40 @@ impl Renderer {
             idx_buffer,
             idx_buffer_contents: Vec::new(),
 
-            toon_colors: [Color::splat(0xFF); 0x20],
-            toon_buffer,
-            toon_bg_layout,
-            toon_bg,
+            bg_layouts,
 
-            pipelines: HashMap::default(),
-            trans_pipelines: HashMap::default(),
-            trans_no_depth_update_pipelines: HashMap::default(),
-
-            textures: HashMap::default(),
-            samplers: [const { None }; 0x10],
-            texture_bg_layout,
-            texture_bgs: HashMap::default(),
-
-            id_bg_layout,
             id_bg,
             id_bg_elem_size,
 
             alpha_and_ref_bg,
-            alpha_and_ref_bg_layout,
             alpha_and_ref_bg_elem_size,
 
+            fog_enabled_bg,
+            fog_enabled_bg_elem_size,
+
+            textures: HashMap::default(),
+            samplers: [const { None }; 0x10],
+            texture_bgs: HashMap::default(),
             texture_decode_buffer: Vec::new(),
+
+            toon_colors: [Color::splat(0xFF); 0x20],
+            toon_buffer,
+            toon_bg,
+
+            fog_data: FogData {
+                depth_shift: 0xFF,
+                offset: 0,
+                densities: [0; 32],
+                color: Color::splat(0),
+            },
+            fog_data_buffer,
+            fog_data_bg,
+
+            opaque_pipelines: HashMap::default(),
+            trans_pipelines: HashMap::default(),
+            trans_no_depth_update_pipelines: HashMap::default(),
+            fog_pipelines,
+
             batches: Vec::new(),
         }
     }
@@ -896,12 +1119,22 @@ impl Renderer {
             return;
         }
         self.resolution_scale_shift = value;
-        self.output_attachments = OutputAttachments::new(&self.device, value);
+        self.output_attachments = OutputAttachments::new(
+            &self.device,
+            value,
+            &self.bg_layouts.color,
+            &self.bg_layouts.depth_attrs,
+        );
+    }
+
+    #[inline]
+    pub fn color_output_index(&self) -> u8 {
+        self.color_output_index
     }
 
     pub fn create_output_view(&self) -> wgpu::TextureView {
-        self.output_attachments
-            .color
+        self.output_attachments.color[self.color_output_index as usize]
+            .0
             .create_view(&Default::default())
     }
 
@@ -914,39 +1147,70 @@ impl Renderer {
         self.texture_bgs
             .retain(|(texture, _), _| self.textures.contains_key(texture));
 
+        let control_flags = ControlFlags::from(frame.rendering.control);
+
+        let mut toon_used = false;
+        let mut fog_used = false;
+
         let mut command_encoder =
             self.device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("3D renderer command encoder"),
                 });
 
-        let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("3D renderer render pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &self.output_attachments.color_view,
+        let mut color_attachments = vec![Some(wgpu::RenderPassColorAttachment {
+            view: &self.output_attachments.color[0].1,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(if frame.rendering.control.rear_plane_bitmap_enabled() {
+                    wgpu::Color::BLACK
+                } else {
+                    color_to_wgpu_f64(frame.rendering.clear_color)
+                }),
+                store: wgpu::StoreOp::Store,
+            },
+        })];
+
+        if control_flags.attrs_enabled() {
+            color_attachments.push(Some(wgpu::RenderPassColorAttachment {
+                view: &self.output_attachments.attrs_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(
-                        if frame.rendering.control.rear_plane_bitmap_enabled() {
-                            wgpu::Color::BLACK
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: if control_flags.fog_enabled() && frame.rendering.rear_plane_fog_enabled
+                        {
+                            fog_used = true;
+                            1.0
                         } else {
-                            color_to_wgpu_f64(frame.rendering.clear_color)
+                            0.0
                         },
-                    ),
+                    }),
                     store: wgpu::StoreOp::Store,
                 },
-            })],
+            }));
+        }
+
+        let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("3D renderer render pass"),
+            color_attachments: &color_attachments,
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &self.output_attachments.depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(
                         if frame.rendering.control.rear_plane_bitmap_enabled() {
-                            0.0
+                            1.0
                         } else {
                             frame.rendering.clear_depth as f32 / (1 << 24) as f32
                         },
                     ),
-                    store: wgpu::StoreOp::Discard,
+                    store: if control_flags.attrs_enabled() {
+                        wgpu::StoreOp::Store
+                    } else {
+                        wgpu::StoreOp::Discard
+                    },
                 }),
                 stencil_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(0),
@@ -963,10 +1227,6 @@ impl Renderer {
 
         let polys = &frame.gx.poly_ram[..frame.gx.poly_ram_level as usize];
         if !polys.is_empty() && frame.rendering.alpha_test_ref < 0x1F {
-            let control_flags = ControlFlags::from(frame.rendering.control);
-
-            let mut toon_used = false;
-
             self.vtx_buffer_contents.clear();
             self.idx_buffer_contents.clear();
 
@@ -992,7 +1252,7 @@ impl Renderer {
                             .get_or_insert_with(|| create_sampler(&self.device, sampler_key));
                         self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                             label: Some("3D renderer texture bind group"),
-                            layout: &self.texture_bg_layout,
+                            layout: &self.bg_layouts.texture,
                             entries: &[
                                 wgpu::BindGroupEntry {
                                     binding: 0,
@@ -1032,9 +1292,9 @@ impl Renderer {
                             let $ident = if true$(&& $cond)* {
                                 let res = bg_index;
                                 bg_index += 1;
-                                res
+                                Some(res)
                             } else {
-                                0
+                                None
                             };
                         )*
                         $process
@@ -1049,20 +1309,24 @@ impl Renderer {
                         PreparedBatchKind::ShadowMask { depth_test_equal }
                     }
 
-                    BatchKind::Opaque { pipeline, texture } => {
+                    BatchKind::Opaque {
+                        pipeline,
+                        texture,
+                        fog_enabled,
+                    } => {
                         field_updates!(
                             Opaque;
                             pipeline, cur_pipeline, pipeline_changed;
-                            texture, cur_texture, texture_changed
+                            texture, cur_texture, texture_changed;
+                            fog_enabled, cur_fog_enabled, fog_enabled_changed
                         );
 
                         if pipeline_changed {
-                            self.pipelines.entry(pipeline).or_insert_with(|| {
+                            self.opaque_pipelines.entry(pipeline).or_insert_with(|| {
                                 render::opaque::create_pipeline(
                                     pipeline,
                                     &self.device,
-                                    &self.toon_bg_layout,
-                                    &self.texture_bg_layout,
+                                    &self.bg_layouts,
                                 )
                             });
                         }
@@ -1076,13 +1340,18 @@ impl Renderer {
                         bg_indices!(
                             0,
                             (
-                                _toon_bg_index * pipeline.mode() >= 2,
-                                texture_bg_index * texture.is_some()
+                                fog_enabled_bg_index * pipeline.fog_enabled(),
+                                texture_bg_index * texture.is_some(),
+                                toon_bg_index * pipeline.mode() >= 2
                             ),
                             PreparedBatchKind::Opaque {
-                                pipeline: pipeline_changed.then_some(pipeline),
+                                pipeline_changed,
+                                pipeline,
+                                fog_enabled: (pipeline_changed || fog_enabled_changed)
+                                    .then_some(fog_enabled_bg_index.map(|i| (fog_enabled, i))),
                                 texture: (texture_changed || pipeline_changed)
-                                    .then(|| texture.map(|t| (t, texture_bg_index))),
+                                    .then(|| texture.zip(texture_bg_index)),
+                                toon_bg_index: pipeline_changed.then_some(toon_bg_index),
                             }
                         )
                     }
@@ -1092,24 +1361,24 @@ impl Renderer {
                         texture,
                         id,
                         alpha_and_ref,
+                        fog_enabled,
                     } => {
                         field_updates!(
                             Translucent;
                             pipeline, cur_pipeline, pipeline_changed;
                             texture, cur_texture, texture_changed;
                             id, cur_id, id_changed;
-                            alpha_and_ref, cur_alpha_and_ref, alpha_and_ref_changed
+                            alpha_and_ref, cur_alpha_and_ref, alpha_and_ref_changed;
+                            fog_enabled, cur_fog_enabled, fog_enabled_changed
                         );
 
                         if pipeline_changed {
                             self.trans_pipelines.entry(pipeline).or_insert_with(|| {
                                 render::trans::create_pipeline(
                                     pipeline,
+                                    true,
                                     &self.device,
-                                    &self.id_bg_layout,
-                                    &self.alpha_and_ref_bg_layout,
-                                    &self.toon_bg_layout,
-                                    &self.texture_bg_layout,
+                                    &self.bg_layouts,
                                 )
                             });
                         }
@@ -1123,16 +1392,19 @@ impl Renderer {
                         bg_indices!(
                             2,
                             (
-                                _toon_bg_index * pipeline.mode() >= 2,
-                                texture_bg_index * texture.is_some()
+                                fog_enabled_bg_index * pipeline.fog_enabled(),
+                                texture_bg_index * texture.is_some(),
+                                toon_bg_index * pipeline.mode() >= 2
                             ),
                             PreparedBatchKind::Translucent {
-                                pipeline_changed,
                                 pipeline,
-                                texture: (texture_changed || pipeline_changed)
-                                    .then(|| texture.map(|t| (t, texture_bg_index))),
                                 id: id_changed.then_some(id),
-                                alpha_and_ref: alpha_and_ref_changed.then_some(alpha_and_ref)
+                                alpha_and_ref: alpha_and_ref_changed.then_some(alpha_and_ref),
+                                fog_enabled: (pipeline_changed || fog_enabled_changed)
+                                    .then_some(fog_enabled_bg_index.map(|i| (fog_enabled, i))),
+                                texture: (texture_changed || pipeline_changed)
+                                    .then(|| texture.zip(texture_bg_index)),
+                                toon_bg_index: pipeline_changed.then_some(toon_bg_index),
                             }
                         )
                     }
@@ -1142,26 +1414,26 @@ impl Renderer {
                         texture,
                         id,
                         alpha_and_ref,
+                        fog_enabled,
                     } => {
                         field_updates!(
                             TranslucentNoDepthUpdate;
                             pipeline, cur_pipeline, pipeline_changed;
                             texture, cur_texture, texture_changed;
                             id, cur_id, id_changed;
-                            alpha_and_ref, cur_alpha_and_ref, alpha_and_ref_changed
+                            alpha_and_ref, cur_alpha_and_ref, alpha_and_ref_changed;
+                            fog_enabled, cur_fog_enabled, fog_enabled_changed
                         );
 
                         if pipeline_changed {
                             self.trans_no_depth_update_pipelines
                                 .entry(pipeline)
                                 .or_insert_with(|| {
-                                    render::trans_no_depth_update::create_pipeline(
+                                    render::trans::create_pipeline(
                                         pipeline,
+                                        false,
                                         &self.device,
-                                        &self.id_bg_layout,
-                                        &self.alpha_and_ref_bg_layout,
-                                        &self.toon_bg_layout,
-                                        &self.texture_bg_layout,
+                                        &self.bg_layouts,
                                     )
                                 });
                         }
@@ -1175,25 +1447,33 @@ impl Renderer {
                         bg_indices!(
                             2,
                             (
-                                _toon_bg_index * pipeline.mode() >= 2,
-                                texture_bg_index * texture.is_some()
+                                fog_enabled_bg_index * pipeline.fog_enabled(),
+                                texture_bg_index * texture.is_some(),
+                                toon_bg_index * pipeline.mode() >= 2
                             ),
                             PreparedBatchKind::TranslucentNoDepthUpdate {
-                                pipeline_changed,
                                 pipeline,
-                                texture: (texture_changed || pipeline_changed)
-                                    .then(|| texture.map(|t| (t, texture_bg_index))),
                                 id: id_changed.then_some(id),
-                                alpha_and_ref: alpha_and_ref_changed.then_some(alpha_and_ref)
+                                alpha_and_ref: alpha_and_ref_changed.then_some(alpha_and_ref),
+                                fog_enabled: (pipeline_changed || fog_enabled_changed)
+                                    .then_some(fog_enabled_bg_index.map(|i| (fog_enabled, i))),
+                                texture: (texture_changed || pipeline_changed)
+                                    .then(|| texture.zip(texture_bg_index)),
+                                toon_bg_index: pipeline_changed.then_some(toon_bg_index),
                             }
                         )
                     }
 
-                    BatchKind::Wireframe { pipeline, texture } => {
+                    BatchKind::Wireframe {
+                        pipeline,
+                        texture,
+                        fog_enabled,
+                    } => {
                         field_updates!(
                             Wireframe;
                             pipeline, cur_pipeline, pipeline_changed;
-                            texture, cur_texture, texture_changed
+                            texture, cur_texture, texture_changed;
+                            fog_enabled, cur_fog_enabled, fog_enabled_changed
                         );
 
                         if pipeline_changed {
@@ -1209,13 +1489,18 @@ impl Renderer {
                         bg_indices!(
                             0,
                             (
-                                _toon_bg_index * pipeline.mode() >= 2,
-                                texture_bg_index * texture.is_some()
+                                fog_enabled_bg_index * pipeline.fog_enabled(),
+                                texture_bg_index * texture.is_some(),
+                                toon_bg_index * pipeline.mode() >= 2
                             ),
                             PreparedBatchKind::Wireframe {
-                                pipeline: pipeline_changed.then_some(pipeline),
+                                pipeline_changed,
+                                pipeline,
+                                fog_enabled: (pipeline_changed || fog_enabled_changed)
+                                    .then_some(fog_enabled_bg_index.map(|i| (fog_enabled, i))),
                                 texture: (texture_changed || pipeline_changed)
-                                    .then(|| texture.map(|t| (t, texture_bg_index))),
+                                    .then(|| texture.zip(texture_bg_index)),
+                                toon_bg_index: pipeline_changed.then_some(toon_bg_index),
                             }
                         )
                     }
@@ -1253,6 +1538,7 @@ impl Renderer {
                 }
 
                 toon_used |= poly.attrs.mode() == 2;
+                fog_used |= poly.attrs.fog_enabled();
 
                 let verts_len = poly.attrs.verts_len();
 
@@ -1285,6 +1571,8 @@ impl Renderer {
             }
             finish_batch!();
 
+            fog_used &= control_flags.fog_enabled();
+
             unsafe {
                 self.queue.write_buffer(
                     &self.vtx_buffer,
@@ -1308,11 +1596,12 @@ impl Renderer {
                         ),
                     ),
                 );
+
                 if toon_used && frame.rendering.toon_colors != self.toon_colors {
                     self.toon_colors = frame.rendering.toon_colors;
                     let mut toon_colors = MaybeUninit::uninit_array::<0x20>();
                     for (dst, src) in toon_colors.iter_mut().zip(&self.toon_colors) {
-                        *dst = MaybeUninit::new(src.cast::<u32>().to_array());
+                        dst.write(src.cast::<u32>().to_array());
                     }
                     self.queue.write_buffer(
                         &self.toon_buffer,
@@ -1330,12 +1619,24 @@ impl Renderer {
                 match batch.kind {
                     PreparedBatchKind::ShadowMask { .. } => {}
 
-                    PreparedBatchKind::Opaque { pipeline, texture } => {
-                        if let Some(pipeline) = pipeline {
-                            render_pass.set_pipeline(&self.pipelines[&pipeline]);
-                            if pipeline.mode() >= 2 {
-                                render_pass.set_bind_group(0, &self.toon_bg, &[])
-                            }
+                    PreparedBatchKind::Opaque {
+                        pipeline_changed,
+                        pipeline,
+                        fog_enabled,
+                        texture,
+                        toon_bg_index,
+                    } => {
+                        if pipeline_changed {
+                            render_pass.set_pipeline(&self.opaque_pipelines[&pipeline]);
+                        }
+
+                        if let Some(Some((fog_enabled, fog_enabled_bg_index))) = fog_enabled {
+                            render_pass.set_bind_group(
+                                fog_enabled_bg_index as u32,
+                                &self.fog_enabled_bg,
+                                &[(fog_enabled as usize * self.fog_enabled_bg_elem_size)
+                                    as wgpu::DynamicOffset],
+                            )
                         }
 
                         if let Some(Some((texture, bg_index))) = texture {
@@ -1344,6 +1645,10 @@ impl Renderer {
                                 &self.texture_bgs[&texture],
                                 &[],
                             );
+                        }
+
+                        if let Some(Some(toon_bg_index)) = toon_bg_index {
+                            render_pass.set_bind_group(toon_bg_index as u32, &self.toon_bg, &[])
                         }
 
                         if batch.idxs != 0 {
@@ -1356,16 +1661,13 @@ impl Renderer {
                     }
 
                     PreparedBatchKind::Translucent {
-                        pipeline_changed,
                         pipeline,
-                        texture,
                         id,
                         alpha_and_ref,
+                        fog_enabled,
+                        texture,
+                        toon_bg_index,
                     } => {
-                        if pipeline_changed && pipeline.mode() >= 2 {
-                            render_pass.set_bind_group(2, &self.toon_bg, &[])
-                        }
-
                         if let Some(id) = id {
                             render_pass.set_stencil_reference((id | 0x40) as u32);
                             render_pass.set_bind_group(
@@ -1385,12 +1687,25 @@ impl Renderer {
                             );
                         }
 
+                        if let Some(Some((fog_enabled, fog_enabled_bg_index))) = fog_enabled {
+                            render_pass.set_bind_group(
+                                fog_enabled_bg_index as u32,
+                                &self.fog_enabled_bg,
+                                &[(fog_enabled as usize * self.fog_enabled_bg_elem_size)
+                                    as wgpu::DynamicOffset],
+                            )
+                        }
+
                         if let Some(Some((texture, bg_index))) = texture {
                             render_pass.set_bind_group(
                                 bg_index as u32,
                                 &self.texture_bgs[&texture],
                                 &[],
                             );
+                        }
+
+                        if let Some(Some(toon_bg_index)) = toon_bg_index {
+                            render_pass.set_bind_group(toon_bg_index as u32, &self.toon_bg, &[])
                         }
 
                         if batch.idxs != 0 {
@@ -1406,16 +1721,13 @@ impl Renderer {
                     }
 
                     PreparedBatchKind::TranslucentNoDepthUpdate {
-                        pipeline_changed,
                         pipeline,
                         texture,
                         id,
                         alpha_and_ref,
+                        fog_enabled,
+                        toon_bg_index,
                     } => {
-                        if pipeline_changed && pipeline.mode() >= 2 {
-                            render_pass.set_bind_group(2, &self.toon_bg, &[])
-                        }
-
                         if let Some(id) = id {
                             render_pass.set_stencil_reference((id | 0x40) as u32);
                             render_pass.set_bind_group(
@@ -1435,12 +1747,25 @@ impl Renderer {
                             );
                         }
 
+                        if let Some(Some((fog_enabled, fog_enabled_bg_index))) = fog_enabled {
+                            render_pass.set_bind_group(
+                                fog_enabled_bg_index as u32,
+                                &self.fog_enabled_bg,
+                                &[(fog_enabled as usize * self.fog_enabled_bg_elem_size)
+                                    as wgpu::DynamicOffset],
+                            )
+                        }
+
                         if let Some(Some((texture, bg_index))) = texture {
                             render_pass.set_bind_group(
                                 bg_index as u32,
                                 &self.texture_bgs[&texture],
                                 &[],
                             );
+                        }
+
+                        if let Some(Some(toon_bg_index)) = toon_bg_index {
+                            render_pass.set_bind_group(toon_bg_index as u32, &self.toon_bg, &[])
                         }
 
                         if batch.idxs != 0 {
@@ -1463,6 +1788,61 @@ impl Renderer {
         }
 
         drop(render_pass);
+
+        self.color_output_index = 0;
+
+        if fog_used {
+            if frame.rendering.fog_data != self.fog_data {
+                self.fog_data.clone_from(&frame.rendering.fog_data);
+                let mut fog_data =
+                    unsafe { MaybeUninit::<[MaybeUninit<u32>; 0x90]>::zeroed().assume_init() };
+
+                // TODO: The addresses are wrong??
+                fog_data[0].write(self.fog_data.densities[0] as u32);
+                for (dst, src) in fog_data[1..0x21].iter_mut().zip(&self.fog_data.densities) {
+                    dst.write(*src as u32);
+                }
+                fog_data[0x21].write(self.fog_data.densities[0x1F] as u32);
+
+                let fog_color_array = self.fog_data.color.cast::<u32>().to_array();
+                for (dst, src) in fog_data[0x24..0x28].iter_mut().zip(fog_color_array) {
+                    dst.write(src);
+                }
+
+                fog_data[0x28].write(expand_depth(self.fog_data.offset));
+                fog_data[0x29].write(self.fog_data.depth_shift as u32);
+
+                self.queue.write_buffer(&self.fog_data_buffer, 0, unsafe {
+                    slice::from_raw_parts(fog_data.as_ptr() as *const u8, 0x90 << 2)
+                });
+            }
+
+            let input_color = &self.output_attachments.color[self.color_output_index as usize];
+            self.color_output_index ^= 1;
+            let output_color = &self.output_attachments.color[self.color_output_index as usize];
+
+            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("3D renderer fog render pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &output_color.1,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            render_pass.set_bind_group(0, &self.fog_data_bg, &[]);
+            render_pass.set_bind_group(1, &input_color.2, &[]);
+            render_pass.set_bind_group(2, &self.output_attachments.depth_attrs_bg, &[]);
+            render_pass.set_pipeline(
+                &self.fog_pipelines[frame.rendering.control.fog_only_alpha() as usize],
+            );
+            render_pass.draw(0..4, 0..1);
+        }
 
         command_encoder.finish()
     }

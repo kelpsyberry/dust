@@ -41,6 +41,14 @@ impl GxData {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct FogData {
+    pub depth_shift: u8,
+    pub offset: u16,
+    pub densities: [u8; 0x20],
+    pub color: Color,
+}
+
 pub struct RenderingData {
     pub control: RenderingControl,
 
@@ -50,12 +58,10 @@ pub struct RenderingData {
     pub clear_image_offset: [u8; 2],
     pub clear_depth: u32,
 
-    pub fog_offset: u16,
-    pub fog_densities: [u8; 0x20],
+    pub fog_data: FogData,
     pub rear_plane_fog_enabled: bool,
 
     pub clear_color: Color,
-    pub fog_color: Color,
     pub edge_colors: [Color; 8],
     pub toon_colors: [Color; 0x20],
 
@@ -85,9 +91,12 @@ impl RenderingData {
         self.toon_colors = state.toon_colors;
         self.edge_colors = state.edge_colors;
 
-        self.fog_color = state.fog_color;
-        self.fog_densities = state.fog_densities;
-        self.fog_offset = state.fog_offset;
+        self.fog_data = FogData {
+            depth_shift: state.control.fog_depth_shift(),
+            color: state.fog_color,
+            densities: state.fog_densities,
+            offset: state.fog_offset,
+        };
         self.rear_plane_fog_enabled = state.rear_plane_fog_enabled;
     }
 

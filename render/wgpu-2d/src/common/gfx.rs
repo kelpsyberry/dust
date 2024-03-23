@@ -10,7 +10,7 @@ use std::{
         Arc,
     },
     thread,
-    time::Duration,
+    // time::Duration,
 };
 
 pub enum Renderer3dRx {
@@ -787,18 +787,19 @@ impl GfxThreadData {
 
                 drop(render_pass);
 
-                if let Renderer3dGfxThreadData::Accel {
-                    last_submitted_frame,
-                    ..
-                } = &self.renderer_3d_data
-                {
-                    while last_submitted_frame.0.load(Ordering::Relaxed) < frame.frame_index {
-                        if self.shared_data.stopped.load(Ordering::Relaxed) {
-                            return;
-                        }
-                        thread::park_timeout(Duration::from_millis(1));
-                    }
-                }
+                // TODO: Proper synchronization
+                // if let Renderer3dGfxThreadData::Accel {
+                //     last_submitted_frame,
+                //     ..
+                // } = &self.renderer_3d_data
+                // {
+                //     while last_submitted_frame.0.load(Ordering::Relaxed) < frame.frame_index {
+                //         if self.shared_data.stopped.load(Ordering::Relaxed) {
+                //             return;
+                //         }
+                //         thread::park_timeout(Duration::from_millis(1));
+                //     }
+                // }
 
                 self.queue.submit([command_encoder.finish()]);
             } else {

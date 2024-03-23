@@ -1,11 +1,16 @@
 use super::{
-    get_output_color, CommonCode, TextureCode, ToonCode, WBufferCode, COMMON_VERT_ATTRIBS,
-    PRIMITIVE_STATE, TEXTURE_VERT_ATTRIBS, TRANS_BLENDING,
+    get_output_color, AttrsCode, CommonCode, FogCode, TextureCode, ToonCode, WBufferCode,
+    COMMON_VERT_ATTRIBS, PRIMITIVE_STATE, TEXTURE_VERT_ATTRIBS, TRANS_BLENDING,
 };
-use crate::{PipelineKey, Vertex};
+use crate::{BgLayouts, PipelineKey, Vertex};
 use core::mem;
 
-pub(super) fn shader_module_src(pipeline: PipelineKey, texture_bg_index: u32) -> [String; 2] {
+pub(super) fn shader_module_src(
+    pipeline: PipelineKey,
+    fog_enabled_bg_index: u32,
+    texture_bg_index: u32,
+    toon_bg_index: u32,
+) -> [String; 2] {
     let CommonCode {
         common_vert_inputs,
         common_vert_outputs,
@@ -13,11 +18,6 @@ pub(super) fn shader_module_src(pipeline: PipelineKey, texture_bg_index: u32) ->
         common_frag_inputs,
         common_frag_outputs,
     } = CommonCode::new();
-
-    let ToonCode {
-        toon_uniforms,
-        toon_get_color,
-    } = ifdef!(pipeline.mode() >= 2, ToonCode::new(2));
 
     let WBufferCode {
         w_buffer_vert_outputs,
@@ -39,11 +39,27 @@ pub(super) fn shader_module_src(pipeline: PipelineKey, texture_bg_index: u32) ->
         TextureCode::new(texture_bg_index)
     );
 
+    let ToonCode {
+        toon_uniforms,
+        toon_get_color,
+    } = ifdef!(pipeline.mode() >= 2, ToonCode::new(toon_bg_index));
+
+    let AttrsCode {
+        attrs_frag_outputs,
+        attrs_init_frag_outputs,
+    } = ifdef!(pipeline.attrs_enabled(), AttrsCode::new());
+
+    let FogCode {
+        fog_uniforms,
+        fog_set_frag_outputs,
+    } = ifdef!(pipeline.fog_enabled(), FogCode::new(fog_enabled_bg_index));
+
     let get_output_color = get_output_color(pipeline.mode(), pipeline.texture_mapping_enabled());
 
     [
-        "if output.color.a < 1.0 { discard; }",
-        "if (output.color.a < alpha_and_ref.alpha_ref) || (output.color.a >= 1.0) { discard; }",
+        "if output.color.a < 30.5 / 31.0 { discard; }",
+        "if (output.color.a < alpha_and_ref.alpha_ref) || (output.color.a >= 30.5 / 31.0) { \
+         discard; }",
     ]
     .map(|alpha_test| {
         format!(
@@ -57,6 +73,7 @@ struct AlphaAndRefUniform {{
 
 {texture_uniforms}
 {toon_uniforms}
+{fog_uniforms}
 
 struct VertOutput {{
     {common_vert_outputs}
@@ -80,6 +97,7 @@ fn vs_main(
 struct FragOutput {{
     {common_frag_outputs}
     {w_buffer_frag_outputs}
+    {attrs_frag_outputs}
 }}
 
 @fragment
@@ -89,11 +107,13 @@ fn fs_main(
     {texture_frag_inputs}
 ) -> FragOutput {{
     var output: FragOutput;
-    {w_buffer_set_frag_outputs}
     {texture_get_color}
     {toon_get_color}
     {get_output_color}
     {alpha_test}
+    {w_buffer_set_frag_outputs}
+    {attrs_init_frag_outputs}
+    {fog_set_frag_outputs}
     return output;
 }}"
         )
@@ -102,31 +122,40 @@ fn fs_main(
 
 pub(crate) fn create_pipeline(
     pipeline: PipelineKey,
+    update_depth: bool,
     device: &wgpu::Device,
-    id_bg_layout: &wgpu::BindGroupLayout,
-    alpha_and_ref_bg_layout: &wgpu::BindGroupLayout,
-    toon_bg_layout: &wgpu::BindGroupLayout,
-    texture_bg_layout: &wgpu::BindGroupLayout,
+    bg_layouts: &BgLayouts,
 ) -> [wgpu::RenderPipeline; 2] {
-    let mut bg_layouts = vec![id_bg_layout, alpha_and_ref_bg_layout];
+    let mut bg_layouts_ = vec![&bg_layouts.id, &bg_layouts.alpha_and_ref];
 
-    if pipeline.mode() >= 2 {
-        bg_layouts.push(toon_bg_layout);
+    let fog_enabled_bg_index = bg_layouts_.len() as u32;
+    if pipeline.fog_enabled() {
+        bg_layouts_.push(&bg_layouts.fog_enabled);
     }
 
-    let texture_bg_index = bg_layouts.len() as u32;
+    let texture_bg_index = bg_layouts_.len() as u32;
     if pipeline.texture_mapping_enabled() {
-        bg_layouts.push(texture_bg_layout);
+        bg_layouts_.push(&bg_layouts.texture);
+    }
+
+    let toon_bg_index = bg_layouts_.len() as u32;
+    if pipeline.mode() >= 2 {
+        bg_layouts_.push(&bg_layouts.toon);
     }
 
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("3D renderer translucent pipeline layout"),
-        bind_group_layouts: &bg_layouts,
+        bind_group_layouts: &bg_layouts_,
         push_constant_ranges: &[],
     });
 
     let (opaque_shader_module, trans_shader_module) = {
-        let [opaque_src, trans_src] = shader_module_src(pipeline, texture_bg_index);
+        let [opaque_src, trans_src] = shader_module_src(
+            pipeline,
+            fog_enabled_bg_index,
+            texture_bg_index,
+            toon_bg_index,
+        );
         (
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("3D renderer translucent opaque pass shader module"),
@@ -185,15 +214,50 @@ pub(crate) fn create_pipeline(
         fragment: Some(wgpu::FragmentState {
             module: &opaque_shader_module,
             entry_point: "fs_main",
-            targets: &[Some(wgpu::ColorTargetState {
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                blend: None,
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
+            targets: if pipeline.attrs_enabled() {
+                &[
+                    Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                ]
+            } else {
+                &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })]
+            },
         }),
 
         multiview: None,
     };
+
+    let mut trans_fragment_targets = vec![Some(wgpu::ColorTargetState {
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        blend: pipeline.alpha_blending_enabled().then_some(TRANS_BLENDING),
+        write_mask: wgpu::ColorWrites::ALL,
+    })];
+    if pipeline.attrs_enabled() {
+        trans_fragment_targets.push(Some(wgpu::ColorTargetState {
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            blend: pipeline.fog_enabled().then_some(wgpu::BlendState {
+                color: wgpu::BlendComponent::REPLACE,
+                alpha: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Min,
+                },
+            }),
+            write_mask: wgpu::ColorWrites::ALL,
+        }));
+    }
 
     [
         device.create_render_pipeline(&opaque_desc),
@@ -212,7 +276,7 @@ pub(crate) fn create_pipeline(
 
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth24PlusStencil8,
-                depth_write_enabled: true,
+                depth_write_enabled: update_depth,
                 depth_compare: if pipeline.depth_test_equal() {
                     wgpu::CompareFunction::Equal
                 } else {
@@ -230,11 +294,7 @@ pub(crate) fn create_pipeline(
             fragment: Some(wgpu::FragmentState {
                 module: &trans_shader_module,
                 entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    blend: pipeline.alpha_blending_enabled().then_some(TRANS_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+                targets: &trans_fragment_targets,
             }),
 
             ..opaque_desc

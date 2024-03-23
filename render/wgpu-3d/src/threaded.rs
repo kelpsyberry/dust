@@ -259,6 +259,7 @@ pub fn init(
                     .name("3D rendering".to_string())
                     .spawn(move || {
                         let mut raw_soft_renderer = soft::Renderer::new();
+                        let mut color_output_index = renderer.color_output_index();
                         loop {
                             if shared_data.stopped.load(Ordering::Relaxed) {
                                 break;
@@ -289,8 +290,19 @@ pub fn init(
                                 if frame.render {
                                     let resolution_scale_shift =
                                         shared_data.resolution_scale_shift.load(Ordering::Relaxed);
+                                    let mut color_output_updated = false;
+
+                                    if color_output_index != renderer.color_output_index() {
+                                        color_output_updated = true;
+                                        color_output_index = renderer.color_output_index();
+                                    }
+
                                     if resolution_scale_shift != renderer.resolution_scale_shift() {
+                                        color_output_updated = true;
                                         renderer.set_resolution_scale_shift(resolution_scale_shift);
+                                    }
+
+                                    if color_output_updated {
                                         color_output_view_tx
                                             .send(renderer.create_output_view())
                                             .expect(
