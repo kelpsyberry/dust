@@ -20,6 +20,8 @@ mod texture;
 pub use texture::*;
 pub mod fog;
 pub use fog::FogCode;
+pub mod edge_marking;
+pub use edge_marking::EdgeMarkingCode;
 
 pub mod opaque;
 pub mod trans;

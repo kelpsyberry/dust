@@ -69,7 +69,7 @@ struct AlphaAndRefUniform {{
     alpha_ref: f32,
 }};
 
-@group(1) @binding(0) var<uniform> alpha_and_ref: AlphaAndRefUniform;
+@group(0) @binding(0) var<uniform> alpha_and_ref: AlphaAndRefUniform;
 
 {texture_uniforms}
 {toon_uniforms}
@@ -126,7 +126,7 @@ pub(crate) fn create_pipeline(
     device: &wgpu::Device,
     bg_layouts: &BgLayouts,
 ) -> [wgpu::RenderPipeline; 2] {
-    let mut bg_layouts_ = vec![&bg_layouts.id, &bg_layouts.alpha_and_ref];
+    let mut bg_layouts_ = vec![&bg_layouts.alpha_and_ref];
 
     let fog_enabled_bg_index = bg_layouts_.len() as u32;
     if pipeline.fog_enabled() {
@@ -224,7 +224,7 @@ pub(crate) fn create_pipeline(
                     Some(wgpu::ColorTargetState {
                         format: wgpu::TextureFormat::Rgba8Unorm,
                         blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
+                        write_mask: wgpu::ColorWrites::ALPHA,
                     }),
                 ]
             } else {
@@ -255,7 +255,7 @@ pub(crate) fn create_pipeline(
                     operation: wgpu::BlendOperation::Min,
                 },
             }),
-            write_mask: wgpu::ColorWrites::ALL,
+            write_mask: wgpu::ColorWrites::ALPHA,
         }));
     }
 

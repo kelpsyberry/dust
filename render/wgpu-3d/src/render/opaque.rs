@@ -1,6 +1,6 @@
 use super::{
-    get_output_color, AttrsCode, CommonCode, FogCode, TextureCode, ToonCode, WBufferCode,
-    COMMON_VERT_ATTRIBS, PRIMITIVE_STATE, TEXTURE_VERT_ATTRIBS,
+    get_output_color, AttrsCode, CommonCode, EdgeMarkingCode, FogCode, TextureCode, ToonCode,
+    WBufferCode, COMMON_VERT_ATTRIBS, PRIMITIVE_STATE, TEXTURE_VERT_ATTRIBS,
 };
 use crate::{BgLayouts, PipelineKey, Vertex};
 use core::mem;
@@ -10,6 +10,7 @@ fn shader_module_src(
     fog_enabled_bg_index: u32,
     texture_bg_index: u32,
     toon_bg_index: u32,
+    id_bg_index: u32,
 ) -> String {
     let CommonCode {
         common_vert_inputs,
@@ -54,6 +55,14 @@ fn shader_module_src(
         fog_set_frag_outputs,
     } = ifdef!(pipeline.fog_enabled(), FogCode::new(fog_enabled_bg_index));
 
+    let EdgeMarkingCode {
+        edge_marking_uniforms,
+        edge_marking_set_frag_outputs,
+    } = ifdef!(
+        pipeline.edge_marking_enabled(),
+        EdgeMarkingCode::new(id_bg_index)
+    );
+
     let get_output_color = get_output_color(pipeline.mode(), pipeline.texture_mapping_enabled());
 
     format!(
@@ -61,6 +70,7 @@ fn shader_module_src(
 {texture_uniforms}
 {toon_uniforms}
 {fog_uniforms}
+{edge_marking_uniforms}
 
 struct VertOutput {{
     {common_vert_outputs}
@@ -103,6 +113,7 @@ fn fs_main(
     {w_buffer_set_frag_outputs}
     {attrs_init_frag_outputs}
     {fog_set_frag_outputs}
+    {edge_marking_set_frag_outputs}
     return output;
 }}"
     )
@@ -118,6 +129,11 @@ pub(crate) fn create_pipeline(
     let fog_enabled_bg_index = bg_layouts_.len() as u32;
     if pipeline.fog_enabled() {
         bg_layouts_.push(&bg_layouts.fog_enabled);
+    }
+
+    let id_bg_index = bg_layouts_.len() as u32;
+    if pipeline.edge_marking_enabled() {
+        bg_layouts_.push(&bg_layouts.id);
     }
 
     let texture_bg_index = bg_layouts_.len() as u32;
@@ -144,6 +160,7 @@ pub(crate) fn create_pipeline(
                 fog_enabled_bg_index,
                 texture_bg_index,
                 toon_bg_index,
+                id_bg_index,
             )
             .into(),
         ),
