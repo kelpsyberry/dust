@@ -1,5 +1,3 @@
-
-
 #[derive(Default)]
 pub struct TextureCode {
     pub texture_uniforms: String,
