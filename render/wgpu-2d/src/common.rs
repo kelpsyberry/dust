@@ -43,6 +43,7 @@ impl<R: Role, B: Buffers, D: RenderingData, V: Vram<R>> FnPtrs<R, B, D, V> {
 }
 
 #[derive(Clone, Copy, Default)]
+#[allow(dead_code)] // These are read from WGSL
 pub struct ScanlineFlags {
     pub master_brightness_control: u32,
     pub color_effects_control: u32,

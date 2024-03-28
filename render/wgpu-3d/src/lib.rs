@@ -238,6 +238,7 @@ enum PreparedBatchKind {
         id: Option<u8>,
         alpha_and_ref: Option<(u8, u8)>,
         fog_enabled: Option<Option<(bool, u8)>>,
+        edge_marking_id: Option<(u8, u8)>,
         texture: Option<Option<((TextureKey, SamplerKey), u8)>>,
         toon_bg_index: Option<Option<u8>>,
     },
@@ -246,6 +247,7 @@ enum PreparedBatchKind {
         id: Option<u8>,
         alpha_and_ref: Option<(u8, u8)>,
         fog_enabled: Option<Option<(bool, u8)>>,
+        edge_marking_id: Option<(u8, u8)>,
         texture: Option<Option<((TextureKey, SamplerKey), u8)>>,
         toon_bg_index: Option<Option<u8>>,
     },
@@ -1235,7 +1237,11 @@ impl Renderer {
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.0,
+                        r: if control_flags.edge_marking_enabled() {
+                            frame.rendering.clear_poly_id as f64 / 63.0
+                        } else {
+                            0.0
+                        },
                         g: 0.0,
                         b: 0.0,
                         a: if control_flags.fog_enabled() && frame.rendering.rear_plane_fog_enabled
@@ -1457,7 +1463,8 @@ impl Renderer {
                             (
                                 fog_enabled_bg_index * pipeline.fog_enabled(),
                                 texture_bg_index * texture.is_some(),
-                                toon_bg_index * pipeline.mode() >= 2
+                                toon_bg_index * pipeline.mode() >= 2,
+                                id_bg_index * pipeline.edge_marking_enabled()
                             ),
                             PreparedBatchKind::Translucent {
                                 pipeline,
@@ -1465,6 +1472,7 @@ impl Renderer {
                                 alpha_and_ref: alpha_and_ref_changed.then_some(alpha_and_ref),
                                 fog_enabled: (pipeline_changed || fog_enabled_changed)
                                     .then_some(fog_enabled_bg_index.map(|i| (fog_enabled, i))),
+                                edge_marking_id: id_bg_index.map(|i| (id, i)),
                                 texture: (texture_changed || pipeline_changed)
                                     .then(|| texture.zip(texture_bg_index)),
                                 toon_bg_index: pipeline_changed.then_some(toon_bg_index),
@@ -1512,7 +1520,8 @@ impl Renderer {
                             (
                                 fog_enabled_bg_index * pipeline.fog_enabled(),
                                 texture_bg_index * texture.is_some(),
-                                toon_bg_index * pipeline.mode() >= 2
+                                toon_bg_index * pipeline.mode() >= 2,
+                                id_bg_index * pipeline.edge_marking_enabled()
                             ),
                             PreparedBatchKind::TranslucentNoDepthUpdate {
                                 pipeline,
@@ -1520,6 +1529,7 @@ impl Renderer {
                                 alpha_and_ref: alpha_and_ref_changed.then_some(alpha_and_ref),
                                 fog_enabled: (pipeline_changed || fog_enabled_changed)
                                     .then_some(fog_enabled_bg_index.map(|i| (fog_enabled, i))),
+                                edge_marking_id: id_bg_index.map(|i| (id, i)),
                                 texture: (texture_changed || pipeline_changed)
                                     .then(|| texture.zip(texture_bg_index)),
                                 toon_bg_index: pipeline_changed.then_some(toon_bg_index),
@@ -1742,6 +1752,7 @@ impl Renderer {
                         id,
                         alpha_and_ref,
                         fog_enabled,
+                        edge_marking_id,
                         texture,
                         toon_bg_index,
                     } => {
@@ -1781,7 +1792,19 @@ impl Renderer {
                         }
 
                         if batch.idxs != 0 {
-                            for pipeline in &self.trans_pipelines[&pipeline] {
+                            let pipelines = &self.trans_pipelines[&pipeline];
+                            for (pipeline, edge_marking_id) in
+                                [(&pipelines[0], edge_marking_id), (&pipelines[1], None)]
+                            {
+                                if let Some((id, id_bg_index)) = edge_marking_id {
+                                    render_pass.set_bind_group(
+                                        id_bg_index as u32,
+                                        &self.id_bg,
+                                        &[(id as usize * self.id_bg_elem_size)
+                                            as wgpu::DynamicOffset],
+                                    );
+                                }
+
                                 render_pass.set_pipeline(pipeline);
                                 render_pass.draw_indexed(
                                     cur_idx_base..cur_idx_base + batch.idxs as u32,
@@ -1797,6 +1820,7 @@ impl Renderer {
                         id,
                         alpha_and_ref,
                         fog_enabled,
+                        edge_marking_id,
                         texture,
                         toon_bg_index,
                     } => {
@@ -1836,7 +1860,19 @@ impl Renderer {
                         }
 
                         if batch.idxs != 0 {
-                            for pipeline in &self.trans_no_depth_update_pipelines[&pipeline] {
+                            let pipelines = &self.trans_no_depth_update_pipelines[&pipeline];
+                            for (pipeline, edge_marking_id) in
+                                [(&pipelines[0], edge_marking_id), (&pipelines[1], None)]
+                            {
+                                if let Some((id, id_bg_index)) = edge_marking_id {
+                                    render_pass.set_bind_group(
+                                        id_bg_index as u32,
+                                        &self.id_bg,
+                                        &[(id as usize * self.id_bg_elem_size)
+                                            as wgpu::DynamicOffset],
+                                    );
+                                }
+
                                 render_pass.set_pipeline(pipeline);
                                 render_pass.draw_indexed(
                                     cur_idx_base..cur_idx_base + batch.idxs as u32,

@@ -272,11 +272,15 @@ pub fn init(
                                 let rendering_data =
                                     unsafe { &*shared_data.capture_rendering_data.get() };
                                 raw_soft_renderer.start_frame(rendering_data);
+                                raw_soft_renderer.render_line(0, rendering_data);
                                 for y in 0..192 {
                                     let scanline = &mut unsafe {
                                         &mut *shared_data.capture_scanline_buffer.get()
                                     }[y as usize];
-                                    raw_soft_renderer.render_line(y, scanline, rendering_data);
+                                    if y < 191 {
+                                        raw_soft_renderer.render_line(y + 1, rendering_data);
+                                    }
+                                    raw_soft_renderer.postprocess_line(y, scanline, rendering_data);
                                     let _ =
                                         shared_data.capture_processing_scanline.compare_exchange(
                                             y,

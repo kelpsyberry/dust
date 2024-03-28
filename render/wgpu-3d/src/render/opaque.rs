@@ -8,9 +8,9 @@ use core::mem;
 fn shader_module_src(
     pipeline: PipelineKey,
     fog_enabled_bg_index: u32,
+    id_bg_index: u32,
     texture_bg_index: u32,
     toon_bg_index: u32,
-    id_bg_index: u32,
 ) -> String {
     let CommonCode {
         common_vert_inputs,
@@ -158,9 +158,9 @@ pub(crate) fn create_pipeline(
             shader_module_src(
                 pipeline,
                 fog_enabled_bg_index,
+                id_bg_index,
                 texture_bg_index,
                 toon_bg_index,
-                id_bg_index,
             )
             .into(),
         ),

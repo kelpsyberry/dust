@@ -1,5 +1,7 @@
 use crate::BgLayouts;
 
+// TODO: No polygon edge detection actually breaks a lot of things...
+
 #[derive(Default)]
 pub struct EdgeMarkingCode {
     pub edge_marking_uniforms: String,
@@ -13,7 +15,7 @@ impl EdgeMarkingCode {
                 "@group({id_bg_index}) @binding(0) var<uniform> id: u32;",
             ),
 
-            edge_marking_set_frag_outputs: "output.attrs.r = f32(id + 1) / 0x40;",
+            edge_marking_set_frag_outputs: "output.attrs.r = f32(id) / 0x3F;",
         }
     }
 }
@@ -69,25 +71,23 @@ fn fs_main(
     var coords = vec2<i32>(position.xy);
     var depth = textureLoad(depth_texture, coords, 0);
     var attrs = textureLoad(attrs_texture, coords, 0);
-    var id = u32(attrs.r * 0x40);
-    if (id > 0) {{
-        var u_attrs = loadOrAttrs(attrs_texture, coords + vec2<i32>( 0i, -1i), 0.0);
-        var u_depth = loadOrDepth(depth_texture, coords + vec2<i32>( 0i, -1i), 1.0);
-        var d_attrs = loadOrAttrs(attrs_texture, coords + vec2<i32>( 0i,  1i), 0.0);
-        var d_depth = loadOrDepth(depth_texture, coords + vec2<i32>( 0i,  1i), 1.0);
-        var l_attrs = loadOrAttrs(attrs_texture, coords + vec2<i32>(-1i,  0i), 0.0);
-        var l_depth = loadOrDepth(depth_texture, coords + vec2<i32>(-1i,  0i), 1.0);
-        var r_attrs = loadOrAttrs(attrs_texture, coords + vec2<i32>( 1i,  0i), 0.0);
-        var r_depth = loadOrDepth(depth_texture, coords + vec2<i32>( 1i,  0i), 1.0);
-        if (
-            (u_attrs != attrs.r && depth < u_depth) ||
-            (d_attrs != attrs.r && depth < d_depth) ||
-            (l_attrs != attrs.r && depth < l_depth) ||
-            (r_attrs != attrs.r && depth < r_depth)
-        ) {{
-            var edge_color = vec4<f32>(edge_colors[(id - 1u) >> 3]) * vec4<f32>(1.0 / 31);
-            return vec4(edge_color.rgb, {edge_alpha});
-        }}
+    var id = u32(attrs.r * 0x3F);
+    var u_attrs = loadOrAttrs(attrs_texture, coords + vec2<i32>( 0i, -1i), 0.0);
+    var u_depth = loadOrDepth(depth_texture, coords + vec2<i32>( 0i, -1i), 1.0);
+    var d_attrs = loadOrAttrs(attrs_texture, coords + vec2<i32>( 0i,  1i), 0.0);
+    var d_depth = loadOrDepth(depth_texture, coords + vec2<i32>( 0i,  1i), 1.0);
+    var l_attrs = loadOrAttrs(attrs_texture, coords + vec2<i32>(-1i,  0i), 0.0);
+    var l_depth = loadOrDepth(depth_texture, coords + vec2<i32>(-1i,  0i), 1.0);
+    var r_attrs = loadOrAttrs(attrs_texture, coords + vec2<i32>( 1i,  0i), 0.0);
+    var r_depth = loadOrDepth(depth_texture, coords + vec2<i32>( 1i,  0i), 1.0);
+    if (
+        (u_attrs != attrs.r && depth < u_depth) ||
+        (d_attrs != attrs.r && depth < d_depth) ||
+        (l_attrs != attrs.r && depth < l_depth) ||
+        (r_attrs != attrs.r && depth < r_depth)
+    ) {{
+        var edge_color = vec4<f32>(edge_colors[id >> 3]) * vec4<f32>(1.0 / 31);
+        return vec4(edge_color.rgb, {edge_alpha});
     }}
     return vec4(0.0);
 }}"

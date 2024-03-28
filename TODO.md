@@ -89,8 +89,6 @@
 # Missing functionality
 - Finished 3D rendering:
     - Shadow polygons
-    - Fog (HW only)
-    - Edge marking
     - Antialiasing
 - Wi-Fi
 - RTC alarms

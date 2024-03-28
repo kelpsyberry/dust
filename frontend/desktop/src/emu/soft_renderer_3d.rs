@@ -158,11 +158,15 @@ pub fn init() -> (Tx, Rx) {
                             {
                                 let rendering_data = unsafe { &*shared_data.rendering_data.get() };
                                 raw_renderer.start_frame(rendering_data);
+                                raw_renderer.render_line(0, rendering_data);
                                 for y in 0..192 {
                                     let scanline =
                                         &mut unsafe { &mut *shared_data.scanline_buffer.get() }
                                             [y as usize];
-                                    raw_renderer.render_line(y, scanline, rendering_data);
+                                    if y < 191 {
+                                        raw_renderer.render_line(y + 1, rendering_data);
+                                    }
+                                    raw_renderer.postprocess_line(y, scanline, rendering_data);
                                     let _ = shared_data.processing_scanline.compare_exchange(
                                         y,
                                         y + 1,

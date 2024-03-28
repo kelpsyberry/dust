@@ -8,6 +8,14 @@ use dust_core::gpu::engine_3d::{
     InterpColor, PolyVertIndex, PolyVertsLen, Polygon, ScreenVertex, TexCoords, VertexAddr,
 };
 
+pub fn clip_x_range((start, end): (u16, u16)) -> (u8, u8) {
+    if start > 255 {
+        (255, 0)
+    } else {
+        (start as u8, end.min(255) as u8)
+    }
+}
+
 #[inline]
 pub fn expand_depth(depth: u16) -> u32 {
     let depth = depth as u32;
@@ -63,8 +71,8 @@ pub struct Edge {
     b_z: u32,
     b_w: u16,
 
-    x_ref: i32,
-    x_incr: i32,
+    x_ref: u32,
+    x_incr: u32,
 
     is_x_major: bool,
     is_negative: bool,
@@ -96,7 +104,7 @@ impl Edge {
         let x_diff = b_x as i16 - a_x as i16;
         let y_len = (b_y - a_y) as u16;
 
-        let mut x_ref = (a_x as i32) << 18;
+        let mut x_ref = (a_x as u32) << 18;
 
         let is_negative = x_diff < 0;
         let x_len = if is_negative {
@@ -116,9 +124,9 @@ impl Edge {
         }
 
         let x_incr = if y_len == 0 {
-            (x_len as i32) << 18
+            (x_len as u32) << 18
         } else {
-            x_len as i32 * ((1 << 18) / y_len as i32)
+            x_len as u32 * ((1 << 18) / y_len as u32)
         };
 
         Edge {
@@ -172,7 +180,7 @@ impl Edge {
         self.b_w
     }
 
-    pub fn x_incr(&self) -> i32 {
+    pub fn x_incr(&self) -> u32 {
         self.x_incr
     }
 
@@ -185,24 +193,26 @@ impl Edge {
     }
 
     pub fn line_x_range(&self, y: u8) -> (u16, u16) {
-        let line_x_disp = self.x_incr * (y - self.a_y) as i32;
+        let line_x_disp = self.x_incr * (y - self.a_y) as u32;
         let start_frac_x = if self.is_negative {
             self.x_ref - line_x_disp
         } else {
             self.x_ref + line_x_disp
         };
-        let start_x = (start_frac_x >> 18).clamp(0, 255) as u16;
+        let start_x = (start_frac_x >> 18) as u16;
         if self.is_x_major {
             if self.is_negative {
                 (
-                    (((start_frac_x + (0x1FF - (start_frac_x & 0x1FF)) - self.x_incr) >> 18) + 1)
-                        .clamp(0, 255) as u16,
+                    ((((start_frac_x + (0x1FF - (start_frac_x & 0x1FF))) as i32
+                        - self.x_incr as i32)
+                        >> 18)
+                        + 1) as u16,
                     start_x,
                 )
             } else {
                 (
                     start_x,
-                    (((((start_frac_x & !0x1FF) + self.x_incr) >> 18) - 1).clamp(0, 255) as u16),
+                    (((start_frac_x & !0x1FF) + self.x_incr) >> 18) as u16 - 1,
                 )
             }
         } else {
@@ -225,6 +235,46 @@ impl Edge {
             self.interp_len,
         )
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DummyEdge {
+    addr: VertexAddr,
+    x: u16,
+    z: u32,
+    w: u16,
+}
+
+impl DummyEdge {
+    pub fn new(poly: &Polygon, i: PolyVertIndex, addr: VertexAddr, v: &ScreenVertex) -> Self {
+        let x = v.coords[0];
+        let z = poly.depth_values[i.get() as usize];
+        let w = poly.w_values[i.get() as usize];
+
+        DummyEdge { addr, x, z, w }
+    }
+
+    pub fn addr(&self) -> VertexAddr {
+        self.addr
+    }
+
+    pub fn z(&self) -> u32 {
+        self.z
+    }
+
+    pub fn w(&self) -> u16 {
+        self.w
+    }
+
+    pub fn line_x_range(&self) -> (u16, u16) {
+        (self.x, self.x)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum Edges {
+    Normal([Edge; 2]),
+    Dummy([DummyEdge; 2]),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -347,13 +397,13 @@ impl<const EDGE: bool> InterpData<EDGE> {
             let b = b.cast::<i32>();
             let lower = a.simd_lt(b);
             let min = lower.select(a, b);
-            let max = lower.select(b, a);
+            let diff = lower.select(b, a) - min;
             let factor = self.p_factor as i32;
             let factor = lower.select(
                 i32x2::splat(factor),
                 i32x2::splat((1 << Self::PERSP_PRECISION) - factor),
             );
-            (min + (((max - min) * factor) >> i32x2::splat(Self::PERSP_PRECISION as i32))).cast()
+            (min + ((diff * factor) >> i32x2::splat(Self::PERSP_PRECISION as i32))).cast()
         }
     }
 

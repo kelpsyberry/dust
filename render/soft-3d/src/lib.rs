@@ -17,8 +17,8 @@ use dust_core::{
     utils::mem_prelude::*,
 };
 use utils::{
-    dec_poly_vert_index, decode_rgb5, expand_depth, inc_poly_vert_index, rgb5_to_rgb6, Edge,
-    InterpLineData,
+    clip_x_range, dec_poly_vert_index, decode_rgb5, expand_depth, inc_poly_vert_index,
+    rgb5_to_rgb6, DummyEdge, Edge, Edges, InterpLineData,
 };
 
 type DepthTestFn = fn(u32, u32, PixelAttrs) -> bool;
@@ -34,7 +34,7 @@ struct RenderingPolygon {
     top_y: u8,
     bot_y: u8,
     height: u8,
-    edges: [Edge; 2],
+    edges: Edges,
     l_vert_i: PolyVertIndex,
     r_vert_i: PolyVertIndex,
     bot_i: PolyVertIndex,
@@ -47,41 +47,43 @@ struct RenderingPolygon {
 proc_bitfield::bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     struct PixelAttrs(pub u32): Debug {
-        pub edge_mask: u8 @ 0..=3,
-        pub top_edge: bool @ 0,
-        pub bottom_edge: bool @ 1,
-        pub left_edge: bool @ 2,
-        pub right_edge: bool @ 3,
+        // Edge flag for the topmost opaque polygon (used for edge marking)
+        pub is_opaque_edge: bool @ 0,
 
+        // Used so that a < depth test for a front-facing pixel over an opaque + back-facing one
+        // becomes <=
         pub translucent: bool @ 13,
         pub front_facing: bool @ 14,
 
+        // Pixel fog flag (replaced for opaque pixels, ANDed for translucent ones)
         pub fog_enabled: bool @ 15,
 
-        pub translucent_id: u8 @ 16..=22,
-        pub opaque_id: u8 @ 24..=29,
+        // The topmost translucent polygon ID (used to avoid rendering translucent pixels over the
+        // same translucent polygon ID)
+        // 0 for no ID or 0x40..=0x7F for ID 0..=0x3F
+        pub translucent_poly_id: u8 @ 16..=22,
 
+        // Topmost opaque pixel polygon ID (used for edge marking)
+        pub opaque_poly_id: u8 @ 24..=29,
+
+        // Whether a shadow mask was drawn on top of this pixel
         pub stencil: bool @ 31,
     }
 }
 
 impl PixelAttrs {
     #[inline]
-    fn from_opaque_poly_attrs(poly: &RenderingPolygon, edge_mask: u32) -> Self {
-        PixelAttrs((poly.attrs.raw() & 0x3F00_8000) | edge_mask)
+    fn from_opaque_poly_attrs(poly: &RenderingPolygon, is_edge: bool) -> Self {
+        PixelAttrs((poly.attrs.raw() & 0x3F00_8000) | is_edge as u32)
             .with_front_facing(poly.attrs.is_front_facing())
     }
 
     #[inline]
-    fn from_translucent_poly_attrs(
-        poly: &RenderingPolygon,
-        opaque: PixelAttrs,
-        edge_mask: u32,
-    ) -> Self {
-        PixelAttrs((opaque.0 & 0x3F00_8000 & (poly.attrs.raw() | !0x0000_8000)) | edge_mask)
+    fn from_translucent_poly_attrs(poly: &RenderingPolygon, opaque: PixelAttrs) -> Self {
+        PixelAttrs(opaque.0 & 0x3F00_800F & (poly.attrs.raw() | !0x0000_8000))
             .with_translucent(true)
             .with_front_facing(poly.attrs.is_front_facing())
-            .with_translucent_id(poly.id | 0x40)
+            .with_translucent_poly_id(poly.id | 0x40)
     }
 }
 
@@ -358,9 +360,9 @@ static PROCESS_PIXEL_TEXTURES_DISABLED: [ProcessPixelFn; 4] = [
 ];
 
 pub struct Renderer {
-    color_buffer: Box<Scanline<Color>>,
-    depth_buffer: Box<Scanline<u32>>,
-    attr_buffer: Box<Scanline<PixelAttrs>>,
+    color_buffer: Box<[Scanline<Color>; 192]>,
+    depth_buffer: Box<[Scanline<u32, 258>; 194]>,
+    attr_buffer: Box<[Scanline<PixelAttrs, 258>; 194]>,
     polys: Vec<RenderingPolygon>,
 }
 
@@ -491,26 +493,10 @@ impl Renderer {
                     height: 1,
                     alpha: poly.attrs.alpha(),
                     id: poly.attrs.id(),
-                    edges: [
-                        Edge::new(
-                            poly,
-                            top_i,
-                            top_vert_addr,
-                            top_vert,
-                            top_i,
-                            top_vert_addr,
-                            top_vert,
-                        ),
-                        Edge::new(
-                            poly,
-                            bot_i,
-                            bot_vert_addr,
-                            bot_vert,
-                            bot_i,
-                            bot_vert_addr,
-                            bot_vert,
-                        ),
-                    ],
+                    edges: Edges::Dummy([
+                        DummyEdge::new(poly, top_i, top_vert_addr, top_vert),
+                        DummyEdge::new(poly, bot_i, bot_vert_addr, bot_vert),
+                    ]),
                     l_vert_i: top_i,
                     r_vert_i: bot_i,
                     bot_i,
@@ -566,7 +552,7 @@ impl Renderer {
                     height: poly.bot_y - poly.top_y,
                     alpha: poly.attrs.alpha(),
                     id: poly.attrs.id(),
-                    edges: [
+                    edges: Edges::Normal([
                         Edge::new(
                             poly,
                             top_i,
@@ -585,7 +571,7 @@ impl Renderer {
                             other_verts[1].1,
                             other_verts[1].2,
                         ),
-                    ],
+                    ]),
                     l_vert_i: other_verts[0].0,
                     r_vert_i: other_verts[1].0,
                     bot_i,
@@ -594,26 +580,31 @@ impl Renderer {
                 });
             }
         }
+
+        // The bitmap rear plane's out-of-screen pixels get the same depth and attributes as a
+        // non-bitmap rear plane (but the fog flag isn't copied since it's unneeded)
+        let outside_pixel_attrs = PixelAttrs(0).with_opaque_poly_id(rendering_data.clear_poly_id);
+        self.depth_buffer[0].0.fill(rendering_data.clear_depth);
+        self.depth_buffer[193].0.fill(rendering_data.clear_depth);
+        self.attr_buffer[0].0.fill(outside_pixel_attrs);
+        self.attr_buffer[193].0.fill(outside_pixel_attrs);
     }
 
-    pub fn render_line(
-        &mut self,
-        y: u8,
-        scanline: &mut Scanline<u32>,
-        rendering_data: &RenderingData,
-    ) {
-        scanline.0.fill(0);
+    pub fn render_line(&mut self, y: u8, rendering_data: &RenderingData) {
+        let color_line = &mut self.color_buffer[y as usize].0;
+        let depth_full_line = &mut self.depth_buffer[y as usize + 1].0;
+        let attr_full_line = &mut self.attr_buffer[y as usize + 1].0;
 
         if rendering_data.control.rear_plane_bitmap_enabled() {
             let line_base = (y.wrapping_add(rendering_data.clear_image_offset[1]) as usize) << 9;
             let mut x_in_image = rendering_data.clear_image_offset[0];
 
             let color_line_base = 0x4_0000 | line_base;
-            for x in 0..256 {
+            for dst in &mut *color_line {
                 let raw_color = rendering_data
                     .texture
                     .read_le(color_line_base | (x_in_image as usize) << 1);
-                self.color_buffer.0[x] = rgb5_to_rgb6(decode_rgb5(
+                *dst = rgb5_to_rgb6(decode_rgb5(
                     raw_color,
                     if raw_color >> 15 != 0 { 31 } else { 0 },
                 ))
@@ -622,137 +613,173 @@ impl Renderer {
             }
 
             let depth_line_base = 0x4_0000 | line_base;
-            let pixel_attrs = PixelAttrs(0).with_opaque_id(rendering_data.clear_poly_id);
-            for x in 0..256 {
+            let pixel_attrs = PixelAttrs(0).with_opaque_poly_id(rendering_data.clear_poly_id);
+            for (dst_depth, dst_attrs) in depth_full_line[1..257]
+                .iter_mut()
+                .zip(&mut attr_full_line[1..257])
+            {
                 let raw_depth = rendering_data
                     .texture
                     .read_le(depth_line_base | (x_in_image as usize) << 1);
-                self.depth_buffer.0[x] = expand_depth(raw_depth);
-                self.attr_buffer.0[x] = pixel_attrs.with_fog_enabled(raw_depth >> 15 != 0);
+                *dst_depth = expand_depth(raw_depth);
+                *dst_attrs = pixel_attrs.with_fog_enabled(raw_depth >> 15 != 0);
                 x_in_image = x_in_image.wrapping_add(1);
             }
+
+            // The bitmap rear plane's out-of-screen pixels get the same depth and attributes as a
+            // non-bitmap rear plane (but the fog flag isn't copied since it's unneeded)
+            depth_full_line[0] = rendering_data.clear_depth;
+            depth_full_line[257] = rendering_data.clear_depth;
+            attr_full_line[0] = pixel_attrs;
+            attr_full_line[257] = pixel_attrs;
         } else {
-            self.color_buffer
-                .0
-                .fill(rgb5_to_rgb6(rendering_data.clear_color.cast()).cast());
-            self.depth_buffer.0.fill(rendering_data.clear_depth);
-            self.attr_buffer.0.fill(
+            color_line.fill(rgb5_to_rgb6(rendering_data.clear_color.cast()).cast());
+            depth_full_line.fill(rendering_data.clear_depth);
+            attr_full_line.fill(
                 PixelAttrs(0)
-                    .with_opaque_id(rendering_data.clear_poly_id)
+                    .with_opaque_poly_id(rendering_data.clear_poly_id)
                     .with_fog_enabled(rendering_data.rear_plane_fog_enabled),
             );
         }
+
+        let depth_line = <&mut [_; 256]>::try_from(&mut depth_full_line[1..257]).unwrap();
+        let attr_line = <&mut [_; 256]>::try_from(&mut attr_full_line[1..257]).unwrap();
 
         for poly in self.polys.iter_mut() {
             if y.wrapping_sub(poly.top_y) >= poly.height {
                 continue;
             }
 
-            if poly.top_y != poly.bot_y {
-                let raw_poly = rendering_data.poly_ram[poly.poly_addr.get() as usize];
-                let verts_len = raw_poly.attrs.verts_len();
+            let (
+                ranges,
+                fill_edges,
+                [(l_vert_color, l_uv, l_depth, l_w), (r_vert_color, r_uv, r_depth, r_w)],
+            ) = match &mut poly.edges {
+                Edges::Normal(edges) => {
+                    let raw_poly = rendering_data.poly_ram[poly.poly_addr.get() as usize];
+                    let verts_len = raw_poly.attrs.verts_len();
 
-                macro_rules! process_edge {
-                    ($vert_i: expr, $edge: expr, $increasing: expr) => {{
-                        let increasing = $increasing;
-                        if y >= $edge.b_y() {
-                            let mut i = *$vert_i;
-                            let mut start_vert_addr = $edge.b_addr();
-                            let mut start_vert =
-                                &rendering_data.vert_ram[start_vert_addr.get() as usize];
-                            while i != poly.bot_i {
-                                i = if increasing {
-                                    inc_poly_vert_index(i, verts_len)
-                                } else {
-                                    dec_poly_vert_index(i, verts_len)
-                                };
-                                let new_end_vert_addr = raw_poly.verts[i.get() as usize];
-                                let new_end_vert =
-                                    &rendering_data.vert_ram[new_end_vert_addr.get() as usize];
-                                let new_b_y = new_end_vert.coords[1] as u8;
+                    macro_rules! process_edge {
+                        ($vert_i: expr, $edge: expr, $increasing: expr) => {{
+                            let increasing = $increasing;
+                            if y >= $edge.b_y() && $vert_i != poly.bot_i {
+                                let mut prev_i = $vert_i;
+                                let mut prev_vert_addr = $edge.b_addr();
+                                let mut prev_vert =
+                                    &rendering_data.vert_ram[prev_vert_addr.get() as usize];
 
-                                if new_b_y > y || i == poly.bot_i {
-                                    $edge = Edge::new(
-                                        &raw_poly,
-                                        *$vert_i,
-                                        start_vert_addr,
-                                        start_vert,
-                                        i,
-                                        new_end_vert_addr,
-                                        new_end_vert,
-                                    );
-                                    *$vert_i = i;
-                                    break;
+                                while true {
+                                    let i = if increasing {
+                                        inc_poly_vert_index(prev_i, verts_len)
+                                    } else {
+                                        dec_poly_vert_index(prev_i, verts_len)
+                                    };
+                                    let vert_addr = raw_poly.verts[i.get() as usize];
+                                    let vert = &rendering_data.vert_ram[vert_addr.get() as usize];
+
+                                    if vert.coords[1] as u8 > y || i == poly.bot_i {
+                                        $edge = Edge::new(
+                                            &raw_poly,
+                                            prev_i,
+                                            prev_vert_addr,
+                                            prev_vert,
+                                            i,
+                                            vert_addr,
+                                            vert,
+                                        );
+                                        $vert_i = i;
+                                        break;
+                                    }
+
+                                    prev_i = i;
+                                    prev_vert = vert;
+                                    prev_vert_addr = vert_addr;
                                 }
-
-                                start_vert = new_end_vert;
-                                start_vert_addr = new_end_vert_addr;
                             }
-                        }
-                    }};
+                        }};
+                    }
+
+                    process_edge!(poly.l_vert_i, edges[0], raw_poly.attrs.is_front_facing());
+                    process_edge!(poly.r_vert_i, edges[1], !raw_poly.attrs.is_front_facing());
+
+                    let mut edges = [&edges[0], &edges[1]];
+                    let mut ranges = [edges[0].line_x_range(y), edges[1].line_x_range(y)];
+
+                    if ranges[1].0 < ranges[0].0 {
+                        edges.swap(0, 1);
+                        ranges.swap(0, 1);
+                    }
+                    // The left edge cannot extend further right than the end of the right edge
+                    ranges[0].1 = ranges[0].1.min(ranges[1].1);
+
+                    macro_rules! interp_edge {
+                        ($i: expr, $x: expr) => {{
+                            let edge = edges[$i];
+                            let a = &rendering_data.vert_ram[edge.a_addr().get() as usize];
+                            let b = &rendering_data.vert_ram[edge.b_addr().get() as usize];
+                            let interp = edge.edge_interp(y, $x);
+                            let vert_color = interp.color(a.color, b.color);
+                            let uv = interp.uv(a.uv, b.uv);
+                            let depth =
+                                interp.depth(edge.a_z(), edge.b_z(), rendering_data.w_buffering);
+                            let w = interp.w(edge.a_w(), edge.b_w());
+                            (vert_color, uv, depth, w)
+                        }};
+                    }
+
+                    let next_is_horiz = edges[0].b_y() == edges[1].b_y();
+
+                    (
+                        ranges,
+                        [
+                            edges[0].is_negative()
+                                || !edges[0].is_x_major()
+                                || (y + 1 == poly.bot_y && edges[0].is_x_major() && next_is_horiz),
+                            (!edges[1].is_negative() && edges[1].is_x_major())
+                                || edges[1].x_incr() == 0
+                                || (y + 1 == poly.bot_y && edges[1].is_x_major() && next_is_horiz),
+                        ],
+                        [interp_edge!(0, ranges[0].0), interp_edge!(1, ranges[1].1)],
+                    )
                 }
-
-                process_edge!(
-                    &mut poly.l_vert_i,
-                    poly.edges[0],
-                    raw_poly.attrs.is_front_facing()
-                );
-                process_edge!(
-                    &mut poly.r_vert_i,
-                    poly.edges[1],
-                    !raw_poly.attrs.is_front_facing()
-                );
-            }
-
-            let mut edges = [&poly.edges[0], &poly.edges[1]];
-            let mut ranges = [edges[0].line_x_range(y), edges[1].line_x_range(y)];
-
-            if ranges[1].0 < ranges[0].0 {
-                edges.swap(0, 1);
-                ranges.swap(0, 1);
-            }
+                Edges::Dummy(edges) => {
+                    let l_v = rendering_data.vert_ram[edges[0].addr().get() as usize];
+                    let r_v = rendering_data.vert_ram[edges[1].addr().get() as usize];
+                    (
+                        [edges[0].line_x_range(), edges[1].line_x_range()],
+                        [true, true],
+                        [
+                            (l_v.color, l_v.uv, edges[0].z(), edges[0].w()),
+                            (r_v.color, r_v.uv, edges[1].z(), edges[1].w()),
+                        ],
+                    )
+                }
+            };
 
             let x_span_start = ranges[0].0;
-            let x_span_len = ranges[0].1.max(ranges[1].1) + 1 - x_span_start;
-            let wireframe = poly.alpha == 0;
+            let x_span_len = ranges[1].1 + 1 - x_span_start;
+            let is_wireframe = poly.alpha == 0;
 
-            let fill_all_edges = wireframe
-                || rendering_data.control.antialiasing_enabled()
-                || rendering_data.control.edge_marking_enabled();
-            let fill_edges = [
-                fill_all_edges || edges[0].is_negative() || !edges[0].is_x_major(),
-                fill_all_edges
-                    || (!edges[1].is_negative() && edges[1].is_x_major())
-                    || edges[1].x_incr() == 0,
-            ];
+            let fill_all_edges = rendering_data.control.antialiasing_enabled()
+                || rendering_data.control.edge_marking_enabled()
+                || is_wireframe
+                || (poly.attrs.is_translucent() && rendering_data.control.alpha_blending_enabled());
+            let fill_edges = if fill_all_edges {
+                [true; 2]
+            } else {
+                fill_edges
+            };
 
-            let y_edge_mask = (y == poly.top_y) as u32 | ((y + 1 == poly.bot_y) as u32) << 1;
-
-            macro_rules! interp_edge {
-                ($i: expr, $x: expr) => {{
-                    let edge = edges[$i];
-                    let a = &rendering_data.vert_ram[edge.a_addr().get() as usize];
-                    let b = &rendering_data.vert_ram[edge.b_addr().get() as usize];
-                    let interp = edge.edge_interp(y, $x);
-                    let vert_color = interp.color(a.color, b.color);
-                    let uv = interp.uv(a.uv, b.uv);
-                    let depth = interp.depth(edge.a_z(), edge.b_z(), rendering_data.w_buffering);
-                    let w = interp.w(edge.a_w(), edge.b_w());
-                    (vert_color, uv, depth, w)
-                }};
-            }
-
-            let [(l_vert_color, l_uv, l_depth, l_w), (r_vert_color, r_uv, r_depth, r_w)] =
-                [interp_edge!(0, x_span_start), interp_edge!(1, ranges[1].1)];
+            let is_at_y_boundary = y == poly.top_y || y + 1 == poly.bot_y;
 
             let x_interp = InterpLineData::<false>::new(l_w, r_w);
 
             macro_rules! render_pixel {
-                ($x: expr, $edge_mask: expr) => {{
+                ($x: expr, $is_edge: expr) => {{
                     let x = $x;
-                    let edge_mask = $edge_mask;
+                    let is_edge = $is_edge;
 
-                    if poly.is_shadow && !self.attr_buffer.0[x as usize].stencil() {
+                    if poly.is_shadow && !attr_line[x as usize].stencil() {
                         continue;
                     }
 
@@ -760,22 +787,21 @@ impl Renderer {
                     let x = x as usize;
                     let depth =
                         interp.depth(l_depth, r_depth, rendering_data.w_buffering) & 0x00FF_FFFF;
-                    if (poly.depth_test)(depth, self.depth_buffer.0[x], self.attr_buffer.0[x]) {
+                    if (poly.depth_test)(depth, depth_line[x], attr_line[x]) {
                         let vert_color = interp.color(l_vert_color, r_vert_color);
                         let uv = interp.uv(l_uv, r_uv);
                         let mut color = (poly.process_pixel)(rendering_data, poly, uv, vert_color);
                         let alpha = color[3];
                         if alpha > rendering_data.alpha_test_ref as u16 {
                             if alpha == 0x1F {
-                                self.color_buffer.0[x] = color.cast();
-                                self.depth_buffer.0[x] = depth;
-                                self.attr_buffer.0[x] =
-                                    PixelAttrs::from_opaque_poly_attrs(poly, edge_mask);
+                                color_line[x] = color.cast();
+                                depth_line[x] = depth;
+                                attr_line[x] = PixelAttrs::from_opaque_poly_attrs(poly, is_edge);
                             } else {
-                                let prev_attrs = self.attr_buffer.0[x];
-                                if prev_attrs.translucent_id() != poly.id | 0x40 {
+                                let prev_attrs = attr_line[x];
+                                if prev_attrs.translucent_poly_id() != poly.id | 0x40 {
                                     if rendering_data.control.alpha_blending_enabled() {
-                                        let prev_color = self.color_buffer.0[x].cast();
+                                        let prev_color = color_line[x].cast();
                                         let prev_alpha = prev_color[3];
                                         if prev_alpha != 0 {
                                             color = ((color * InterpColor::splat(alpha + 1))
@@ -784,13 +810,12 @@ impl Renderer {
                                             color[3] = alpha.max(prev_alpha);
                                         }
                                     }
-                                    self.color_buffer.0[x] = color.cast();
+                                    color_line[x] = color.cast();
                                     if poly.attrs.update_depth_for_translucent() {
-                                        self.depth_buffer.0[x] = depth;
+                                        depth_line[x] = depth;
                                     }
-                                    self.attr_buffer.0[x] = PixelAttrs::from_translucent_poly_attrs(
-                                        poly, prev_attrs, edge_mask,
-                                    );
+                                    attr_line[x] =
+                                        PixelAttrs::from_translucent_poly_attrs(poly, prev_attrs);
                                 }
                             }
                         }
@@ -800,23 +825,75 @@ impl Renderer {
 
             for i in 0..2 {
                 if fill_edges[i] {
-                    for x in ranges[i].0..=ranges[i].1 {
-                        render_pixel!(x, y_edge_mask | 4 << i);
+                    // If the range is out-of-screen don't render it
+                    let (start, end) = clip_x_range(ranges[i]);
+                    for x in start..=end {
+                        render_pixel!(x as u16, true);
                     }
                 }
             }
 
-            if !wireframe || y_edge_mask != 0 {
+            if !is_wireframe || is_at_y_boundary {
                 for x in ranges[0].1 + 1..ranges[1].0 {
-                    render_pixel!(x, y_edge_mask);
+                    render_pixel!(x, is_at_y_boundary);
+                }
+            }
+        }
+    }
+
+    pub fn postprocess_line(
+        &mut self,
+        y: u8,
+        scanline: &mut Scanline<u32>,
+        rendering_data: &RenderingData,
+    ) {
+        let color_line = &mut self.color_buffer[y as usize].0;
+
+        if rendering_data.control.edge_marking_enabled() {
+            let y_ = y as usize + 1;
+
+            for (x, color_dst) in color_line.iter_mut().enumerate() {
+                let x_ = x + 1;
+
+                let attrs = self.attr_buffer[y_].0[x_];
+                if !attrs.is_opaque_edge() {
+                    continue;
+                }
+
+                let opaque_poly_id = attrs.opaque_poly_id();
+                let depth = self.depth_buffer[y_].0[x_];
+
+                macro_rules! has_edge {
+                    ($x: expr, $y: expr) => {
+                        (depth < self.depth_buffer[$y].0[$x]
+                            && self.attr_buffer[$y].0[$x].opaque_poly_id() != opaque_poly_id)
+                    };
+                }
+
+                if has_edge!(x_, y_ - 1)
+                    || has_edge!(x_, y_ + 1)
+                    || has_edge!(x_ - 1, y_)
+                    || has_edge!(x_ + 1, y_)
+                {
+                    let edge_color = rendering_data.edge_colors[(opaque_poly_id >> 3) as usize];
+                    if rendering_data.control.antialiasing_enabled() {
+                        *color_dst = (*color_dst + edge_color) / Color::splat(2);
+                    } else {
+                        *color_dst = edge_color;
+                    }
                 }
             }
         }
 
+        let depth_line =
+            <&mut [_; 256]>::try_from(&mut self.depth_buffer[y as usize + 1].0[1..257]).unwrap();
+        let attr_line =
+            <&mut [_; 256]>::try_from(&mut self.attr_buffer[y as usize + 1].0[1..257]).unwrap();
+
         if rendering_data.control.fog_enabled() {
             macro_rules! fog_density {
                 ($x: expr) => {{
-                    let z = self.depth_buffer.0[$x];
+                    let z = depth_line[$x];
                     let offset = if z < rendering_data.fog_offset {
                         0
                     } else {
@@ -835,25 +912,25 @@ impl Renderer {
             if rendering_data.control.fog_only_alpha() {
                 let fog_alpha = rendering_data.fog_color[3] as u16;
                 for x in 0..256 {
-                    let attrs = self.attr_buffer.0[x];
+                    let attrs = attr_line[x];
                     if !attrs.fog_enabled() {
                         continue;
                     }
                     let density = fog_density!(x);
-                    let alpha = self.color_buffer.0[x][3] as u16;
-                    self.color_buffer.0[x][3] =
+                    let alpha = color_line[x][3] as u16;
+                    color_line[x][3] =
                         ((fog_alpha * density + alpha * (0x80 - density)) >> 7) as u8;
                 }
             } else {
                 let fog_color = rgb5_to_rgb6(rendering_data.fog_color.cast());
                 for x in 0..256 {
-                    let attrs = self.attr_buffer.0[x];
+                    let attrs = attr_line[x];
                     if !attrs.fog_enabled() {
                         continue;
                     }
                     let density = fog_density!(x);
-                    let color = self.color_buffer.0[x].cast::<u16>();
-                    self.color_buffer.0[x] = ((fog_color * InterpColor::splat(density)
+                    let color = color_line[x].cast::<u16>();
+                    color_line[x] = ((fog_color * InterpColor::splat(density)
                         + color * InterpColor::splat(0x80 - density))
                         >> 7)
                         .cast();
@@ -861,9 +938,9 @@ impl Renderer {
             }
         }
 
-        for x in 0..256 {
-            let [r, g, b, a] = self.color_buffer.0[x].to_array();
-            scanline.0[x] = r as u32 | (g as u32) << 6 | (b as u32) << 12 | (a as u32) << 18
+        for (dst, src) in scanline.0.iter_mut().zip(&*color_line) {
+            let [r, g, b, a] = src.to_array();
+            *dst = r as u32 | (g as u32) << 6 | (b as u32) << 12 | (a as u32) << 18
         }
     }
 }
