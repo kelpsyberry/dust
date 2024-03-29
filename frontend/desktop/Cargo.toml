@@ -44,10 +44,10 @@ wgpu = "0.19"
 imgui = { version = "0.11", features = ["docking", "tables-api"] }
 imgui-winit-support = { git = "https://github.com/kelpsyberry/imgui-rs" }
 imgui-wgpu = { git = "https://github.com/kelpsyberry/imgui-wgpu" }
-opener = "0.6"
+opener = "0.7"
 
 # System resources
-rfd = "0.13"
+rfd = "0.14"
 directories = "5.0"
 copypasta = "0.10"
 cpal = "0.15"
@@ -59,7 +59,7 @@ ahash = "0.8"
 pollster = "0.3"
 crossbeam-channel = "0.5"
 parking_lot = "0.12"
-bitflags = "2.4"
+bitflags = "2.5"
 miniz_oxide = { version = "0.7", features = ["simd"] }
 fatfs = { version = "0.3", optional = true }
 tempdir = { version = "0.3", optional = true }
