@@ -702,4 +702,26 @@ impl Vram {
             self.arm7.write_le_aligned_unchecked(addr, value);
         }
     }
+
+    #[inline]
+    pub fn write_palette<T: MemValue>(&mut self, addr: u32, value: T)
+    where
+        [(); mem::size_of::<T>()]: Sized,
+    {
+        self.palette.write_le(addr as usize, value);
+        if let Some(updates) = &mut self.bg_obj_updates {
+            updates.get_mut()[(addr >> 10 & 1) as usize].palette = true;
+        }
+    }
+
+    #[inline]
+    pub fn write_oam<T: MemValue>(&mut self, addr: u32, value: T)
+    where
+        [(); mem::size_of::<T>()]: Sized,
+    {
+        self.oam.write_le(addr as usize, value);
+        if let Some(updates) = &mut self.bg_obj_updates {
+            updates.get_mut()[(addr >> 10 & 1) as usize].oam = true;
+        }
+    }
 }

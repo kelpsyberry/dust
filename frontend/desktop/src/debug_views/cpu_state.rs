@@ -4,7 +4,7 @@ use super::{
         regs::{bitfield, regs_32, regs_32_default_label, BitfieldCommand},
         separator_with_width,
     },
-    FrameDataSlot, Messages, View,
+    BaseView, FrameDataSlot, Messages, SingletonView, View,
 };
 use crate::ui::{utils::combo_value, window::Window};
 use dust_core::{
@@ -18,57 +18,26 @@ use dust_core::{
 };
 use imgui::{StyleColor, StyleVar, TableFlags};
 
-pub struct CpuState<const ARM9: bool> {
-    reg_values: Option<(Regs, Psr)>,
-    reg_bank: Option<Bank>,
-}
-
 mod bounded {
     use dust_core::utils::bounded_int_lit;
     bounded_int_lit!(pub struct RegIndex(u8), max 15);
 }
 pub use bounded::*;
 
-impl<const ARM9: bool> View for CpuState<ARM9> {
-    const NAME: &'static str = if ARM9 { "ARM9 state" } else { "ARM7 state" };
+pub struct EmuState<const ARM9: bool>;
 
-    type FrameData = (Regs, Psr);
-    type EmuState = ();
+impl<const ARM9: bool> super::EmuState for EmuState<ARM9> {
+    type InitData = ();
     type Message = (Bank, RegIndex, u32);
+    type FrameData = (Regs, Psr);
 
-    fn new(_window: &mut Window) -> Self {
-        CpuState {
-            reg_values: None,
-            reg_bank: None,
-        }
+    fn new<E: Engine>(_data: Self::InitData, _visible: bool, _emu: &mut Emu<E>) -> Self {
+        EmuState
     }
 
-    fn destroy(self, _window: &mut Window) {}
-
-    fn emu_state(&self) -> Self::EmuState {}
-
-    fn handle_emu_state_changed<E: Engine>(
-        _prev: Option<&Self::EmuState>,
-        _new: Option<&Self::EmuState>,
-        _emu: &mut Emu<E>,
-    ) {
-    }
-
-    fn prepare_frame_data<'a, E: Engine, S: FrameDataSlot<'a, Self::FrameData>>(
-        _emu_state: &Self::EmuState,
-        emu: &mut Emu<E>,
-        frame_data: S,
-    ) {
-        frame_data.insert(if ARM9 {
-            (emu.arm9.regs(), emu.arm9.cpsr())
-        } else {
-            (emu.arm7.regs(), emu.arm7.cpsr())
-        });
-    }
-
-    fn handle_custom_message<E: dust_core::cpu::Engine>(
+    fn handle_message<E: Engine>(
+        &mut self,
         (selected_bank, i, value): Self::Message,
-        _emu_state: &Self::EmuState,
         emu: &mut Emu<E>,
     ) {
         let (mut regs, cpsr) = if ARM9 {
@@ -114,29 +83,61 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
         }
     }
 
-    fn clear_frame_data(&mut self) {
-        self.reg_values = None;
+    fn prepare_frame_data<'a, E: Engine, S: FrameDataSlot<'a, Self::FrameData>>(
+        &mut self,
+        emu: &mut Emu<E>,
+        frame_data: S,
+    ) {
+        frame_data.insert(if ARM9 {
+            (emu.arm9.regs(), emu.arm9.cpsr())
+        } else {
+            (emu.arm7.regs(), emu.arm7.cpsr())
+        });
     }
+}
 
-    fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, _window: &mut Window) {
+pub struct CpuState<const ARM9: bool> {
+    reg_values: Option<(Regs, Psr)>,
+    reg_bank: Option<Bank>,
+}
+
+impl<const ARM9: bool> SingletonView for CpuState<ARM9> {
+    fn window<'ui>(
+        &mut self,
+        ui: &'ui imgui::Ui,
+    ) -> imgui::Window<'ui, 'ui, impl AsRef<str> + 'static> {
+        ui.window(Self::MENU_NAME).always_auto_resize(true)
+    }
+    fn window_stopped(ui: &'_ imgui::Ui) -> imgui::Window<'_, '_, impl AsRef<str> + 'static> {
+        ui.window(Self::MENU_NAME).always_auto_resize(true)
+    }
+}
+
+impl<const ARM9: bool> BaseView for CpuState<ARM9> {
+    const MENU_NAME: &'static str = if ARM9 { "ARM9 state" } else { "ARM7 state" };
+
+    fn new(_window: &mut Window) -> Self {
+        CpuState {
+            reg_values: None,
+            reg_bank: None,
+        }
+    }
+}
+
+impl<const ARM9: bool> View for CpuState<ARM9> {
+    type EmuState = EmuState<ARM9>;
+
+    fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {}
+
+    fn update_from_frame_data(
+        &mut self,
+        frame_data: &<Self::EmuState as super::EmuState>::FrameData,
+        _window: &mut Window,
+    ) {
         self.reg_values = Some(frame_data.clone());
     }
 
-    fn customize_window<'ui, 'a, T: AsRef<str>>(
-        &mut self,
-        _ui: &imgui::Ui,
-        window: imgui::Window<'ui, 'a, T>,
-    ) -> imgui::Window<'ui, 'a, T> {
-        window.always_auto_resize(true)
-    }
-
-    fn draw(
-        &mut self,
-        ui: &imgui::Ui,
-        window: &mut Window,
-        _emu_running: bool,
-        mut messages: impl Messages<Self>,
-    ) -> Option<Self::EmuState> {
+    fn draw(&mut self, ui: &imgui::Ui, window: &mut Window, mut messages: impl Messages<Self>) {
         if let Some((reg_values, cpsr)) = self.reg_values.as_mut() {
             let _mono_font_token = ui.push_font(window.imgui.mono_font);
             let _item_spacing =
@@ -160,7 +161,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                     0,
                     &reg_values.gprs,
                     |i, value| {
-                        messages.push_custom((cpu_reg_bank, RegIndex::new(i as u8), value));
+                        messages.push((cpu_reg_bank, RegIndex::new(i as u8), value));
                     },
                     regs_32_default_label,
                     |i| {
@@ -364,7 +365,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                                 8,
                                 r8_r12,
                                 |i, value| {
-                                    messages.push_custom((reg_bank, RegIndex::new(i as u8), value));
+                                    messages.push((reg_bank, RegIndex::new(i as u8), value));
                                 },
                                 regs_32_label,
                                 |i| {
@@ -390,7 +391,7 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                                 13,
                                 r13_14,
                                 |i, value| {
-                                    messages.push_custom((reg_bank, RegIndex::new(i as u8), value));
+                                    messages.push((reg_bank, RegIndex::new(i as u8), value));
                                 },
                                 regs_32_label,
                                 |i| {
@@ -425,6 +426,5 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
                 });
             }
         }
-        None
     }
 }

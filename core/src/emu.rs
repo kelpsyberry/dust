@@ -503,7 +503,7 @@ impl<E: cpu::Engine> Emu<E> {
             .write_control(swram::Control(3), &mut self.arm7, &mut self.arm9);
         self.gpu.write_power_control(gpu::PowerControl(0x820F));
 
-        // ––––––––––––––––    Game boot code     ––––––––––––––––
+        // –––––––––––––––    Program boot code    –––––––––––––––
 
         let mut arm7_loaded_data = BoxedByteSlice::new_zeroed(header.arm7_size() as usize);
         self.ds_slot

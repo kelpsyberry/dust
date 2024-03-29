@@ -245,7 +245,12 @@ impl UiState {
 }
 
 impl UiState {
-    fn load_from_rom_path(&mut self, path: &Path, config: &mut Config, window: &window::Window) {
+    fn load_from_rom_path(
+        &mut self,
+        path: &Path,
+        config: &mut Config,
+        window: &mut window::Window,
+    ) {
         let Some(game_title) = path.file_stem().and_then(|path| path.to_str()) else {
             error!("Invalid ROM path", "Invalid ROM path provided: {path:?}");
             return;
@@ -313,7 +318,7 @@ impl UiState {
         }
     }
 
-    fn load_firmware(&mut self, config: &mut Config, window: &window::Window) {
+    fn load_firmware(&mut self, config: &mut Config, window: &mut window::Window) {
         self.stop(config, window);
         match config::Launch::new(&config.config, true) {
             Ok((launch_config, warnings)) => {
@@ -461,7 +466,7 @@ impl UiState {
         save_path: Option<PathBuf>,
         title: String,
         ds_slot_rom: Option<(DsSlotRom, &Path)>,
-        window: &window::Window,
+        window: &mut window::Window,
     ) {
         #[cfg(feature = "discord-presence")]
         if let Some(presence) = &mut self.discord_presence {
@@ -636,7 +641,7 @@ impl UiState {
             .expect("couldn't spawn emulation thread");
 
         #[cfg(feature = "debug-views")]
-        self.debug_views.reload_emu_state();
+        self.debug_views.emu_started(window);
 
         self.emu = Some(EmuState {
             playing,
@@ -679,7 +684,7 @@ impl UiState {
         }
     }
 
-    fn stop(&mut self, config: &mut Config, window: &window::Window) {
+    fn stop(&mut self, config: &mut Config, window: &mut window::Window) {
         self.stop_emu(config);
 
         self.savestate_editor
@@ -692,7 +697,7 @@ impl UiState {
         config.config.unset_game();
 
         #[cfg(feature = "debug-views")]
-        self.debug_views.clear_frame_data();
+        self.debug_views.emu_stopped(window);
 
         triple_buffer::reset(
             (
@@ -1208,6 +1213,11 @@ pub fn main() {
                                 continue 'process_notifs;
                             }
 
+                            #[cfg(feature = "debug-views")]
+                            emu::Notification::DebugViews(notif) => {
+                                state.debug_views.handle_notif(notif, window);
+                            }
+
                             emu::Notification::RtcTimeOffsetSecondsUpdated(value) => {
                                 set_config!(config.config, rtc_time_offset_seconds, value);
                                 config.config.rtc_time_offset_seconds.clear_updates();
@@ -1499,7 +1509,7 @@ pub fn main() {
 
                             #[cfg(feature = "debug-views")]
                             section! {{
-                                state.debug_views.draw_menu(ui, window);
+                                state.debug_views.draw_menu(state.emu.is_some(), ui, window);
                             }}
                         });
                     }
@@ -1539,7 +1549,7 @@ pub fn main() {
 
             // Draw debug views
             #[cfg(feature = "debug-views")]
-            for message in state.debug_views.draw(ui, window, state.emu.is_some()) {
+            for message in state.debug_views.draw(ui, window) {
                 if let Some(emu) = &state.emu {
                     emu.send_message(emu::Message::DebugViews(message));
                 }

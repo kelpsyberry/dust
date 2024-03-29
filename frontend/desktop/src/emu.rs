@@ -110,6 +110,9 @@ pub enum Message {
 
 pub enum Notification {
     Stopped,
+    #[cfg(feature = "debug-views")]
+    DebugViews(debug_views::Notification),
+
     RtcTimeOffsetSecondsUpdated(i64),
     SavestateCreated(String, Savestate),
     SavestateFailed(String),
@@ -474,7 +477,7 @@ pub(super) fn run(
     let mut last_save_flush_time = last_frame_time;
 
     #[cfg(feature = "debug-views")]
-    let mut debug_views = debug_views::EmuState::new();
+    let mut debug_views = debug_views::ViewsEmuState::new();
 
     #[cfg(feature = "gdb-server")]
     let mut gdb_server = None;
@@ -514,7 +517,9 @@ pub(super) fn run(
 
                 #[cfg(feature = "debug-views")]
                 Message::DebugViews(message) => {
-                    debug_views.handle_message(&mut emu, message);
+                    if let Some(notif) = debug_views.handle_message(&mut emu, message) {
+                        notif!(Notification::DebugViews(notif));
+                    }
                 }
 
                 Message::Reset => {

@@ -1,6 +1,6 @@
 use super::{
     common::regs::{bitfield, BitfieldCommand},
-    FrameDataSlot, InstanceableView, Messages, View,
+    FrameDataSlot, BaseView, InstanceableEmuState, InstanceableView, Messages, RefreshType, View,
 };
 use crate::ui::window::Window;
 use dust_core::{
@@ -8,7 +8,7 @@ use dust_core::{
     cpu,
     emu::Emu,
 };
-use imgui::{PlotLines, SliderFlags, StyleVar, TableFlags, Ui};
+use imgui::{PlotLines, SliderFlags, StyleVar, TableFlags};
 use realfft::{num_complex::Complex, RealFftPlanner as FftPlanner};
 use std::cmp::Ordering;
 
@@ -80,6 +80,78 @@ impl Default for ChannelData {
     }
 }
 
+pub struct EmuState {
+    channel_index: ChannelIndex,
+}
+
+impl super::EmuState for EmuState {
+    type InitData = ChannelIndex;
+    type Message = ChannelIndex;
+    type FrameData = (ChannelData, Vec<i16>);
+
+    fn new<E: cpu::Engine>(channel_index: Self::InitData, visible: bool, emu: &mut Emu<E>) -> Self {
+        if visible {
+            emu.audio.channel_audio_capture_data.mask |= 1 << channel_index.get();
+        }
+        EmuState { channel_index }
+    }
+
+    fn destroy<E: cpu::Engine>(self, emu: &mut Emu<E>) {
+        emu.audio.channel_audio_capture_data.mask = 0;
+    }
+
+    fn handle_visibility_changed<E: cpu::Engine>(&mut self, visible: bool, emu: &mut Emu<E>) {
+        if visible {
+            emu.audio.channel_audio_capture_data.mask |= 1 << self.channel_index.get();
+        } else {
+            emu.audio.channel_audio_capture_data.mask = 0;
+        }
+    }
+
+    fn handle_message<E: cpu::Engine>(&mut self, channel_index: Self::Message, emu: &mut Emu<E>) {
+        emu.audio.channel_audio_capture_data.mask = 1 << channel_index.get();
+        self.channel_index = channel_index;
+    }
+
+    fn prepare_frame_data<'a, E: cpu::Engine, S: FrameDataSlot<'a, Self::FrameData>>(
+        &mut self,
+        emu: &mut Emu<E>,
+        frame_data: S,
+    ) {
+        let frame_data = frame_data.get_or_insert_with(|| (ChannelData::default(), Vec::new()));
+        frame_data.0.channel = Some(self.channel_index);
+        frame_data.1.clear();
+        frame_data.1.extend_from_slice(
+            &emu.audio.channel_audio_capture_data.buffers[self.channel_index.get() as usize],
+        );
+        let channel = &emu.audio.channels[self.channel_index.get() as usize];
+        frame_data.0.control = channel.control();
+    }
+}
+
+impl InstanceableEmuState for EmuState {
+    const ADDITION_TRIGGERS_REFRESH: bool = false;
+    const DELETION_TRIGGERS_REFRESH: bool = true;
+    fn visibility_change_triggers_refresh(visible: bool) -> bool {
+        !visible
+    }
+    fn message_triggers_refresh(_message: &Self::Message) -> bool {
+        true
+    }
+
+    fn refresh<E: cpu::Engine>(&mut self, _ty: RefreshType, visible: bool, emu: &mut Emu<E>) {
+        if visible {
+            emu.audio.channel_audio_capture_data.mask |= 1 << self.channel_index.get();
+        }
+    }
+
+    fn finish_preparing_frame_data<E: cpu::Engine>(emu: &mut Emu<E>) {
+        for buffer in &mut emu.audio.channel_audio_capture_data.buffers {
+            buffer.clear();
+        }
+    }
+}
+
 pub struct AudioChannels {
     cur_channel: ChannelIndex,
     samples_to_show: u32,
@@ -92,11 +164,8 @@ pub struct AudioChannels {
     fft_output_f32_buf: Vec<f32>,
 }
 
-impl View for AudioChannels {
-    const NAME: &'static str = "Audio channels";
-
-    type FrameData = (ChannelData, Vec<i16>);
-    type EmuState = ChannelIndex;
+impl BaseView for AudioChannels {
+    const MENU_NAME: &'static str = "Audio channels";
 
     fn new(_window: &mut Window) -> Self {
         const DEFAULT_SAMPLES: u32 = 512 * 8;
@@ -112,68 +181,27 @@ impl View for AudioChannels {
             fft_output_f32_buf: Vec::new(),
         }
     }
+}
 
-    fn destroy(self, _window: &mut Window) {}
+impl View for AudioChannels {
+    type EmuState = EmuState;
 
-    fn emu_state(&self) -> Self::EmuState {
+    fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
         self.cur_channel
     }
 
-    fn handle_emu_state_changed<E: cpu::Engine>(
-        prev_channel_index: Option<&Self::EmuState>,
-        new_channel_index: Option<&Self::EmuState>,
-        emu: &mut Emu<E>,
+    fn update_from_frame_data(
+        &mut self,
+        frame_data: &<Self::EmuState as super::EmuState>::FrameData,
+        _window: &mut Window,
     ) {
-        if let Some(prev_channel_index) = prev_channel_index {
-            emu.audio.channel_audio_capture_data.mask &= !(1 << prev_channel_index.get());
-        }
-        if let Some(new_channel_index) = new_channel_index {
-            emu.audio.channel_audio_capture_data.mask |= 1 << new_channel_index.get();
-        }
-    }
-
-    fn prepare_frame_data<'a, E: cpu::Engine, S: FrameDataSlot<'a, Self::FrameData>>(
-        channel_index: &Self::EmuState,
-        emu: &mut Emu<E>,
-        frame_data: S,
-    ) {
-        let frame_data = frame_data.get_or_insert_with(|| (ChannelData::default(), Vec::new()));
-        frame_data.0.channel = Some(*channel_index);
-        frame_data.1.clear();
-        frame_data.1.extend_from_slice(
-            &emu.audio.channel_audio_capture_data.buffers[channel_index.get() as usize],
-        );
-        let channel = &emu.audio.channels[channel_index.get() as usize];
-        frame_data.0.control = channel.control();
-    }
-
-    fn clear_frame_data(&mut self) {
-        self.data.channel = None;
-        self.samples.fill(0.0);
-    }
-
-    fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, _window: &mut Window) {
         self.data.channel = frame_data.0.channel;
         self.samples
             .extend(frame_data.1.iter().map(|sample| *sample as f32 / 32768.0));
         self.data.control = frame_data.0.control;
     }
 
-    fn customize_window<'ui, 'a, T: AsRef<str>>(
-        &mut self,
-        _ui: &imgui::Ui,
-        window: imgui::Window<'ui, 'a, T>,
-    ) -> imgui::Window<'ui, 'a, T> {
-        window
-    }
-
-    fn draw(
-        &mut self,
-        ui: &Ui,
-        window: &mut Window,
-        _emu_running: bool,
-        _messages: impl Messages<Self>,
-    ) -> Option<Self::EmuState> {
+    fn draw(&mut self, ui: &imgui::Ui, window: &mut Window, mut messages: impl Messages<Self>) {
         let item_spacing = style!(ui, item_spacing);
 
         let sliders_width = 0.5 * (ui.content_region_avail()[0] - item_spacing[0]);
@@ -185,15 +213,13 @@ impl View for AudioChannels {
             .display_format("Channel %d")
             .build(&mut raw_channel_index);
 
-        let new_state = if selection_updated {
+        if selection_updated {
             self.samples.fill(0.0);
             if let Some(channel_index) = ChannelIndex::new_checked(raw_channel_index) {
                 self.cur_channel = channel_index;
             }
-            Some(self.cur_channel)
-        } else {
-            None
-        };
+            messages.push(self.cur_channel);
+        }
 
         ui.same_line();
         ui.set_next_item_width(sliders_width);
@@ -208,7 +234,7 @@ impl View for AudioChannels {
         }
 
         if self.data.channel != Some(self.cur_channel) {
-            return new_state;
+            return;
         }
 
         PlotLines::new(ui, "##sample_graph", &self.samples.buffer)
@@ -353,15 +379,7 @@ impl View for AudioChannels {
             ui.same_line();
             ui.checkbox("##running", &mut self.data.control.running());
         }
-
-        new_state
     }
 }
 
-impl InstanceableView for AudioChannels {
-    fn finish_preparing_frame_data<E: cpu::Engine>(emu: &mut Emu<E>) {
-        for buffer in &mut emu.audio.channel_audio_capture_data.buffers {
-            buffer.clear();
-        }
-    }
-}
+impl InstanceableView for AudioChannels {}

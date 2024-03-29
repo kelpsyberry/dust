@@ -1,6 +1,6 @@
 use super::{
     common::{rgb32f_to_rgb5, rgb5_to_rgb32f, rgb5_to_rgba32f},
-    FrameDataSlot, InstanceableView, Messages, View,
+    BaseView, FrameDataSlot, InstanceableEmuState, InstanceableView, Messages, View,
 };
 use crate::ui::{utils::combo_value, window::Window};
 use dust_core::{cpu, emu::Emu, utils::mem_prelude::*};
@@ -54,67 +54,85 @@ impl Default for PaletteData {
     }
 }
 
-pub struct Palettes2d {
-    cur_selection: Selection,
-    data: PaletteData,
-    cur_color_index: u16,
-    cur_color: [f32; 3],
+pub enum Message {
+    Write {
+        selection: Selection,
+        index: u16,
+        value: u16,
+    },
+    UpdateSelection(Selection),
 }
 
-impl View for Palettes2d {
-    const NAME: &'static str = "2D engine palettes";
+pub struct EmuState {
+    selection: Selection,
+}
 
+impl super::EmuState for EmuState {
+    type InitData = Selection;
+    type Message = Message;
     type FrameData = PaletteData;
-    type EmuState = Selection;
-    type Message = (Selection, u16, u16);
 
-    fn new(_window: &mut Window) -> Self {
-        Palettes2d {
-            cur_selection: Selection {
-                engine: Engine2d::A,
-                palette: Palette::Bg,
+    fn new<E: cpu::Engine>(selection: Self::InitData, _visible: bool, _emu: &mut Emu<E>) -> Self {
+        EmuState { selection }
+    }
+
+    fn handle_message<E: cpu::Engine>(&mut self, message: Self::Message, emu: &mut Emu<E>) {
+        match message {
+            Message::Write {
+                selection,
+                index,
+                value,
+            } => match selection.palette {
+                Palette::Bg => {
+                    let base = ((selection.engine == Engine2d::B) as u32) << 10;
+                    emu.gpu
+                        .vram
+                        .write_palette(base | ((index as u32) << 1), value);
+                }
+
+                Palette::Obj => {
+                    let base = ((selection.engine == Engine2d::B) as u32) << 10 | 0x200;
+                    emu.gpu
+                        .vram
+                        .write_palette(base | ((index as u32) << 1), value);
+                }
+
+                Palette::ExtBg => match selection.engine {
+                    Engine2d::A => emu.gpu.vram.write_a_bg_ext_pal((index as u32) << 1, value),
+                    Engine2d::B => emu.gpu.vram.write_b_bg_ext_pal((index as u32) << 1, value),
+                },
+
+                Palette::ExtObj => match selection.engine {
+                    Engine2d::A => emu.gpu.vram.write_a_obj_ext_pal((index as u32) << 1, value),
+                    Engine2d::B => emu.gpu.vram.write_b_obj_ext_pal((index as u32) << 1, value),
+                },
             },
-            data: PaletteData::default(),
-            cur_color_index: 0,
-            cur_color: [0.0; 3],
+            Message::UpdateSelection(selection) => self.selection = selection,
         }
     }
 
-    fn destroy(self, _window: &mut Window) {}
-
-    fn emu_state(&self) -> Self::EmuState {
-        self.cur_selection
-    }
-
-    fn handle_emu_state_changed<E: cpu::Engine>(
-        _prev: Option<&Self::EmuState>,
-        _new: Option<&Self::EmuState>,
-        _emu: &mut Emu<E>,
-    ) {
-    }
-
     fn prepare_frame_data<'a, E: cpu::Engine, S: FrameDataSlot<'a, Self::FrameData>>(
-        emu_state: &Self::EmuState,
+        &mut self,
         emu: &mut Emu<E>,
         frame_data: S,
     ) {
         let palette_data = frame_data.get_or_insert_with(Default::default);
-        palette_data.selection = Some(*emu_state);
+        palette_data.selection = Some(self.selection);
         unsafe {
-            match emu_state.palette {
+            match self.selection.palette {
                 Palette::Bg => {
-                    let base = ((emu_state.engine == Engine2d::B) as usize) << 10;
+                    let base = ((self.selection.engine == Engine2d::B) as usize) << 10;
                     palette_data.data[..0x200]
                         .copy_from_slice(&emu.gpu.vram.palette.as_arr()[base..base + 0x200]);
                 }
 
                 Palette::Obj => {
-                    let base = ((emu_state.engine == Engine2d::B) as usize) << 10 | 0x200;
+                    let base = ((self.selection.engine == Engine2d::B) as usize) << 10 | 0x200;
                     palette_data.data[..0x200]
                         .copy_from_slice(&emu.gpu.vram.palette.as_arr()[base..base + 0x200]);
                 }
 
-                Palette::ExtBg => match emu_state.engine {
+                Palette::ExtBg => match self.selection.engine {
                     Engine2d::A => emu.gpu.vram.read_a_bg_ext_pal_slice(
                         0,
                         0x8000,
@@ -127,7 +145,7 @@ impl View for Palettes2d {
                     ),
                 },
 
-                Palette::ExtObj => match emu_state.engine {
+                Palette::ExtObj => match self.selection.engine {
                     Engine2d::A => emu.gpu.vram.read_a_obj_ext_pal_slice(
                         0,
                         0x2000,
@@ -142,66 +160,51 @@ impl View for Palettes2d {
             }
         }
     }
+}
 
-    fn handle_custom_message<E: cpu::Engine>(
-        (selection, index, value): Self::Message,
-        _emu_state: &Self::EmuState,
-        emu: &mut Emu<E>,
-    ) {
-        match selection.palette {
-            Palette::Bg => {
-                let base = ((selection.engine == Engine2d::B) as usize) << 10;
-                emu.gpu
-                    .vram
-                    .palette
-                    .write_le(base | ((index as usize) << 1), value);
-            }
+impl InstanceableEmuState for EmuState {}
 
-            Palette::Obj => {
-                let base = ((selection.engine == Engine2d::B) as usize) << 10 | 0x200;
-                emu.gpu
-                    .vram
-                    .palette
-                    .write_le(base | ((index as usize) << 1), value);
-            }
+pub struct Palettes2d {
+    cur_selection: Selection,
+    data: PaletteData,
+    cur_color_index: u16,
+    cur_color: [f32; 3],
+}
 
-            Palette::ExtBg => match selection.engine {
-                Engine2d::A => emu.gpu.vram.write_a_bg_ext_pal((index as u32) << 1, value),
-                Engine2d::B => emu.gpu.vram.write_b_bg_ext_pal((index as u32) << 1, value),
+impl BaseView for Palettes2d {
+    const MENU_NAME: &'static str = "2D engine palettes";
+
+    fn new(_window: &mut Window) -> Self {
+        Palettes2d {
+            cur_selection: Selection {
+                engine: Engine2d::A,
+                palette: Palette::Bg,
             },
-
-            Palette::ExtObj => match selection.engine {
-                Engine2d::A => emu.gpu.vram.write_a_obj_ext_pal((index as u32) << 1, value),
-                Engine2d::B => emu.gpu.vram.write_b_obj_ext_pal((index as u32) << 1, value),
-            },
+            data: PaletteData::default(),
+            cur_color_index: 0,
+            cur_color: [0.0; 3],
         }
     }
+}
 
-    fn clear_frame_data(&mut self) {
-        self.data.selection = None;
+impl View for Palettes2d {
+    type EmuState = EmuState;
+
+    fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
+        self.cur_selection
     }
 
-    fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, _window: &mut Window) {
+    fn update_from_frame_data(
+        &mut self,
+        frame_data: &<Self::EmuState as super::EmuState>::FrameData,
+        _window: &mut Window,
+    ) {
         self.data.selection = frame_data.selection;
         let data_len = frame_data.selection.unwrap().data_len();
         self.data.data[..data_len].copy_from_slice(&frame_data.data[..data_len]);
     }
 
-    fn customize_window<'ui, 'a, T: AsRef<str>>(
-        &mut self,
-        _ui: &imgui::Ui,
-        window: imgui::Window<'ui, 'a, T>,
-    ) -> imgui::Window<'ui, 'a, T> {
-        window
-    }
-
-    fn draw(
-        &mut self,
-        ui: &Ui,
-        _window: &mut Window,
-        _emu_running: bool,
-        mut messages: impl Messages<Self>,
-    ) -> Option<Self::EmuState> {
+    fn draw(&mut self, ui: &imgui::Ui, _window: &mut Window, mut messages: impl Messages<Self>) {
         static POSSIBLE_SELECTIONS: [Selection; 8] = [
             Selection::new(Engine2d::A, Palette::Bg),
             Selection::new(Engine2d::A, Palette::Obj),
@@ -235,14 +238,12 @@ impl View for Palettes2d {
             },
         );
 
-        let new_state = if selection_updated {
-            Some(self.cur_selection)
-        } else {
-            None
-        };
+        if selection_updated {
+            messages.push(Message::UpdateSelection(self.cur_selection));
+        }
 
         if self.data.selection != Some(self.cur_selection) {
-            return new_state;
+            return;
         }
 
         let _frame_rounding = ui.push_style_var(StyleVar::FrameRounding(1.0));
@@ -306,15 +307,15 @@ impl View for Palettes2d {
                     .alpha(false)
                     .build()
                 {
-                    messages.push_custom((self.cur_selection, i, rgb32f_to_rgb5(self.cur_color)))
+                    messages.push(Message::Write {
+                        selection: self.cur_selection,
+                        index: i,
+                        value: rgb32f_to_rgb5(self.cur_color),
+                    });
                 }
             });
         }
-
-        new_state
     }
 }
 
-impl InstanceableView for Palettes2d {
-    fn finish_preparing_frame_data<E: cpu::Engine>(_emu: &mut Emu<E>) {}
-}
+impl InstanceableView for Palettes2d {}

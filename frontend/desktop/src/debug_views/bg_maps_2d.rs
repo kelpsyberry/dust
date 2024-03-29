@@ -1,4 +1,6 @@
-use super::{common::rgb5_to_rgba8, FrameDataSlot, InstanceableView, Messages, View};
+use super::{
+    common::rgb5_to_rgba8, BaseView, FrameDataSlot, InstanceableEmuState, InstanceableView, Messages, View,
+};
 use crate::ui::{
     utils::{add2, combo_value, scale_to_fit, sub2s},
     window::Window,
@@ -12,7 +14,7 @@ use dust_core::{
     },
     utils::mem_prelude::*,
 };
-use imgui::{Image, MouseButton, SliderFlags, StyleColor, TextureId, Ui, WindowHoveredFlags};
+use imgui::{Image, MouseButton, SliderFlags, StyleColor, TextureId, WindowHoveredFlags};
 use std::slice;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -95,72 +97,25 @@ impl Default for BgMapData {
     }
 }
 
-pub struct BgMaps2d {
-    cur_selection: Selection,
-    tex_id: TextureId,
-    show_transparency_checkerboard: bool,
-    show_grid_lines: bool,
-    palette_buffer: Box<[u32; 0x1000]>,
-    pixel_buffer: Box<[u32; 1024 * 1024]>,
-    data: BgMapData,
+pub struct EmuState {
+    selection: Selection,
 }
 
-impl View for BgMaps2d {
-    const NAME: &'static str = "2D BG maps";
-
+impl super::EmuState for EmuState {
+    type InitData = Selection;
+    type Message = Selection;
     type FrameData = BgMapData;
-    type EmuState = Selection;
 
-    fn new(window: &mut Window) -> Self {
-        let tex_id = window.imgui_gfx.create_and_add_owned_texture(
-            Some("BG map".into()),
-            imgui_wgpu::TextureDescriptor {
-                width: 1024,
-                height: 1024,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                ..Default::default()
-            },
-            imgui_wgpu::SamplerDescriptor {
-                mag_filter: wgpu::FilterMode::Nearest,
-                min_filter: wgpu::FilterMode::Linear,
-                ..Default::default()
-            },
-        );
-        unsafe {
-            BgMaps2d {
-                cur_selection: Selection {
-                    engine: Engine2d::A,
-                    bg_index: BgIndex::new(0),
-                    use_ext_palettes: None,
-                    display_mode: None,
-                },
-                tex_id,
-                show_transparency_checkerboard: true,
-                show_grid_lines: true,
-                palette_buffer: Box::new_zeroed().assume_init(),
-                pixel_buffer: Box::new_zeroed().assume_init(),
-                data: BgMapData::default(),
-            }
-        }
+    fn new<E: cpu::Engine>(selection: Self::InitData, _visible: bool, _emu: &mut Emu<E>) -> Self {
+        EmuState { selection }
     }
 
-    fn destroy(self, window: &mut Window) {
-        window.imgui_gfx.remove_texture(self.tex_id);
-    }
-
-    fn emu_state(&self) -> Self::EmuState {
-        self.cur_selection
-    }
-
-    fn handle_emu_state_changed<E: cpu::Engine>(
-        _prev: Option<&Self::EmuState>,
-        _new: Option<&Self::EmuState>,
-        _emu: &mut Emu<E>,
-    ) {
+    fn handle_message<E: cpu::Engine>(&mut self, selection: Self::Message, _emu: &mut Emu<E>) {
+        self.selection = selection;
     }
 
     fn prepare_frame_data<'a, E: cpu::Engine, S: FrameDataSlot<'a, Self::FrameData>>(
-        emu_state: &Self::EmuState,
+        &mut self,
         emu: &mut Emu<E>,
         frame_data: S,
     ) {
@@ -243,7 +198,7 @@ impl View for BgMaps2d {
         fn copy_bg_render_data<R: Role>(
             engine: &engine_2d::Engine2d<R>,
             vram: &Vram,
-            selection: &Selection,
+            selection: Selection,
             data: &mut BgMapData,
         ) {
             let bg = &engine.bgs[selection.bg_index.get() as usize];
@@ -403,23 +358,89 @@ impl View for BgMaps2d {
         let frame_data = frame_data.get_or_insert_with(Default::default);
         frame_data.bgs[0] = get_bgs_data(&emu.gpu.engine_2d_a);
         frame_data.bgs[1] = get_bgs_data(&emu.gpu.engine_2d_b);
-        frame_data.selection = Some(*emu_state);
-        match emu_state.engine {
-            Engine2d::A => {
-                copy_bg_render_data(&emu.gpu.engine_2d_a, &emu.gpu.vram, emu_state, frame_data)
-            }
-            Engine2d::B => {
-                copy_bg_render_data(&emu.gpu.engine_2d_b, &emu.gpu.vram, emu_state, frame_data)
+        frame_data.selection = Some(self.selection);
+        match self.selection.engine {
+            Engine2d::A => copy_bg_render_data(
+                &emu.gpu.engine_2d_a,
+                &emu.gpu.vram,
+                self.selection,
+                frame_data,
+            ),
+            Engine2d::B => copy_bg_render_data(
+                &emu.gpu.engine_2d_b,
+                &emu.gpu.vram,
+                self.selection,
+                frame_data,
+            ),
+        }
+    }
+}
+
+impl InstanceableEmuState for EmuState {}
+
+pub struct BgMaps2d {
+    cur_selection: Selection,
+    tex_id: TextureId,
+    show_transparency_checkerboard: bool,
+    show_grid_lines: bool,
+    palette_buffer: Box<[u32; 0x1000]>,
+    pixel_buffer: Box<[u32; 1024 * 1024]>,
+    data: BgMapData,
+}
+
+impl BaseView for BgMaps2d {
+    const MENU_NAME: &'static str = "2D BG maps";
+
+    fn new(window: &mut Window) -> Self {
+        let tex_id = window.imgui_gfx.create_and_add_owned_texture(
+            Some("BG map".into()),
+            imgui_wgpu::TextureDescriptor {
+                width: 1024,
+                height: 1024,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                ..Default::default()
+            },
+            imgui_wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            },
+        );
+        unsafe {
+            BgMaps2d {
+                cur_selection: Selection {
+                    engine: Engine2d::A,
+                    bg_index: BgIndex::new(0),
+                    use_ext_palettes: None,
+                    display_mode: None,
+                },
+                tex_id,
+                show_transparency_checkerboard: true,
+                show_grid_lines: true,
+                palette_buffer: Box::new_zeroed().assume_init(),
+                pixel_buffer: Box::new_zeroed().assume_init(),
+                data: BgMapData::default(),
             }
         }
     }
 
-    fn clear_frame_data(&mut self) {
-        self.data.bgs = BgMapData::default_bgs();
-        self.data.selection = None;
+    fn destroy(self, window: &mut Window) {
+        window.imgui_gfx.remove_texture(self.tex_id);
+    }
+}
+
+impl View for BgMaps2d {
+    type EmuState = EmuState;
+
+    fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
+        self.cur_selection
     }
 
-    fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, _window: &mut Window) {
+    fn update_from_frame_data(
+        &mut self,
+        frame_data: &<Self::EmuState as super::EmuState>::FrameData,
+        _window: &mut Window,
+    ) {
         self.data.bgs = frame_data.bgs;
         self.data.selection = frame_data.selection;
         self.data.cur_bg = frame_data.cur_bg;
@@ -438,21 +459,7 @@ impl View for BgMaps2d {
         self.data.palette[..palette_len].copy_from_slice(&frame_data.palette[..palette_len]);
     }
 
-    fn customize_window<'ui, 'a, T: AsRef<str>>(
-        &mut self,
-        _ui: &imgui::Ui,
-        window: imgui::Window<'ui, 'a, T>,
-    ) -> imgui::Window<'ui, 'a, T> {
-        window
-    }
-
-    fn draw(
-        &mut self,
-        ui: &Ui,
-        window: &mut Window,
-        _emu_running: bool,
-        _messages: impl Messages<Self>,
-    ) -> Option<Self::EmuState> {
+    fn draw(&mut self, ui: &imgui::Ui, window: &mut Window, mut messages: impl Messages<Self>) {
         if ui.is_window_hovered_with_flags(WindowHoveredFlags::ROOT_AND_CHILD_WINDOWS)
             && ui.is_mouse_clicked(MouseButton::Right)
         {
@@ -569,11 +576,9 @@ impl View for BgMaps2d {
             },
         );
 
-        let new_state = if selection_updated {
-            Some(self.cur_selection)
-        } else {
-            None
-        };
+        if selection_updated {
+            messages.push(self.cur_selection);
+        }
 
         if self.data.selection == Some(self.cur_selection) {
             ui.align_text_to_frame_padding();
@@ -598,7 +603,7 @@ impl View for BgMaps2d {
         });
 
         if self.data.selection != Some(self.cur_selection) {
-            return new_state;
+            return;
         }
 
         let (mut image_pos, image_size) = scale_to_fit(
@@ -881,11 +886,7 @@ impl View for BgMaps2d {
                     ..Default::default()
                 },
             );
-
-        new_state
     }
 }
 
-impl InstanceableView for BgMaps2d {
-    fn finish_preparing_frame_data<E: cpu::Engine>(_emu: &mut Emu<E>) {}
-}
+impl InstanceableView for BgMaps2d {}

@@ -293,9 +293,7 @@ impl Editor {
                 };
             let mut warnings = Vec::new();
             for entry in dir_entries {
-                let Ok(entry) = entry else {
-                    continue;
-                };
+                let Ok(entry) = entry else { continue };
                 let path = entry.path();
                 if path.extension() != Some("state".as_ref()) {
                     continue;

@@ -1,4 +1,4 @@
-use super::{FrameDataSlot, InstanceableView, Messages, View};
+use super::{BaseView, FrameDataSlot, InstanceableEmuState, InstanceableView, Messages, View};
 use crate::ui::window::Window;
 use dust_core::{
     cpu::{self, arm7, arm9, bus},
@@ -6,29 +6,92 @@ use dust_core::{
 };
 use imgui_memory_editor::{Addr, MemoryEditor, RangeInclusive};
 
+pub struct MemContents {
+    visible_addrs: RangeInclusive<Addr>,
+    data: Vec<u32>,
+}
+
+pub enum Message {
+    Write { addr: u32, value: u8 },
+    UpdateVisibleAddrs(RangeInclusive<Addr>),
+}
+
+pub struct EmuState<const ARM9: bool> {
+    visible_addrs: RangeInclusive<Addr>,
+}
+
+impl<const ARM9: bool> super::EmuState for EmuState<ARM9> {
+    type InitData = RangeInclusive<Addr>;
+    type Message = Message;
+    type FrameData = MemContents;
+
+    fn new<E: cpu::Engine>(
+        visible_addrs: Self::InitData,
+        _visible: bool,
+        _emu: &mut Emu<E>,
+    ) -> Self {
+        EmuState { visible_addrs }
+    }
+
+    fn handle_message<E: cpu::Engine>(&mut self, message: Self::Message, emu: &mut Emu<E>) {
+        match message {
+            Message::Write { addr, value } => {
+                if ARM9 {
+                    arm9::bus::write_8::<bus::DebugCpuAccess, E>(emu, addr, value);
+                } else {
+                    arm7::bus::write_8::<bus::DebugCpuAccess, E>(emu, addr, value);
+                }
+            }
+            Message::UpdateVisibleAddrs(addrs) => self.visible_addrs = addrs,
+        }
+    }
+
+    fn prepare_frame_data<'a, E: cpu::Engine, S: FrameDataSlot<'a, Self::FrameData>>(
+        &mut self,
+        emu: &mut Emu<E>,
+        frame_data: S,
+    ) {
+        let frame_data = frame_data.get_or_insert_with(|| MemContents {
+            visible_addrs: RangeInclusive { start: 0, end: 0 },
+            data: Vec::new(),
+        });
+        frame_data.data.clear();
+        frame_data
+            .data
+            .reserve(((self.visible_addrs.end - self.visible_addrs.start) >> 2) as usize);
+        for addr in (self.visible_addrs.start..=self.visible_addrs.end).step_by(4) {
+            frame_data.data.push(if ARM9 {
+                arm9::bus::read_32::<bus::DebugCpuAccess, E, false>(emu, addr as u32)
+            } else {
+                arm7::bus::read_32::<bus::DebugCpuAccess, E>(emu, addr as u32)
+            });
+        }
+        frame_data.visible_addrs = self.visible_addrs;
+    }
+}
+
+impl<const ARM9: bool> InstanceableEmuState for EmuState<ARM9> {}
+
 pub struct CpuMemory<const ARM9: bool> {
     editor: MemoryEditor,
     last_visible_addrs: RangeInclusive<Addr>,
     mem_contents: MemContents,
 }
 
-#[derive(Clone)]
-pub struct EmuState {
-    visible_addrs: RangeInclusive<Addr>,
+impl<const ARM9: bool> InstanceableView for CpuMemory<ARM9> {
+    fn window<'ui>(
+        &mut self,
+        key: u32,
+        ui: &'ui imgui::Ui,
+    ) -> imgui::Window<'ui, 'ui, impl AsRef<str> + 'static> {
+        let width = self.editor.window_width(ui);
+        ui.window(format!("{} {key}", Self::MENU_NAME))
+            .size_constraints([width, 0.0], [width, f32::INFINITY])
+    }
 }
 
-#[derive(Clone)]
-pub struct MemContents {
-    visible_addrs: RangeInclusive<Addr>,
-    data: Vec<u32>,
-}
-
-impl<const ARM9: bool> View for CpuMemory<ARM9> {
-    const NAME: &'static str = if ARM9 { "ARM9 memory" } else { "ARM7 memory" };
-
-    type FrameData = MemContents;
-    type EmuState = EmuState;
-    type Message = (u32, u8);
+impl<const ARM9: bool> BaseView for CpuMemory<ARM9> {
+    const MENU_NAME: &'static str = if ARM9 { "ARM9 memory" } else { "ARM7 memory" };
 
     fn new(_window: &mut Window) -> Self {
         let mut editor = MemoryEditor::new();
@@ -43,83 +106,26 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
             },
         }
     }
+}
 
-    fn destroy(self, _window: &mut Window) {}
+impl<const ARM9: bool> View for CpuMemory<ARM9> {
+    type EmuState = EmuState<ARM9>;
 
-    fn emu_state(&self) -> Self::EmuState {
-        EmuState {
-            visible_addrs: self.last_visible_addrs,
-        }
+    fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
+        self.last_visible_addrs
     }
 
-    fn handle_emu_state_changed<E: cpu::Engine>(
-        _prev: Option<&Self::EmuState>,
-        _new: Option<&Self::EmuState>,
-        _emu: &mut Emu<E>,
+    fn update_from_frame_data(
+        &mut self,
+        frame_data: &<Self::EmuState as super::EmuState>::FrameData,
+        _window: &mut Window,
     ) {
-    }
-
-    fn prepare_frame_data<'a, E: cpu::Engine, S: FrameDataSlot<'a, Self::FrameData>>(
-        emu_state: &Self::EmuState,
-        emu: &mut Emu<E>,
-        frame_data: S,
-    ) {
-        let frame_data = frame_data.get_or_insert_with(|| MemContents {
-            visible_addrs: RangeInclusive { start: 0, end: 0 },
-            data: Vec::new(),
-        });
-        frame_data.data.clear();
-        frame_data
-            .data
-            .reserve(((emu_state.visible_addrs.end - emu_state.visible_addrs.start) >> 2) as usize);
-        for addr in (emu_state.visible_addrs.start..=emu_state.visible_addrs.end).step_by(4) {
-            frame_data.data.push(if ARM9 {
-                arm9::bus::read_32::<bus::DebugCpuAccess, E, false>(emu, addr as u32)
-            } else {
-                arm7::bus::read_32::<bus::DebugCpuAccess, E>(emu, addr as u32)
-            });
-        }
-        frame_data.visible_addrs = emu_state.visible_addrs;
-    }
-
-    fn handle_custom_message<E: cpu::Engine>(
-        (addr, value): Self::Message,
-        _emu_state: &Self::EmuState,
-        emu: &mut Emu<E>,
-    ) {
-        if ARM9 {
-            arm9::bus::write_8::<bus::DebugCpuAccess, E>(emu, addr, value);
-        } else {
-            arm7::bus::write_8::<bus::DebugCpuAccess, E>(emu, addr, value);
-        }
-    }
-
-    fn clear_frame_data(&mut self) {
-        self.mem_contents.data.clear();
-    }
-
-    fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, _window: &mut Window) {
         self.mem_contents.data.clear();
         self.mem_contents.data.extend_from_slice(&frame_data.data);
         self.mem_contents.visible_addrs = frame_data.visible_addrs;
     }
 
-    fn customize_window<'ui, 'a, T: AsRef<str>>(
-        &mut self,
-        ui: &imgui::Ui,
-        window: imgui::Window<'ui, 'a, T>,
-    ) -> imgui::Window<'ui, 'a, T> {
-        let width = self.editor.window_width(ui);
-        window.size_constraints([width, 0.0], [width, f32::INFINITY])
-    }
-
-    fn draw(
-        &mut self,
-        ui: &imgui::Ui,
-        window: &mut Window,
-        _emu_running: bool,
-        mut messages: impl Messages<Self>,
-    ) -> Option<Self::EmuState> {
+    fn draw(&mut self, ui: &imgui::Ui, window: &mut Window, mut messages: impl Messages<Self>) {
         let _mono_font = ui.push_font(window.imgui.mono_font);
 
         self.editor.handle_options_right_click(ui);
@@ -140,7 +146,10 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
                 }
             },
             |_, addr, value| {
-                messages.push_custom((addr as u32, value));
+                messages.push(Message::Write {
+                    addr: addr as u32,
+                    value,
+                });
             },
         );
 
@@ -149,13 +158,7 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
         visible_addrs.end = (visible_addrs.end + 3) & !3;
         if visible_addrs != self.last_visible_addrs {
             self.last_visible_addrs = visible_addrs;
-            Some(EmuState { visible_addrs })
-        } else {
-            None
+            messages.push(Message::UpdateVisibleAddrs(visible_addrs));
         }
     }
-}
-
-impl<const ARM9: bool> InstanceableView for CpuMemory<ARM9> {
-    fn finish_preparing_frame_data<E: cpu::Engine>(_emu: &mut Emu<E>) {}
 }

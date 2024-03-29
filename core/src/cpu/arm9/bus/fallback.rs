@@ -1316,12 +1316,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
             }
         }
 
-        0x05 => {
-            emu.gpu.vram.palette.write_le(addr as usize & 0x7FE, value);
-            if let Some(updates) = &mut emu.gpu.vram.bg_obj_updates {
-                updates.get_mut()[(addr >> 10 & 1) as usize].palette = true;
-            }
-        }
+        0x05 => emu.gpu.vram.write_palette(addr & 0x7FE, value),
 
         0x06 => match addr >> 21 & 7 {
             0 => emu.gpu.vram.write_a_bg(addr, value),
@@ -1331,12 +1326,7 @@ pub fn write_16<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, value
             _ => emu.gpu.vram.write_lcdc(addr, value),
         },
 
-        0x07 => {
-            emu.gpu.vram.oam.write_le(addr as usize & 0x7FE, value);
-            if let Some(updates) = &mut emu.gpu.vram.bg_obj_updates {
-                updates.get_mut()[(addr >> 10 & 1) as usize].oam = true;
-            }
-        }
+        0x07 => emu.gpu.vram.write_oam(addr & 0x7FE, value),
 
         _ =>
         {
@@ -1667,12 +1657,7 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
             }
         }
 
-        0x05 => {
-            emu.gpu.vram.palette.write_le(addr as usize & 0x7FC, value);
-            if let Some(updates) = &mut emu.gpu.vram.bg_obj_updates {
-                updates.get_mut()[(addr >> 10 & 1) as usize].palette = true;
-            }
-        }
+        0x05 => emu.gpu.vram.write_palette(addr & 0x7FC, value),
 
         0x06 => match addr >> 21 & 7 {
             0 => emu.gpu.vram.write_a_bg(addr, value),
@@ -1682,12 +1667,7 @@ pub fn write_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32, mut v
             _ => emu.gpu.vram.write_lcdc(addr, value),
         },
 
-        0x07 => {
-            emu.gpu.vram.oam.write_le(addr as usize & 0x7FC, value);
-            if let Some(updates) = &mut emu.gpu.vram.bg_obj_updates {
-                updates.get_mut()[(addr >> 10 & 1) as usize].oam = true;
-            }
-        }
+        0x07 => emu.gpu.vram.write_oam(addr & 0x7FC, value),
 
         _ =>
         {

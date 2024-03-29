@@ -3,7 +3,7 @@ use super::{
         disasm::{Addr, DisassemblyView},
         RangeInclusive,
     },
-    FrameDataSlot, InstanceableView, Messages, View,
+    FrameDataSlot, BaseView, InstanceableEmuState, InstanceableView, Messages, View,
 };
 use crate::ui::window::Window;
 use dust_core::{
@@ -15,21 +15,6 @@ use dust_core::{
 };
 use imgui::StyleColor;
 
-pub struct CpuDisasm<const ARM9: bool> {
-    view: DisassemblyView,
-    thumb: bool,
-    last_visible_addrs: RangeInclusive<Addr>,
-    last_bytes_per_line: u8,
-    disasm_results: DisassemblyResults,
-}
-
-#[derive(Clone)]
-pub struct EmuState {
-    visible_addrs: RangeInclusive<Addr>,
-    thumb: bool,
-}
-
-#[derive(Clone)]
 pub struct DisassemblyResults {
     visible_addrs: RangeInclusive<Addr>,
     cpu_pc: u32,
@@ -38,15 +23,86 @@ pub struct DisassemblyResults {
     instrs: Vec<Instr>,
 }
 
-impl<const ARM9: bool> View for CpuDisasm<ARM9> {
-    const NAME: &'static str = if ARM9 {
+pub struct EmuState<const ARM9: bool> {
+    visible_addrs: RangeInclusive<Addr>,
+    thumb: bool,
+}
+
+impl<const ARM9: bool> super::EmuState for EmuState<ARM9> {
+    type InitData = RangeInclusive<Addr>;
+    type Message = (RangeInclusive<Addr>, bool);
+    type FrameData = DisassemblyResults;
+
+    fn new<E: cpu::Engine>(
+        visible_addrs: Self::InitData,
+        _visible: bool,
+        _emu: &mut Emu<E>,
+    ) -> Self {
+        EmuState {
+            visible_addrs,
+            thumb: false,
+        }
+    }
+
+    fn handle_message<E: cpu::Engine>(
+        &mut self,
+        (visible_addrs, thumb): Self::Message,
+        _emu: &mut Emu<E>,
+    ) {
+        self.visible_addrs = visible_addrs;
+        self.thumb = thumb;
+    }
+
+    fn prepare_frame_data<'a, E: cpu::Engine, S: FrameDataSlot<'a, Self::FrameData>>(
+        &mut self,
+        emu: &mut Emu<E>,
+        frame_data: S,
+    ) {
+        let frame_data = frame_data.get_or_insert_with(|| DisassemblyResults {
+            visible_addrs: (0, 0).into(),
+            cpu_pc: 0,
+            cpu_thumb: false,
+            thumb: false,
+            instrs: Vec::new(),
+        });
+        let (r15, cpsr) = if ARM9 {
+            (emu.arm9.r15(), emu.arm9.cpsr())
+        } else {
+            (emu.arm7.r15(), emu.arm7.cpsr())
+        };
+        frame_data.visible_addrs = self.visible_addrs;
+        frame_data.cpu_pc = r15;
+        frame_data.cpu_thumb = cpsr.thumb_state();
+        frame_data.thumb = self.thumb;
+        frame_data.instrs.clear();
+        disassemble_range::<_, ARM9>(
+            emu,
+            (
+                self.visible_addrs.start as u32,
+                self.visible_addrs.end as u32,
+            ),
+            self.thumb,
+            &mut frame_data.instrs,
+        );
+    }
+}
+
+impl<const ARM9: bool> InstanceableEmuState for EmuState<ARM9> {}
+
+pub struct CpuDisasm<const ARM9: bool> {
+    view: DisassemblyView,
+    thumb: bool,
+    last_visible_addrs: RangeInclusive<Addr>,
+    last_bytes_per_line: u8,
+    disasm_results: DisassemblyResults,
+}
+
+impl<const ARM9: bool> BaseView for CpuDisasm<ARM9> {
+    const MENU_NAME: &'static str = if ARM9 {
         "ARM9 disassembly"
     } else {
         "ARM7 disassembly"
     };
-
-    type FrameData = DisassemblyResults;
-    type EmuState = EmuState;
 
     fn new(_window: &mut Window) -> Self {
         CpuDisasm {
@@ -66,63 +122,20 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
             },
         }
     }
+}
 
-    fn destroy(self, _window: &mut Window) {}
+impl<const ARM9: bool> View for CpuDisasm<ARM9> {
+    type EmuState = EmuState<ARM9>;
 
-    fn emu_state(&self) -> Self::EmuState {
-        EmuState {
-            visible_addrs: self.last_visible_addrs,
-            thumb: false,
-        }
+    fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
+        self.last_visible_addrs
     }
 
-    fn handle_emu_state_changed<E: cpu::Engine>(
-        _prev: Option<&Self::EmuState>,
-        _new: Option<&Self::EmuState>,
-        _emu: &mut Emu<E>,
+    fn update_from_frame_data(
+        &mut self,
+        frame_data: &<Self::EmuState as super::EmuState>::FrameData,
+        _window: &mut Window,
     ) {
-    }
-
-    fn prepare_frame_data<'a, E: cpu::Engine, S: FrameDataSlot<'a, Self::FrameData>>(
-        emu_state: &Self::EmuState,
-        emu: &mut Emu<E>,
-        frame_data: S,
-    ) {
-        let frame_data = frame_data.get_or_insert_with(|| DisassemblyResults {
-            visible_addrs: (0, 0).into(),
-            cpu_pc: 0,
-            cpu_thumb: false,
-            thumb: false,
-            instrs: Vec::new(),
-        });
-        let (r15, cpsr) = if ARM9 {
-            (emu.arm9.r15(), emu.arm9.cpsr())
-        } else {
-            (emu.arm7.r15(), emu.arm7.cpsr())
-        };
-        frame_data.visible_addrs = emu_state.visible_addrs;
-        frame_data.cpu_pc = r15;
-        frame_data.cpu_thumb = cpsr.thumb_state();
-        frame_data.thumb = emu_state.thumb;
-        frame_data.instrs.clear();
-        disassemble_range::<_, ARM9>(
-            emu,
-            (
-                emu_state.visible_addrs.start as u32,
-                emu_state.visible_addrs.end as u32,
-            ),
-            emu_state.thumb,
-            &mut frame_data.instrs,
-        );
-    }
-
-    fn clear_frame_data(&mut self) {
-        self.disasm_results.cpu_pc = 0;
-        self.disasm_results.cpu_thumb = false;
-        self.disasm_results.instrs.clear();
-    }
-
-    fn update_from_frame_data(&mut self, frame_data: &Self::FrameData, _window: &mut Window) {
         self.disasm_results.visible_addrs = frame_data.visible_addrs;
         self.disasm_results.cpu_pc = frame_data.cpu_pc;
         self.disasm_results.cpu_thumb = frame_data.cpu_thumb;
@@ -133,21 +146,7 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
             .extend_from_slice(&frame_data.instrs);
     }
 
-    fn customize_window<'ui, 'a, T: AsRef<str>>(
-        &mut self,
-        _ui: &imgui::Ui,
-        window: imgui::Window<'ui, 'a, T>,
-    ) -> imgui::Window<'ui, 'a, T> {
-        window
-    }
-
-    fn draw(
-        &mut self,
-        ui: &imgui::Ui,
-        window: &mut Window,
-        _emu_running: bool,
-        _messages: impl Messages<Self>,
-    ) -> Option<Self::EmuState> {
+    fn draw(&mut self, ui: &imgui::Ui, window: &mut Window, mut messages: impl Messages<Self>) {
         let mut emu_state_changed = false;
 
         let _mono_font = ui.push_font(window.imgui.mono_font);
@@ -209,16 +208,9 @@ impl<const ARM9: bool> View for CpuDisasm<ARM9> {
         let visible_addrs = self.view.visible_addrs(1);
         if emu_state_changed || visible_addrs != self.last_visible_addrs {
             self.last_visible_addrs = visible_addrs;
-            Some(EmuState {
-                visible_addrs,
-                thumb: self.thumb,
-            })
-        } else {
-            None
+            messages.push((visible_addrs, self.thumb));
         }
     }
 }
 
-impl<const ARM9: bool> InstanceableView for CpuDisasm<ARM9> {
-    fn finish_preparing_frame_data<E: cpu::Engine>(_emu: &mut Emu<E>) {}
-}
+impl<const ARM9: bool> InstanceableView for CpuDisasm<ARM9> {}
