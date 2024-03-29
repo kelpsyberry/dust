@@ -139,6 +139,7 @@ impl GfxSurface {
             match self.surface.get_current_texture() {
                 Ok(frame) => {
                     if frame.suboptimal {
+                        drop(frame);
                         self.update_format_and_rebuild_swapchain(gfx, size);
                     } else {
                         break frame;
