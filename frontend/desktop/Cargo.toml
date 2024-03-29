@@ -14,7 +14,7 @@ debug-views = [
     "dust-core/channel-audio-capture",
 ]
 gdb-server = ["gdb-protocol", "dust-core/debugger-hooks"]
-dldi = ["fatfs", "tempdir"]
+dldi = ["fatfs", "tempfile"]
 
 discord-presence = ["discord-rpc"]
 
@@ -62,7 +62,7 @@ parking_lot = "0.12"
 bitflags = "2.5"
 miniz_oxide = { version = "0.7", features = ["simd"] }
 fatfs = { version = "0.3", optional = true }
-tempdir = { version = "0.3", optional = true }
+tempfile = { version = "3.10", optional = true }
 proc-bitfield = { version = "0.3", features = ["nightly"] }
 
 # Config
@@ -86,4 +86,4 @@ gdb-protocol = { version = "0.1", optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.25"
 objc = "0.2"
-tempdir = "0.3"
+tempfile = "3.10"

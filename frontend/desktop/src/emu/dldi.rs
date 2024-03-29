@@ -8,7 +8,7 @@ use std::{
     io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 struct LoadedChunk {
     index: u64,
@@ -257,7 +257,7 @@ impl FsProvider {
             return Ok(());
         }
         let mut chunk_manager = ChunkManager {
-            temp_dir: TempDir::new("dust-dldi")?,
+            temp_dir: tempfile::Builder::new().prefix("dust-dldi").tempdir()?,
             cur_addr: 0,
             fs_max_size: 1 << 30,
             chunk_size_shift: 22,

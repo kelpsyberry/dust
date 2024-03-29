@@ -14,7 +14,7 @@ use imgui::{Image, TextureId};
 use std::path::PathBuf;
 use std::{fmt::Write, path::Path};
 #[cfg(target_os = "macos")]
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,7 +57,7 @@ impl TitleMenuBarState {
             game_file_path: None,
             #[cfg(target_os = "macos")]
             temp_icon_dir: if config!(_config, game_icon_mode) == GameIconMode::Game {
-                TempDir::new("dust-icons").ok()
+                tempfile::Builder::new().prefix("dust-icons").tempdir().ok()
             } else {
                 None
             },
@@ -292,7 +292,9 @@ impl TitleMenuBarState {
                     match config!(config, game_icon_mode) {
                         GameIconMode::None => None,
                         GameIconMode::File => None,
-                        GameIconMode::Game => TempDir::new("dust-icons").ok(),
+                        GameIconMode::Game => {
+                            tempfile::Builder::new().prefix("dust-icons").tempdir().ok()
+                        }
                     }
                 };
                 self.update_game_icon(config, _window);
