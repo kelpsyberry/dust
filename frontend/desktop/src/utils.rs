@@ -236,7 +236,7 @@ pub fn icon_data_to_rgba8(
     palette: &icon_title::Palette,
     pixels: &icon_title::Pixels,
 ) -> Box<[u8; 0x1000]> {
-    let palette: [u32; 8] = array::from_fn(|i| {
+    let palette: [u32; 0x10] = array::from_fn(|i| {
         if i == 0 {
             return 0;
         }
@@ -245,7 +245,7 @@ pub fn icon_data_to_rgba8(
         0xFF00_0000 | rgb6 << 2 | (rgb6 >> 4 & 0x03_0303)
     });
 
-    let mut rgba = zeroed_box::<[u8; 32 * 32 * 4]>();
+    let mut rgba = zeroed_box::<[u8; 0x1000]>();
     for (i, pixel) in pixels.iter().enumerate() {
         for (j, component) in palette[*pixel as usize]
             .to_le_bytes()

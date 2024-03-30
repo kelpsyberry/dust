@@ -117,21 +117,22 @@ pub fn scale_to_fit_rotated(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn heading_options(
+pub fn heading_options_custom(
     ui: &Ui,
-    text: &str,
-    text_indent: f32,
+    inner_indent: f32,
     line_inner_margin: f32,
     line_outer_margin_start: f32,
     line_outer_margin_end: f32,
     line_thickness: f32,
     width: f32,
     height: f32,
+    inner_height: f32,
     remove_item_spacing: bool,
+    draw: impl FnOnce(),
 ) {
     let half_line_thickness = line_thickness * 0.5;
 
-    let height = height.max(ui.text_line_height());
+    let height = height.max(inner_height);
 
     let mut cursor_pos = ui.cursor_screen_pos();
     if remove_item_spacing {
@@ -152,20 +153,21 @@ pub fn heading_options(
     let separator_color = ui.style_color(StyleColor::Separator);
 
     let mid_y = cursor_pos[1] + height * 0.5;
-    let text_start_x = cursor_pos[0] + text_indent;
-    let text_start_y = mid_y - ui.text_line_height() * 0.5;
-    let text_end_x = text_start_x + ui.calc_text_size(text)[0];
+    let inner_start_x = cursor_pos[0] + inner_indent;
+    let inner_start_y = mid_y - inner_height * 0.5;
     let line_y = mid_y - half_line_thickness;
 
-    ui.set_cursor_screen_pos([text_start_x, text_start_y]);
-    ui.text(text);
+    ui.set_cursor_screen_pos([inner_start_x, inner_start_y]);
+    draw();
+    ui.same_line_with_spacing(0.0, 0.0);
+    let inner_end_x = ui.cursor_screen_pos()[0];
 
     let draw_list = ui.get_window_draw_list();
     draw_list
         .add_line(
             [line_outer_bounds[0], line_y],
             [
-                text_start_x - line_inner_margin - half_line_thickness,
+                inner_start_x - line_inner_margin - half_line_thickness,
                 line_y,
             ],
             separator_color,
@@ -175,12 +177,43 @@ pub fn heading_options(
     draw_list
         .add_line(
             [line_outer_bounds[1], line_y],
-            [text_end_x + line_inner_margin - half_line_thickness, line_y],
+            [
+                inner_end_x + line_inner_margin - half_line_thickness,
+                line_y,
+            ],
             separator_color,
         )
         .thickness(line_thickness)
         .build();
     ui.set_cursor_screen_pos(end_pos);
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn heading_options(
+    ui: &Ui,
+    text: &str,
+    text_indent: f32,
+    line_inner_margin: f32,
+    line_outer_margin_start: f32,
+    line_outer_margin_end: f32,
+    line_thickness: f32,
+    width: f32,
+    height: f32,
+    remove_item_spacing: bool,
+) {
+    heading_options_custom(
+        ui,
+        text_indent,
+        line_inner_margin,
+        line_outer_margin_start,
+        line_outer_margin_end,
+        line_thickness,
+        width,
+        height,
+        ui.text_line_height(),
+        remove_item_spacing,
+        || ui.text(text),
+    );
 }
 
 pub fn table_row_heading(
@@ -243,13 +276,40 @@ pub fn heading_spacing(
 }
 
 pub fn heading(ui: &Ui, text: &str, text_indent: f32, line_inner_margin: f32, line_thickness: f32) {
-    heading_spacing(
+    heading_options(
         ui,
         text,
         text_indent,
         line_inner_margin,
-        line_thickness,
         0.0,
+        0.0,
+        line_thickness,
+        ui.content_region_avail()[0],
+        0.0,
+        false,
+    );
+}
+
+pub fn heading_custom(
+    ui: &Ui,
+    inner_indent: f32,
+    line_inner_margin: f32,
+    line_thickness: f32,
+    inner_height: f32,
+    draw: impl FnOnce(),
+) {
+    heading_options_custom(
+        ui,
+        inner_indent,
+        line_inner_margin,
+        0.0,
+        0.0,
+        line_thickness,
+        ui.content_region_avail()[0],
+        0.0,
+        inner_height,
+        false,
+        draw,
     );
 }
 

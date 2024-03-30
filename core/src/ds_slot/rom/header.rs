@@ -25,11 +25,8 @@ pub enum Region {
 
 impl<'a> Header<'a> {
     #[inline]
-    pub fn new(bytes: &'a [u8]) -> Option<Self> {
-        if bytes.len() < 0x170 {
-            return None;
-        }
-        Some(Header(bytes))
+    pub fn new(bytes: &'a [u8; 0x170]) -> Self {
+        Header(bytes)
     }
 
     #[inline]

@@ -136,7 +136,12 @@ impl Titles {
                 }
                 let mut bytes = [0; 0x100];
                 rom_contents.read_slice(icon_title_offset + $offset, &mut bytes);
-                String::from_utf16le(&bytes).map_err(|_| Box::new(bytes))
+                let end_index = bytes
+                    .array_chunks::<2>()
+                    .position(|c| *c == [0; 2])
+                    .unwrap_or(bytes.len())
+                    << 1;
+                String::from_utf16le(&bytes[..end_index]).map_err(|_| Box::new(bytes))
             }};
         }
 
@@ -260,8 +265,11 @@ impl IconTitle {
 }
 
 pub fn read_icon_title_offset(rom_contents: &mut (impl Contents + ?Sized)) -> Option<usize> {
+    if 0x170 > rom_contents.len() {
+        return None;
+    }
     let mut header_bytes = Bytes::new([0; 0x170]);
     rom_contents.read_header(&mut header_bytes);
-    let header = Header::new(&*header_bytes)?;
+    let header = Header::new(&header_bytes);
     Some(header.icon_title_offset() as usize)
 }

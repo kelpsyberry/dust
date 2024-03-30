@@ -14,6 +14,8 @@ mod bg_maps_2d;
 use bg_maps_2d::BgMaps2d;
 mod audio_channels;
 use audio_channels::AudioChannels;
+mod ds_rom_info;
+use ds_rom_info::DsRomInfo;
 
 use super::ui::window::Window;
 use ahash::AHashMap as HashMap;
@@ -773,5 +775,7 @@ declare_structs!(
         (bg_maps_2d, BgMaps2d, InitBgMaps2d, DestroyBgMaps2d, BgMaps2dVisibility, BgMaps2dCustom),
         (audio_channels, AudioChannels, InitAudioChannels, DestroyAudioChannels, AudioChannelsVisibility, AudioChannelsCustom)
     ],
-    []
+    [
+        (ds_rom_info, DsRomInfo, FetchDsRomInfo, ReplyDsRomInfo)
+    ]
 );
