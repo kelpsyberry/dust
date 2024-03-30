@@ -1,5 +1,6 @@
 use super::{
-    common::rgb5_to_rgba8, BaseView, FrameDataSlot, InstanceableEmuState, InstanceableView, Messages, View,
+    common::rgb5_to_rgba8, BaseView, FrameDataSlot, InstanceableEmuState, InstanceableView,
+    Messages, View,
 };
 use crate::ui::{
     utils::{add2, combo_value, scale_to_fit, sub2s},
@@ -390,6 +391,10 @@ pub struct BgMaps2d {
 
 impl BaseView for BgMaps2d {
     const MENU_NAME: &'static str = "2D BG maps";
+}
+
+impl View for BgMaps2d {
+    type EmuState = EmuState;
 
     fn new(window: &mut Window) -> Self {
         let tex_id = window.imgui_gfx.create_and_add_owned_texture(
@@ -427,10 +432,6 @@ impl BaseView for BgMaps2d {
     fn destroy(self, window: &mut Window) {
         window.imgui_gfx.remove_texture(self.tex_id);
     }
-}
-
-impl View for BgMaps2d {
-    type EmuState = EmuState;
 
     fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
         self.cur_selection

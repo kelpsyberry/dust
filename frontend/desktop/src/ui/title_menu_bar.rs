@@ -4,9 +4,10 @@ use crate::config::TitleBarMode;
 use crate::{
     config::{Config, GameIconMode},
     emu::ds_slot_rom::DsSlotRom,
+    utils::icon_data_to_rgba8,
 };
 #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-use dust_core::ds_slot::rom::icon;
+use dust_core::ds_slot::rom::icon_title;
 use imgui::Ui;
 #[cfg(target_os = "macos")]
 use imgui::{Image, TextureId};
@@ -112,17 +113,12 @@ impl TitleMenuBarState {
 
         #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
         {
-            self.game_icon_rgba8_pixels = ds_slot_rom
-                .and_then(icon::read_header_and_decode_to_rgba8)
-                .map(|pixels| {
-                    let mut rgba = unsafe { Box::<[u8; 32 * 32 * 4]>::new_zeroed().assume_init() };
-                    for (i, pixel) in pixels.iter().enumerate() {
-                        for (j, component) in pixel.to_le_bytes().into_iter().enumerate() {
-                            rgba[i << 2 | j] = component;
-                        }
-                    }
-                    rgba
-                });
+            self.game_icon_rgba8_pixels = ds_slot_rom.and_then(|rom_contents| {
+                let icon_title_offset = icon_title::read_icon_title_offset(rom_contents)?;
+                let icon =
+                    icon_title::DefaultIcon::decode_at_offset(icon_title_offset, rom_contents)?;
+                Some(icon_data_to_rgba8(&icon.palette, &icon.pixels))
+            });
             #[cfg(target_os = "macos")]
             {
                 self.game_file_path = _ds_slot_rom_path.map(Path::to_path_buf);

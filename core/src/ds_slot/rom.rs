@@ -2,7 +2,7 @@ mod empty;
 mod key1;
 pub use empty::Empty;
 pub mod header;
-pub mod icon;
+pub mod icon_title;
 pub mod normal;
 
 use super::RomOutputLen;

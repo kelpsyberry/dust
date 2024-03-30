@@ -3,7 +3,7 @@ use super::{
         disasm::{Addr, DisassemblyView},
         RangeInclusive,
     },
-    FrameDataSlot, BaseView, InstanceableEmuState, InstanceableView, Messages, View,
+    BaseView, FrameDataSlot, InstanceableEmuState, InstanceableView, Messages, View,
 };
 use crate::ui::window::Window;
 use dust_core::{
@@ -103,6 +103,10 @@ impl<const ARM9: bool> BaseView for CpuDisasm<ARM9> {
     } else {
         "ARM7 disassembly"
     };
+}
+
+impl<const ARM9: bool> View for CpuDisasm<ARM9> {
+    type EmuState = EmuState<ARM9>;
 
     fn new(_window: &mut Window) -> Self {
         CpuDisasm {
@@ -122,10 +126,6 @@ impl<const ARM9: bool> BaseView for CpuDisasm<ARM9> {
             },
         }
     }
-}
-
-impl<const ARM9: bool> View for CpuDisasm<ARM9> {
-    type EmuState = EmuState<ARM9>;
 
     fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
         self.last_visible_addrs

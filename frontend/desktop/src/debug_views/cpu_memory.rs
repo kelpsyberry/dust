@@ -92,6 +92,10 @@ impl<const ARM9: bool> InstanceableView for CpuMemory<ARM9> {
 
 impl<const ARM9: bool> BaseView for CpuMemory<ARM9> {
     const MENU_NAME: &'static str = if ARM9 { "ARM9 memory" } else { "ARM7 memory" };
+}
+
+impl<const ARM9: bool> View for CpuMemory<ARM9> {
+    type EmuState = EmuState<ARM9>;
 
     fn new(_window: &mut Window) -> Self {
         let mut editor = MemoryEditor::new();
@@ -106,10 +110,6 @@ impl<const ARM9: bool> BaseView for CpuMemory<ARM9> {
             },
         }
     }
-}
-
-impl<const ARM9: bool> View for CpuMemory<ARM9> {
-    type EmuState = EmuState<ARM9>;
 
     fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
         self.last_visible_addrs

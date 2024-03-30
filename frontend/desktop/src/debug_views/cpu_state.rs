@@ -115,6 +115,10 @@ impl<const ARM9: bool> SingletonView for CpuState<ARM9> {
 
 impl<const ARM9: bool> BaseView for CpuState<ARM9> {
     const MENU_NAME: &'static str = if ARM9 { "ARM9 state" } else { "ARM7 state" };
+}
+
+impl<const ARM9: bool> View for CpuState<ARM9> {
+    type EmuState = EmuState<ARM9>;
 
     fn new(_window: &mut Window) -> Self {
         CpuState {
@@ -122,10 +126,6 @@ impl<const ARM9: bool> BaseView for CpuState<ARM9> {
             reg_bank: None,
         }
     }
-}
-
-impl<const ARM9: bool> View for CpuState<ARM9> {
-    type EmuState = EmuState<ARM9>;
 
     fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {}
 

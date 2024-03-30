@@ -1,6 +1,6 @@
 use super::{
     common::regs::{bitfield, BitfieldCommand},
-    FrameDataSlot, BaseView, InstanceableEmuState, InstanceableView, Messages, RefreshType, View,
+    BaseView, FrameDataSlot, InstanceableEmuState, InstanceableView, Messages, RefreshType, View,
 };
 use crate::ui::window::Window;
 use dust_core::{
@@ -166,6 +166,10 @@ pub struct AudioChannels {
 
 impl BaseView for AudioChannels {
     const MENU_NAME: &'static str = "Audio channels";
+}
+
+impl View for AudioChannels {
+    type EmuState = EmuState;
 
     fn new(_window: &mut Window) -> Self {
         const DEFAULT_SAMPLES: u32 = 512 * 8;
@@ -181,10 +185,6 @@ impl BaseView for AudioChannels {
             fft_output_f32_buf: Vec::new(),
         }
     }
-}
-
-impl View for AudioChannels {
-    type EmuState = EmuState;
 
     fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
         self.cur_channel

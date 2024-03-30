@@ -111,13 +111,13 @@ pub trait InstanceableEmuState: EmuState {
 
 pub trait BaseView: Sized {
     const MENU_NAME: &'static str;
-
-    fn new(window: &mut Window) -> Self;
-    fn destroy(self, _window: &mut Window) {}
 }
 
 pub trait View: BaseView {
     type EmuState: EmuState;
+
+    fn new(window: &mut Window) -> Self;
+    fn destroy(self, _window: &mut Window) {}
 
     fn emu_state(&self) -> <Self::EmuState as EmuState>::InitData;
     fn update_from_frame_data(
@@ -133,7 +133,9 @@ pub trait StaticView: BaseView {
     type Data: Send;
 
     fn fetch_data<E: cpu::Engine>(emu: &mut Emu<E>) -> Self::Data;
-    fn update_from_data(&mut self, data: Self::Data, window: &mut Window);
+
+    fn new(data: Self::Data, window: &mut Window) -> Self;
+    fn destroy(self, _window: &mut Window) {}
 
     fn draw(&mut self, ui: &imgui::Ui, window: &mut Window);
 }
@@ -164,6 +166,11 @@ pub trait InstanceableView: BaseView {
     ) -> imgui::Window<'_, '_, impl AsRef<str> + 'static> {
         ui.window(format!("{} {key}", Self::MENU_NAME))
     }
+}
+
+enum StaticViewState<T: StaticView> {
+    Loading,
+    Loaded(T),
 }
 
 macro_rules! declare_structs {
@@ -430,7 +437,7 @@ macro_rules! declare_structs {
                 $i_view_ident: HashMap<ViewKey, (Option<$i_view_ty>, bool)>,
             )*
             $(
-                $sst_view_ident: Option<Option<$sst_view_ty>>,
+                $sst_view_ident: Option<Option<StaticViewState<$sst_view_ty>>>,
             )*
         }
 
@@ -455,8 +462,10 @@ macro_rules! declare_structs {
                 match notif {
                     $(
                         Notification::$sst_reply_message_ident(data) => {
-                            if let Some(Some(view)) = &mut self.$sst_view_ident {
-                                view.update_from_data(data, window);
+                            if let Some(Some(view @ StaticViewState::Loading)) =
+                                &mut self.$sst_view_ident
+                            {
+                                *view = StaticViewState::Loaded(<$sst_view_ty>::new(data, window));
                             }
                         }
                     )*
@@ -499,7 +508,7 @@ macro_rules! declare_structs {
                 )*
                 $(
                     if let Some(view @ None) = &mut self.$sst_view_ident {
-                        *view = Some(<$sst_view_ty>::new(window));
+                        *view = Some(StaticViewState::Loading);
                         self.messages.push(Message::$sst_fetch_message_ident);
                     }
                 )*
@@ -524,7 +533,7 @@ macro_rules! declare_structs {
                 )*
                 $(
                     if let Some(view) = &mut self.$sst_view_ident {
-                        if let Some(view) = view.take() {
+                        if let Some(StaticViewState::Loaded(view)) = view.take() {
                             view.destroy(window);
                         };
                     }
@@ -538,13 +547,13 @@ macro_rules! declare_structs {
                         .build()
                     {
                         if let Some(view) = self.$sst_view_ident.take() {
-                            if let Some(view) = view {
+                            if let Some(StaticViewState::Loaded(view)) = view {
                                 view.destroy(window);
                             }
                         } else {
                             self.$sst_view_ident = Some(if emu_running {
                                 self.messages.push(Message::$sst_fetch_message_ident);
-                                Some(<$sst_view_ty>::new(window))
+                                Some(StaticViewState::Loading)
                             } else {
                                 None
                             });
@@ -606,6 +615,10 @@ macro_rules! declare_structs {
 
             fn draw_unavailable_view(ui: &imgui::Ui) {
                 ui.text("Start the emulator to see information.");
+            }
+
+            fn draw_loading_view(ui: &imgui::Ui) {
+                ui.text("Loading...");
             }
 
             pub fn draw<'a>(
@@ -690,15 +703,27 @@ macro_rules! declare_structs {
                     if let Some(view) = &mut self.$sst_view_ident {
                         let mut opened = true;
                         if let Some(view) = view {
-                            let ui_window = view.window(ui).opened(&mut opened);
-                            ui_window.build(|| {
-                                view.draw(ui, window);
-                            });
-                            if !opened {
-                                let Some(Some(view)) = self.$sst_view_ident.take() else {
-                                    unreachable!();
-                                };
-                                view.destroy(window);
+                            if let StaticViewState::Loaded(view) = view {
+                                let ui_window = view.window(ui).opened(&mut opened);
+                                ui_window.build(|| {
+                                    view.draw(ui, window);
+                                });
+                                if !opened {
+                                    let Some(Some(StaticViewState::Loaded(view))) =
+                                        self.$sst_view_ident.take() else {
+                                        unreachable!();
+                                    };
+                                    view.destroy(window);
+                                }
+                            } else {
+                                <$sst_view_ty>::window_stopped(ui)
+                                    .opened(&mut opened)
+                                    .build(|| {
+                                        Self::draw_loading_view(ui);
+                                    });
+                                if !opened {
+                                    self.$sst_view_ident.take();
+                                }
                             }
                         } else {
                             <$sst_view_ty>::window_stopped(ui)

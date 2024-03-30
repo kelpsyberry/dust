@@ -173,6 +173,10 @@ pub struct Palettes2d {
 
 impl BaseView for Palettes2d {
     const MENU_NAME: &'static str = "2D engine palettes";
+}
+
+impl View for Palettes2d {
+    type EmuState = EmuState;
 
     fn new(_window: &mut Window) -> Self {
         Palettes2d {
@@ -185,10 +189,6 @@ impl BaseView for Palettes2d {
             cur_color: [0.0; 3],
         }
     }
-}
-
-impl View for Palettes2d {
-    type EmuState = EmuState;
 
     fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
         self.cur_selection

@@ -1,3 +1,5 @@
+use dust_core::{ds_slot::rom::icon_title, utils::zeroed_box};
+use std::array;
 use std::{
     borrow::Cow,
     fmt,
@@ -228,4 +230,30 @@ pub mod double_option {
             Some(Some(v)) => serializer.serialize_some(&v),
         }
     }
+}
+
+pub fn icon_data_to_rgba8(
+    palette: &icon_title::Palette,
+    pixels: &icon_title::Pixels,
+) -> Box<[u8; 0x1000]> {
+    let palette: [u32; 8] = array::from_fn(|i| {
+        if i == 0 {
+            return 0;
+        }
+        let raw = palette[i] as u32;
+        let rgb6 = (raw << 1 & 0x3E) | (raw << 4 & 0x3E00) | (raw << 7 & 0x3E_0000);
+        0xFF00_0000 | rgb6 << 2 | (rgb6 >> 4 & 0x03_0303)
+    });
+
+    let mut rgba = zeroed_box::<[u8; 32 * 32 * 4]>();
+    for (i, pixel) in pixels.iter().enumerate() {
+        for (j, component) in palette[*pixel as usize]
+            .to_le_bytes()
+            .into_iter()
+            .enumerate()
+        {
+            rgba[i << 2 | j] = component;
+        }
+    }
+    rgba
 }
