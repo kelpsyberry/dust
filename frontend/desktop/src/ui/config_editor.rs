@@ -126,7 +126,7 @@ use crate::{
     },
     ui::{
         utils::{
-            add2, combo_value, heading_options, heading_spacing, mul2s, sub2, sub2s,
+            add2, add_y_spacing, combo_value, heading, heading_options, mul2s, sub2, sub2s,
             table_row_heading,
         },
         Config, EmuState,
@@ -1663,7 +1663,8 @@ with the Imgui title bar mode)
                             )]
                         );
 
-                        heading_spacing(
+                        add_y_spacing(ui, 8.0);
+                        heading(
                             ui,
                             &if self.data.game_loaded {
                                 format!("Game saves - {}", emu_state.as_deref().unwrap().title)
@@ -1673,7 +1674,6 @@ with the Imgui title bar mode)
                             16.0,
                             5.0,
                             BORDER_WIDTH,
-                            8.0,
                         );
                         if self.data.game_loaded {
                             self.draw_game_saves_config(ui, config, emu_state.unwrap());

@@ -116,6 +116,12 @@ pub fn scale_to_fit_rotated(
     )
 }
 
+pub fn add_y_spacing(ui: &Ui, spacing: f32) {
+    let mut cursor_pos = ui.cursor_screen_pos();
+    cursor_pos[1] += spacing;
+    ui.set_cursor_screen_pos(cursor_pos);
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn heading_options_custom(
     ui: &Ui,
@@ -249,47 +255,7 @@ pub fn table_row_heading(
     );
 }
 
-pub fn heading_spacing(
-    ui: &Ui,
-    text: &str,
-    text_indent: f32,
-    line_inner_margin: f32,
-    line_thickness: f32,
-    spacing: f32,
-) {
-    let mut cursor_pos = ui.cursor_screen_pos();
-    cursor_pos[1] += spacing;
-    ui.set_cursor_screen_pos(cursor_pos);
-
-    heading_options(
-        ui,
-        text,
-        text_indent,
-        line_inner_margin,
-        0.0,
-        0.0,
-        line_thickness,
-        ui.content_region_avail()[0],
-        0.0,
-        false,
-    );
-}
-
-pub fn heading(ui: &Ui, text: &str, text_indent: f32, line_inner_margin: f32, line_thickness: f32) {
-    heading_options(
-        ui,
-        text,
-        text_indent,
-        line_inner_margin,
-        0.0,
-        0.0,
-        line_thickness,
-        ui.content_region_avail()[0],
-        0.0,
-        false,
-    );
-}
-
+#[allow(dead_code)]
 pub fn heading_custom(
     ui: &Ui,
     inner_indent: f32,
@@ -310,6 +276,21 @@ pub fn heading_custom(
         inner_height,
         false,
         draw,
+    );
+}
+
+pub fn heading(ui: &Ui, text: &str, text_indent: f32, line_inner_margin: f32, line_thickness: f32) {
+    heading_options(
+        ui,
+        text,
+        text_indent,
+        line_inner_margin,
+        0.0,
+        0.0,
+        line_thickness,
+        ui.content_region_avail()[0],
+        0.0,
+        false,
     );
 }
 
