@@ -1,11 +1,5 @@
 use super::{BaseView, SingletonView, StaticView};
-use crate::{
-    ui::{
-        utils::{heading, heading_custom},
-        window::Window,
-    },
-    utils::icon_data_to_rgba8,
-};
+use crate::{ui::window::Window, utils::icon_data_to_rgba8};
 use dust_core::{
     cpu,
     ds_slot::rom::{
@@ -15,7 +9,9 @@ use dust_core::{
     emu::Emu,
     utils::{zeroed_box, Bytes},
 };
-use imgui::{Image, StyleColor, TableColumnFlags, TableColumnSetup, TableFlags, TextureId};
+use imgui::{
+    Image, StyleColor, TableColumnFlags, TableColumnSetup, TableFlags, TextureId, TreeNodeFlags,
+};
 use std::borrow::Cow;
 
 pub struct Data {
@@ -28,14 +24,11 @@ pub struct DsRomInfo {
     chip_id: u32,
     header_bytes: Box<Bytes<0x170>>,
     icon_title: Option<(TextureId, Box<IconTitle>)>,
-    show_advanced: bool,
 }
 
 impl BaseView for DsRomInfo {
     const MENU_NAME: &'static str = "DS ROM info";
 }
-
-const BORDER_WIDTH: f32 = 1.0;
 
 fn format_size(size: u32) -> String {
     let log1024 = 31_u32.saturating_sub(size.leading_zeros()) / 10;
@@ -111,7 +104,6 @@ impl StaticView for DsRomInfo {
             chip_id: data.chip_id,
             header_bytes: data.header_bytes,
             icon_title,
-            show_advanced: false,
         }
     }
 
@@ -126,24 +118,9 @@ impl StaticView for DsRomInfo {
             };
         }
 
-        let cell_padding = style!(ui, cell_padding);
-
         let header = Header::new(&self.header_bytes);
 
-        let _table = self.icon_title.is_some().then(|| {
-            ui.begin_table_with_flags("root", 2, TableFlags::NO_CLIP | TableFlags::BORDERS_INNER_V)
-        });
-
         if let Some((icon_tex_id, icon_title)) = &self.icon_title {
-            ui.table_setup_column_with(TableColumnSetup {
-                flags: TableColumnFlags::WIDTH_FIXED,
-                init_width_or_weight: 256.0,
-                ..TableColumnSetup::new("Icon/title")
-            });
-            ui.table_setup_column("Other");
-            ui.table_next_row();
-            ui.table_next_column();
-
             let mut cursor_pos = ui.cursor_pos();
             cursor_pos[0] += (ui.content_region_avail()[0] - 128.0) * 0.5;
             ui.set_cursor_pos(cursor_pos);
@@ -151,242 +128,231 @@ impl StaticView for DsRomInfo {
                 .border_col(ui.style_color(StyleColor::Border))
                 .build(ui);
 
-            heading(ui, "Titles", 16.0, 5.0, BORDER_WIDTH);
-
-            if let Some(_table) = ui.begin_table_with_sizing(
-                "icon-title",
-                2,
-                TableFlags::NO_CLIP
-                    | TableFlags::SCROLL_Y
-                    | TableFlags::SCROLL_X
-                    | TableFlags::SIZING_STRETCH_SAME,
-                [0.0, ui.content_region_avail()[1] - cell_padding[1]],
-                0.0,
+            if ui.collapsing_header(
+                "Titles",
+                TreeNodeFlags::DEFAULT_OPEN | TreeNodeFlags::NO_TREE_PUSH_ON_OPEN,
             ) {
-                macro_rules! title {
-                    ($name: expr, $value: expr) => {
-                        data!($name, $value.as_deref().unwrap_or("<invalid UTF-16>"));
-                    };
-                }
+                if let Some(_table) =
+                    ui.begin_table_with_flags("icon-title", 2, TableFlags::NO_CLIP)
+                {
+                    macro_rules! title {
+                        ($name: expr, $value: expr) => {
+                            data!($name, $value.as_deref().unwrap_or("<invalid UTF-16>"));
+                        };
+                    }
 
+                    ui.table_setup_column_with(TableColumnSetup {
+                        flags: TableColumnFlags::WIDTH_FIXED,
+                        ..TableColumnSetup::new("Name")
+                    });
+                    ui.table_setup_column("Value");
+
+                    title!("Japanese", icon_title.titles.japanese);
+                    title!("English", icon_title.titles.english);
+                    title!("French", icon_title.titles.french);
+                    title!("German", icon_title.titles.german);
+                    title!("Italian", icon_title.titles.italian);
+                    title!("Spanish", icon_title.titles.spanish);
+                    if let Some(chinese) = &icon_title.titles.chinese {
+                        title!("Chinese", chinese);
+                    }
+                    if let Some(korean) = &icon_title.titles.korean {
+                        title!("Korean", korean);
+                    }
+                }
+            }
+        }
+
+        if ui.collapsing_header(
+            "General",
+            TreeNodeFlags::DEFAULT_OPEN | TreeNodeFlags::NO_TREE_PUSH_ON_OPEN,
+        ) {
+            if let Some(_table) = ui.begin_table_with_flags("other", 2, TableFlags::NO_CLIP) {
                 ui.table_setup_column_with(TableColumnSetup {
                     flags: TableColumnFlags::WIDTH_FIXED,
                     ..TableColumnSetup::new("Name")
                 });
                 ui.table_setup_column("Value");
 
-                title!("Japanese", icon_title.titles.japanese);
-                title!("English", icon_title.titles.english);
-                title!("French", icon_title.titles.french);
-                title!("German", icon_title.titles.german);
-                title!("Italian", icon_title.titles.italian);
-                title!("Spanish", icon_title.titles.spanish);
-                if let Some(chinese) = &icon_title.titles.chinese {
-                    title!("Chinese", chinese);
-                }
-                if let Some(korean) = &icon_title.titles.korean {
-                    title!("Korean", korean);
-                }
+                data!(
+                    "Game title",
+                    header
+                        .game_title()
+                        .map(|s| Cow::from(format!("{s:?}")))
+                        .unwrap_or("<invalid UTF-8>".into())
+                );
+                data!("Game code", {
+                    let (code, str) = header.game_code();
+                    if code == 0 {
+                        Cow::from("Homebrew (0)")
+                    } else if let Some(str) = str {
+                        format!("{str:?} ({code:#010X})").into()
+                    } else {
+                        format!("{code:#010X}").into()
+                    }
+                });
+                data!("Maker code", {
+                    let (code, str) = header.maker_code();
+                    if code == 0 {
+                        Cow::from("Homebrew (0)")
+                    } else if let Some(str) = str {
+                        format!("{str:?} ({code:#06X})").into()
+                    } else {
+                        format!("{code:#06X}").into()
+                    }
+                });
+                data!(
+                    "Unit code",
+                    match header.unit_code() {
+                        Ok(UnitCode::Ds) => Cow::from("DS"),
+                        Ok(UnitCode::DsAndDsi) => "DS and DSi".into(),
+                        Ok(UnitCode::Dsi) => "DSi".into(),
+                        Err(code) => format!("Unknown ({code:#04X})").into(),
+                    }
+                );
+                data!(
+                    "ROM size",
+                    format!(
+                        "{} (capacity {})",
+                        format_size(header.used_rom_size()),
+                        format_size_shift(header.capacity().0 as usize + 17)
+                    )
+                );
+                data!(
+                    "Region",
+                    match header.region() {
+                        Ok(Region::Normal) => Cow::from("Normal"),
+                        Ok(Region::Korea) => "Korea".into(),
+                        Ok(Region::China) => "China".into(),
+                        Err(code) => format!("Unknown ({code:#04X})").into(),
+                    }
+                );
+                data!("Version", format!("{:#04X}", header.version()));
+                data!("Auto-start", if header.auto_start() { "On" } else { "Off" });
             }
-
-            ui.table_next_column();
         }
 
-        ui.child_window("other")
-            .size([0.0, ui.content_region_avail()[1] - cell_padding[1]])
-            .build(|| {
-                if let Some(_table) = ui.begin_table_with_flags("other", 2, TableFlags::NO_CLIP) {
-                    ui.table_setup_column_with(TableColumnSetup {
-                        flags: TableColumnFlags::WIDTH_FIXED,
-                        ..TableColumnSetup::new("Name")
-                    });
-                    ui.table_setup_column("Value");
-
-                    data!(
-                        "Game title",
-                        header
-                            .game_title()
-                            .map(|s| Cow::from(format!("{s:?}")))
-                            .unwrap_or("<invalid UTF-8>".into())
-                    );
-                    data!("Game code", {
-                        let (code, str) = header.game_code();
-                        if code == 0 {
-                            Cow::from("Homebrew (0)")
-                        } else if let Some(str) = str {
-                            format!("{str:?} ({code:#010X})").into()
-                        } else {
-                            format!("{code:#010X}").into()
-                        }
-                    });
-                    data!("Maker code", {
-                        let (code, str) = header.maker_code();
-                        if code == 0 {
-                            Cow::from("Homebrew (0)")
-                        } else if let Some(str) = str {
-                            format!("{str:?} ({code:#06X})").into()
-                        } else {
-                            format!("{code:#06X}").into()
-                        }
-                    });
-                    data!(
-                        "Unit code",
-                        match header.unit_code() {
-                            Ok(UnitCode::Ds) => Cow::from("DS"),
-                            Ok(UnitCode::DsAndDsi) => "DS and DSi".into(),
-                            Ok(UnitCode::Dsi) => "DSi".into(),
-                            Err(code) => format!("Unknown ({code:#04X})").into(),
-                        }
-                    );
-                    data!(
-                        "ROM size",
-                        format!(
-                            "{} (capacity {})",
-                            format_size(header.used_rom_size()),
-                            format_size_shift(header.capacity().0 as usize + 17)
-                        )
-                    );
-                    data!(
-                        "Region",
-                        match header.region() {
-                            Ok(Region::Normal) => Cow::from("Normal"),
-                            Ok(Region::Korea) => "Korea".into(),
-                            Ok(Region::China) => "China".into(),
-                            Err(code) => format!("Unknown ({code:#04X})").into(),
-                        }
-                    );
-                    data!("Version", format!("{:#04X}", header.version()));
-                    data!("Auto-start", if header.auto_start() { "On" } else { "Off" });
-                }
-
-                heading_custom(ui, 16.0, 5.0, BORDER_WIDTH, ui.frame_height(), || {
-                    ui.checkbox("Show advanced", &mut self.show_advanced);
+        if ui.collapsing_header("Advanced", TreeNodeFlags::NO_TREE_PUSH_ON_OPEN) {
+            if let Some(_table) =
+                ui.begin_table_with_flags("other-advanced", 2, TableFlags::NO_CLIP)
+            {
+                ui.table_setup_column_with(TableColumnSetup {
+                    flags: TableColumnFlags::WIDTH_FIXED,
+                    ..TableColumnSetup::new("Name")
                 });
+                ui.table_setup_column("Value");
 
-                if let Some(_table) =
-                    ui.begin_table_with_flags("other-advanced", 2, TableFlags::NO_CLIP)
-                {
-                    ui.table_setup_column_with(TableColumnSetup {
-                        flags: TableColumnFlags::WIDTH_FIXED,
-                        ..TableColumnSetup::new("Name")
-                    });
-                    ui.table_setup_column("Value");
-
-                    if self.show_advanced {
-                        data!("Chip ID", format!("{:#010X}", self.chip_id));
-                        data!(
-                            "Encryption seed",
-                            match header.encryption_seed() {
-                                Ok(seed) => format!("{}", seed.get()),
-                                Err(seed) => format!("Unknown ({seed:#04X})"),
-                            }
-                        );
-                        data!("Icon/title", {
-                            if let Some(icon_title) = &self.icon_title {
-                                let size = match icon_title.1.version_crc_data.version {
-                                    icon_title::Version::Base | icon_title::Version::Chinese => {
-                                        0xA00
-                                    }
-                                    icon_title::Version::Korean => 0xC00,
-                                    icon_title::Version::AnimatedIcon => 0x2400,
-                                };
-                                format!(
-                                    "ROM: {:#010X}..{:#010X} ({})",
-                                    header.icon_title_offset(),
-                                    header.icon_title_offset() as u64 + size as u64,
-                                    format_size(size)
-                                )
-                            } else {
-                                format!("ROM offset: {:#010X}", header.icon_title_offset())
-                            }
-                        });
-                        data!("ARM7 payload", {
-                            let size = header.arm7_size();
-                            format!(
-                                "ROM: {:#010X}..{:#010X}\nRAM: {:#010X}..{:#010X}\n({})",
-                                header.arm7_rom_offset(),
-                                header.arm7_rom_offset() as u64 + size as u64,
-                                header.arm7_ram_addr(),
-                                header.arm7_ram_addr() as u64 + size as u64,
-                                format_size(size)
-                            )
-                        });
-                        data!(
-                            "ARM7 entry address",
-                            format!("{:#010X}", header.arm7_entry_addr())
-                        );
-                        data!("ARM9 payload", {
-                            let size = header.arm9_size();
-                            format!(
-                                "ROM: {:#010X}..{:#010X}\nRAM: {:#010X}..{:#010X}\n({})",
-                                header.arm9_rom_offset(),
-                                header.arm9_rom_offset() as u64 + size as u64,
-                                header.arm9_ram_addr(),
-                                header.arm9_ram_addr() as u64 + size as u64,
-                                format_size(size)
-                            )
-                        });
-                        data!(
-                            "ARM9 entry address",
-                            format!("{:#010X}", header.arm9_entry_addr())
-                        );
-                        data!("FNT", {
-                            let size = header.fnt_size();
-                            format!(
-                                "ROM: {:#010X}..{:#010X} ({})",
-                                header.fnt_offset(),
-                                header.fnt_offset() as u64 + size as u64,
-                                format_size(size)
-                            )
-                        });
-                        data!("FAT", {
-                            let size = header.fat_size();
-                            format!(
-                                "ROM: {:#010X}..{:#010X} ({})",
-                                header.fat_offset(),
-                                header.fat_offset() as u64 + size as u64,
-                                format_size(size)
-                            )
-                        });
-                        data!("ARM7 overlay", {
-                            let size = header.arm7_overlay_size();
-                            if size == 0 {
-                                Cow::from("Not present")
-                            } else {
-                                format!(
-                                    "ROM: {:#010X}..{:#010X} ({})",
-                                    header.arm7_overlay_offset(),
-                                    header.arm7_overlay_offset() as u64 + size as u64,
-                                    format_size(size)
-                                )
-                                .into()
-                            }
-                        });
-                        data!("ARM9 overlay", {
-                            let size = header.arm9_overlay_size();
-                            if size == 0 {
-                                Cow::from("Not present")
-                            } else {
-                                format!(
-                                    "ROM: {:#010X}..{:#010X} ({})",
-                                    header.arm9_overlay_offset(),
-                                    header.arm9_overlay_offset() as u64 + size as u64,
-                                    format_size(size)
-                                )
-                                .into()
-                            }
-                        });
-                        data!(
-                            "ROMCTRL normal setting",
-                            format!("{:#010X}", header.rom_control_normal().0)
-                        );
-                        data!(
-                            "ROMCTRL key1 setting",
-                            format!("{:#010X}", header.rom_control_key1().0)
-                        );
+                data!("Chip ID", format!("{:#010X}", self.chip_id));
+                data!(
+                    "Encryption seed",
+                    match header.encryption_seed() {
+                        Ok(seed) => format!("{}", seed.get()),
+                        Err(seed) => format!("Unknown ({seed:#04X})"),
                     }
-                }
-            });
+                );
+                data!("Icon/title", {
+                    if let Some(icon_title) = &self.icon_title {
+                        let size = match icon_title.1.version_crc_data.version {
+                            icon_title::Version::Base | icon_title::Version::Chinese => 0xA00,
+                            icon_title::Version::Korean => 0xC00,
+                            icon_title::Version::AnimatedIcon => 0x2400,
+                        };
+                        format!(
+                            "ROM: {:#010X}..{:#010X} ({})",
+                            header.icon_title_offset(),
+                            header.icon_title_offset() as u64 + size as u64,
+                            format_size(size)
+                        )
+                    } else {
+                        format!("ROM offset: {:#010X}", header.icon_title_offset())
+                    }
+                });
+                data!("ARM7 payload", {
+                    let size = header.arm7_size();
+                    format!(
+                        "ROM: {:#010X}..{:#010X}\nRAM: {:#010X}..{:#010X}\n({})",
+                        header.arm7_rom_offset(),
+                        header.arm7_rom_offset() as u64 + size as u64,
+                        header.arm7_ram_addr(),
+                        header.arm7_ram_addr() as u64 + size as u64,
+                        format_size(size)
+                    )
+                });
+                data!(
+                    "ARM7 entry address",
+                    format!("{:#010X}", header.arm7_entry_addr())
+                );
+                data!("ARM9 payload", {
+                    let size = header.arm9_size();
+                    format!(
+                        "ROM: {:#010X}..{:#010X}\nRAM: {:#010X}..{:#010X}\n({})",
+                        header.arm9_rom_offset(),
+                        header.arm9_rom_offset() as u64 + size as u64,
+                        header.arm9_ram_addr(),
+                        header.arm9_ram_addr() as u64 + size as u64,
+                        format_size(size)
+                    )
+                });
+                data!(
+                    "ARM9 entry address",
+                    format!("{:#010X}", header.arm9_entry_addr())
+                );
+                data!("FNT", {
+                    let size = header.fnt_size();
+                    format!(
+                        "ROM: {:#010X}..{:#010X} ({})",
+                        header.fnt_offset(),
+                        header.fnt_offset() as u64 + size as u64,
+                        format_size(size)
+                    )
+                });
+                data!("FAT", {
+                    let size = header.fat_size();
+                    format!(
+                        "ROM: {:#010X}..{:#010X} ({})",
+                        header.fat_offset(),
+                        header.fat_offset() as u64 + size as u64,
+                        format_size(size)
+                    )
+                });
+                data!("ARM7 overlay", {
+                    let size = header.arm7_overlay_size();
+                    if size == 0 {
+                        Cow::from("Not present")
+                    } else {
+                        format!(
+                            "ROM: {:#010X}..{:#010X} ({})",
+                            header.arm7_overlay_offset(),
+                            header.arm7_overlay_offset() as u64 + size as u64,
+                            format_size(size)
+                        )
+                        .into()
+                    }
+                });
+                data!("ARM9 overlay", {
+                    let size = header.arm9_overlay_size();
+                    if size == 0 {
+                        Cow::from("Not present")
+                    } else {
+                        format!(
+                            "ROM: {:#010X}..{:#010X} ({})",
+                            header.arm9_overlay_offset(),
+                            header.arm9_overlay_offset() as u64 + size as u64,
+                            format_size(size)
+                        )
+                        .into()
+                    }
+                });
+                data!(
+                    "ROMCTRL normal setting",
+                    format!("{:#010X}", header.rom_control_normal().0)
+                );
+                data!(
+                    "ROMCTRL key1 setting",
+                    format!("{:#010X}", header.rom_control_key1().0)
+                );
+            }
+        }
     }
 }
 

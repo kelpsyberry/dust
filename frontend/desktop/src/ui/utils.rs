@@ -255,30 +255,6 @@ pub fn table_row_heading(
     );
 }
 
-#[allow(dead_code)]
-pub fn heading_custom(
-    ui: &Ui,
-    inner_indent: f32,
-    line_inner_margin: f32,
-    line_thickness: f32,
-    inner_height: f32,
-    draw: impl FnOnce(),
-) {
-    heading_options_custom(
-        ui,
-        inner_indent,
-        line_inner_margin,
-        0.0,
-        0.0,
-        line_thickness,
-        ui.content_region_avail()[0],
-        0.0,
-        inner_height,
-        false,
-        draw,
-    );
-}
-
 pub fn heading(ui: &Ui, text: &str, text_indent: f32, line_inner_margin: f32, line_thickness: f32) {
     heading_options(
         ui,
