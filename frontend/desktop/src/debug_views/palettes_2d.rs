@@ -3,7 +3,11 @@ use super::{
     BaseView, FrameDataSlot, InstanceableEmuState, InstanceableView, Messages, View,
 };
 use crate::ui::{utils::combo_value, window::Window};
-use dust_core::{cpu, emu::Emu, utils::mem_prelude::*};
+use dust_core::{
+    cpu,
+    emu::Emu,
+    utils::{mem_prelude::*, zeroed_box},
+};
 use imgui::{StyleVar, TableFlags, Ui};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -49,7 +53,7 @@ impl Default for PaletteData {
     fn default() -> Self {
         PaletteData {
             selection: None,
-            data: unsafe { Box::new_zeroed().assume_init() },
+            data: zeroed_box(),
         }
     }
 }

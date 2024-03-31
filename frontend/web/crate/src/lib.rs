@@ -14,7 +14,7 @@ use dust_core::{
     gpu::{SCREEN_HEIGHT, SCREEN_WIDTH},
     rtc,
     spi::firmware,
-    utils::{BoxedByteSlice, Bytes},
+    utils::{zeroed_box, BoxedByteSlice, Bytes},
     Model, SaveContents,
 };
 use js_sys::{Function, Uint32Array, Uint8Array};
@@ -206,13 +206,13 @@ pub fn create_emu_state(
     let logger = slog::Logger::root(console_log::Console::new(), slog::o!());
 
     let arm7_bios = arm7_bios_arr.map(|arr| {
-        let mut buf = unsafe { Box::<Bytes<{ arm7::BIOS_SIZE }>>::new_zeroed().assume_init() };
+        let mut buf = zeroed_box::<Bytes<{ arm7::BIOS_SIZE }>>();
         arr.copy_to(&mut **buf);
         buf
     });
 
     let arm9_bios = arm9_bios_arr.map(|arr| {
-        let mut buf = unsafe { Box::<Bytes<{ arm9::BIOS_SIZE }>>::new_zeroed().assume_init() };
+        let mut buf = zeroed_box::<Bytes<{ arm9::BIOS_SIZE }>>();
         arr.copy_to(&mut **buf);
         buf
     });

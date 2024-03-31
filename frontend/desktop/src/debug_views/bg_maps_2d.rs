@@ -13,7 +13,7 @@ use dust_core::{
         engine_2d::{self, BgIndex, Role},
         vram::Vram,
     },
-    utils::mem_prelude::*,
+    utils::{mem_prelude::*, zeroed_box},
 };
 use imgui::{Image, MouseButton, SliderFlags, StyleColor, TextureId, WindowHoveredFlags};
 use std::slice;
@@ -81,19 +81,17 @@ impl BgMapData {
 
 impl Default for BgMapData {
     fn default() -> Self {
-        unsafe {
-            BgMapData {
-                bgs: Self::default_bgs(),
-                selection: None,
-                cur_bg: BgData {
-                    display_mode: BgDisplayMode::Text16,
-                    uses_ext_palettes: false,
-                    size: [128; 2],
-                },
-                tiles: Box::new_zeroed().assume_init(),
-                tile_bitmap_data: Box::new_zeroed().assume_init(),
-                palette: Box::new_zeroed().assume_init(),
-            }
+        BgMapData {
+            bgs: Self::default_bgs(),
+            selection: None,
+            cur_bg: BgData {
+                display_mode: BgDisplayMode::Text16,
+                uses_ext_palettes: false,
+                size: [128; 2],
+            },
+            tiles: zeroed_box(),
+            tile_bitmap_data: zeroed_box(),
+            palette: zeroed_box(),
         }
     }
 }
@@ -411,21 +409,19 @@ impl View for BgMaps2d {
                 ..Default::default()
             },
         );
-        unsafe {
-            BgMaps2d {
-                cur_selection: Selection {
-                    engine: Engine2d::A,
-                    bg_index: BgIndex::new(0),
-                    use_ext_palettes: None,
-                    display_mode: None,
-                },
-                tex_id,
-                show_transparency_checkerboard: true,
-                show_grid_lines: true,
-                palette_buffer: Box::new_zeroed().assume_init(),
-                pixel_buffer: Box::new_zeroed().assume_init(),
-                data: BgMapData::default(),
-            }
+        BgMaps2d {
+            cur_selection: Selection {
+                engine: Engine2d::A,
+                bg_index: BgIndex::new(0),
+                use_ext_palettes: None,
+                display_mode: None,
+            },
+            tex_id,
+            show_transparency_checkerboard: true,
+            show_grid_lines: true,
+            palette_buffer: zeroed_box(),
+            pixel_buffer: zeroed_box(),
+            data: BgMapData::default(),
         }
     }
 

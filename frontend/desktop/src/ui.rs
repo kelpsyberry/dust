@@ -30,6 +30,7 @@ use crate::{
 use dust_core::{
     ds_slot::rom::Contents,
     gpu::{engine_2d, engine_3d, Framebuffer, SCREEN_HEIGHT, SCREEN_WIDTH},
+    utils::zeroed_box,
 };
 use emu_utils::triple_buffer;
 #[cfg(feature = "logging")]
@@ -806,8 +807,7 @@ impl FbTexture {
     }
 
     fn clear(&self, window: &window::Window) {
-        let mut data =
-            unsafe { Box::<[u8; SCREEN_WIDTH * SCREEN_HEIGHT * 8]>::new_zeroed().assume_init() };
+        let mut data = zeroed_box::<[u8; SCREEN_WIDTH * SCREEN_HEIGHT * 8]>();
         for i in (3..data.len()).step_by(4) {
             data[i] = 0xFF;
         }

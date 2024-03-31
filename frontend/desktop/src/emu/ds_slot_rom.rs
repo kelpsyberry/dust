@@ -1,6 +1,6 @@
 use dust_core::{
     ds_slot::rom::{self, Contents},
-    utils::mem_prelude::*,
+    utils::{mem_prelude::*, zeroed_box},
     Model,
 };
 use std::{
@@ -33,7 +33,7 @@ impl Contents for File {
     fn secure_area_mut(&mut self) -> Option<&mut [u8]> {
         self.secure_area
             .get_or_insert_with(|| {
-                let mut buf = unsafe { Box::<Bytes<0x800>>::new_zeroed().assume_init() };
+                let mut buf = zeroed_box::<Bytes<0x800>>();
                 self.file
                     .seek(SeekFrom::Start(self.secure_area_start as u64))
                     .and_then(|_| self.file.read_exact(&mut **buf))

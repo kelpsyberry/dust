@@ -14,7 +14,7 @@ use dust_core::{
     audio::ChannelInterpMethod as AudioChannelInterpMethod,
     cpu::{arm7, arm9},
     spi::firmware,
-    utils::{BoxedByteSlice, Bytes},
+    utils::{zeroed_box, BoxedByteSlice, Bytes},
     Model,
 };
 use serde::{Deserialize, Serialize};
@@ -747,9 +747,7 @@ impl Launch {
                 open_file!(&config.sys_paths.get().arm7_bios, Arm7Bios, |file| {
                     let len = file.metadata()?.len();
                     if len == arm7::BIOS_SIZE as u64 {
-                        let mut buf = unsafe {
-                            Box::<Bytes<{ arm7::BIOS_SIZE }>>::new_zeroed().assume_init()
-                        };
+                        let mut buf = zeroed_box::<Bytes<{ arm7::BIOS_SIZE }>>();
                         file.read_exact(&mut **buf)?;
                         Some(buf)
                     } else {
@@ -768,9 +766,7 @@ impl Launch {
                 open_file!(&config.sys_paths.get().arm9_bios, Arm9Bios, |file| {
                     let len = file.metadata()?.len();
                     if len == arm9::BIOS_SIZE as u64 {
-                        let mut buf = unsafe {
-                            Box::<Bytes<{ arm9::BIOS_SIZE }>>::new_zeroed().assume_init()
-                        };
+                        let mut buf = zeroed_box::<Bytes<{ arm9::BIOS_SIZE }>>();
                         file.read_exact(&mut **buf)?;
                         Some(buf)
                     } else {

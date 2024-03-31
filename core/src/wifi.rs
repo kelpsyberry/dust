@@ -1,6 +1,6 @@
 mod io;
 
-use crate::utils::{Bytes, Savestate};
+use crate::utils::{zeroed_box, Bytes, Savestate};
 
 #[derive(Savestate)]
 pub struct WiFi {
@@ -11,7 +11,7 @@ pub struct WiFi {
 
 impl WiFi {
     pub(crate) fn new() -> Self {
-        let mut mmio = unsafe { Box::<Bytes<0x1000>>::new_zeroed().assume_init() };
+        let mut mmio = zeroed_box::<Bytes<0x1000>>();
         mmio[0x3D] = 0x02;
 
         let mut bb_regs = [0; 0x100];
@@ -22,7 +22,7 @@ impl WiFi {
 
         WiFi {
             mmio,
-            ram: unsafe { Box::new_zeroed().assume_init() },
+            ram: zeroed_box(),
             bb_regs,
         }
     }

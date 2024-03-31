@@ -1,5 +1,5 @@
 use crate::{
-    utils::{mem_prelude::*, Savestate},
+    utils::{mem_prelude::*, zeroed_box, Savestate},
     SaveContents,
 };
 
@@ -72,7 +72,7 @@ impl Flash {
             status: Status(0),
             powered_down: false,
 
-            write_buffer: unsafe { Box::new_zeroed().assume_init() },
+            write_buffer: zeroed_box(),
             write_buffer_end: 0,
             write_buffer_len: 0,
 
