@@ -55,7 +55,7 @@ impl StaticView for DsRomInfo {
                 .ok()?,
             ))
         });
-        
+
         Some(TransferData {
             chip_id: emu.ds_slot.rom.chip_id(),
             header_bytes,

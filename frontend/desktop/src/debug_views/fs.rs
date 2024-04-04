@@ -7,7 +7,7 @@ use dust_core::{cpu, ds_slot::rom::header::Header, emu::Emu, utils::mem_prelude:
 use imgui::{TableColumnFlags, TableColumnSetup, TableFlags, TreeNodeFlags, TreeNodeId};
 use imgui_memory_editor::MemoryEditor;
 use rfd::FileDialog;
-use std::fs;
+use std::{fmt::Write, fs};
 
 pub enum Message {
     ReadFile { id: u16, start: u32, size: u32 },
@@ -100,8 +100,18 @@ struct FileSelection {
     file: File,
 }
 
+bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct DirEntryComponents: u8 {
+        const FILE_SIZE = 1 << 0;
+        const DIR_ENTRIES = 1 << 1;
+        const ID = 1 << 2;
+    }
+}
+
 pub struct Fs {
     has_rom: bool,
+    dir_entry_components: DirEntryComponents,
     root_dir: Option<Option<Vec<DirEntry>>>,
     selected_file: Option<(FileSelection, Option<Option<BoxedByteSlice>>)>,
     editor: MemoryEditor,
@@ -223,6 +233,7 @@ impl MessageView for Fs {
     fn new(_window: &mut Window) -> Self {
         Fs {
             has_rom: true,
+            dir_entry_components: DirEntryComponents::FILE_SIZE | DirEntryComponents::DIR_ENTRIES,
             root_dir: None,
             selected_file: None,
             editor: MemoryEditor::new(),
@@ -268,11 +279,57 @@ impl MessageView for Fs {
         window: &mut Window,
         mut messages: impl MessageViewMessages<Self>,
     ) {
+        macro_rules! dir_entry_components {
+            (
+                $ui: ident,
+                $dir_entry_components: ident,
+                |$text: ident| (
+                    [$(($m_cond_flags: expr, $m_component: expr)),*],
+                    [$(($o_cond_flags: expr, $o_component: expr)),*]
+                )
+            ) => {
+                #[allow(unused_assignments)]
+                if $dir_entry_components.intersects($($m_cond_flags)|* | $($o_cond_flags)|*) {
+                    let mut $text = String::new();
+
+                    let mut has_main = false;
+                    $(if $dir_entry_components.contains($m_cond_flags) {
+                        if has_main {
+                            $text.push_str(", ");
+                        }
+                        has_main = true;
+                        let _ = $m_component;
+                    })*
+
+                    let mut has_other = false;
+                    $(if $dir_entry_components.contains($o_cond_flags) {
+                        if has_other {
+                            $text.push_str(", ");
+                        } else {
+                            if has_main {
+                                $text.push(' ');
+                            }
+                            $text.push('(');
+                        }
+                        has_other = true;
+                        let _ = $o_component;
+                    })*
+                    if has_other {
+                        $text.push(')');
+                    }
+
+                    $ui.same_line();
+                    $ui.text_disabled($text);
+                }
+            }
+        }
+
         fn draw_dir_entry(
             name: Option<&str>,
             id: u16,
             entries: &[DirEntry],
             selected_id: Option<u16>,
+            dir_entry_components: DirEntryComponents,
             ui: &imgui::Ui,
         ) -> Option<FileSelection> {
             let mut flags =
@@ -285,18 +342,26 @@ impl MessageView for Fs {
                 .label::<TreeNodeId<&str>, &str>(name.unwrap_or("/"))
                 .flags(flags)
                 .push();
-            ui.same_line();
-            ui.text_disabled(format!(
-                "ID {id:X} ({} {})",
-                entries.len(),
-                if entries.len() == 1 {
-                    "entry"
-                } else {
-                    "entries"
-                }
+
+            dir_entry_components!(ui, dir_entry_components, |text| (
+                [(
+                    DirEntryComponents::DIR_ENTRIES,
+                    write!(
+                        text,
+                        "{} {}",
+                        entries.len(),
+                        if entries.len() == 1 {
+                            "entry"
+                        } else {
+                            "entries"
+                        }
+                    )
+                )],
+                [(DirEntryComponents::ID, write!(text, "ID {id:X}"))]
             ));
+
             if tree_node.is_some() {
-                draw_dir_entries(entries, selected_id, ui).map(|selection| {
+                draw_dir_entries(entries, selected_id, dir_entry_components, ui).map(|selection| {
                     let mut path = name
                         .map(|name| {
                             let mut path = String::from(name);
@@ -315,9 +380,11 @@ impl MessageView for Fs {
         fn draw_dir_entries(
             entries: &[DirEntry],
             selected_id: Option<u16>,
+            dir_entry_components: DirEntryComponents,
             ui: &imgui::Ui,
         ) -> Option<FileSelection> {
             let mut selection = None;
+
             for entry in entries {
                 match &entry.contents {
                     DirEntryContents::File(file) => {
@@ -341,8 +408,14 @@ impl MessageView for Fs {
                                 file: file.clone(),
                             });
                         }
-                        ui.same_line();
-                        ui.text_disabled(format!("ID {:X} ({})", entry.id, format_size(file.size)));
+
+                        dir_entry_components!(ui, dir_entry_components, |text| (
+                            [(
+                                DirEntryComponents::FILE_SIZE,
+                                write!(text, "{}", format_size(file.size))
+                            )],
+                            [(DirEntryComponents::ID, write!(text, "ID {:X}", entry.id))]
+                        ));
                     }
                     DirEntryContents::Directory(dir) => {
                         if let Some(new_selection) = draw_dir_entry(
@@ -350,6 +423,7 @@ impl MessageView for Fs {
                             entry.id,
                             &dir.entries,
                             selected_id,
+                            dir_entry_components,
                             ui,
                         ) {
                             selection = Some(new_selection);
@@ -385,6 +459,33 @@ impl MessageView for Fs {
             ui.table_next_row();
             ui.table_next_column();
 
+            if ui.button("Options...") {
+                ui.open_popup("options");
+            }
+
+            ui.popup("options", || {
+                let mut dir_entry_components_bits = self.dir_entry_components.bits();
+                ui.checkbox_flags(
+                    "Show file sizes",
+                    &mut dir_entry_components_bits,
+                    DirEntryComponents::FILE_SIZE.bits(),
+                );
+                ui.checkbox_flags(
+                    "Show directory entries",
+                    &mut dir_entry_components_bits,
+                    DirEntryComponents::DIR_ENTRIES.bits(),
+                );
+                ui.checkbox_flags(
+                    "Show IDs",
+                    &mut dir_entry_components_bits,
+                    DirEntryComponents::ID.bits(),
+                );
+                self.dir_entry_components =
+                    DirEntryComponents::from_bits_truncate(dir_entry_components_bits);
+            });
+
+            ui.separator();
+
             ui.child_window("tree")
                 .size([
                     0.0,
@@ -393,9 +494,14 @@ impl MessageView for Fs {
                 .horizontal_scrollbar(true)
                 .build(|| {
                     let prev_selection_id = self.selected_file.as_ref().map(|s| s.0.id);
-                    if let Some(selection) =
-                        draw_dir_entry(None, 0xF000, root_dir, prev_selection_id, ui)
-                    {
+                    if let Some(selection) = draw_dir_entry(
+                        None,
+                        0xF000,
+                        root_dir,
+                        prev_selection_id,
+                        self.dir_entry_components,
+                        ui,
+                    ) {
                         if prev_selection_id != Some(selection.id) {
                             messages.push(Message::ReadFile {
                                 id: selection.id,
