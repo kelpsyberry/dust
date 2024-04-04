@@ -6,4 +6,4 @@ publish = false
 
 [dependencies]
 dust-core = { path = "../../core" }
-proc-bitfield = { version = "0.3", features = ["nightly"] }
+proc-bitfield = { git = "https://github.com/kelpsyberry/proc-bitfield", features = ["nightly"] }

@@ -410,7 +410,7 @@ impl Renderer {
         for poly_addr in 0..rendering_data.poly_ram_level {
             let poly_addr = unsafe { PolyAddr::new_unchecked(poly_addr) };
             let poly = &rendering_data.poly_ram[poly_addr.get() as usize];
-            let verts_len = poly.attrs.verts_len();
+            let verts_len = unsafe { poly.attrs.verts_len() };
 
             if verts_len.get() < 3 {
                 continue;
@@ -657,7 +657,7 @@ impl Renderer {
             ) = match &mut poly.edges {
                 Edges::Normal(edges) => {
                     let raw_poly = rendering_data.poly_ram[poly.poly_addr.get() as usize];
-                    let verts_len = raw_poly.attrs.verts_len();
+                    let verts_len = unsafe { raw_poly.attrs.verts_len() };
 
                     macro_rules! process_edge {
                         ($vert_i: expr, $edge: expr, $increasing: expr) => {{

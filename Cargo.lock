@@ -2302,8 +2302,7 @@ dependencies = [
 [[package]]
 name = "proc-bitfield"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e77336166f33f8d15afb6d06cec94829b764988876363b1751bbde5b06fef6d4"
+source = "git+https://github.com/kelpsyberry/proc-bitfield#7e1a5b6a9d102bcffc0f6de39e0f2d6a02df1d86"
 dependencies = [
  "proc-bitfield-macros",
  "static_assertions",
@@ -2312,8 +2311,7 @@ dependencies = [
 [[package]]
 name = "proc-bitfield-macros"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90d78755a79b5711d5e2140c36e10dac2f06f555b1a9995141b54f72ae129515"
+source = "git+https://github.com/kelpsyberry/proc-bitfield#7e1a5b6a9d102bcffc0f6de39e0f2d6a02df1d86"
 dependencies = [
  "proc-macro2",
  "quote",

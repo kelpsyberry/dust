@@ -1618,7 +1618,7 @@ impl Renderer {
                 toon_used |= poly.attrs.mode() == 2;
                 fog_used |= poly.attrs.fog_enabled();
 
-                let verts_len = poly.attrs.verts_len();
+                let verts_len = unsafe { poly.attrs.verts_len() };
 
                 if verts_len.get() < 3 || poly.attrs.mode() == 3 {
                     // TODO: Do process shadow/shadow mask polygons
