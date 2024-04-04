@@ -69,14 +69,15 @@ impl Contents for File {
     }
 
     fn read_slice(&mut self, addr: usize, output: &mut [u8]) {
-        self.file
-            .seek(SeekFrom::Start(addr as u64))
-            .and_then(|_| {
-                let read_len = output.len().min(self.len - addr);
-                output[read_len..].fill(0);
-                self.file.read_exact(&mut output[..read_len])
-            })
-            .expect("couldn't read DS slot ROM data");
+        let read_len = output.len().min(self.len.saturating_sub(addr));
+        output[read_len..].fill(0);
+        if read_len > 0 {
+            self.file
+                .seek(SeekFrom::Start(addr as u64))
+                .and_then(|_| self.file.read_exact(&mut output[..read_len]))
+                .expect("couldn't read DS slot ROM data");
+        }
+
         macro_rules! apply_overlay {
             ($bytes: expr, $start: expr, $end: expr) => {
                 if let Some(Some(bytes)) = $bytes {
