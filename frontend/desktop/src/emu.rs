@@ -118,6 +118,22 @@ pub enum Notification {
     SavestateFailed(String),
 }
 
+#[cfg(feature = "debug-views")]
+impl debug_views::Messages for &crossbeam_channel::Sender<Message> {
+    fn push(&mut self, notif: debug_views::Message) {
+        self.send(Message::DebugViews(notif))
+            .expect("couldn't send message to emulation thread");
+    }
+}
+
+#[cfg(feature = "debug-views")]
+impl debug_views::Notifications for &crossbeam_channel::Sender<Notification> {
+    fn push(&mut self, notif: debug_views::Notification) {
+        self.send(Notification::DebugViews(notif))
+            .expect("couldn't send notification to UI thread");
+    }
+}
+
 pub struct DsSlot {
     pub rom: DsSlotRom,
     pub save_type: Option<SaveType>,
@@ -477,7 +493,7 @@ pub(super) fn run(
     let mut last_save_flush_time = last_frame_time;
 
     #[cfg(feature = "debug-views")]
-    let mut debug_views = debug_views::ViewsEmuState::new();
+    let mut debug_views = debug_views::EmuState::new();
 
     #[cfg(feature = "gdb-server")]
     let mut gdb_server = None;
@@ -517,9 +533,7 @@ pub(super) fn run(
 
                 #[cfg(feature = "debug-views")]
                 Message::DebugViews(message) => {
-                    if let Some(notif) = debug_views.handle_message(&mut emu, message) {
-                        notif!(Notification::DebugViews(notif));
-                    }
+                    debug_views.handle_message(&mut emu, message, &to_ui);
                 }
 
                 Message::Reset => {
@@ -812,7 +826,7 @@ pub(super) fn run(
         }
 
         #[cfg(feature = "debug-views")]
-        debug_views.prepare_frame_data(&mut emu, &mut frame.debug);
+        debug_views.update(&mut emu, &mut frame.debug, &to_ui);
 
         frames_since_last_fps_calc += 1;
         let now = Instant::now();

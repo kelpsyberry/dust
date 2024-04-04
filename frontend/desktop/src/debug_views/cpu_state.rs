@@ -4,7 +4,7 @@ use super::{
         regs::{bitfield, regs_32, regs_32_default_label, BitfieldCommand},
         separator_with_width,
     },
-    BaseView, FrameDataSlot, Messages, SingletonView, View,
+    BaseView, FrameDataSlot, FrameView, FrameViewMessages, SingletonView,
 };
 use crate::ui::{utils::combo_value, window::Window};
 use dust_core::{
@@ -26,7 +26,7 @@ pub use bounded::*;
 
 pub struct EmuState<const ARM9: bool>;
 
-impl<const ARM9: bool> super::EmuState for EmuState<ARM9> {
+impl<const ARM9: bool> super::FrameViewEmuState for EmuState<ARM9> {
     type InitData = ();
     type Message = (Bank, RegIndex, u32);
     type FrameData = (Regs, Psr);
@@ -117,7 +117,7 @@ impl<const ARM9: bool> BaseView for CpuState<ARM9> {
     const MENU_NAME: &'static str = if ARM9 { "ARM9 state" } else { "ARM7 state" };
 }
 
-impl<const ARM9: bool> View for CpuState<ARM9> {
+impl<const ARM9: bool> FrameView for CpuState<ARM9> {
     type EmuState = EmuState<ARM9>;
 
     fn new(_window: &mut Window) -> Self {
@@ -127,17 +127,22 @@ impl<const ARM9: bool> View for CpuState<ARM9> {
         }
     }
 
-    fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {}
+    fn emu_state(&self) -> <Self::EmuState as super::FrameViewEmuState>::InitData {}
 
     fn update_from_frame_data(
         &mut self,
-        frame_data: &<Self::EmuState as super::EmuState>::FrameData,
+        frame_data: &<Self::EmuState as super::FrameViewEmuState>::FrameData,
         _window: &mut Window,
     ) {
         self.reg_values = Some(frame_data.clone());
     }
 
-    fn draw(&mut self, ui: &imgui::Ui, window: &mut Window, mut messages: impl Messages<Self>) {
+    fn draw(
+        &mut self,
+        ui: &imgui::Ui,
+        window: &mut Window,
+        mut messages: impl FrameViewMessages<Self>,
+    ) {
         if let Some((reg_values, cpsr)) = self.reg_values.as_mut() {
             let _mono_font_token = ui.push_font(window.imgui.mono_font);
             let _item_spacing =

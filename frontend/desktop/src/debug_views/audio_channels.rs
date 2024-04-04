@@ -1,6 +1,7 @@
 use super::{
     common::regs::{bitfield, BitfieldCommand},
-    BaseView, FrameDataSlot, InstanceableEmuState, InstanceableView, Messages, RefreshType, View,
+    BaseView, FrameDataSlot, FrameView, FrameViewMessages, InstanceableFrameViewEmuState,
+    InstanceableView, RefreshType,
 };
 use crate::ui::window::Window;
 use dust_core::{
@@ -84,7 +85,7 @@ pub struct EmuState {
     channel_index: ChannelIndex,
 }
 
-impl super::EmuState for EmuState {
+impl super::FrameViewEmuState for EmuState {
     type InitData = ChannelIndex;
     type Message = ChannelIndex;
     type FrameData = (ChannelData, Vec<i16>);
@@ -129,7 +130,7 @@ impl super::EmuState for EmuState {
     }
 }
 
-impl InstanceableEmuState for EmuState {
+impl InstanceableFrameViewEmuState for EmuState {
     const ADDITION_TRIGGERS_REFRESH: bool = false;
     const DELETION_TRIGGERS_REFRESH: bool = true;
     fn visibility_change_triggers_refresh(visible: bool) -> bool {
@@ -168,7 +169,7 @@ impl BaseView for AudioChannels {
     const MENU_NAME: &'static str = "Audio channels";
 }
 
-impl View for AudioChannels {
+impl FrameView for AudioChannels {
     type EmuState = EmuState;
 
     fn new(_window: &mut Window) -> Self {
@@ -186,13 +187,13 @@ impl View for AudioChannels {
         }
     }
 
-    fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
+    fn emu_state(&self) -> <Self::EmuState as super::FrameViewEmuState>::InitData {
         self.cur_channel
     }
 
     fn update_from_frame_data(
         &mut self,
-        frame_data: &<Self::EmuState as super::EmuState>::FrameData,
+        frame_data: &<Self::EmuState as super::FrameViewEmuState>::FrameData,
         _window: &mut Window,
     ) {
         self.data.channel = frame_data.0.channel;
@@ -201,7 +202,12 @@ impl View for AudioChannels {
         self.data.control = frame_data.0.control;
     }
 
-    fn draw(&mut self, ui: &imgui::Ui, window: &mut Window, mut messages: impl Messages<Self>) {
+    fn draw(
+        &mut self,
+        ui: &imgui::Ui,
+        window: &mut Window,
+        mut messages: impl FrameViewMessages<Self>,
+    ) {
         let item_spacing = style!(ui, item_spacing);
 
         let sliders_width = 0.5 * (ui.content_region_avail()[0] - item_spacing[0]);

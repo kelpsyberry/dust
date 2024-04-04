@@ -642,7 +642,7 @@ impl UiState {
             .expect("couldn't spawn emulation thread");
 
         #[cfg(feature = "debug-views")]
-        self.debug_views.emu_started(window);
+        self.debug_views.emu_started(window, &to_emu);
 
         self.emu = Some(EmuState {
             playing,
@@ -665,8 +665,11 @@ impl UiState {
         });
     }
 
-    fn stop_emu(&mut self, config: &mut Config) {
+    fn stop_emu(&mut self, config: &mut Config, window: &mut window::Window) {
         if let Some(emu) = self.emu.take() {
+            #[cfg(feature = "debug-views")]
+            self.debug_views.emu_stopped(window, &emu.to_emu);
+
             emu.send_message(emu::Message::Stop);
             self.frame_tx = Some(emu.thread.join().expect("couldn't join emulation thread"));
 
@@ -686,7 +689,7 @@ impl UiState {
     }
 
     fn stop(&mut self, config: &mut Config, window: &mut window::Window) {
-        self.stop_emu(config);
+        self.stop_emu(config, window);
 
         self.savestate_editor
             .update_game(window, &config.config, None);
@@ -696,9 +699,6 @@ impl UiState {
         }
 
         config.config.unset_game();
-
-        #[cfg(feature = "debug-views")]
-        self.debug_views.emu_stopped(window);
 
         triple_buffer::reset(
             (
@@ -1509,7 +1509,7 @@ pub fn main() {
 
                             #[cfg(feature = "debug-views")]
                             section! {{
-                                state.debug_views.draw_menu(state.emu.is_some(), ui, window);
+                                state.debug_views.draw_menu(ui, window, state.emu.as_ref().map(|emu| &emu.to_emu));
                             }}
                         });
                     }
@@ -1549,11 +1549,7 @@ pub fn main() {
 
             // Draw debug views
             #[cfg(feature = "debug-views")]
-            for message in state.debug_views.draw(ui, window) {
-                if let Some(emu) = &state.emu {
-                    emu.send_message(emu::Message::DebugViews(message));
-                }
-            }
+            state.debug_views.draw(ui, window, state.emu.as_ref().map(|emu| &emu.to_emu));
 
             // Draw config editor
             if let Some(editor) = &mut state.config_editor {
@@ -1704,8 +1700,8 @@ pub fn main() {
             });
             window::ControlFlow::Continue
         },
-        move |window, (mut config, mut state)| {
-            state.stop_emu(&mut config);
+        move |mut window, (mut config, mut state)| {
+            state.stop_emu(&mut config, &mut window);
 
             config.config.window_size = window.inner_size().into();
 

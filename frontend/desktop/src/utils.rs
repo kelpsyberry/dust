@@ -257,3 +257,19 @@ pub fn icon_data_to_rgba8(
     }
     rgba
 }
+
+pub fn format_size(size: u32) -> String {
+    let log1024 = 31_u32.saturating_sub(size.leading_zeros()) / 10;
+    let unit = ["B", "KiB", "MiB", "GiB"][log1024 as usize];
+    let amount = size as f64 / (1 << (log1024 * 10)) as f64;
+    format!("{amount:.2} {unit}")
+}
+
+pub fn format_size_shift(shift: usize) -> String {
+    let units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
+    if let Some(unit) = units.get(shift / 10) {
+        format!("{} {unit}, 2^{shift} B", 1 << (shift % 10))
+    } else {
+        format!("2^{shift} B")
+    }
+}

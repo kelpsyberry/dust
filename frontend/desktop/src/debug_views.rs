@@ -16,6 +16,8 @@ mod audio_channels;
 use audio_channels::AudioChannels;
 mod ds_rom_info;
 use ds_rom_info::DsRomInfo;
+mod fs;
+use fs::Fs;
 
 use super::ui::window::Window;
 use ahash::AHashMap as HashMap;
@@ -23,6 +25,12 @@ use dust_core::{cpu, emu::Emu};
 use std::collections::hash_map::Entry;
 
 pub type ViewKey = u32;
+
+pub trait BaseView: Sized {
+    const MENU_NAME: &'static str;
+}
+
+// region: Frame views (synced with emulator visual updates, updating every frame)
 
 pub trait FrameDataSlot<'a, T> {
     fn insert(self, value: T);
@@ -67,11 +75,11 @@ impl<'a, T> FrameDataSlot<'a, T> for &'a mut Option<T> {
     }
 }
 
-pub trait Messages<T: View> {
-    fn push(&mut self, message: <T::EmuState as EmuState>::Message);
+pub trait FrameViewMessages<T: FrameView> {
+    fn push(&mut self, message: <T::EmuState as FrameViewEmuState>::Message);
 }
 
-pub trait EmuState: Sized {
+pub trait FrameViewEmuState: Sized {
     type InitData: Send;
     type Message: Send;
     type FrameData: Send;
@@ -80,7 +88,7 @@ pub trait EmuState: Sized {
     fn destroy<E: cpu::Engine>(self, _emu: &mut Emu<E>) {}
 
     fn handle_visibility_changed<E: cpu::Engine>(&mut self, _visible: bool, _emu: &mut Emu<E>) {}
-    fn handle_message<E: cpu::Engine>(&mut self, _message: Self::Message, _emu: &mut Emu<E>);
+    fn handle_message<E: cpu::Engine>(&mut self, message: Self::Message, emu: &mut Emu<E>);
 
     fn prepare_frame_data<'a, E: cpu::Engine, S: FrameDataSlot<'a, Self::FrameData>>(
         &mut self,
@@ -97,7 +105,7 @@ pub enum RefreshType {
     Message,
 }
 
-pub trait InstanceableEmuState: EmuState {
+pub trait InstanceableFrameViewEmuState: FrameViewEmuState {
     const ADDITION_TRIGGERS_REFRESH: bool = false;
     const DELETION_TRIGGERS_REFRESH: bool = false;
     fn visibility_change_triggers_refresh(_visible: bool) -> bool {
@@ -111,25 +119,87 @@ pub trait InstanceableEmuState: EmuState {
     fn finish_preparing_frame_data<E: cpu::Engine>(_emu: &mut Emu<E>) {}
 }
 
-pub trait BaseView: Sized {
-    const MENU_NAME: &'static str;
-}
-
-pub trait View: BaseView {
-    type EmuState: EmuState;
+pub trait FrameView: BaseView {
+    type EmuState: FrameViewEmuState;
 
     fn new(window: &mut Window) -> Self;
     fn destroy(self, _window: &mut Window) {}
 
-    fn emu_state(&self) -> <Self::EmuState as EmuState>::InitData;
+    fn emu_state(&self) -> <Self::EmuState as FrameViewEmuState>::InitData;
     fn update_from_frame_data(
         &mut self,
-        frame_data: &<Self::EmuState as EmuState>::FrameData,
+        frame_data: &<Self::EmuState as FrameViewEmuState>::FrameData,
         window: &mut Window,
     );
 
-    fn draw(&mut self, ui: &imgui::Ui, window: &mut Window, messages: impl Messages<Self>);
+    fn draw(&mut self, ui: &imgui::Ui, window: &mut Window, messages: impl FrameViewMessages<Self>);
 }
+
+// endregion
+
+// region: Message views (no per-frame updates, pass messages between the emulator and the UI)
+
+pub trait MessageViewNotifications<T: MessageViewEmuState> {
+    fn push(&mut self, notif: T::Notification);
+}
+
+pub trait MessageViewMessages<T: MessageView> {
+    fn push(&mut self, message: <T::EmuState as MessageViewEmuState>::Message);
+}
+
+pub trait MessageViewEmuState: Sized {
+    type InitData: Send;
+    type Message: Send;
+    type Notification: Send;
+
+    fn new<E: cpu::Engine, N: MessageViewNotifications<Self>>(
+        data: Self::InitData,
+        visible: bool,
+        emu: &mut Emu<E>,
+        notifs: N,
+    ) -> Self;
+    fn destroy<E: cpu::Engine>(self, _emu: &mut Emu<E>) {}
+
+    fn handle_visibility_changed<E: cpu::Engine>(&mut self, _visible: bool, _emu: &mut Emu<E>) {}
+    fn handle_message<E: cpu::Engine, N: MessageViewNotifications<Self>>(
+        &mut self,
+        message: Self::Message,
+        emu: &mut Emu<E>,
+        notifs: N,
+    );
+
+    fn update<E: cpu::Engine, N: MessageViewNotifications<Self>>(
+        &mut self,
+        _emu: &mut Emu<E>,
+        _notifs: N,
+    ) {
+    }
+}
+
+pub trait MessageView: BaseView {
+    type EmuState: MessageViewEmuState;
+
+    fn new(window: &mut Window) -> Self;
+    fn destroy(self, _window: &mut Window) {}
+
+    fn emu_state(&self) -> <Self::EmuState as MessageViewEmuState>::InitData;
+    fn handle_notif(
+        &mut self,
+        notif: <Self::EmuState as MessageViewEmuState>::Notification,
+        window: &mut Window,
+    );
+
+    fn draw(
+        &mut self,
+        ui: &imgui::Ui,
+        window: &mut Window,
+        messages: impl MessageViewMessages<Self>,
+    );
+}
+
+// endregion
+
+// region: Static views (request data once then display it)
 
 pub trait StaticView: BaseView {
     type Data: Send;
@@ -141,6 +211,10 @@ pub trait StaticView: BaseView {
 
     fn draw(&mut self, ui: &imgui::Ui, window: &mut Window);
 }
+
+// endregion
+
+// region: View types, singleton and instanceable
 
 pub trait SingletonView: BaseView {
     fn window<'ui>(
@@ -170,9 +244,31 @@ pub trait InstanceableView: BaseView {
     }
 }
 
+// endregion
+
 enum StaticViewState<T: StaticView> {
     Loading,
     Loaded(T),
+}
+
+pub trait Notifications {
+    fn push(&mut self, notif: Notification);
+}
+
+impl<N: Notifications> Notifications for &mut N {
+    fn push(&mut self, notif: Notification) {
+        N::push(*self, notif);
+    }
+}
+
+pub trait Messages {
+    fn push(&mut self, notif: Message);
+}
+
+impl<N: Messages> Messages for &mut N {
+    fn push(&mut self, notif: Message) {
+        N::push(*self, notif);
+    }
 }
 
 macro_rules! declare_structs {
@@ -194,57 +290,100 @@ macro_rules! declare_structs {
             $i_message_ident: ident
         )),*],
         [$((
-            $sst_view_ident: ident,
-            $sst_view_ty: ty,
-            $sst_fetch_message_ident: ident,
-            $sst_reply_message_ident: ident
+            $ss_view_ident: ident,
+            $ss_view_ty: ty,
+            $ss_fetch_message_ident: ident,
+            $ss_reply_message_ident: ident
+        )),*],
+        [$((
+            $im_view_ident: ident,
+            $im_view_ty: ty,
+            $im_init_message_ident: ident,
+            $im_destroy_message_ident: ident,
+            $im_visibility_changed_message_ident: ident,
+            $im_message_ident: ident,
+            $im_notif_ident: ident
         )),*]
     ) => {
+        #[allow(clippy::enum_variant_names)]
         pub enum Message {
             $(
-                $s_init_message_ident(<<$s_view_ty as View>::EmuState as EmuState>::InitData, bool),
+                $s_init_message_ident(
+                    <<$s_view_ty as FrameView>::EmuState as FrameViewEmuState>::InitData,
+                    bool,
+                ),
                 $s_destroy_message_ident,
                 $s_visibility_changed_message_ident(bool),
-                $s_message_ident(<<$s_view_ty as View>::EmuState as EmuState>::Message),
+                $s_message_ident(
+                    <<$s_view_ty as FrameView>::EmuState as FrameViewEmuState>::Message,
+                ),
             )*
             $(
                 $i_init_message_ident(
                     ViewKey,
-                    <<$i_view_ty as View>::EmuState as EmuState>::InitData,
+                    <<$i_view_ty as FrameView>::EmuState as FrameViewEmuState>::InitData,
                     bool,
                 ),
                 $i_destroy_message_ident(ViewKey),
                 $i_visibility_changed_message_ident(ViewKey, bool),
-                $i_message_ident(ViewKey, <<$i_view_ty as View>::EmuState as EmuState>::Message),
+                $i_message_ident(
+                    ViewKey,
+                    <<$i_view_ty as FrameView>::EmuState as FrameViewEmuState>::Message,
+                ),
             )*
             $(
-                $sst_fetch_message_ident,
+                $ss_fetch_message_ident,
+            )*
+            $(
+                $im_init_message_ident(
+                    ViewKey,
+                    <<$im_view_ty as MessageView>::EmuState as MessageViewEmuState>::InitData,
+                    bool,
+                ),
+                $im_destroy_message_ident(ViewKey),
+                $im_visibility_changed_message_ident(ViewKey, bool),
+                $im_message_ident(
+                    ViewKey,
+                    <<$im_view_ty as MessageView>::EmuState as MessageViewEmuState>::Message,
+                ),
             )*
         }
 
         pub enum Notification {
             $(
-                $sst_reply_message_ident(<$sst_view_ty as StaticView>::Data),
+                $ss_reply_message_ident(<$ss_view_ty as StaticView>::Data),
+            )*
+            $(
+                $im_notif_ident(
+                    ViewKey,
+                    <<$im_view_ty as MessageView>::EmuState as MessageViewEmuState>::Notification,
+                ),
             )*
         }
 
-        pub struct ViewsEmuState {
+        pub struct EmuState {
             $(
-                $s_view_ident: Option<(<$s_view_ty as View>::EmuState, bool)>,
+                $s_view_ident: Option<(<$s_view_ty as FrameView>::EmuState, bool)>,
             )*
             $(
-                $i_view_ident: HashMap<ViewKey, (<$i_view_ty as View>::EmuState, bool)>,
+                $i_view_ident: HashMap<ViewKey, (<$i_view_ty as FrameView>::EmuState, bool)>,
+            )*
+            $(
+                $im_view_ident: HashMap<ViewKey, (<$im_view_ty as MessageView>::EmuState, bool)>,
             )*
         }
 
-        impl ViewsEmuState {
+        impl EmuState {
             pub fn new() -> Self {
-                ViewsEmuState {
+                EmuState {
                     $(
                         $s_view_ident: None,
                     )*
                     $(
                         $i_view_ident: HashMap::default(),
+                    )*
+                    $(
+                        $im_view_ident: HashMap::default(),
                     )*
                 }
             }
@@ -253,12 +392,13 @@ macro_rules! declare_structs {
                 &mut self,
                 emu: &mut Emu<E>,
                 message: Message,
-            ) -> Option<Notification> {
+                mut notifs: impl Notifications,
+            ) {
                 match message {
                     $(
                         Message::$s_init_message_ident(data, visible) => {
                             self.$s_view_ident = Some((
-                                <<$s_view_ty as View>::EmuState as EmuState>::new(
+                                <<$s_view_ty as FrameView>::EmuState as FrameViewEmuState>::new(
                                     data,
                                     visible,
                                     emu,
@@ -289,7 +429,7 @@ macro_rules! declare_structs {
                             self.$i_view_ident.insert(
                                 key,
                                 (
-                                    <<$i_view_ty as View>::EmuState as EmuState>::new(
+                                    <<$i_view_ty as FrameView>::EmuState as FrameViewEmuState>::new(
                                         data,
                                         visible,
                                         emu,
@@ -297,7 +437,7 @@ macro_rules! declare_structs {
                                     visible,
                                 ),
                             );
-                            if <$i_view_ty as View>::EmuState::ADDITION_TRIGGERS_REFRESH {
+                            if <$i_view_ty as FrameView>::EmuState::ADDITION_TRIGGERS_REFRESH {
                                 for (other_key, (state, visible)) in &mut self.$i_view_ident {
                                     if *other_key != key {
                                         state.refresh(RefreshType::Addition, *visible, emu);
@@ -309,7 +449,7 @@ macro_rules! declare_structs {
                             if let Some((state, _)) = self.$i_view_ident.remove(&key) {
                                 state.destroy(emu);
                             }
-                            if <$i_view_ty as View>::EmuState::DELETION_TRIGGERS_REFRESH {
+                            if <$i_view_ty as FrameView>::EmuState::DELETION_TRIGGERS_REFRESH {
                                 for (other_key, (state, visible)) in &mut self.$i_view_ident {
                                     if *other_key != key {
                                         state.refresh(RefreshType::Deletion, *visible, emu);
@@ -323,7 +463,9 @@ macro_rules! declare_structs {
                                 *visible = new_visible;
                                 state.handle_visibility_changed(new_visible, emu);
                             }
-                            if <$i_view_ty as View>::EmuState::visibility_change_triggers_refresh(
+                            if <
+                                $i_view_ty as FrameView
+                            >::EmuState::visibility_change_triggers_refresh(
                                 new_visible,
                             ) {
                                 for (other_key, (state, visible)) in &mut self.$i_view_ident {
@@ -335,7 +477,7 @@ macro_rules! declare_structs {
                         }
                         Message::$i_message_ident(key, message) => {
                             let triggers_refresh =
-                                <$i_view_ty as View>::EmuState::message_triggers_refresh(
+                                <$i_view_ty as FrameView>::EmuState::message_triggers_refresh(
                                     &message,
                                 );
                             if let Some((state, _)) = &mut self.$i_view_ident.get_mut(&key) {
@@ -351,20 +493,55 @@ macro_rules! declare_structs {
                         }
                     )*
                     $(
-                        Message::$sst_fetch_message_ident => {
-                            return Some(Notification::$sst_reply_message_ident(
-                                <$sst_view_ty as StaticView>::fetch_data(emu),
+                        Message::$ss_fetch_message_ident => {
+                            notifs.push(Notification::$ss_reply_message_ident(
+                                <$ss_view_ty as StaticView>::fetch_data(emu),
                             ));
                         }
                     )*
+                    $(
+                        Message::$im_init_message_ident(key, data, visible) => {
+                            self.$im_view_ident.insert(
+                                key,
+                                (
+                                    <
+                                        <$im_view_ty as MessageView
+                                    >::EmuState as MessageViewEmuState>::new(
+                                        data,
+                                        visible,
+                                        emu,
+                                        (notifs, key),
+                                    ),
+                                    visible,
+                                ),
+                            );
+                        }
+                        Message::$im_destroy_message_ident(key) => {
+                            if let Some((state, _)) = self.$im_view_ident.remove(&key) {
+                                state.destroy(emu);
+                            }
+                        }
+
+                        Message::$im_visibility_changed_message_ident(key, new_visible) => {
+                            if let Some((state, visible)) = &mut self.$im_view_ident.get_mut(&key) {
+                                *visible = new_visible;
+                                state.handle_visibility_changed(new_visible, emu);
+                            }
+                        }
+                        Message::$im_message_ident(key, message) => {
+                            if let Some((state, _)) = &mut self.$im_view_ident.get_mut(&key) {
+                                state.handle_message(message, emu, (notifs, key));
+                            }
+                        }
+                    )*
                 }
-                None
             }
 
-            pub fn prepare_frame_data<E: cpu::Engine>(
+            pub fn update<E: cpu::Engine>(
                 &mut self,
                 emu: &mut Emu<E>,
                 frame_data: &mut FrameData,
+                mut notifs: impl Notifications,
             ) {
                 $(
                     if let Some((state, visible)) = &mut self.$s_view_ident {
@@ -389,20 +566,27 @@ macro_rules! declare_structs {
                         }
                     }
                     <
-                        <$i_view_ty as View>::EmuState as InstanceableEmuState
+                        <$i_view_ty as FrameView>::EmuState as InstanceableFrameViewEmuState
                     >::finish_preparing_frame_data(emu);
+                )*
+                $(
+                    for (key, (state, _)) in &mut self.$im_view_ident {
+                        state.update(emu, (&mut notifs, *key));
+                    }
                 )*
             }
         }
 
         pub struct FrameData {
             $(
-                $s_view_ident: Option<<<$s_view_ty as View>::EmuState as EmuState>::FrameData>,
+                $s_view_ident: Option<
+                    <<$s_view_ty as FrameView>::EmuState as FrameViewEmuState>::FrameData
+                >,
             )*
             $(
                 $i_view_ident: HashMap<
                     ViewKey,
-                    <<$i_view_ty as View>::EmuState as EmuState>::FrameData,
+                    <<$i_view_ty as FrameView>::EmuState as FrameViewEmuState>::FrameData,
                 >,
             )*
         }
@@ -431,7 +615,6 @@ macro_rules! declare_structs {
         }
 
         pub struct UiState {
-            messages: Vec<Message>,
             $(
                 $s_view_ident: Option<(Option<$s_view_ty>, bool)>,
             )*
@@ -439,7 +622,10 @@ macro_rules! declare_structs {
                 $i_view_ident: HashMap<ViewKey, (Option<$i_view_ty>, bool)>,
             )*
             $(
-                $sst_view_ident: Option<Option<StaticViewState<$sst_view_ty>>>,
+                $ss_view_ident: Option<Option<StaticViewState<$ss_view_ty>>>,
+            )*
+            $(
+                $im_view_ident: HashMap<ViewKey, (Option<$im_view_ty>, bool)>,
             )*
         }
 
@@ -447,7 +633,6 @@ macro_rules! declare_structs {
             #[inline]
             pub fn new() -> Self {
                 UiState {
-                    messages: Vec::new(),
                     $(
                         $s_view_ident: None,
                     )*
@@ -455,7 +640,10 @@ macro_rules! declare_structs {
                         $i_view_ident: HashMap::default(),
                     )*
                     $(
-                        $sst_view_ident: None,
+                        $ss_view_ident: None,
+                    )*
+                    $(
+                        $im_view_ident: HashMap::default(),
                     )*
                 }
             }
@@ -463,11 +651,18 @@ macro_rules! declare_structs {
             pub fn handle_notif(&mut self, notif: Notification, window: &mut Window) {
                 match notif {
                     $(
-                        Notification::$sst_reply_message_ident(data) => {
+                        Notification::$ss_reply_message_ident(data) => {
                             if let Some(Some(view @ StaticViewState::Loading)) =
-                                &mut self.$sst_view_ident
+                                &mut self.$ss_view_ident
                             {
-                                *view = StaticViewState::Loaded(<$sst_view_ty>::new(data, window));
+                                *view = StaticViewState::Loaded(<$ss_view_ty>::new(data, window));
+                            }
+                        }
+                    )*
+                    $(
+                        Notification::$im_notif_ident(key, notif) => {
+                            if let Some((Some(view), _)) = self.$im_view_ident.get_mut(&key) {
+                                view.handle_notif(notif, window);
                             }
                         }
                     )*
@@ -492,12 +687,16 @@ macro_rules! declare_structs {
                 )*
             }
 
-            pub fn emu_started(&mut self, window: &mut Window) {
+            pub fn emu_started(
+                &mut self,
+                window: &mut Window,
+                mut messages: impl Messages,
+            ) {
                 $(
                     if let Some((view @ None, visible)) = &mut self.$s_view_ident {
                         let view = view.insert(<$s_view_ty>::new(window));
                         let data = view.emu_state();
-                        self.messages.push(Message::$s_init_message_ident(data, *visible));
+                        messages.push(Message::$s_init_message_ident(data, *visible));
                     }
                 )*
                 $(
@@ -505,23 +704,35 @@ macro_rules! declare_structs {
                         let (view @ None, visible) = view else { continue };
                         let view = view.insert(<$i_view_ty>::new(window));
                         let data = view.emu_state();
-                        self.messages.push(Message::$i_init_message_ident(*key, data, *visible));
+                        messages.push(Message::$i_init_message_ident(*key, data, *visible));
                     }
                 )*
                 $(
-                    if let Some(view @ None) = &mut self.$sst_view_ident {
+                    if let Some(view @ None) = &mut self.$ss_view_ident {
                         *view = Some(StaticViewState::Loading);
-                        self.messages.push(Message::$sst_fetch_message_ident);
+                        messages.push(Message::$ss_fetch_message_ident);
+                    }
+                )*
+                $(
+                    for (key, view) in &mut self.$im_view_ident {
+                        let (view @ None, visible) = view else { continue };
+                        let view = view.insert(<$im_view_ty>::new(window));
+                        let data = view.emu_state();
+                        messages.push(Message::$im_init_message_ident(*key, data, *visible));
                     }
                 )*
             }
 
-            pub fn emu_stopped(&mut self, window: &mut Window) {
+            pub fn emu_stopped(
+                &mut self,
+                window: &mut Window,
+                mut messages: impl Messages,
+            ) {
                 $(
                     if let Some((view, _)) = &mut self.$s_view_ident {
                         if let Some(view) = view.take() {
                             view.destroy(window);
-                            self.messages.push(Message::$s_destroy_message_ident);
+                            messages.push(Message::$s_destroy_message_ident);
                         };
                     }
                 )*
@@ -529,32 +740,45 @@ macro_rules! declare_structs {
                     for (key, (view, _)) in &mut self.$i_view_ident {
                         if let Some(view) = view.take() {
                             view.destroy(window);
-                            self.messages.push(Message::$i_destroy_message_ident(*key));
+                            messages.push(Message::$i_destroy_message_ident(*key));
                         }
                     }
                 )*
                 $(
-                    if let Some(view) = &mut self.$sst_view_ident {
+                    if let Some(view) = &mut self.$ss_view_ident {
                         if let Some(StaticViewState::Loaded(view)) = view.take() {
                             view.destroy(window);
                         };
                     }
                 )*
+                $(
+                    for (key, (view, _)) in &mut self.$im_view_ident {
+                        if let Some(view) = view.take() {
+                            view.destroy(window);
+                            messages.push(Message::$im_destroy_message_ident(*key));
+                        }
+                    }
+                )*
             }
 
-            pub fn draw_menu(&mut self, emu_running: bool, ui: &imgui::Ui, window: &mut Window) {
+            pub fn draw_menu(
+                &mut self,
+                ui: &imgui::Ui,
+                window: &mut Window,
+                mut messages: Option<impl Messages>,
+            ) {
                 $(
-                    if ui.menu_item_config(<$sst_view_ty>::MENU_NAME)
-                        .selected(self.$sst_view_ident.is_some())
+                    if ui.menu_item_config(<$ss_view_ty>::MENU_NAME)
+                        .selected(self.$ss_view_ident.is_some())
                         .build()
                     {
-                        if let Some(view) = self.$sst_view_ident.take() {
+                        if let Some(view) = self.$ss_view_ident.take() {
                             if let Some(StaticViewState::Loaded(view)) = view {
                                 view.destroy(window);
                             }
                         } else {
-                            self.$sst_view_ident = Some(if emu_running {
-                                self.messages.push(Message::$sst_fetch_message_ident);
+                            self.$ss_view_ident = Some(if let Some(messages) = &mut messages {
+                                messages.push(Message::$ss_fetch_message_ident);
                                 Some(StaticViewState::Loading)
                             } else {
                                 None
@@ -571,14 +795,14 @@ macro_rules! declare_structs {
                         if let Some((view, _)) = self.$s_view_ident.take() {
                             if let Some(view) = view {
                                 view.destroy(window);
-                                self.messages.push(Message::$s_destroy_message_ident);
+                                messages.as_mut().unwrap().push(Message::$s_destroy_message_ident);
                             }
                         } else {
                             self.$s_view_ident = Some((
-                                if emu_running {
+                                if let Some(messages) = &mut messages {
                                     let view = <$s_view_ty>::new(window);
                                     let data = view.emu_state();
-                                    self.messages.push(Message::$s_init_message_ident(data, true));
+                                    messages.push(Message::$s_init_message_ident(data, true));
                                     Some(view)
                                 } else {
                                     None
@@ -598,12 +822,32 @@ macro_rules! declare_structs {
                         self.$i_view_ident.insert(
                             key,
                             (
-                                if emu_running {
+                                if let Some(messages) = &mut messages {
                                     let view = <$i_view_ty>::new(window);
                                     let data = view.emu_state();
-                                    self.messages.push(
-                                        Message::$i_init_message_ident(key, data, true),
-                                    );
+                                    messages.push(Message::$i_init_message_ident(key, data, true));
+                                    Some(view)
+                                } else {
+                                    None
+                                },
+                                true,
+                            ),
+                        );
+                    }
+                )*
+                $(
+                    if ui.menu_item(<$im_view_ty>::MENU_NAME) {
+                        let mut key = 1;
+                        while self.$im_view_ident.contains_key(&key) {
+                            key += 1;
+                        }
+                        self.$im_view_ident.insert(
+                            key,
+                            (
+                                if let Some(messages) = &mut messages {
+                                    let view = <$im_view_ty>::new(window);
+                                    let data = view.emu_state();
+                                    messages.push(Message::$im_init_message_ident(key, data, true));
                                     Some(view)
                                 } else {
                                     None
@@ -623,13 +867,15 @@ macro_rules! declare_structs {
                 ui.text("Loading...");
             }
 
-            pub fn draw<'a>(
-                &'a mut self,
+            pub fn draw(
+                &mut self,
                 ui: &imgui::Ui,
                 window: &mut Window,
-            ) -> impl Iterator<Item = Message> + 'a {
+                mut messages: Option<impl Messages>,
+            ) {
                 $(
                     if let Some((view, visible)) = &mut self.$s_view_ident {
+                        let messages = messages.as_mut().unwrap();
                         let mut opened = true;
                         let was_visible = *visible;
                         *visible = false;
@@ -637,16 +883,16 @@ macro_rules! declare_structs {
                             let ui_window = view.window(ui).opened(&mut opened);
                             ui_window.build(|| {
                                 *visible = true;
-                                view.draw(ui, window, &mut self.messages);
+                                view.draw(ui, window, &mut *messages);
                             });
                             if !opened {
                                 let Some((Some(view), _)) = self.$s_view_ident.take() else {
                                     unreachable!();
                                 };
                                 view.destroy(window);
-                                self.messages.push(Message::$s_destroy_message_ident);
+                                messages.push(Message::$s_destroy_message_ident);
                             } else if was_visible != *visible {
-                                self.messages.push(Message::$s_visibility_changed_message_ident(
+                                messages.push(Message::$s_visibility_changed_message_ident(
                                     *visible,
                                 ));
                             }
@@ -670,15 +916,16 @@ macro_rules! declare_structs {
                             let was_visible = *visible;
                             *visible = false;
                             if let Some(view) = view {
+                                let messages = messages.as_mut().unwrap();
                                 view.window(*key, ui).opened(&mut opened).build(|| {
                                     *visible = true;
-                                    view.draw(ui, window, (&mut self.messages, *key));
+                                    view.draw(ui, window, (&mut *messages, *key));
                                 });
                                 if !opened {
-                                    self.messages.push(Message::$i_destroy_message_ident(*key));
+                                    messages.push(Message::$i_destroy_message_ident(*key));
                                     return true;
                                 } else if was_visible != *visible {
-                                    self.messages.push(Message::$i_visibility_changed_message_ident(
+                                    messages.push(Message::$i_visibility_changed_message_ident(
                                         *key,
                                         *visible,
                                     ));
@@ -702,7 +949,7 @@ macro_rules! declare_structs {
                     }
                 )*
                 $(
-                    if let Some(view) = &mut self.$sst_view_ident {
+                    if let Some(view) = &mut self.$ss_view_ident {
                         let mut opened = true;
                         if let Some(view) = view {
                             if let StaticViewState::Loaded(view) = view {
@@ -712,49 +959,123 @@ macro_rules! declare_structs {
                                 });
                                 if !opened {
                                     let Some(Some(StaticViewState::Loaded(view))) =
-                                        self.$sst_view_ident.take() else {
+                                        self.$ss_view_ident.take() else {
                                         unreachable!();
                                     };
                                     view.destroy(window);
                                 }
                             } else {
-                                <$sst_view_ty>::window_stopped(ui)
+                                <$ss_view_ty>::window_stopped(ui)
                                     .opened(&mut opened)
                                     .build(|| {
                                         Self::draw_loading_view(ui);
                                     });
                                 if !opened {
-                                    self.$sst_view_ident.take();
+                                    self.$ss_view_ident.take();
                                 }
                             }
                         } else {
-                            <$sst_view_ty>::window_stopped(ui)
+                            <$ss_view_ty>::window_stopped(ui)
                                 .opened(&mut opened)
                                 .build(|| {
                                     Self::draw_unavailable_view(ui);
                                 });
                             if !opened {
-                                self.$sst_view_ident.take();
+                                self.$ss_view_ident.take();
                             }
                         }
                     }
                 )*
-                self.messages.drain(..)
+                $(
+                    let closed_views = self.$im_view_ident.extract_if(
+                        |key, (view, visible)| {
+                            let mut opened = true;
+                            let was_visible = *visible;
+                            *visible = false;
+                            if let Some(view) = view {
+                                let messages = messages.as_mut().unwrap();
+                                view.window(*key, ui).opened(&mut opened).build(|| {
+                                    *visible = true;
+                                    view.draw(ui, window, (&mut *messages, *key));
+                                });
+                                if !opened {
+                                    messages.push(Message::$im_destroy_message_ident(*key));
+                                    return true;
+                                } else if was_visible != *visible {
+                                    messages.push(
+                                        Message::$im_visibility_changed_message_ident(
+                                            *key,
+                                            *visible,
+                                        ),
+                                    );
+                                }
+                                false
+                            } else {
+                                <$im_view_ty>::window_stopped(*key, ui)
+                                    .opened(&mut opened)
+                                    .build(|| {
+                                        *visible = true;
+                                        Self::draw_unavailable_view(ui);
+                                    });
+                                !opened
+                            }
+                        },
+                    )
+                        .filter_map(|(_, (view, _))| view)
+                        .collect::<Vec<_>>();
+                    for view in closed_views {
+                        view.destroy(window);
+                    }
+                )*
             }
         }
 
         $(
-            impl Messages<$s_view_ty> for &mut Vec<Message> {
-                fn push(&mut self, message: <<$s_view_ty as View>::EmuState as EmuState>::Message) {
-                    Vec::push(self, Message::$s_message_ident(message));
+            impl<M: Messages> FrameViewMessages<$s_view_ty> for &mut M {
+                fn push(
+                    &mut self,
+                    message: <<$s_view_ty as FrameView>::EmuState as FrameViewEmuState>::Message,
+                ) {
+                    Messages::push(self, Message::$s_message_ident(message));
                 }
             }
         )*
 
         $(
-            impl Messages<$i_view_ty> for (&mut Vec<Message>, ViewKey) {
-                fn push(&mut self, message: <<$i_view_ty as View>::EmuState as EmuState>::Message) {
+            impl<M: Messages> FrameViewMessages<$i_view_ty> for (&mut M, ViewKey) {
+                fn push(
+                    &mut self,
+                    message: <<$i_view_ty as FrameView>::EmuState as FrameViewEmuState>::Message,
+                ) {
                     self.0.push(Message::$i_message_ident(self.1, message));
+                }
+            }
+        )*
+
+        $(
+            impl<M: Messages> MessageViewMessages<$im_view_ty> for (&mut M, ViewKey) {
+                fn push(
+                    &mut self,
+                    message: <
+                        <$im_view_ty as MessageView>::EmuState as MessageViewEmuState
+                    >::Message,
+                ) {
+                    self.0.push(Message::$im_message_ident(self.1, message));
+                }
+            }
+        )*
+
+        $(
+            impl<N: Notifications> MessageViewNotifications<
+                <$im_view_ty as MessageView>::EmuState
+            > for (N, ViewKey) {
+                fn push(
+                    &mut self,
+                    notif: <
+                        <$im_view_ty as MessageView>::EmuState as MessageViewEmuState
+                    >::Notification,
+                ) {
+                    self.0.push(Notification::$im_notif_ident(self.1, notif));
                 }
             }
         )*
@@ -777,5 +1098,8 @@ declare_structs!(
     ],
     [
         (ds_rom_info, DsRomInfo, FetchDsRomInfo, ReplyDsRomInfo)
+    ],
+    [
+        (fs, Fs, InitFs, DestroyFs, FsVisibility, FsMessage, FsNotif)
     ]
 );

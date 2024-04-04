@@ -1,6 +1,6 @@
 use super::{
-    common::rgb5_to_rgba8, BaseView, FrameDataSlot, InstanceableEmuState, InstanceableView,
-    Messages, View,
+    common::rgb5_to_rgba8, BaseView, FrameDataSlot, FrameView, FrameViewMessages,
+    InstanceableFrameViewEmuState, InstanceableView,
 };
 use crate::ui::{
     utils::{add2, combo_value, scale_to_fit, sub2s},
@@ -100,7 +100,7 @@ pub struct EmuState {
     selection: Selection,
 }
 
-impl super::EmuState for EmuState {
+impl super::FrameViewEmuState for EmuState {
     type InitData = Selection;
     type Message = Selection;
     type FrameData = BgMapData;
@@ -375,7 +375,7 @@ impl super::EmuState for EmuState {
     }
 }
 
-impl InstanceableEmuState for EmuState {}
+impl InstanceableFrameViewEmuState for EmuState {}
 
 pub struct BgMaps2d {
     cur_selection: Selection,
@@ -391,7 +391,7 @@ impl BaseView for BgMaps2d {
     const MENU_NAME: &'static str = "2D BG maps";
 }
 
-impl View for BgMaps2d {
+impl FrameView for BgMaps2d {
     type EmuState = EmuState;
 
     fn new(window: &mut Window) -> Self {
@@ -429,13 +429,13 @@ impl View for BgMaps2d {
         window.imgui_gfx.remove_texture(self.tex_id);
     }
 
-    fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
+    fn emu_state(&self) -> <Self::EmuState as super::FrameViewEmuState>::InitData {
         self.cur_selection
     }
 
     fn update_from_frame_data(
         &mut self,
-        frame_data: &<Self::EmuState as super::EmuState>::FrameData,
+        frame_data: &<Self::EmuState as super::FrameViewEmuState>::FrameData,
         _window: &mut Window,
     ) {
         self.data.bgs = frame_data.bgs;
@@ -456,7 +456,12 @@ impl View for BgMaps2d {
         self.data.palette[..palette_len].copy_from_slice(&frame_data.palette[..palette_len]);
     }
 
-    fn draw(&mut self, ui: &imgui::Ui, window: &mut Window, mut messages: impl Messages<Self>) {
+    fn draw(
+        &mut self,
+        ui: &imgui::Ui,
+        window: &mut Window,
+        mut messages: impl FrameViewMessages<Self>,
+    ) {
         if ui.is_window_hovered_with_flags(WindowHoveredFlags::ROOT_AND_CHILD_WINDOWS)
             && ui.is_mouse_clicked(MouseButton::Right)
         {

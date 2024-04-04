@@ -1,6 +1,7 @@
 use super::{
     common::{rgb32f_to_rgb5, rgb5_to_rgb32f, rgb5_to_rgba32f},
-    BaseView, FrameDataSlot, InstanceableEmuState, InstanceableView, Messages, View,
+    BaseView, FrameDataSlot, FrameView, FrameViewMessages, InstanceableFrameViewEmuState,
+    InstanceableView,
 };
 use crate::ui::{utils::combo_value, window::Window};
 use dust_core::{
@@ -71,7 +72,7 @@ pub struct EmuState {
     selection: Selection,
 }
 
-impl super::EmuState for EmuState {
+impl super::FrameViewEmuState for EmuState {
     type InitData = Selection;
     type Message = Message;
     type FrameData = PaletteData;
@@ -166,7 +167,7 @@ impl super::EmuState for EmuState {
     }
 }
 
-impl InstanceableEmuState for EmuState {}
+impl InstanceableFrameViewEmuState for EmuState {}
 
 pub struct Palettes2d {
     cur_selection: Selection,
@@ -179,7 +180,7 @@ impl BaseView for Palettes2d {
     const MENU_NAME: &'static str = "2D engine palettes";
 }
 
-impl View for Palettes2d {
+impl FrameView for Palettes2d {
     type EmuState = EmuState;
 
     fn new(_window: &mut Window) -> Self {
@@ -194,13 +195,13 @@ impl View for Palettes2d {
         }
     }
 
-    fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
+    fn emu_state(&self) -> <Self::EmuState as super::FrameViewEmuState>::InitData {
         self.cur_selection
     }
 
     fn update_from_frame_data(
         &mut self,
-        frame_data: &<Self::EmuState as super::EmuState>::FrameData,
+        frame_data: &<Self::EmuState as super::FrameViewEmuState>::FrameData,
         _window: &mut Window,
     ) {
         self.data.selection = frame_data.selection;
@@ -208,7 +209,12 @@ impl View for Palettes2d {
         self.data.data[..data_len].copy_from_slice(&frame_data.data[..data_len]);
     }
 
-    fn draw(&mut self, ui: &imgui::Ui, _window: &mut Window, mut messages: impl Messages<Self>) {
+    fn draw(
+        &mut self,
+        ui: &imgui::Ui,
+        _window: &mut Window,
+        mut messages: impl FrameViewMessages<Self>,
+    ) {
         static POSSIBLE_SELECTIONS: [Selection; 8] = [
             Selection::new(Engine2d::A, Palette::Bg),
             Selection::new(Engine2d::A, Palette::Obj),

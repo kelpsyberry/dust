@@ -1,4 +1,7 @@
-use super::{BaseView, FrameDataSlot, InstanceableEmuState, InstanceableView, Messages, View};
+use super::{
+    BaseView, FrameDataSlot, FrameView, FrameViewMessages, InstanceableFrameViewEmuState,
+    InstanceableView,
+};
 use crate::ui::window::Window;
 use dust_core::{
     cpu::{self, arm7, arm9, bus},
@@ -20,7 +23,7 @@ pub struct EmuState<const ARM9: bool> {
     visible_addrs: RangeInclusive<Addr>,
 }
 
-impl<const ARM9: bool> super::EmuState for EmuState<ARM9> {
+impl<const ARM9: bool> super::FrameViewEmuState for EmuState<ARM9> {
     type InitData = RangeInclusive<Addr>;
     type Message = Message;
     type FrameData = MemContents;
@@ -70,7 +73,7 @@ impl<const ARM9: bool> super::EmuState for EmuState<ARM9> {
     }
 }
 
-impl<const ARM9: bool> InstanceableEmuState for EmuState<ARM9> {}
+impl<const ARM9: bool> InstanceableFrameViewEmuState for EmuState<ARM9> {}
 
 pub struct CpuMemory<const ARM9: bool> {
     editor: MemoryEditor,
@@ -94,7 +97,7 @@ impl<const ARM9: bool> BaseView for CpuMemory<ARM9> {
     const MENU_NAME: &'static str = if ARM9 { "ARM9 memory" } else { "ARM7 memory" };
 }
 
-impl<const ARM9: bool> View for CpuMemory<ARM9> {
+impl<const ARM9: bool> FrameView for CpuMemory<ARM9> {
     type EmuState = EmuState<ARM9>;
 
     fn new(_window: &mut Window) -> Self {
@@ -111,13 +114,13 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
         }
     }
 
-    fn emu_state(&self) -> <Self::EmuState as super::EmuState>::InitData {
+    fn emu_state(&self) -> <Self::EmuState as super::FrameViewEmuState>::InitData {
         self.last_visible_addrs
     }
 
     fn update_from_frame_data(
         &mut self,
-        frame_data: &<Self::EmuState as super::EmuState>::FrameData,
+        frame_data: &<Self::EmuState as super::FrameViewEmuState>::FrameData,
         _window: &mut Window,
     ) {
         self.mem_contents.data.clear();
@@ -125,7 +128,12 @@ impl<const ARM9: bool> View for CpuMemory<ARM9> {
         self.mem_contents.visible_addrs = frame_data.visible_addrs;
     }
 
-    fn draw(&mut self, ui: &imgui::Ui, window: &mut Window, mut messages: impl Messages<Self>) {
+    fn draw(
+        &mut self,
+        ui: &imgui::Ui,
+        window: &mut Window,
+        mut messages: impl FrameViewMessages<Self>,
+    ) {
         let _mono_font = ui.push_font(window.imgui.mono_font);
 
         self.editor.handle_options_right_click(ui);
