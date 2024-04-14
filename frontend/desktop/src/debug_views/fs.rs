@@ -1,8 +1,8 @@
 use super::{
-    BaseView, InstanceableView, MessageView, MessageViewEmuState, MessageViewMessages,
-    MessageViewNotifications,
+    common::format_size, BaseView, InstanceableView, MessageView, MessageViewEmuState,
+    MessageViewMessages, MessageViewNotifications,
 };
-use crate::{ui::window::Window, utils::format_size};
+use crate::ui::window::Window;
 use dust_core::{cpu, ds_slot::rom::header::Header, emu::Emu, utils::mem_prelude::*};
 use imgui::{TableColumnFlags, TableColumnSetup, TableFlags, TreeNodeFlags, TreeNodeId};
 use imgui_memory_editor::MemoryEditor;

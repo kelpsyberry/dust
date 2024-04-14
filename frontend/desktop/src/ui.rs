@@ -665,10 +665,10 @@ impl UiState {
         });
     }
 
-    fn stop_emu(&mut self, config: &mut Config, window: &mut window::Window) {
+    fn stop_emu(&mut self, config: &mut Config, _window: &mut window::Window) {
         if let Some(emu) = self.emu.take() {
             #[cfg(feature = "debug-views")]
-            self.debug_views.emu_stopped(window, &emu.to_emu);
+            self.debug_views.emu_stopped(_window, &emu.to_emu);
 
             emu.send_message(emu::Message::Stop);
             self.frame_tx = Some(emu.thread.join().expect("couldn't join emulation thread"));

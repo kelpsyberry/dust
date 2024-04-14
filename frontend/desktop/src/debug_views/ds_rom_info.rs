@@ -1,8 +1,8 @@
-use super::{BaseView, SingletonView, StaticView};
-use crate::{
-    ui::window::Window,
-    utils::{format_size, format_size_shift, icon_data_to_rgba8},
+use super::{
+    common::{format_size, format_size_shift},
+    BaseView, SingletonView, StaticView,
 };
+use crate::{ui::window::Window, utils::icon_data_to_rgba8};
 use dust_core::{
     cpu,
     ds_slot::rom::{
