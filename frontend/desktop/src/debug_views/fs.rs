@@ -262,7 +262,7 @@ impl MessageView for Fs {
                         if contents.is_empty() {
                             *contents_ = Some(None);
                         } else {
-                            self.editor.set_selected_addr(0);
+                            self.editor.set_selected_addr(0, true);
                             self.editor
                                 .set_addr_range((0_u64, contents.len() as u64 - 1).into());
                             *contents_ = Some(Some(contents));
@@ -551,13 +551,13 @@ impl MessageView for Fs {
                 match contents {
                     Some(Some(contents)) => {
                         let _font = ui.push_font(window.imgui.mono_font);
-                        ui.child_window("file")
-                            .size([
-                                0.0,
-                                ui.content_region_avail()[1] - style!(ui, cell_padding)[1],
-                            ])
-                            .always_auto_resize(true)
-                            .build(|| self.editor.draw_buffer_read_only(ui, None, contents));
+                        self.editor.draw_buffer_read_only(
+                            ui,
+                            imgui_memory_editor::DisplayMode::Child {
+                                height: ui.content_region_avail()[1] - style!(ui, cell_padding)[1],
+                            },
+                            contents,
+                        );
                     }
                     Some(None) => ui.text("Empty file."),
                     None => ui.text("Loading..."),

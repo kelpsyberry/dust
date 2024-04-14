@@ -87,7 +87,7 @@ impl<const ARM9: bool> InstanceableView for CpuMemory<ARM9> {
         key: u32,
         ui: &'ui imgui::Ui,
     ) -> imgui::Window<'ui, 'ui, impl AsRef<str> + 'static> {
-        let width = self.editor.window_width(ui);
+        let width = self.editor.window_auto_width(ui);
         ui.window(format!("{} {key}", Self::MENU_NAME))
             .size_constraints([width, 0.0], [width, f32::INFINITY])
     }
@@ -139,7 +139,9 @@ impl<const ARM9: bool> FrameView for CpuMemory<ARM9> {
         self.editor.handle_options_right_click(ui);
         self.editor.draw_callbacks(
             ui,
-            None,
+            imgui_memory_editor::DisplayMode::Child {
+                height: ui.content_region_avail()[1],
+            },
             &mut (),
             |_, addr| {
                 if self.mem_contents.visible_addrs.contains(&addr) {
@@ -161,7 +163,7 @@ impl<const ARM9: bool> FrameView for CpuMemory<ARM9> {
             },
         );
 
-        let mut visible_addrs = self.editor.visible_addrs(1);
+        let mut visible_addrs = self.editor.visible_addrs(1, ui);
         visible_addrs.start &= !3;
         visible_addrs.end = (visible_addrs.end + 3) & !3;
         if visible_addrs != self.last_visible_addrs {

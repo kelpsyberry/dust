@@ -11,19 +11,19 @@ type BlendData = ([__m256i; 3], [__m256i; 3], [__m256i; 3]);
 static BLEND_DATA: BlendData = unsafe {
     (
         [
-            transmute(u64x4::from_array([0x3F; 4])),
-            transmute(u64x4::from_array([0xFC0; 4])),
-            transmute(u64x4::from_array([0x3_F000; 4])),
+            transmute::<u64x4, __m256i>(u64x4::from_array([0x3F; 4])),
+            transmute::<u64x4, __m256i>(u64x4::from_array([0xFC0; 4])),
+            transmute::<u64x4, __m256i>(u64x4::from_array([0x3_F000; 4])),
         ],
         [
-            transmute(u64x4::from_array([0x3F0; 4])),
-            transmute(u64x4::from_array([0xFC00; 4])),
-            transmute(u64x4::from_array([0x3F_0000; 4])),
+            transmute::<u64x4, __m256i>(u64x4::from_array([0x3F0; 4])),
+            transmute::<u64x4, __m256i>(u64x4::from_array([0xFC00; 4])),
+            transmute::<u64x4, __m256i>(u64x4::from_array([0x3F_0000; 4])),
         ],
         [
-            transmute(u64x4::from_array([0x7E0; 4])),
-            transmute(u64x4::from_array([0x1_F800; 4])),
-            transmute(u64x4::from_array([0x7E_0000; 4])),
+            transmute::<u64x4, __m256i>(u64x4::from_array([0x7E0; 4])),
+            transmute::<u64x4, __m256i>(u64x4::from_array([0x1_F800; 4])),
+            transmute::<u64x4, __m256i>(u64x4::from_array([0x7E_0000; 4])),
         ],
     )
 };
@@ -211,12 +211,12 @@ pub unsafe fn apply_color_effects<B: Buffers, D: RenderingData, const EFFECT: u8
 static RGB6_TO_RGBA8_DATA: ([__m256i; 3], __m256i, __m256i) = unsafe {
     (
         [
-            transmute(u32x8::from_array([0x3F; 8])),
-            transmute(u32x8::from_array([0x3F00; 8])),
-            transmute(u32x8::from_array([0x3F_0000; 8])),
+            transmute::<u32x8, __m256i>(u32x8::from_array([0x3F; 8])),
+            transmute::<u32x8, __m256i>(u32x8::from_array([0x3F00; 8])),
+            transmute::<u32x8, __m256i>(u32x8::from_array([0x3F_0000; 8])),
         ],
-        transmute(u32x8::from_array([0xFF00_0000; 8])),
-        transmute(u32x8::from_array([0x0003_0303; 8])),
+        transmute::<u32x8, __m256i>(u32x8::from_array([0xFF00_0000; 8])),
+        transmute::<u32x8, __m256i>(u32x8::from_array([0x0003_0303; 8])),
     )
 };
 

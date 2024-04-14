@@ -1523,7 +1523,8 @@ impl Engine3d {
             match command {
                 0x10 => {
                     // MTX_MODE
-                    emu.gpu.engine_3d.mtx_mode = unsafe { transmute(first_param as u8 & 3) };
+                    emu.gpu.engine_3d.mtx_mode =
+                        unsafe { transmute::<u8, MatrixMode>(first_param as u8 & 3) };
                 }
 
                 0x11 => {
@@ -2003,7 +2004,8 @@ impl Engine3d {
                 0x40 => {
                     // BEGIN_VTXS
                     emu.gpu.engine_3d.cur_poly_attrs = emu.gpu.engine_3d.next_poly_attrs;
-                    emu.gpu.engine_3d.cur_prim_type = unsafe { transmute(first_param as u8 & 3) };
+                    emu.gpu.engine_3d.cur_prim_type =
+                        unsafe { transmute::<u8, PrimitiveType>(first_param as u8 & 3) };
                     emu.gpu.engine_3d.cur_prim_vert_index = PrimVertIndex::new(0);
                     emu.gpu.engine_3d.cur_prim_max_verts = match emu.gpu.engine_3d.cur_prim_type {
                         PrimitiveType::Triangles | PrimitiveType::TriangleStrip => {

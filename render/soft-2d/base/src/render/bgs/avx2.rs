@@ -163,9 +163,9 @@ pub unsafe fn render_scanline_bgs_and_objs<
 
 static RGB5_TO_RGB6_DATA: [__m256i; 3] = unsafe {
     [
-        transmute(u64x4::from_array([0x3E; 4])),
-        transmute(u64x4::from_array([0xF80; 4])),
-        transmute(u64x4::from_array([0x3_E000; 4])),
+        transmute::<u64x4, __m256i>(u64x4::from_array([0x3E; 4])),
+        transmute::<u64x4, __m256i>(u64x4::from_array([0xF80; 4])),
+        transmute::<u64x4, __m256i>(u64x4::from_array([0x3_E000; 4])),
     ]
 };
 

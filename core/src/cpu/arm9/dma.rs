@@ -10,7 +10,7 @@ use crate::{
     gpu::engine_3d::Engine3d,
     utils::{schedule::RawTimestamp, Savestate},
 };
-use core::marker::ConstParamTy;
+use core::{marker::ConstParamTy, mem::transmute};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ConstParamTy, Savestate)]
@@ -48,7 +48,7 @@ impl<E: Engine> Arm9<E> {
             return;
         }
 
-        channel.timing = unsafe { core::mem::transmute(value.timing_arm9()) };
+        channel.timing = unsafe { transmute::<u8, Timing>(value.timing_arm9()) };
 
         let incr_shift = 1 + value.is_32_bit() as u8;
         channel.src_addr_incr = match value.src_addr_control() {
