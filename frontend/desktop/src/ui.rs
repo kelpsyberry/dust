@@ -536,7 +536,7 @@ impl UiState {
                 .as_ref()
                 .and_then(|db| db.lookup(game_code))
                 .map(|entry| {
-                    if entry.rom_size as usize != rom.len() {
+                    if entry.rom_size as u64 != rom.len() {
                         warning!(
                             "Unexpected ROM size",
                             "Unexpected ROM size: expected {} B, got {} B",

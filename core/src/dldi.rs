@@ -35,6 +35,8 @@ static DRIVER_CODE: [u32; 6] = [
 ];
 const TOTAL_DRIVER_LEN: usize = 0x98;
 
+const SCAN_BLOCK_SIZE: usize = 0x400;
+
 impl Dldi {
     pub(crate) fn new_if_supported(
         ds_rom: &mut Box<dyn ds_slot::rom::Contents>,
@@ -43,11 +45,15 @@ impl Dldi {
         let rom_offset = 'search: {
             let mut block_buffer = zeroed_box::<Bytes<0x400>>();
             let mut magic_string_buffer = zeroed_box::<Bytes<12>>();
-            for addr in (0..ds_rom.len().checked_sub(TOTAL_DRIVER_LEN)?).step_by(4) {
-                if addr & 0x3FF == 0 {
-                    ds_rom.read_slice(addr, &mut block_buffer[..0x400.min(ds_rom.len() - addr)]);
+            for addr in (0..ds_rom.len().checked_sub(TOTAL_DRIVER_LEN as u64)? as u32).step_by(4) {
+                if addr as usize & (SCAN_BLOCK_SIZE - 1) == 0 {
+                    ds_rom.read_slice(
+                        addr,
+                        &mut block_buffer
+                            [..(SCAN_BLOCK_SIZE as u64).min(ds_rom.len() - addr as u64) as usize],
+                    );
                 }
-                let value = unsafe { block_buffer.read_le_aligned::<u32>(addr & 0x3FC) };
+                let value = block_buffer.read_le::<u32>(addr as usize & 0x3FC);
                 // Look for the DLDI magic string
                 if value == 0xBF8D_A5ED {
                     ds_rom.read_slice(addr, &mut **magic_string_buffer);

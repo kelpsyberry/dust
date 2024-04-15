@@ -106,6 +106,7 @@ fn build_emu<E: cpu::Engine>(emu_builder: emu::Builder, engine: E) -> emu::Emu<E
     match emu_builder.build(engine) {
         Ok(emu) => emu,
         Err(err) => match err {
+            emu::BuildError::MissingRom => unreachable!("Missing DS slot ROM"),
             emu::BuildError::MissingSysFiles => unreachable!("Missing emulator system files"),
             emu::BuildError::RomCreation(err) => match err {
                 ds_slot::rom::normal::CreationError::InvalidSize => {
@@ -230,7 +231,7 @@ pub fn create_emu_state(
 
     let mut rom = BoxedByteSlice::new_zeroed(rom_arr.length().next_power_of_two() as usize);
     rom_arr.copy_to(&mut rom[..rom_arr.length() as usize]);
-    if !ds_slot::rom::is_valid_size(rom.len(), model) {
+    if !ds_slot::rom::is_valid_size(rom.len() as u64, model) {
         panic!("Invalid ROM size");
     }
 
@@ -257,7 +258,7 @@ pub fn create_emu_state(
                         logger,
                         "Unexpected save file size: expected {}, got {} B; respecting {}.",
                         if let Some(expected_len) = expected_len {
-                            Cow::Owned(format!("{expected_len} B"))
+                            Cow::from(format!("{expected_len} B"))
                         } else {
                             "no file".into()
                         },

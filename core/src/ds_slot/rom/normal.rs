@@ -68,11 +68,19 @@ impl Normal {
         })
     }
 
+    pub fn chip_id(&self) -> u32 {
+        self.chip_id
+    }
+
     pub fn into_contents(self) -> Box<dyn Contents> {
         self.contents
     }
 
-    pub fn contents(&mut self) -> &mut dyn Contents {
+    pub fn contents(&self) -> &dyn Contents {
+        &*self.contents
+    }
+
+    pub fn contents_mut(&mut self) -> &mut dyn Contents {
         &mut *self.contents
     }
 
@@ -86,32 +94,6 @@ impl Normal {
 }
 
 impl super::RomDevice for Normal {
-    fn read(&mut self, addr: u32, output: &mut [u8]) {
-        let addr = (addr & self.rom_mask) as usize;
-        let rom_len = self.rom_mask as usize + 1;
-        let first_read_max_len = rom_len - addr;
-        if output.len() <= first_read_max_len {
-            self.contents.read_slice(addr, output);
-        } else {
-            self.contents
-                .read_slice(addr, &mut output[..first_read_max_len]);
-            let mut i = first_read_max_len;
-            while i < output.len() {
-                let end_i = (i + rom_len).min(output.len());
-                self.contents.read_slice(0, &mut output[i..end_i]);
-                i += rom_len;
-            }
-        }
-    }
-
-    fn read_header(&mut self, buf: &mut Bytes<0x170>) {
-        self.contents.read_header(buf);
-    }
-
-    fn chip_id(&self) -> u32 {
-        self.chip_id
-    }
-
     fn setup(&mut self, direct_boot: bool) -> Result<(), ()> {
         let mut buf = zero();
         self.contents.read_header(&mut buf);
@@ -265,7 +247,7 @@ impl super::RomDevice for Normal {
                         // TODO: What's the actual range of the address command bytes?
                         // TODO: What happens if the read goes out of bounds? (Though it can only
                         //       happen for homebrew)
-                        let start_addr = 0x4000 | (cmd[2] as usize & 0x30) << 8;
+                        let start_addr = 0x4000 | (cmd[2] as u32 & 0x30) << 8;
                         for start_i in (0..output_len.get() as usize).step_by(0x1000) {
                             let len = (output_len.get() as usize - start_i).min(0x1000);
                             self.contents
@@ -304,15 +286,16 @@ impl super::RomDevice for Normal {
                 match cmd[0] {
                     0xB7 => {
                         // if cmd.read_be::<u32>(4) & 0x00FF_FFFF == 0 {
-                        let mut addr = (cmd.read_be::<u32>(1) & self.rom_mask) as usize;
+                        let mut addr = cmd.read_be::<u32>(1) & self.rom_mask;
                         if addr < 0x8000 {
                             addr = 0x8000 | (addr & 0x1FF);
                         }
                         let page_start = addr & !0xFFF;
-                        let page_end = page_start + 0x1000;
+                        let page_end = page_start as u64 + 0x1000;
                         let mut start_i = 0;
                         while start_i < output_len.get() as usize {
-                            let len = (page_end - addr).min(output_len.get() as usize - start_i);
+                            let len = ((page_end - addr as u64) as usize)
+                                .min(output_len.get() as usize - start_i);
                             self.contents
                                 .read_slice(addr, &mut output[start_i..start_i + len]);
                             addr = page_start;

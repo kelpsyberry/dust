@@ -1006,6 +1006,7 @@ dependencies = [
  "slog-async",
  "slog-imgui",
  "slog-term",
+ "sync_file",
  "tempfile",
  "wgpu",
  "winit",
@@ -2819,6 +2820,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "sync_file"
+version = "0.2.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbeec677c04ab24ccddb3b46a435ae41ce4985a1d4c9d12678bb3471c608f216"
+dependencies = [
+ "wasi",
 ]
 
 [[package]]

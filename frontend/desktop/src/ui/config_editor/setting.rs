@@ -294,30 +294,33 @@ impl RawSetting for SocketAddr {
     }
 }
 
-pub struct Scalar<T: DataTypeKind> {
+pub struct Scalar<T: DataTypeKind + PartialOrd> {
     pub get: fn(&Config) -> T,
     pub set: fn(&mut Config, T),
     pub step: Option<T>,
+    pub max: Option<T>,
     pub display_format: &'static str,
 }
 
-impl<T: DataTypeKind> Scalar<T> {
+impl<T: DataTypeKind + PartialOrd> Scalar<T> {
     pub const fn new(
         get: fn(&Config) -> T,
         set: fn(&mut Config, T),
         step: Option<T>,
+        max: Option<T>,
         display_format: &'static str,
     ) -> Self {
         Scalar {
             get,
             set,
             step,
+            max,
             display_format,
         }
     }
 }
 
-impl<T: DataTypeKind> RawSetting for Scalar<T> {
+impl<T: DataTypeKind + PartialOrd> RawSetting for Scalar<T> {
     fn draw(&mut self, ui: &Ui, config: &mut Config, tooltip: &str, width: f32) {
         let mut value = (self.get)(config);
 
@@ -329,6 +332,12 @@ impl<T: DataTypeKind> RawSetting for Scalar<T> {
             input = input.step(step);
         }
         if input.build() {
+            if let Some(max) = self.max {
+                if value > max {
+                    value = max;
+                }
+            }
+
             (self.set)(config, value);
         }
 

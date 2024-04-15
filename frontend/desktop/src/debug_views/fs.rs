@@ -42,10 +42,10 @@ impl super::MessageViewEmuState for EmuState {
         let header = Header::new(&header_bytes);
 
         let mut fnt = BoxedByteSlice::new_zeroed(header.fnt_size() as usize);
-        emu.ds_slot.rom.read(header.fnt_offset(), &mut fnt);
+        contents.read_slice_wrapping(header.fnt_offset(), &mut fnt);
 
         let mut fat = BoxedByteSlice::new_zeroed(header.fat_size() as usize);
-        emu.ds_slot.rom.read(header.fat_offset(), &mut fat);
+        contents.read_slice_wrapping(header.fat_offset(), &mut fat);
 
         notifs.push(Notification::FntFat((fnt, fat)));
 
@@ -61,7 +61,11 @@ impl super::MessageViewEmuState for EmuState {
         match message {
             Message::ReadFile { id, start, size } => {
                 let mut contents = BoxedByteSlice::new_zeroed(size as usize);
-                emu.ds_slot.rom.read(start, &mut contents);
+                emu.ds_slot
+                    .rom
+                    .contents()
+                    .expect("DS slot ROM contents should have been present")
+                    .read_slice_wrapping(start, &mut contents);
                 notifs.push(Notification::File { id, contents });
             }
         }

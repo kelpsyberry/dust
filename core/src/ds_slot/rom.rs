@@ -12,21 +12,38 @@ use crate::{
 };
 
 #[allow(clippy::len_without_is_empty)]
-pub trait Contents {
-    fn len(&self) -> usize;
+pub trait Contents: Sync {
+    fn len(&self) -> u64;
 
     fn game_code(&self) -> u32;
 
     fn secure_area_mut(&mut self) -> Option<&mut [u8]>;
-    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<&mut [u8]>;
+    fn dldi_area_mut(&mut self, addr: u32, len: usize) -> Option<&mut [u8]>;
 
-    fn read_header(&mut self, buf: &mut Bytes<0x170>);
-    fn read_slice(&mut self, addr: usize, output: &mut [u8]);
+    fn read_header(&self, output: &mut Bytes<0x170>);
+    fn read_slice(&self, addr: u32, output: &mut [u8]);
+
+    fn read_slice_wrapping(&self, addr: u32, output: &mut [u8]) {
+        let len = self.len();
+        let addr = addr & (len - 1) as u32;
+        let first_read_max_len = len - addr as u64;
+        if output.len() as u64 <= first_read_max_len {
+            self.read_slice(addr, output);
+        } else {
+            self.read_slice(addr, &mut output[..first_read_max_len as usize]);
+            let mut i = first_read_max_len as usize;
+            while i < output.len() {
+                let end_i = (i + len as usize).min(output.len());
+                self.read_slice(0, &mut output[i..end_i]);
+                i += len as usize;
+            }
+        }
+    }
 }
 
 impl Contents for BoxedByteSlice {
-    fn len(&self) -> usize {
-        (**self).len()
+    fn len(&self) -> u64 {
+        (**self).len() as u64
     }
 
     fn game_code(&self) -> u32 {
@@ -38,24 +55,20 @@ impl Contents for BoxedByteSlice {
         self.get_mut(arm9_rom_offset..arm9_rom_offset + 0x800)
     }
 
-    fn dldi_area_mut(&mut self, addr: usize, len: usize) -> Option<&mut [u8]> {
-        self.get_mut(addr..addr + len)
+    fn dldi_area_mut(&mut self, addr: u32, len: usize) -> Option<&mut [u8]> {
+        self.get_mut(addr as usize..addr as usize + len)
     }
 
-    fn read_header(&mut self, buf: &mut Bytes<0x170>) {
-        buf.copy_from_slice(&self[..0x170]);
+    fn read_header(&self, output: &mut Bytes<0x170>) {
+        output.copy_from_slice(&self[..0x170]);
     }
 
-    fn read_slice(&mut self, addr: usize, output: &mut [u8]) {
-        let end_addr = addr + output.len();
-        output.copy_from_slice(&self[addr..end_addr]);
+    fn read_slice(&self, addr: u32, output: &mut [u8]) {
+        output.copy_from_slice(&self[addr as usize..addr as usize + output.len()]);
     }
 }
 
 trait RomDevice {
-    fn read(&mut self, addr: u32, output: &mut [u8]);
-    fn read_header(&mut self, buf: &mut Bytes<0x170>);
-    fn chip_id(&self) -> u32;
     fn setup(&mut self, direct_boot: bool) -> Result<(), ()>;
     fn handle_rom_command(
         &mut self,
@@ -73,18 +86,6 @@ pub enum Rom {
 }
 
 impl Rom {
-    pub fn read(&mut self, addr: u32, output: &mut [u8]) {
-        forward_to_variants!(Rom; Normal, Empty; self, read(addr, output));
-    }
-
-    pub fn read_header(&mut self, buf: &mut Bytes<0x170>) {
-        forward_to_variants!(Rom; Normal, Empty; self, read_header(buf));
-    }
-
-    pub fn chip_id(&self) -> u32 {
-        forward_to_variants!(Rom; Normal, Empty; self, chip_id())
-    }
-
     pub(crate) fn setup(&mut self, direct_boot: bool) -> Result<(), ()> {
         forward_to_variants!(Rom; Normal, Empty; self, setup(direct_boot))
     }
@@ -105,9 +106,16 @@ impl Rom {
         }
     }
 
-    pub fn contents(&mut self) -> Option<&mut dyn Contents> {
+    pub fn contents(&self) -> Option<&dyn Contents> {
         match self {
             Rom::Normal(rom) => Some(rom.contents()),
+            Rom::Empty(_) => None,
+        }
+    }
+
+    pub fn contents_mut(&mut self) -> Option<&mut dyn Contents> {
+        match self {
+            Rom::Normal(rom) => Some(rom.contents_mut()),
             Rom::Empty(_) => None,
         }
     }
@@ -115,13 +123,13 @@ impl Rom {
 
 impl_from_variants!(Rom; Normal, Empty; normal::Normal, Empty);
 
-pub fn min_size_for_model(model: Model) -> usize {
+pub fn min_size_for_model(model: Model) -> u64 {
     match model {
         Model::Ds | Model::Lite | Model::Ique | Model::IqueLite => 0x200,
         Model::Dsi => 0x1000,
     }
 }
 
-pub fn is_valid_size(len: usize, model: Model) -> bool {
+pub fn is_valid_size(len: u64, model: Model) -> bool {
     len.is_power_of_two() && len >= min_size_for_model(model)
 }

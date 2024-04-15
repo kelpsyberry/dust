@@ -182,18 +182,20 @@ macro_rules! scalar {
             $display_format,
         )
     };
-    (overridable $id: ident, $step: expr, $display_format: expr) => {
+    (overridable $id: ident, $step: expr, $max: expr, $display_format: expr) => {
         (
             setting::Scalar::new(
                 |config| *config.$id.inner().global(),
                 |config, value| config.$id.inner_mut().set_global(value),
                 $step,
+                $max,
                 $display_format,
             ),
             setting::Scalar::new(
                 |config| config.$id.inner().game().unwrap(),
                 |config, value| config.$id.inner_mut().set_game(Some(value)),
                 $step,
+                $max,
                 $display_format,
             ),
         )
@@ -576,7 +578,7 @@ impl AudioSettings {
     fn new() -> Self {
         AudioSettings {
             volume: overridable!(audio_volume, slider, 0.0, 100.0, "%.02f%%", 100.0),
-            sample_chunk_size: overridable!(audio_sample_chunk_size, scalar, Some(128), "%d"),
+            sample_chunk_size: overridable!(audio_sample_chunk_size, scalar, Some(128), None, "%d"),
             #[cfg(feature = "xq-audio")]
             custom_sample_rate: overridable!(
                 audio_custom_sample_rate,
@@ -647,7 +649,7 @@ struct SavesSettings {
 impl SavesSettings {
     fn new() -> Self {
         SavesSettings {
-            save_interval_ms: overridable!(save_interval_ms, scalar, Some(100.0), "%.02f ms"),
+            save_interval_ms: overridable!(save_interval_ms, scalar, Some(100.0), None, "%.02f ms"),
             reset_on_save_slot_switch: nonoverridable!(reset_on_save_slot_switch, bool),
             include_save_in_savestates: overridable!(include_save_in_savestates, bool),
             save_dir_path: nonoverridable!(save_dir_path, home_path),
@@ -718,9 +720,16 @@ impl EmulationSettings {
                 ds_slot_rom_in_memory_max_size,
                 scalar,
                 Some(1024 * 1024),
+                Some((u32::MAX >> 1) + 1),
                 "%d B"
             ),
-            rtc_time_offset_seconds: overridable!(rtc_time_offset_seconds, scalar, Some(1), "%d s"),
+            rtc_time_offset_seconds: overridable!(
+                rtc_time_offset_seconds,
+                scalar,
+                Some(1),
+                None,
+                "%d s"
+            ),
             renderer_2d_kind: overridable!(
                 renderer_2d_kind,
                 combo,
@@ -788,6 +797,7 @@ impl DebugSettings {
                 imgui_log_history_capacity,
                 scalar,
                 Some(1024),
+                None,
                 "%d"
             ),
             #[cfg(feature = "gdb-server")]

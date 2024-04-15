@@ -8,6 +8,7 @@ use dust_core::{
     ds_slot::rom::{
         header::{Header, Region, UnitCode},
         icon_title::{self, IconTitle},
+        Rom,
     },
     emu::Emu,
     utils::{zeroed_box, Bytes},
@@ -41,23 +42,22 @@ impl StaticView for DsRomInfo {
     type Data = Option<TransferData>;
 
     fn fetch_data<E: cpu::Engine>(emu: &mut Emu<E>) -> Self::Data {
-        let contents = emu.ds_slot.rom.contents()?;
+        let Rom::Normal(rom) = &emu.ds_slot.rom else {
+            return None;
+        };
 
         let mut header_bytes = zeroed_box();
-        contents.read_header(&mut header_bytes);
+        rom.contents().read_header(&mut header_bytes);
 
-        let icon_title = emu.ds_slot.rom.contents().and_then(|rom_contents| {
-            Some(Box::new(
-                IconTitle::decode_at_offset(
-                    Header::new(&header_bytes).icon_title_offset() as usize,
-                    rom_contents,
-                )
-                .ok()?,
-            ))
-        });
+        let icon_title = IconTitle::decode_at_offset(
+            Header::new(&header_bytes).icon_title_offset(),
+            rom.contents(),
+        )
+        .ok()
+        .map(Box::new);
 
         Some(TransferData {
-            chip_id: emu.ds_slot.rom.chip_id(),
+            chip_id: rom.chip_id(),
             header_bytes,
             icon_title,
         })

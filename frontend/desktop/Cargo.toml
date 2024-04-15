@@ -53,6 +53,7 @@ copypasta = "0.10"
 cpal = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 libc = "0.2"
+sync_file = "0.2"
 
 # Utils
 ahash = "0.8"

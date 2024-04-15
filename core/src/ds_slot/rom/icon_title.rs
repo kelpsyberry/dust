@@ -5,19 +5,13 @@ use std::array;
 pub type Palette = [u16; 0x10];
 pub type Pixels = [u8; 0x400];
 
-fn decode_palette(offset: usize, rom_contents: &mut (impl Contents + ?Sized)) -> Option<Palette> {
-    if offset + 0x20 > rom_contents.len() {
-        return None;
-    }
+fn decode_palette(offset: u32, rom_contents: &(impl Contents + ?Sized)) -> Palette {
     let mut data = Bytes::new([0; 0x20]);
     rom_contents.read_slice(offset, &mut *data);
-    Some(array::from_fn(|i| data.read_le(i << 1)))
+    array::from_fn(|i| data.read_le(i << 1))
 }
 
-fn decode_pixels(offset: usize, rom_contents: &mut (impl Contents + ?Sized)) -> Option<Pixels> {
-    if offset + 0x200 > rom_contents.len() {
-        return None;
-    }
+fn decode_pixels(offset: u32, rom_contents: &(impl Contents + ?Sized)) -> Pixels {
     let mut data = zeroed_box::<Bytes<0x200>>();
     rom_contents.read_slice(offset, &mut **data);
 
@@ -32,7 +26,7 @@ fn decode_pixels(offset: usize, rom_contents: &mut (impl Contents + ?Sized)) -> 
             pixels[dst_tile_line_base | x_in_tile] = (src_line >> (x_in_tile << 2)) as u8 & 0xF;
         }
     }
-    Some(pixels)
+    pixels
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -59,10 +53,10 @@ pub enum DecodeError {
 
 impl VersionCrcData {
     pub fn decode_at_offset(
-        icon_title_offset: usize,
-        rom_contents: &mut (impl Contents + ?Sized),
+        icon_title_offset: u32,
+        rom_contents: &(impl Contents + ?Sized),
     ) -> Result<Self, DecodeError> {
-        if icon_title_offset + 20 > rom_contents.len() {
+        if icon_title_offset as u64 + 20 > rom_contents.len() {
             return Err(DecodeError::OutOfBounds);
         }
         let mut version_crc_data = Bytes::new([0; 0x20]);
@@ -98,12 +92,16 @@ pub struct DefaultIcon {
 
 impl DefaultIcon {
     pub fn decode_at_offset(
-        icon_title_offset: usize,
-        rom_contents: &mut (impl Contents + ?Sized),
+        icon_title_offset: u32,
+        rom_contents: &(impl Contents + ?Sized),
     ) -> Option<Box<Self>> {
+        if icon_title_offset as u64 + 0x240 > rom_contents.len() {
+            return None;
+        }
+
         let default_icon = Box::new(DefaultIcon {
-            palette: decode_palette(icon_title_offset + 0x220, rom_contents)?,
-            pixels: decode_pixels(icon_title_offset + 0x20, rom_contents)?,
+            palette: decode_palette(icon_title_offset + 0x220, rom_contents),
+            pixels: decode_pixels(icon_title_offset + 0x20, rom_contents),
         });
 
         Some(default_icon)
@@ -125,13 +123,13 @@ pub struct Titles {
 
 impl Titles {
     pub fn decode_at_offset(
-        icon_title_offset: usize,
+        icon_title_offset: u32,
         version: Version,
-        rom_contents: &mut (impl Contents + ?Sized),
+        rom_contents: &(impl Contents + ?Sized),
     ) -> Option<Self> {
         macro_rules! title {
             ($offset: expr) => {{
-                if $offset > rom_contents.len() {
+                if icon_title_offset as u64 + $offset > rom_contents.len() {
                     return None;
                 }
                 let mut bytes = [0; 0x100];
@@ -194,21 +192,22 @@ pub struct AnimatedIcon {
 
 impl AnimatedIcon {
     pub fn decode_at_offset(
-        icon_title_offset: usize,
-        rom_contents: &mut (impl Contents + ?Sized),
+        icon_title_offset: u32,
+        rom_contents: &(impl Contents + ?Sized),
     ) -> Option<Self> {
-        let palettes: [Box<Palette>; 8] = array::try_from_fn(|i| {
-            let offset = icon_title_offset + 0x1240 + i * 0x200;
-            decode_palette(offset, rom_contents).map(Box::new)
-        })?;
-        let pixels: [Box<Pixels>; 8] = array::try_from_fn(|i| {
-            let offset = icon_title_offset + 0x2240 + i * 0x20;
-            decode_pixels(offset, rom_contents).map(Box::new)
-        })?;
-
-        if icon_title_offset + 0x23C0 > rom_contents.len() {
+        if icon_title_offset as u64 + 0x23C0 > rom_contents.len() {
             return None;
         }
+
+        let palettes: [Box<Palette>; 8] = array::from_fn(|i| {
+            let offset = icon_title_offset + 0x1240 + i as u32 * 0x200;
+            Box::new(decode_palette(offset, rom_contents))
+        });
+        let pixels: [Box<Pixels>; 8] = array::from_fn(|i| {
+            let offset = icon_title_offset + 0x2240 + i as u32 * 0x20;
+            Box::new(decode_pixels(offset, rom_contents))
+        });
+
         let mut anim_sequence_data = Bytes::new([0; 0x80]);
         rom_contents.read_slice(icon_title_offset + 0x2340, &mut *anim_sequence_data);
 
@@ -238,8 +237,8 @@ pub struct IconTitle {
 
 impl IconTitle {
     pub fn decode_at_offset(
-        icon_title_offset: usize,
-        rom_contents: &mut (impl Contents + ?Sized),
+        icon_title_offset: u32,
+        rom_contents: &(impl Contents + ?Sized),
     ) -> Result<Self, DecodeError> {
         let version_crc_data = VersionCrcData::decode_at_offset(icon_title_offset, rom_contents)?;
         Ok(IconTitle {
@@ -264,12 +263,12 @@ impl IconTitle {
     }
 }
 
-pub fn read_icon_title_offset(rom_contents: &mut (impl Contents + ?Sized)) -> Option<usize> {
+pub fn read_icon_title_offset(rom_contents: &(impl Contents + ?Sized)) -> Option<u32> {
     if 0x170 > rom_contents.len() {
         return None;
     }
     let mut header_bytes = Bytes::new([0; 0x170]);
     rom_contents.read_header(&mut header_bytes);
     let header = Header::new(&header_bytes);
-    Some(header.icon_title_offset() as usize)
+    Some(header.icon_title_offset())
 }

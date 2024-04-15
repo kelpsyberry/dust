@@ -29,18 +29,6 @@ impl Empty {
 }
 
 impl super::RomDevice for Empty {
-    fn read(&mut self, _addr: u32, output: &mut [u8]) {
-        output.fill(0xFF);
-    }
-
-    fn read_header(&mut self, buf: &mut Bytes<0x170>) {
-        buf.fill(0xFF);
-    }
-
-    fn chip_id(&self) -> u32 {
-        0
-    }
-
     fn setup(&mut self, _direct_boot: bool) -> Result<(), ()> {
         Ok(())
     }

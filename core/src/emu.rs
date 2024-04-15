@@ -183,6 +183,7 @@ pub struct Builder {
 }
 
 pub enum BuildError {
+    MissingRom,
     MissingSysFiles,
     RomCreation(ds_slot::rom::normal::CreationError),
     RomNeedsDecryptionButNoBiosProvided,
@@ -346,7 +347,8 @@ impl Builder {
         E::Arm7Data::setup(&mut emu);
         E::Arm9Data::setup(&mut emu);
         if self.direct_boot {
-            emu.setup_direct_boot();
+            emu.setup_direct_boot()
+                .map_err(|()| BuildError::MissingRom)?;
         }
         Ok(emu)
     }
@@ -372,14 +374,18 @@ pub enum RunOutput {
 }
 
 impl<E: cpu::Engine> Emu<E> {
-    fn setup_direct_boot(&mut self) {
+    fn setup_direct_boot(&mut self) -> Result<(), ()> {
         // TODO: More accurate direct boot
 
+        let ds_slot::rom::Rom::Normal(ds_slot_rom) = &self.ds_slot.rom else {
+            return Err(());
+        };
+
+        let chip_id = ds_slot_rom.chip_id();
         let mut header_bytes = Bytes::new([0; 0x170]);
         // NOTE: The ROM file's size is ensured beforehand, this should never panic.
-        self.ds_slot.rom.read_header(&mut header_bytes);
+        ds_slot_rom.contents().read_header(&mut header_bytes);
         let header = ds_slot::rom::header::Header::new(&header_bytes);
-        let chip_id = self.ds_slot.rom.chip_id();
 
         macro_rules! write_main_mem {
             ($addr: expr, $value: expr) => {
@@ -507,7 +513,9 @@ impl<E: cpu::Engine> Emu<E> {
         let mut arm7_loaded_data = BoxedByteSlice::new_zeroed(header.arm7_size() as usize);
         self.ds_slot
             .rom
-            .read(header.arm7_rom_offset(), &mut arm7_loaded_data);
+            .contents()
+            .expect("DS slot ROM contents should have been initialized")
+            .read_slice_wrapping(header.arm7_rom_offset(), &mut arm7_loaded_data);
         for (&byte, addr) in arm7_loaded_data.iter().zip(header.arm7_ram_addr()..) {
             arm7::bus::write_8::<CpuAccess, _>(self, addr, byte);
         }
@@ -516,11 +524,15 @@ impl<E: cpu::Engine> Emu<E> {
         let mut arm9_loaded_data = BoxedByteSlice::new_zeroed(header.arm9_size() as usize);
         self.ds_slot
             .rom
-            .read(header.arm9_rom_offset(), &mut arm9_loaded_data);
+            .contents()
+            .expect("DS slot ROM contents should have been initialized")
+            .read_slice_wrapping(header.arm9_rom_offset(), &mut arm9_loaded_data);
         for (&byte, addr) in arm9_loaded_data.iter().zip(header.arm9_ram_addr()..) {
             arm9::bus::write_8::<CpuAccess, _>(self, addr, byte);
         }
         E::Arm9Data::setup_direct_boot(self, header.arm9_entry_addr());
+
+        Ok(())
     }
 
     #[inline]

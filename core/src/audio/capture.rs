@@ -118,11 +118,13 @@ impl CaptureUnit {
         let mut cur_dst_addr = capture.cur_dst_addr;
         let dst_end_addr = capture.dst_end_addr;
         for read_pos in (fifo_read_base..fifo_read_base + 0x10).step_by(4) {
-            arm7::bus::write_32::<DmaAccess, _>(emu, cur_dst_addr, unsafe {
+            arm7::bus::write_32::<DmaAccess, _>(
+                emu,
+                cur_dst_addr,
                 emu.audio.capture[i.get() as usize]
                     .fifo
-                    .read_le_aligned(read_pos as usize)
-            });
+                    .read_le(read_pos as usize),
+            );
             cur_dst_addr = (cur_dst_addr + 4) & 0x0FFF_FFFC;
             if cur_dst_addr == dst_end_addr {
                 break;

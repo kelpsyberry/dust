@@ -60,7 +60,7 @@ impl Editor {
                             let _id = ui.push_id_usize(i);
 
                             if Some(i) == self.editing_i {
-                                let mut buffer = slot.to_string();
+                                let mut buffer = slot.clone();
                                 ui.set_keyboard_focus_here();
                                 ui.set_next_item_width(line_width);
                                 if ui

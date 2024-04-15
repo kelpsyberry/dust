@@ -312,6 +312,7 @@ fn build_emu<E: cpu::Engine>(emu_builder: emu::Builder, engine: E) -> Option<emu
     match emu_builder.build(engine) {
         Ok(emu) => Some(emu),
         Err(err) => match err {
+            emu::BuildError::MissingRom => unreachable!("Missing DS slot ROM"),
             emu::BuildError::MissingSysFiles => unreachable!("Missing emulator system files"),
             emu::BuildError::RomCreation(err) => match err {
                 ds_slot::rom::normal::CreationError::InvalidSize => {

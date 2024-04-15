@@ -482,7 +482,7 @@ pub fn read_32<A: AccessType, E: Engine>(emu: &mut Emu<E>, mut addr: u32) -> u32
             };
             let pc = emu.arm7.engine_data.r15();
             if pc < max_pc || A::IS_DEBUG {
-                let value = unsafe { emu.arm7.bios.read_le_aligned(addr as usize) };
+                let value = emu.arm7.bios.read_le(addr as usize);
                 if !A::IS_DEBUG {
                     emu.arm7.last_bios_word = value;
                 }
