@@ -3,7 +3,7 @@ use dust_core::{
     utils::{mem_prelude::*, zeroed_box},
     Model,
 };
-use std::{io, path::Path, sync::Arc};
+use std::{any::Any, io, path::Path, sync::Arc};
 use sync_file::{RandomAccessFile, ReadAt};
 
 pub struct File {
@@ -20,6 +20,14 @@ pub struct File {
 }
 
 impl Contents for File {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn len(&self) -> u64 {
         self.len.next_power_of_two()
     }
@@ -159,6 +167,14 @@ macro_rules! forward_to_variants {
 }
 
 impl Contents for DsSlotRom {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn len(&self) -> u64 {
         forward_to_variants!(DsSlotRom; File, Memory; self, len())
     }
@@ -187,6 +203,14 @@ impl Contents for DsSlotRom {
 pub struct ArcDsSlotRom(pub Arc<DsSlotRom>);
 
 impl Contents for ArcDsSlotRom {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn len(&self) -> u64 {
         self.0.len()
     }

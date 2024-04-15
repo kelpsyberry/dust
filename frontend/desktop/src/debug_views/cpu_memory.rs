@@ -7,24 +7,24 @@ use dust_core::{
     cpu::{self, arm7, arm9, bus},
     emu::Emu,
 };
-use imgui_memory_editor::{Addr, MemoryEditor, RangeInclusive};
+use imgui_memory_editor::{MemoryEditor, RangeInclusive};
 
 pub struct MemContents {
-    visible_addrs: RangeInclusive<Addr>,
+    visible_addrs: RangeInclusive<u32>,
     data: Vec<u32>,
 }
 
 pub enum Message {
     Write { addr: u32, value: u8 },
-    UpdateVisibleAddrs(RangeInclusive<Addr>),
+    UpdateVisibleAddrs(RangeInclusive<u32>),
 }
 
 pub struct EmuState<const ARM9: bool> {
-    visible_addrs: RangeInclusive<Addr>,
+    visible_addrs: RangeInclusive<u32>,
 }
 
 impl<const ARM9: bool> super::FrameViewEmuState for EmuState<ARM9> {
-    type InitData = RangeInclusive<Addr>;
+    type InitData = RangeInclusive<u32>;
     type Message = Message;
     type FrameData = MemContents;
 
@@ -64,9 +64,9 @@ impl<const ARM9: bool> super::FrameViewEmuState for EmuState<ARM9> {
             .reserve(((self.visible_addrs.end - self.visible_addrs.start) >> 2) as usize);
         for addr in (self.visible_addrs.start..=self.visible_addrs.end).step_by(4) {
             frame_data.data.push(if ARM9 {
-                arm9::bus::read_32::<bus::DebugCpuAccess, E, false>(emu, addr as u32)
+                arm9::bus::read_32::<bus::DebugCpuAccess, E, false>(emu, addr)
             } else {
-                arm7::bus::read_32::<bus::DebugCpuAccess, E>(emu, addr as u32)
+                arm7::bus::read_32::<bus::DebugCpuAccess, E>(emu, addr)
             });
         }
         frame_data.visible_addrs = self.visible_addrs;
@@ -77,7 +77,7 @@ impl<const ARM9: bool> InstanceableFrameViewEmuState for EmuState<ARM9> {}
 
 pub struct CpuMemory<const ARM9: bool> {
     editor: MemoryEditor,
-    last_visible_addrs: RangeInclusive<Addr>,
+    last_visible_addrs: RangeInclusive<u32>,
     mem_contents: MemContents,
 }
 
@@ -144,8 +144,8 @@ impl<const ARM9: bool> FrameView for CpuMemory<ARM9> {
             },
             &mut (),
             |_, addr| {
-                if self.mem_contents.visible_addrs.contains(&addr) {
-                    let offset = (addr - self.mem_contents.visible_addrs.start) as usize;
+                if self.mem_contents.visible_addrs.contains(&(addr as u32)) {
+                    let offset = (addr as u32 - self.mem_contents.visible_addrs.start) as usize;
                     if offset < self.mem_contents.data.len() << 2 {
                         Some((self.mem_contents.data[offset >> 2] >> ((offset & 3) << 3)) as u8)
                     } else {
@@ -163,9 +163,12 @@ impl<const ARM9: bool> FrameView for CpuMemory<ARM9> {
             },
         );
 
-        let mut visible_addrs = self.editor.visible_addrs(1, ui);
-        visible_addrs.start &= !3;
-        visible_addrs.end = (visible_addrs.end + 3) & !3;
+        let visible_addrs = self.editor.visible_addrs(1, ui);
+        let visible_addrs = (
+            visible_addrs.start as u32 & !3,
+            (((visible_addrs.end + 3) & !3) - 1) as u32,
+        )
+            .into();
         if visible_addrs != self.last_visible_addrs {
             self.last_visible_addrs = visible_addrs;
             messages.push(Message::UpdateVisibleAddrs(visible_addrs));

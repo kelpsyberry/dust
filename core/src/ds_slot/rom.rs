@@ -10,9 +10,13 @@ use crate::{
     utils::{mem_prelude::*, Savestate},
     Model,
 };
+use core::any::Any;
 
 #[allow(clippy::len_without_is_empty)]
 pub trait Contents: Sync {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+
     fn len(&self) -> u64;
 
     fn game_code(&self) -> u32;
@@ -42,6 +46,14 @@ pub trait Contents: Sync {
 }
 
 impl Contents for BoxedByteSlice {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn len(&self) -> u64 {
         (**self).len() as u64
     }
