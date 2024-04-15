@@ -234,7 +234,7 @@ impl ImGuiState {
             }
 
             fn set(&mut self, value: &str) {
-                let _ = self.0.set_contents(value.to_string());
+                let _ = self.0.set_contents(value.to_owned());
             }
         }
 

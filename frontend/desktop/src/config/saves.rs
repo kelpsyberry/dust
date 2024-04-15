@@ -97,7 +97,7 @@ impl Slots {
             SlotsKind::Single => Slots::Single,
             SlotsKind::Multiple => Slots::Multiple {
                 current: Some(0),
-                slots: vec!["0".to_string()],
+                slots: vec!["0".to_owned()],
             },
         }
     }
@@ -217,7 +217,7 @@ impl PathConfig {
         if let Slots::Single = &self.slots {
             self.slots = Slots::Multiple {
                 current: Some(0),
-                slots: vec!["0".to_string()],
+                slots: vec!["0".to_owned()],
             };
         }
     }
@@ -249,7 +249,7 @@ impl PathConfig {
 
             let (base_dir, base_name, extension) =
                 self.location.path_components(save_dir, game_title);
-            let prev_name = mem::replace(&mut slots[i], new_name.to_string());
+            let prev_name = mem::replace(&mut slots[i], new_name.to_owned());
             if *current != Some(i) {
                 let _ = fs::rename(
                     path(base_dir, base_name, extension, Some(&prev_name)),

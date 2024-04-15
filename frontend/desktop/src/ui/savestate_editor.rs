@@ -298,16 +298,16 @@ impl Editor {
                 if path.extension() != Some("state".as_ref()) {
                     continue;
                 }
-                if let Some(name) = path.file_stem().and_then(|p| p.to_str()) {
-                    match Savestate::load(&path, window) {
-                        Ok(savestate) => self.entries.push(Entry {
-                            name: name.to_string(),
-                            kind: EntryKind::Savestate(savestate),
-                        }),
-                        Err(err) => {
-                            warnings.push(format!("Couldn't load savestate at {:?}: {err}", path));
-                            continue;
-                        }
+                let Some(name) = path.file_stem().and_then(|p| p.to_str()) else {
+                    continue;
+                };
+                match Savestate::load(&path, window) {
+                    Ok(savestate) => self.entries.push(Entry {
+                        name: name.to_owned(),
+                        kind: EntryKind::Savestate(savestate),
+                    }),
+                    Err(err) => {
+                        warnings.push(format!("Couldn't load savestate at {:?}: {err}", path));
                     }
                 }
             }

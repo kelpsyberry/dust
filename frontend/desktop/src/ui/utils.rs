@@ -7,16 +7,6 @@ use std::{
     path::Path,
 };
 
-macro_rules! location_str {
-    ($path: expr) => {
-        if let Some(path_str) = $path.to_str() {
-            format!(" at `{path_str}`")
-        } else {
-            String::new()
-        }
-    };
-}
-
 macro_rules! config_warning {
     (yes_no, $($desc: tt)*) => {
         warning!(yes_no, "Configuration warning", $($desc)*)
@@ -41,16 +31,12 @@ impl<T: Default + Serialize + for<'de> Deserialize<'de>> File<T> {
         match File::read(&path, true) {
             Ok(config) => config,
             Err(err) => {
-                let path_str = match path.to_str() {
-                    Some(path_str) => format!("`{path_str}`"),
-                    None => filename.to_string(),
-                };
-                let save = match err {
+                let should_overwrite = match err {
                     config::FileError::Io(err) => {
                         config_error!(
                             "Couldn't read `{}`: {}\n\nThe default values will be used, new \
                              changes will not be saved.",
-                            path_str,
+                            path.display(),
                             err,
                         );
                         false
@@ -59,13 +45,13 @@ impl<T: Default + Serialize + for<'de> Deserialize<'de>> File<T> {
                         yes_no,
                         "Couldn't parse `{}`: {}\n\nOverwrite the existing configuration file \
                          with the default values?",
-                        path_str,
+                        path.display(),
                         err,
                     ),
                 };
                 File {
                     contents: T::default(),
-                    path: save.then(|| path.to_path_buf()),
+                    path: should_overwrite.then(|| path.to_path_buf()),
                 }
             }
         }

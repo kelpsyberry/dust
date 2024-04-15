@@ -260,7 +260,7 @@ impl GfxData {
                 cur_frame_index: 0,
                 thread: Some(
                     thread::Builder::new()
-                        .name("2D rendering graphics".to_string())
+                        .name("2D rendering graphics".to_owned())
                         .spawn(move || thread_data.run())
                         .expect("couldn't spawn 2D rendering graphics thread"),
                 ),

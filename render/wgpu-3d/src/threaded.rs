@@ -256,7 +256,7 @@ pub fn init(
 
             thread: Some(
                 thread::Builder::new()
-                    .name("3D rendering".to_string())
+                    .name("3D rendering".to_owned())
                     .spawn(move || {
                         let mut raw_soft_renderer = soft::Renderer::new();
                         let mut color_output_index = renderer.color_output_index();

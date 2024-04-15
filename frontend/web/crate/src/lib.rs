@@ -18,6 +18,7 @@ use dust_core::{
     Model, SaveContents,
 };
 use js_sys::{Function, Uint32Array, Uint8Array};
+use std::borrow::Cow;
 use wasm_bindgen::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -256,9 +257,9 @@ pub fn create_emu_state(
                         logger,
                         "Unexpected save file size: expected {}, got {} B; respecting {}.",
                         if let Some(expected_len) = expected_len {
-                            format!("{expected_len} B")
+                            Cow::Owned(format!("{expected_len} B"))
                         } else {
-                            "no file".to_string()
+                            "no file".into()
                         },
                         save_contents.len(),
                         _message,

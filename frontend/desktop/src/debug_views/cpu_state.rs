@@ -259,7 +259,7 @@ impl<const ARM9: bool> FrameView for CpuState<ARM9> {
                             Bank::Abort => "Abort",
                             Bank::Undefined => "Undefined",
                         }
-                        .to_string();
+                        .to_owned();
                         let same_reg = *reg_bank == cpu_reg_bank;
                         let same_spsr = *reg_bank == cpu_spsr_bank;
                         label.push_str(match (same_reg, same_spsr) {

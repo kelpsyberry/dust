@@ -113,9 +113,9 @@ impl Config {
         let games_base_path = base_path.join("games");
         let (base_path, games_base_path) = if let Err(err) = fs::create_dir_all(&games_base_path) {
             config_error!(
-                "Couldn't create the configuration directory{}: {}\n\nThe default configuration \
-                 will be used, new changes will not be saved.",
-                location_str!(games_base_path),
+                "Couldn't create the configuration directory at `{}`: {}\n\nThe default \
+                 configuration will be used, new changes will not be saved.",
+                games_base_path.display(),
                 err,
             );
             (None, None)
@@ -151,7 +151,7 @@ impl DiscordPresence {
     fn new() -> Self {
         DiscordPresence {
             rpc_connection: discord_rpc::Rpc::new(
-                "914286657849667645".to_string(),
+                "914286657849667645".to_owned(),
                 Default::default(),
                 false,
             ),
@@ -170,7 +170,7 @@ impl DiscordPresence {
     }
 
     fn stop(&mut self) {
-        self.presence.state = Some("Not playing anything".to_string());
+        self.presence.state = Some("Not playing anything".to_owned());
         self.presence.timestamps = Some(discord_rpc::Timestamps {
             start: Some(SystemTime::now()),
             end: None,
@@ -302,7 +302,7 @@ impl UiState {
                     config,
                     launch_config,
                     config.config.save_path(game_title),
-                    game_title.to_string(),
+                    game_title.to_owned(),
                     Some((ds_slot_rom, path)),
                     window,
                 );
@@ -330,7 +330,7 @@ impl UiState {
                     config,
                     launch_config,
                     None,
-                    "Firmware".to_string(),
+                    "Firmware".to_owned(),
                     None,
                     window,
                 );
@@ -507,23 +507,25 @@ impl UiState {
                         .and_then(|path| match game_db::Database::read_from_file(&path.0) {
                             Ok(db) => Some(db),
                             Err(err) => {
-                                let location_str = location_str!(&path.0);
                                 match err {
                                     game_db::Error::Io(err) => {
                                         if err.kind() == io::ErrorKind::NotFound {
                                             warning!(
                                                 "Missing game database",
-                                                "The game database was not found{location_str}.",
+                                                "The game database was not found at `{}`.",
+                                                path.0.display()
                                             );
                                         } else {
                                             config_error!(
-                                                "Couldn't read game database{location_str}: {err}",
+                                                "Couldn't read game database at `{}`: {err}",
+                                                path.0.display()
                                             );
                                         }
                                     }
                                     game_db::Error::Json(err) => {
                                         config_error!(
-                                            "Couldn't load game database{location_str}: {err}",
+                                            "Couldn't load game database at `{}`: {err}",
+                                            path.0.display()
                                         );
                                     }
                                 }
@@ -637,7 +639,7 @@ impl UiState {
         };
 
         let thread = thread::Builder::new()
-            .name("emulation".to_string())
+            .name("emulation".to_owned())
             .spawn(move || emu::run(launch_data))
             .expect("couldn't spawn emulation thread");
 

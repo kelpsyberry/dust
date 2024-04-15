@@ -73,7 +73,7 @@ impl TitleMenuBarState {
         let mut needs_separator = false;
         let mut buffer = if components.contains(TitleComponents::EMU_NAME) {
             needs_separator = true;
-            "Dust".to_string()
+            "Dust".to_owned()
         } else {
             String::new()
         };

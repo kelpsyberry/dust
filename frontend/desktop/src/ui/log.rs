@@ -40,7 +40,7 @@ impl Log {
                 Log::Term(slog::Logger::root(
                     slog_async::Async::new(drain)
                         .overflow_strategy(slog_async::OverflowStrategy::Block)
-                        .thread_name("async logger".to_string())
+                        .thread_name("async logger".to_owned())
                         .build()
                         .fuse(),
                     slog::o!(),

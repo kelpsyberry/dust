@@ -144,7 +144,7 @@ pub fn init() -> (Tx, Rx) {
             shared_data: Arc::clone(&shared_data),
             thread: Some(
                 thread::Builder::new()
-                    .name("3D rendering".to_string())
+                    .name("3D rendering".to_owned())
                     .spawn(move || {
                         let mut raw_renderer = Renderer::new();
                         loop {

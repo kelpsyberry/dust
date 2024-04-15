@@ -2,10 +2,10 @@ use super::super::Context;
 use core::fmt::Write;
 
 pub(super) fn invalid_dsp_mul(ctx: &mut Context, _instr: u32, cond: &'static str) {
-    ctx.next_instr.opcode = if cond.is_empty() {
-        "<Invalid DSP multiply>".to_string()
+    if cond.is_empty() {
+        "<Invalid DSP multiply>".clone_into(&mut ctx.next_instr.opcode);
     } else {
-        format!("<Invalid DSP multiply, {cond}>")
+        ctx.next_instr.opcode = format!("<Invalid DSP multiply, {cond}>");
     };
 }
 
@@ -18,7 +18,7 @@ pub(super) fn mrs<const SPSR: bool>(ctx: &mut Context, instr: u32, cond: &'stati
         if SPSR { "spsr" } else { "cpsr" }
     );
     if dst_reg == 15 || instr & 0xFFF != 0 || instr >> 16 & 0xF != 0xF {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -43,7 +43,7 @@ pub(super) fn msr<const IMM: bool, const SPSR: bool>(
         format!("msr{cond} {cpsr_spsr}_{mask}, r{src_reg}")
     };
     if (!IMM && instr >> 8 & 0xF != 0) || instr >> 12 & 0xF != 0xF {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -51,7 +51,7 @@ pub(super) fn bkpt(ctx: &mut Context, instr: u32, cond: &'static str) {
     let comment = instr & 0xFF;
     ctx.next_instr.opcode = format!("bkpt{cond} #{comment:#04X}");
     if instr >> 28 != 0 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -65,7 +65,7 @@ pub(super) fn undefined(ctx: &mut Context, _instr: u32, cond: &'static str) {
 }
 
 pub(super) fn undefined_uncond(ctx: &mut Context, _instr: u32) {
-    ctx.next_instr.opcode = "udf".to_string();
+    "udf".clone_into(&mut ctx.next_instr.opcode);
 }
 
 #[allow(clippy::similar_names)]
@@ -90,7 +90,7 @@ pub(super) fn mrc_mcr<const LOAD: bool>(ctx: &mut Context, instr: u32, cond: &'s
         let _ = write!(ctx.next_instr.opcode, ", {opcode_2}");
     }
     if !LOAD && src_dst_reg == 15 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -115,7 +115,7 @@ pub(super) fn mrrc_mcrr<const LOAD: bool>(ctx: &mut Context, instr: u32, cond: &
         coproc_rm
     );
     if src_dst_reg_low == 15 || src_dst_reg_high == 15 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -175,7 +175,7 @@ pub(super) fn ldc_stc<const LOAD: bool>(ctx: &mut Context, instr: u32, cond: &'s
         (true, true) => write!(ctx.next_instr.opcode, ", {{{offset}}}"),
     };
     if writeback && base_reg == 15 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 

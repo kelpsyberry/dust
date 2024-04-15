@@ -226,7 +226,7 @@ impl Renderer {
             shared_data,
             thread: Some(
                 thread::Builder::new()
-                    .name("2D rendering".to_string())
+                    .name("2D rendering".to_owned())
                     .spawn(move || {
                         thread_data.run();
                     })

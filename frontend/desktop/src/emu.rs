@@ -194,7 +194,7 @@ fn setup_ds_slot(
                         if let Some(expected_len) = expected_len {
                             format!("{expected_len} B")
                         } else {
-                            "no file".to_string()
+                            "no file".to_owned()
                         },
                         save_contents.len(),
                     );

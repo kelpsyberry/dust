@@ -14,5 +14,5 @@ pub(super) fn swi(ctx: &mut Context, instr: u16) {
 
 pub(super) fn undefined(ctx: &mut Context, _instr: u16) {
     ctx.branch_addr_base = None;
-    ctx.next_instr.opcode = "udf".to_string();
+    "udf".clone_into(&mut ctx.next_instr.comment);
 }

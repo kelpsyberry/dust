@@ -857,7 +857,7 @@ impl SettingsData {
                 return;
             }
         }
-        self.next_help_item = Some((label.to_string(), help.to_string()));
+        self.next_help_item = Some((label.to_owned(), help.to_owned()));
     }
 
     fn cur_help_item_or_default(&self) -> (&str, &str) {
@@ -1014,7 +1014,8 @@ impl Editor {
                 let mut base_dir_str = location
                     .base_dir
                     .to_string()
-                    .map_or_else(|| "<invalid UTF-8>".to_string(), |v| v.to_string());
+                    .unwrap_or_else(|| "<invalid UTF-8>".into())
+                    .into_owned();
                 if ui
                     .input_text("##base_dir", &mut base_dir_str)
                     .auto_select_all(true)
@@ -1032,7 +1033,7 @@ impl Editor {
                             .as_ref()
                             .map(|v| v.to_str().unwrap_or("<invalid UTF-8>"))
                             .unwrap_or("")
-                            .to_string();
+                            .to_owned();
                         if ui
                             .input_text(concat!("##", stringify!($id)), &mut str)
                             .auto_select_all(true)
@@ -1666,11 +1667,11 @@ with the Imgui title bar mode)
                         add_y_spacing(ui, 8.0);
                         heading(
                             ui,
-                            &if self.data.game_loaded {
-                                format!("Game saves - {}", emu_state.as_deref().unwrap().title)
+                            if self.data.game_loaded {
+                                Cow::from(format!("Game saves - {}", emu_state.as_deref().unwrap().title))
                             } else {
-                                "Game saves".to_string()
-                            },
+                                "Game saves".into()
+                            }.as_ref(),
                             16.0,
                             5.0,
                             BORDER_WIDTH,

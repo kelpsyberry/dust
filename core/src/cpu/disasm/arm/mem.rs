@@ -68,7 +68,7 @@ pub(super) fn load_store_wb<
     if (BYTE && src_dst_reg == 15)
         || (ADDRESSING.writeback() && (base_reg == src_dst_reg || base_reg == 15))
     {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -113,7 +113,7 @@ pub(super) fn load_store_misc<
         || (ADDRESSING.writeback() && (base_reg == src_dst_reg || base_reg == 15))
         || (SUFFIX == "d" && src_dst_reg & 1 != 0)
     {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -130,7 +130,7 @@ pub(super) fn swp_swpb<const BYTE: bool>(ctx: &mut Context, instr: u32, cond: &'
         addr_reg
     );
     if instr >> 8 & 0xF != 0 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -190,7 +190,7 @@ pub(super) fn ldm_stm<
         || (S_BIT && (!LOAD || instr & 1 << 15 == 0) && WRITEBACK)
         || instr & 0xFFFF == 0
     {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 

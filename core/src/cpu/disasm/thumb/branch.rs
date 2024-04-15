@@ -21,7 +21,7 @@ pub(super) fn bx<const LINK: bool>(ctx: &mut Context, instr: u16) {
 pub(super) fn bl_prefix(ctx: &mut Context, instr: u16) {
     let branch_addr_base = ctx.pc.wrapping_add(((instr as i32) << 21 >> 9) as u32);
     ctx.branch_addr_base = Some(branch_addr_base);
-    ctx.next_instr.opcode = "<bl/blx prefix>".to_string();
+    "<bl/blx prefix>".clone_into(&mut ctx.next_instr.comment);
     ctx.next_instr.comment = format!("r14 = {branch_addr_base:#010X}");
 }
 

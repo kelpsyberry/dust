@@ -101,7 +101,7 @@ pub(super) fn dp_op<const OP_TY: DpOpTy, const OPERAND: DpOperand, const SET_FLA
         }
     }
     if OP_TY.is_test() && dst_reg != 0 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -110,7 +110,7 @@ pub(super) fn clz(ctx: &mut Context, instr: u32, cond: &'static str) {
     let src_reg = instr & 0xF;
     ctx.next_instr.opcode = format!("clz{cond} r{dst_reg}, r{src_reg}");
     if src_reg == 15 || dst_reg == 15 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -136,7 +136,7 @@ pub(super) fn mul<const ACC: bool, const SET_FLAGS: bool>(
         let _ = write!(ctx.next_instr.opcode, ", r{acc_reg}");
     }
     if (!ACC && acc_reg != 0) || dst_reg == 15 || src_reg == 15 || op_reg == 15 || acc_reg == 15 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -161,7 +161,7 @@ pub(super) fn umull_smull<const SIGNED: bool, const ACC: bool, const SET_FLAGS: 
         op_reg
     );
     if dst_acc_reg_low == 15 || dst_acc_reg_high == 15 || src_reg == 15 || op_reg == 15 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -184,7 +184,7 @@ pub(super) fn smulxy<const ACC: bool>(ctx: &mut Context, instr: u32, cond: &'sta
         let _ = write!(ctx.next_instr.opcode, ", r{acc_reg}");
     }
     if (!ACC && acc_reg != 0) || dst_reg == 15 || src_reg == 15 || op_reg == 15 || acc_reg == 15 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -206,7 +206,7 @@ pub(super) fn smulwy<const ACC: bool>(ctx: &mut Context, instr: u32, cond: &'sta
         let _ = write!(ctx.next_instr.opcode, ", r{acc_reg}");
     }
     if (!ACC && acc_reg != 0) || dst_reg == 15 || src_reg == 15 || op_reg == 15 || acc_reg == 15 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -226,7 +226,7 @@ pub(super) fn smlalxy(ctx: &mut Context, instr: u32, cond: &'static str) {
         op_reg
     );
     if dst_acc_reg_low == 15 || dst_acc_reg_high == 15 || src_reg == 15 || op_reg == 15 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
 
@@ -248,6 +248,6 @@ pub(super) fn qaddsub<const SUB: bool, const DOUBLED: bool>(
         op_reg
     );
     if dst_reg == 15 || src_reg == 15 || op_reg == 15 {
-        ctx.next_instr.comment = "Unpredictable".to_string();
+        "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }
 }
