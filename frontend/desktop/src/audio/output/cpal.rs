@@ -6,7 +6,7 @@ use cpal::{
     default_host,
     platform::Stream,
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    Sample, SampleFormat,
+    Sample, SampleFormat, SupportedStreamConfigRange,
 };
 use std::{
     iter,
@@ -51,8 +51,15 @@ impl OutputStream {
         let output_device = default_host().default_output_device()?;
         let supported_output_config = output_device
             .supported_output_configs()
+            .map_err(|e| {
+                error!(
+                    "Audio output error",
+                    "Error setting up audio output device: {e}"
+                );
+            })
             .ok()?
-            .find(|config| config.channels() == 2)?
+            .filter(|config| config.channels() == 2)
+            .max_by(SupportedStreamConfigRange::cmp_default_heuristics)?
             .with_max_sample_rate();
 
         let output_sample_rate = supported_output_config.sample_rate().0;
@@ -103,8 +110,22 @@ impl OutputStream {
             SampleFormat::F64 => build_output_stream!(f64),
             _ => panic!("Unsupported audio output sample format"),
         }
+        .map_err(|e| {
+            error!(
+                "Audio output error",
+                "Error setting up audio output stream: {e}"
+            );
+        })
         .ok()?;
-        stream.play().expect("couldn't start audio output stream");
+        stream
+            .play()
+            .map_err(|e| {
+                error!(
+                    "Audio output error",
+                    "Error starting audio output stream: {e}"
+                );
+            })
+            .ok()?;
 
         Some(OutputStream {
             _stream: stream,

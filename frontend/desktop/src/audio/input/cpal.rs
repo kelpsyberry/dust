@@ -20,6 +20,12 @@ impl InputStream {
         let input_device = default_host().default_input_device()?;
         let supported_input_config = input_device
             .supported_input_configs()
+            .map_err(|e| {
+                error!(
+                    "Audio input error",
+                    "Error setting up audio input device: {e}"
+                );
+            })
             .ok()?
             .max_by(SupportedStreamConfigRange::cmp_default_heuristics)?
             .with_max_sample_rate();
@@ -39,29 +45,47 @@ impl InputStream {
         };
 
         let err_callback = |err| panic!("Error in default audio input device stream: {err}");
+
+        macro_rules! build_input_stream {
+            ($t: ty) => {
+                input_device.build_input_stream(
+                    &supported_input_config.config(),
+                    move |data: &[$t], _| input_data.fill(data),
+                    err_callback,
+                    None,
+                )
+            };
+        }
+
         let stream = match supported_input_config.sample_format() {
-            SampleFormat::U16 => input_device.build_input_stream(
-                &supported_input_config.config(),
-                move |data: &[u16], _| input_data.fill(data),
-                err_callback,
-                None,
-            ),
-            SampleFormat::I16 => input_device.build_input_stream(
-                &supported_input_config.config(),
-                move |data: &[i16], _| input_data.fill(data),
-                err_callback,
-                None,
-            ),
-            SampleFormat::F32 => input_device.build_input_stream(
-                &supported_input_config.config(),
-                move |data: &[f32], _| input_data.fill(data),
-                err_callback,
-                None,
-            ),
+            SampleFormat::U8 => build_input_stream!(u8),
+            SampleFormat::I8 => build_input_stream!(i8),
+            SampleFormat::U16 => build_input_stream!(u16),
+            SampleFormat::I16 => build_input_stream!(i16),
+            SampleFormat::U32 => build_input_stream!(u32),
+            SampleFormat::I32 => build_input_stream!(i32),
+            SampleFormat::U64 => build_input_stream!(u64),
+            SampleFormat::I64 => build_input_stream!(i64),
+            SampleFormat::F32 => build_input_stream!(f32),
+            SampleFormat::F64 => build_input_stream!(f64),
             _ => panic!("Unsupported audio input sample format"),
         }
+        .map_err(|e| {
+            error!(
+                "Audio input error",
+                "Error setting up audio input stream: {e}"
+            );
+        })
         .ok()?;
-        stream.play().expect("couldn't start audio input stream");
+        stream
+            .play()
+            .map_err(|e| {
+                error!(
+                    "Audio input error",
+                    "Error starting audio input stream: {e}"
+                );
+            })
+            .ok()?;
 
         Some(InputStream {
             _stream: stream,
