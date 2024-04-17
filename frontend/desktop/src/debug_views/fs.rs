@@ -131,36 +131,43 @@ impl super::MessageViewEmuState for EmuState {
                     .spawn(move || {
                         const EXPORT_CHUNK_SIZE: usize = 0x100000; // 1 MB
 
-                        if let Err(err) = (move || -> io::Result<()> {
-                            use dust_core::ds_slot::rom::Contents;
+                        let mut exported_size = 0;
+                        let mut buffer = zeroed_box::<Bytes<EXPORT_CHUNK_SIZE>>();
 
-                            let mut exported_size = 0;
-                            let mut buffer = zeroed_box::<Bytes<EXPORT_CHUNK_SIZE>>();
+                        if let Err((err, dst_path)) =
+                            files.into_iter().try_for_each(|(dst_path, start, size)| {
+                                (|| -> io::Result<()> {
+                                    use dust_core::ds_slot::rom::Contents;
 
-                            for (dst_path, start, size) in files {
-                                if let Some(parent) = dst_path.parent() {
-                                    fs::create_dir_all(parent)?;
-                                }
-                                let mut file = fs::File::create(dst_path)?;
+                                    if let Some(parent) = dst_path.parent() {
+                                        fs::create_dir_all(parent)?;
+                                    }
+                                    let mut file = fs::File::create(&dst_path)?;
 
-                                let mut addr = start;
-                                let end = start + size;
-                                while addr < end {
-                                    let len = buffer.len().min((end - addr) as usize);
+                                    let mut addr = start;
+                                    let end = start + size;
+                                    while addr < end {
+                                        let len = buffer.len().min((end - addr) as usize);
 
-                                    let buffer = &mut buffer[..len];
-                                    rom.read_slice_wrapping(addr, buffer);
-                                    file.write_all(buffer)?;
+                                        let buffer = &mut buffer[..len];
+                                        rom.read_slice_wrapping(addr, buffer);
+                                        file.write_all(buffer)?;
 
-                                    addr += len as u32;
-                                    exported_size += len as u64;
-                                    exported_size_shared.store(exported_size, Ordering::Relaxed);
-                                }
-                            }
-
-                            Ok(())
-                        })() {
-                            error!("Export error", "Couldn't complete export: {err}");
+                                        addr += len as u32;
+                                        exported_size += len as u64;
+                                        exported_size_shared
+                                            .store(exported_size, Ordering::Relaxed);
+                                    }
+                                    Ok(())
+                                })()
+                                .map_err(|e| (e, dst_path))
+                            })
+                        {
+                            error!(
+                                "Export error",
+                                "Couldn't complete export at `{}`: {err}",
+                                dst_path.display()
+                            );
                         }
                     })
                     .expect("couldn't spawn export thread");
@@ -548,7 +555,7 @@ impl MessageView for Fs {
             }
 
             ui.popup("export", || {
-                if ui.button("Export") {
+                if ui.button("Export...") {
                     export_dir(
                         if path.is_empty() {
                             "/".to_owned()
@@ -618,7 +625,7 @@ impl MessageView for Fs {
                             }
 
                             ui.popup("export", || {
-                                if ui.button("Export") {
+                                if ui.button("Export...") {
                                     export_file(
                                         path.clone(),
                                         &entry.name,

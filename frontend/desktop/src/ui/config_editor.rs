@@ -1189,7 +1189,7 @@ impl Editor {
         modify_configs!(
             ui,
             width bot_button_width,
-            icon_tooltip "\u{f56f}", "Import ",
+            icon_tooltip "\u{f56f}", "Import",
             "import",
             self.data.game_loaded,
             import_config!(deserialize_global),
@@ -1216,7 +1216,7 @@ impl Editor {
         modify_configs!(
             ui,
             width bot_button_width,
-            icon_tooltip "\u{f56e}", "Export ",
+            icon_tooltip "\u{f56e}", "Export",
             "export",
             self.data.game_loaded,
             export_config!(serialize_global, "global_config.json"),
