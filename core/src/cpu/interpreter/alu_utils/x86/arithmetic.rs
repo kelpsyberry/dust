@@ -19,7 +19,7 @@ pub fn add_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
             options(pure, nomem, nostack),
         );
     }
-    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & 0x0FFF_FFFF) | flags);
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0xF000_0000) | flags);
     result
 }
 
@@ -62,7 +62,7 @@ pub fn adc_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
             options(pure, nomem, nostack),
         );
     }
-    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & 0x0FFF_FFFF) | flags);
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0xF000_0000) | flags);
     result
 }
 
@@ -85,7 +85,7 @@ pub fn sub_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
             options(pure, nomem, nostack),
         );
     }
-    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & 0x0FFF_FFFF) | flags);
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0xF000_0000) | flags);
     result
 }
 
@@ -107,5 +107,5 @@ pub fn cmp(regs: &mut Regs, a: u32, b: u32) {
             options(pure, nomem, nostack),
         );
     }
-    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & 0x0FFF_FFFF) | flags);
+    regs.cpsr = Psr::from_raw((regs.cpsr.raw() & !0xF000_0000) | flags);
 }

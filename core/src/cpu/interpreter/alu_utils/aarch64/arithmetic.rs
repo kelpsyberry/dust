@@ -38,7 +38,7 @@ pub fn adc(regs: &Regs, a: u32, b: u32) -> u32 {
     let result: u32;
     unsafe {
         core::arch::asm!(
-            "rmif {flags:x}, #28, #2",
+            "msr nzcv, {flags:x}",
             "adc {result:w}, {a:w}, {b:w}",
             a = in(reg) a,
             b = in(reg) b,
@@ -55,7 +55,7 @@ pub fn adc_s(regs: &mut Regs, a: u32, b: u32) -> u32 {
     let result: u32;
     unsafe {
         core::arch::asm!(
-            "rmif {flags:x}, #28, #2",
+            "msr nzcv, {flags:x}",
             "adcs {result:w}, {a:w}, {b:w}",
             "mrs {flags:x}, nzcv",
             a = in(reg) a,

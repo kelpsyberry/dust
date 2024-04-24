@@ -39,6 +39,67 @@ pub struct GfxDevice {
     queue: Arc<wgpu::Queue>,
 }
 
+impl GfxDevice {
+    async fn new(features: wgpu::Features, adapter: AdapterSelection) -> Self {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            ..Default::default()
+        });
+
+        let adapter = match adapter {
+            AdapterSelection::Auto(power_preference) => {
+                instance
+                    .request_adapter(&wgpu::RequestAdapterOptions {
+                        power_preference,
+                        force_fallback_adapter: false,
+                        compatible_surface: None,
+                    })
+                    .await
+            }
+            AdapterSelection::Manual(backends, suitable) => instance
+                .enumerate_adapters(backends)
+                .into_iter()
+                .find(suitable),
+        }
+        .expect("couldn't create graphics adapter");
+
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: None,
+                    required_features: features,
+                    required_limits: wgpu::Limits {
+                        max_texture_dimension_2d: 4096,
+                        max_bind_groups: 5,
+                        ..wgpu::Limits::downlevel_webgl2_defaults()
+                    },
+                },
+                None,
+            )
+            .await
+            .expect("couldn't open connection to graphics device");
+
+        GfxDevice {
+            instance,
+            adapter,
+            device: Arc::new(device),
+            queue: Arc::new(queue),
+        }
+    }
+
+    pub fn adapter(&self) -> &wgpu::Adapter {
+        &self.adapter
+    }
+
+    pub fn device(&self) -> &Arc<wgpu::Device> {
+        &self.device
+    }
+
+    pub fn queue(&self) -> &Arc<wgpu::Queue> {
+        &self.queue
+    }
+}
+
 pub struct GfxSurface {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
@@ -154,67 +215,6 @@ impl GfxSurface {
                 },
             }
         }
-    }
-}
-
-impl GfxDevice {
-    async fn new(features: wgpu::Features, adapter: AdapterSelection) -> Self {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
-
-        let adapter = match adapter {
-            AdapterSelection::Auto(power_preference) => {
-                instance
-                    .request_adapter(&wgpu::RequestAdapterOptions {
-                        power_preference,
-                        force_fallback_adapter: false,
-                        compatible_surface: None,
-                    })
-                    .await
-            }
-            AdapterSelection::Manual(backends, suitable) => instance
-                .enumerate_adapters(backends)
-                .into_iter()
-                .find(suitable),
-        }
-        .expect("couldn't create graphics adapter");
-
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    required_features: features,
-                    required_limits: wgpu::Limits {
-                        max_texture_dimension_2d: 4096,
-                        max_bind_groups: 5,
-                        ..wgpu::Limits::downlevel_webgl2_defaults()
-                    },
-                },
-                None,
-            )
-            .await
-            .expect("couldn't open connection to graphics device");
-
-        GfxDevice {
-            instance,
-            adapter,
-            device: Arc::new(device),
-            queue: Arc::new(queue),
-        }
-    }
-
-    pub fn adapter(&self) -> &wgpu::Adapter {
-        &self.adapter
-    }
-
-    pub fn device(&self) -> &Arc<wgpu::Device> {
-        &self.device
-    }
-
-    pub fn queue(&self) -> &Arc<wgpu::Queue> {
-        &self.queue
     }
 }
 
