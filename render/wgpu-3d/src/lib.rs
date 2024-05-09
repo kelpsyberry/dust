@@ -26,7 +26,10 @@ use dust_core::{
     utils::mem_prelude::*,
 };
 use std::sync::Arc;
-use utils::{color_to_wgpu_f64, decode_rgb5, expand_depth, round_up_to_alignment};
+use utils::{
+    color_to_wgpu_f64, decode_rgb5, expand_depth, rgb5_to_rgb6, rgb5_to_rgb6_shift,
+    round_up_to_alignment,
+};
 use wgpu::util::DeviceExt;
 
 proc_bitfield::bitfield! {
@@ -369,7 +372,10 @@ fn create_texture(
                 let pixel = unsafe { *frame.rendering.texture.get_unchecked(i) };
                 let color_index = pixel as usize & 0x1F;
                 let raw_alpha = pixel >> 5;
-                decode_buffer.push(read_palette!(color_index, raw_alpha << 2 | raw_alpha >> 1));
+                decode_buffer.push(rgb5_to_rgb6(read_palette!(
+                    color_index,
+                    raw_alpha << 2 | raw_alpha >> 1
+                )));
                 i = (i + 1) & 0x7_FFFF;
             }
         }
@@ -382,14 +388,14 @@ fn create_texture(
                 let mut pixels = unsafe { *frame.rendering.texture.get_unchecked(i) };
                 for _ in 0..4 {
                     let color_index = pixels as usize & 3;
-                    decode_buffer.push(read_palette!(
+                    decode_buffer.push(rgb5_to_rgb6(read_palette!(
                         color_index,
                         if texture_key.color_0_is_transparent() && color_index == 0 {
                             0
                         } else {
                             0x1F
                         }
-                    ));
+                    )));
                     pixels >>= 2;
                 }
                 i = (i + 1) & 0x7_FFFF;
@@ -404,14 +410,14 @@ fn create_texture(
                 let mut pixels = unsafe { *frame.rendering.texture.get_unchecked(i) };
                 for _ in 0..2 {
                     let color_index = pixels as usize & 0xF;
-                    decode_buffer.push(read_palette!(
+                    decode_buffer.push(rgb5_to_rgb6(read_palette!(
                         color_index,
                         if texture_key.color_0_is_transparent() && color_index == 0 {
                             0
                         } else {
                             0x1F
                         }
-                    ));
+                    )));
                     pixels >>= 4;
                 }
                 i = (i + 1) & 0x7_FFFF;
@@ -424,14 +430,14 @@ fn create_texture(
             let mut i = range.0;
             while i != range.1 || decode_buffer.len() != len {
                 let color_index = unsafe { *frame.rendering.texture.get_unchecked(i) } as usize;
-                decode_buffer.push(read_palette!(
+                decode_buffer.push(rgb5_to_rgb6(read_palette!(
                     color_index,
                     if texture_key.color_0_is_transparent() && color_index == 0 {
                         0
                     } else {
                         0x1F
                     }
-                ));
+                )));
                 i = (i + 1) & 0x7_FFFF;
             }
         }
@@ -498,36 +504,36 @@ fn create_texture(
 
                     match mode {
                         0 => process!(|texel| {
-                            match texel {
+                            rgb5_to_rgb6(match texel {
                                 0 => color_0,
                                 1 => color_1,
                                 2 => color!(2),
                                 _ => 0,
-                            }
+                            })
                         }),
                         1 => process!(|texel| {
-                            match texel {
+                            rgb5_to_rgb6_shift(match texel {
                                 0 => color_0,
                                 1 => color_1,
                                 2 => (color_0 + color_1) >> 1 & 0x1F1F_1F1F,
                                 _ => 0,
-                            }
+                            })
                         }),
                         2 => process!(|texel| {
-                            match texel {
+                            rgb5_to_rgb6(match texel {
                                 0 => color_0,
                                 1 => color_1,
                                 2 => color!(2),
                                 _ => color!(3),
-                            }
+                            })
                         }),
                         _ => process!(|texel| {
-                            match texel {
+                            rgb5_to_rgb6_shift(match texel {
                                 0 => color_0,
                                 1 => color_1,
                                 2 => (color_0 * 5 + color_1 * 3) >> 3 & 0x1F1F_1F1F,
                                 _ => (color_0 * 3 + color_1 * 5) >> 3 & 0x1F1F_1F1F,
-                            }
+                            })
                         }),
                     };
                 }
@@ -553,7 +559,7 @@ fn create_texture(
                 let pixel = unsafe { *frame.rendering.texture.get_unchecked(i) };
                 let color_index = pixel as usize & 7;
                 let raw_alpha = pixel >> 3;
-                decode_buffer.push(read_palette!(color_index, raw_alpha));
+                decode_buffer.push(rgb5_to_rgb6(read_palette!(color_index, raw_alpha)));
                 i = (i + 1) & 0x7_FFFF;
             }
         }
@@ -564,10 +570,10 @@ fn create_texture(
             let mut i = range.0;
             while i != range.1 || decode_buffer.len() != len {
                 let color = unsafe { frame.rendering.texture.read_le_aligned_unchecked::<u16>(i) };
-                decode_buffer.push(decode_rgb5(
+                decode_buffer.push(rgb5_to_rgb6(decode_rgb5(
                     color,
                     if color & 0x8000 != 0 { 0x1F } else { 0 },
-                ));
+                )));
                 i = (i + 2) & 0x7_FFFF;
             }
         }

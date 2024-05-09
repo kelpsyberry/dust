@@ -18,7 +18,7 @@ use dust_core::{
 };
 use utils::{
     clip_x_range, dec_poly_vert_index, decode_rgb5, expand_depth, inc_poly_vert_index,
-    rgb5_to_rgb6, DummyEdge, Edge, Edges, InterpLineData,
+    rgb5_to_rgb6, rgb5_to_rgb6_shift, DummyEdge, Edge, Edges, InterpLineData,
 };
 
 type DepthTestFn = fn(u32, u32, PixelAttrs) -> bool;
@@ -142,24 +142,24 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
 
         let i = v << (tex_width_shift + 3) | u;
 
-        let tex_color = rgb5_to_rgb6(match FORMAT {
+        let tex_color = match FORMAT {
             1 => {
                 let pixel = rendering_data.texture[(tex_base + i) & 0x7_FFFF];
                 let color_index = pixel as usize & 0x1F;
                 let raw_alpha = pixel >> 5;
-                decode_rgb5(
+                rgb5_to_rgb6(decode_rgb5(
                     rendering_data
                         .tex_pal
                         .read_le::<u16>((pal_base + (color_index << 1)) & 0x1_FFFF),
                     (raw_alpha << 2 | raw_alpha >> 1) as u16,
-                )
+                ))
             }
 
             2 => {
                 let color_index = rendering_data.texture[(tex_base + (i >> 2)) & 0x7_FFFF]
                     .wrapping_shr((i << 1) as u32) as usize
                     & 3;
-                decode_rgb5(
+                rgb5_to_rgb6(decode_rgb5(
                     rendering_data
                         .tex_pal
                         .read_le::<u16>(pal_base | color_index << 1),
@@ -168,14 +168,14 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                     } else {
                         0x1F
                     },
-                )
+                ))
             }
 
             3 => {
                 let color_index = rendering_data.texture[(tex_base + (i >> 1)) & 0x7_FFFF]
                     .wrapping_shr((i << 2) as u32) as usize
                     & 0xF;
-                decode_rgb5(
+                rgb5_to_rgb6(decode_rgb5(
                     rendering_data
                         .tex_pal
                         .read_le::<u16>((pal_base + (color_index << 1)) & 0x1_FFFF),
@@ -184,12 +184,12 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                     } else {
                         0x1F
                     },
-                )
+                ))
             }
 
             4 => {
                 let color_index = rendering_data.texture[(tex_base + i) & 0x7_FFFF] as usize;
-                decode_rgb5(
+                rgb5_to_rgb6(decode_rgb5(
                     rendering_data
                         .tex_pal
                         .read_le::<u16>((pal_base + (color_index << 1)) & 0x1_FFFF),
@@ -198,7 +198,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                     } else {
                         0x1F
                     },
-                )
+                ))
             }
 
             5 => {
@@ -226,7 +226,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                     };
                 }
 
-                match texel_value {
+                let color = match texel_value {
                     0 => color!(0),
 
                     1 => color!(1),
@@ -258,6 +258,12 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                             (color_0 * InterpColor::splat(3) + color_1 * InterpColor::splat(5)) >> 3
                         }
                     },
+                };
+
+                if mode & 1 != 0 {
+                    rgb5_to_rgb6_shift(color)
+                } else {
+                    rgb5_to_rgb6(color)
                 }
             }
 
@@ -265,21 +271,24 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                 let pixel = rendering_data.texture[(tex_base + i) & 0x7_FFFF];
                 let color_index = pixel as usize & 7;
                 let alpha = pixel >> 3;
-                decode_rgb5(
+                rgb5_to_rgb6(decode_rgb5(
                     rendering_data
                         .tex_pal
                         .read_le::<u16>((pal_base | color_index << 1) & 0x1_FFFF),
                     alpha as u16,
-                )
+                ))
             }
 
             _ => {
                 let color = rendering_data
                     .texture
                     .read_le::<u16>((tex_base + (i << 1)) & 0x7_FFFE);
-                decode_rgb5(color, if color & 1 << 15 != 0 { 0x1F } else { 0 })
+                rgb5_to_rgb6(decode_rgb5(
+                    color,
+                    if color & 1 << 15 != 0 { 0x1F } else { 0 },
+                ))
             }
-        });
+        };
 
         match MODE {
             1 => match tex_color[3] {

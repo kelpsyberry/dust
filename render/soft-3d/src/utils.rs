@@ -33,9 +33,16 @@ pub fn decode_rgb5(color: u16, alpha: u16) -> InterpColor {
 }
 
 #[inline]
+pub fn rgb5_to_rgb6_shift(color: InterpColor) -> InterpColor {
+    let mut result = color << 1;
+    result[3] = color[3];
+    result
+}
+
+#[inline]
 pub fn rgb5_to_rgb6(color: InterpColor) -> InterpColor {
     let mut result = (color << 1) - color.simd_ne(InterpColor::splat(0)).to_int().cast::<u16>();
-    result[3] >>= 1;
+    result[3] = color[3];
     result
 }
 

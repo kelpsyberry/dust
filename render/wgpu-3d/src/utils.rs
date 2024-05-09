@@ -21,6 +21,18 @@ pub fn decode_rgb5(color: u16, alpha: u8) -> u32 {
 }
 
 #[inline]
+pub fn rgb5_to_rgb6_shift(color: u32) -> u32 {
+    (color & 0xFF00_0000) | (color << 1 & 0x00FF_FFFF)
+}
+
+#[inline]
+pub fn rgb5_to_rgb6(color: u32) -> u32 {
+    (color & 0xFF00_0000)
+        | (color << 1 & 0x00FF_FFFF)
+        | ((color >> 4 | color >> 3 | color >> 2 | color >> 1 | color) & 0x010101)
+}
+
+#[inline]
 pub fn color_to_wgpu_f64(color: Color) -> wgpu::Color {
     let [r, g, b, a] = (color.cast::<f64>() * f64x4::splat(1.0 / 31.0)).to_array();
     wgpu::Color { r, g, b, a }

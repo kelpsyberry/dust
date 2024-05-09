@@ -24,8 +24,8 @@ impl TextureCode {
 
             texture_frag_inputs: "@location(1) uv: vec2<f32>,",
             texture_get_color: "let t_color = textureSample(t_texture, s_texture, uv / \
-                                vec2<f32>(textureDimensions(t_texture))) * vec4<f32>(255.0 / \
-                                31.0);",
+                                vec2<f32>(textureDimensions(t_texture))) * \
+                                vec4<f32>(vec3<f32>(255.0 / 63.0), 255.0 / 31.0);",
         }
     }
 }
