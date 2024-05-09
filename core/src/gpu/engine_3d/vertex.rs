@@ -85,11 +85,11 @@ pub fn culled(
     let v1_64 = v1.coords.cast::<i64>();
     let mut normal = cross_w_as_z(v2.coords.cast() - v1_64, v0.coords.cast() - v1_64);
     // Normalize the normal's components so that they fit in a 32-bit integer, to avoid overflows
-    while ((normal >> i64x4::splat(31) ^ normal >> i64x4::splat(63)).simd_ne(i64x4::splat(0))
+    while ((normal >> 31 ^ normal >> 63).simd_ne(i64x4::splat(0))
         & mask64x4::from_array([true, true, true, false]))
     .any()
     {
-        normal >>= i64x4::splat(4);
+        normal >>= 4;
     }
     let dot = (normal * simd_swizzle!(v1_64, [0, 1, 3, 2])).reduce_sum();
     let is_front_facing = dot > 0;

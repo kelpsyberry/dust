@@ -3,7 +3,6 @@
     const_trait_impl,
     portable_simd,
     array_windows,
-    inline_const,
     maybe_uninit_uninit_array,
     new_uninit
 )]

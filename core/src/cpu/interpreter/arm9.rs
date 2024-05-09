@@ -7,7 +7,7 @@ use super::{super::Regs as EngineRegs, common::StateSource, Interpreter, Regs};
 #[cfg(feature = "debugger-hooks")]
 use crate::cpu::debug;
 #[cfg(feature = "interp-arm9-interlocks")]
-use crate::schedule::SignedTimestamp;
+use crate::utils::schedule::SignedTimestamp;
 use crate::{
     cpu::{
         arm9::{bus, Arm9, Event, Timestamp},

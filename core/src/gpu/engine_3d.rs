@@ -327,7 +327,7 @@ fn decode_rgb5(value: u16, alpha: u8) -> Color {
 
 #[inline(always)]
 fn rgb5_to_rgb6(value: Color) -> Color {
-    value << Color::splat(1) | (value + Color::splat(0x1F)) >> Color::splat(5)
+    value << 1 | (value + Color::splat(0x1F)) >> 5
 }
 
 static CMD_PARAMS: [u8; 0x100] = {
@@ -874,11 +874,9 @@ impl Engine3d {
                 shininess_level = self.shininess_table[(shininess_level >> 1) as usize] as i32;
             }
 
-            color += ((self.diffuse_color * light.color * i32x4::splat(diffuse_level))
-                >> i32x4::splat(14))
-                + ((self.specular_color * light.color * i32x4::splat(shininess_level))
-                    >> i32x4::splat(13))
-                + ((self.ambient_color * light.color) >> i32x4::splat(5));
+            color += ((self.diffuse_color * light.color * i32x4::splat(diffuse_level)) >> 14)
+                + ((self.specular_color * light.color * i32x4::splat(shininess_level)) >> 13)
+                + ((self.ambient_color * light.color) >> 5);
         }
         self.vert_color = rgb5_to_rgb6(color.simd_min(i32x4::splat(0x1F)).cast());
     }
@@ -1179,7 +1177,7 @@ impl Engine3d {
                 ]);
                 if w > 0xFFFF {
                     w >>= 1;
-                    coords >>= u32x2::splat(1);
+                    coords >>= 1;
                 }
                 ((unsafe {
                     // Safety: w != 0
@@ -1210,23 +1208,22 @@ impl Engine3d {
                     ]);
                     if w > 0xFFFF {
                         w >>= 1;
-                        coords >>= u32x2::splat(1);
+                        coords >>= 1;
                     }
                     ((unsafe {
                         // Safety: w != 0
                         simd_div(
-                            (coords.cast::<u64>() << u64x2::splat(4)) * viewport_size,
+                            (coords.cast::<u64>() << 4) * viewport_size,
                             u64x2::splat((w << 1) as u64),
                         )
                     }
                     .cast::<u32>()
-                        + (viewport_origin << u32x2::splat(4)))
+                        + (viewport_origin << 4))
                         & u32x2::from_array([0x1FFF, 0xFFF]))
                     .cast::<u16>()
                 },
                 uv: vert.uv,
-                color: vert.color.cast() << InterpColor::splat(3)
-                    | vert.color.cast() >> InterpColor::splat(3),
+                color: vert.color.cast::<u16>() << 3 | vert.color.cast::<u16>() >> 3,
             };
             *vert_addr = VertexAddr::new(self.vert_ram_level);
             self.vert_ram_level += 1;

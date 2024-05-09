@@ -34,8 +34,7 @@ pub fn decode_rgb5(color: u16, alpha: u16) -> InterpColor {
 
 #[inline]
 pub fn rgb5_to_rgb6(color: InterpColor) -> InterpColor {
-    let mut result = (color << InterpColor::splat(1))
-        - color.simd_ne(InterpColor::splat(0)).to_int().cast::<u16>();
+    let mut result = (color << 1) - color.simd_ne(InterpColor::splat(0)).to_int().cast::<u16>();
     result[3] >>= 1;
     result
 }
@@ -363,7 +362,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
                 u64x4::splat(x as u64 * denom as u64),
                 u64x4::splat((len - x) as u64 * denom as u64),
             );
-            (min + ((diff * factor) >> u64x4::splat(LINEAR_PRECISION as u64))).cast()
+            (min + ((diff * factor) >> LINEAR_PRECISION as u64)).cast()
         } else {
             let a = a.cast::<u32>();
             let b = b.cast::<u32>();
@@ -375,7 +374,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
                 u32x4::splat(factor),
                 u32x4::splat((1 << Self::PERSP_PRECISION) - factor),
             );
-            (min + ((diff * factor) >> u32x4::splat(Self::PERSP_PRECISION as u32))).cast()
+            (min + ((diff * factor) >> Self::PERSP_PRECISION as u32)).cast()
         }
     }
 
@@ -391,7 +390,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
                 i64x2::splat(x as i64 * denom as i64),
                 i64x2::splat((len - x) as i64 * denom as i64),
             );
-            (min + ((diff * factor) >> i64x2::splat(LINEAR_PRECISION as i64))).cast()
+            (min + ((diff * factor) >> LINEAR_PRECISION as i64)).cast()
         } else {
             let a = a.cast::<i32>();
             let b = b.cast::<i32>();
@@ -403,7 +402,7 @@ impl<const EDGE: bool> InterpData<EDGE> {
                 i32x2::splat(factor),
                 i32x2::splat((1 << Self::PERSP_PRECISION) - factor),
             );
-            (min + ((diff * factor) >> i32x2::splat(Self::PERSP_PRECISION as i32))).cast()
+            (min + ((diff * factor) >> Self::PERSP_PRECISION as i32)).cast()
         }
     }
 

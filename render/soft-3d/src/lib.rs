@@ -93,7 +93,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
     uv: TexCoords,
     vert_color: InterpColor,
 ) -> InterpColor {
-    let vert_color = vert_color >> InterpColor::splat(3);
+    let vert_color = vert_color >> 3;
 
     let mut vert_blend_color = match MODE {
         2 => rgb5_to_rgb6(rendering_data.toon_colors[(vert_color[0] as usize >> 1).min(31)].cast()),
@@ -237,14 +237,13 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                         1 => {
                             let color_0 = color!(0);
                             let color_1 = color!(1);
-                            (color_0 + color_1) >> InterpColor::splat(1)
+                            (color_0 + color_1) >> 1
                         }
 
                         _ => {
                             let color_0 = color!(0);
                             let color_1 = color!(1);
-                            (color_0 * InterpColor::splat(5) + color_1 * InterpColor::splat(3))
-                                >> InterpColor::splat(3)
+                            (color_0 * InterpColor::splat(5) + color_1 * InterpColor::splat(3)) >> 3
                         }
                     },
 
@@ -256,8 +255,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                         _ => {
                             let color_0 = color!(0);
                             let color_1 = color!(1);
-                            (color_0 * InterpColor::splat(3) + color_1 * InterpColor::splat(5))
-                                >> InterpColor::splat(3)
+                            (color_0 * InterpColor::splat(3) + color_1 * InterpColor::splat(5)) >> 3
                         }
                     },
                 }
@@ -294,7 +292,7 @@ fn process_pixel<const FORMAT: u8, const MODE: u8>(
                 _ => {
                     let mut color = (tex_color * InterpColor::splat(tex_color[3])
                         + vert_blend_color * InterpColor::splat(31 - tex_color[3]))
-                        >> InterpColor::splat(5);
+                        >> 5;
                     color[3] = vert_blend_color[3];
                     color
                 }
@@ -806,7 +804,7 @@ impl Renderer {
                                         if prev_alpha != 0 {
                                             color = ((color * InterpColor::splat(alpha + 1))
                                                 + (prev_color * InterpColor::splat(31 - alpha)))
-                                                >> InterpColor::splat(5);
+                                                >> 5;
                                             color[3] = alpha.max(prev_alpha);
                                         }
                                     }
@@ -877,7 +875,7 @@ impl Renderer {
                 {
                     let edge_color = rendering_data.edge_colors[(opaque_poly_id >> 3) as usize];
                     if rendering_data.control.antialiasing_enabled() {
-                        *color_dst = (*color_dst + edge_color) / Color::splat(2);
+                        *color_dst = (*color_dst + edge_color) >> 1;
                     } else {
                         *color_dst = edge_color;
                     }
