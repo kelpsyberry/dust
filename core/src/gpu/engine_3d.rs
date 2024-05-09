@@ -537,8 +537,8 @@ impl Engine3d {
     #[inline]
     pub fn set_renderer_tx(&mut self, renderer_tx: Box<dyn RendererTx>) {
         self.renderer_tx = renderer_tx;
-        self.rendering_state.texture_dirty = 0x3F;
-        self.rendering_state.tex_pal_dirty = 0xF;
+        self.rendering_state.texture_dirty = 0xF;
+        self.rendering_state.tex_pal_dirty = 0x3F;
     }
 
     #[inline]
