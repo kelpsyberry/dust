@@ -9,7 +9,8 @@
     portable_simd,
     new_uninit,
     str_from_utf16_endian,
-    array_chunks
+    array_chunks,
+    unsized_const_params
 )]
 #![warn(clippy::pedantic)]
 #![allow(

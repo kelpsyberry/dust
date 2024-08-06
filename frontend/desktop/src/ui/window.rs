@@ -19,7 +19,7 @@ use winit::{
     dpi::{LogicalSize, PhysicalSize},
     event::{Event, WindowEvent},
     event_loop::EventLoop,
-    window::{Window as WinitWindow, WindowAttributes},
+    window::Window as WinitWindow,
 };
 #[cfg(target_os = "macos")]
 use winit::{
