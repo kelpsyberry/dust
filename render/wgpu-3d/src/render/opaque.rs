@@ -190,6 +190,7 @@ pub(crate) fn create_pipeline(
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &attribs,
             }],
+            compilation_options: Default::default(),
         },
 
         primitive: PRIMITIVE_STATE,
@@ -231,8 +232,10 @@ pub(crate) fn create_pipeline(
                     write_mask: wgpu::ColorWrites::ALL,
                 })]
             },
+            compilation_options: Default::default(),
         }),
 
         multiview: None,
+        cache: None,
     })
 }

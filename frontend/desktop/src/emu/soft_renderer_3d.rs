@@ -5,7 +5,7 @@ use dust_core::{
         },
         Scanline, SCREEN_HEIGHT,
     },
-    utils::Bytes,
+    utils::mem_prelude::*,
 };
 use dust_soft_3d::{Renderer, RenderingData};
 use std::{

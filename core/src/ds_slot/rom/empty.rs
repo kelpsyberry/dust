@@ -1,8 +1,5 @@
 use super::super::RomOutputLen;
-#[cfg(feature = "log")]
 use crate::utils::mem_prelude::*;
-#[allow(unused_imports)]
-use crate::utils::Bytes;
 use crate::utils::Savestate;
 
 #[derive(Savestate)]

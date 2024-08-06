@@ -427,6 +427,7 @@ impl GfxThreadData {
                 module: &shader_module,
                 entry_point: "vs_main",
                 buffers: &[],
+                compilation_options: Default::default(),
             },
 
             primitive: wgpu::PrimitiveState {
@@ -451,9 +452,11 @@ impl GfxThreadData {
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: Default::default(),
             }),
 
             multiview: None,
+            cache: None,
         });
 
         (pipeline, color_output_3d_bg_layout)

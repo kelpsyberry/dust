@@ -207,11 +207,10 @@ impl Server {
             unreachable!();
         }
 
-        if let Ok((reader, writer)) = self
-            .listener
-            .accept()
-            .and_then(|(writer, _)| Ok((BufReader::new(writer.try_clone()?), writer)))
-        {
+        if let Ok((reader, writer)) = self.listener.accept().and_then(|(stream, _)| {
+            // stream.set_nonblocking(true)?;
+            Ok((BufReader::new(stream.try_clone()?), stream))
+        }) {
             self.state = State::Running(RunningState {
                 reader,
                 writer,

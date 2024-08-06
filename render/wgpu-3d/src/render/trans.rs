@@ -227,6 +227,7 @@ pub(crate) fn create_pipeline(
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &attribs,
             }],
+            compilation_options: Default::default(),
         },
 
         primitive: PRIMITIVE_STATE,
@@ -268,9 +269,11 @@ pub(crate) fn create_pipeline(
                     write_mask: wgpu::ColorWrites::ALL,
                 })]
             },
+            compilation_options: Default::default(),
         }),
 
         multiview: None,
+        cache: None,
     };
 
     let mut trans_fragment_targets = vec![Some(wgpu::ColorTargetState {
@@ -307,6 +310,7 @@ pub(crate) fn create_pipeline(
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &attribs,
                 }],
+                compilation_options: Default::default(),
             },
 
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -330,6 +334,7 @@ pub(crate) fn create_pipeline(
                 module: &trans_shader_module,
                 entry_point: "fs_main",
                 targets: &trans_fragment_targets,
+                compilation_options: Default::default(),
             }),
 
             ..opaque_desc

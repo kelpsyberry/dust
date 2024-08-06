@@ -40,9 +40,9 @@ dust-wgpu-2d = { path = "../../render/wgpu-2d" }
 dust-wgpu-3d = { path = "../../render/wgpu-3d", features = ["threaded"] }
 
 # UI
-winit = { version = "0.29", features = ["serde"] }
-wgpu = "0.19"
-imgui = { version = "0.11", features = ["docking", "tables-api"] }
+winit = { version = "0.30", features = ["serde"] }
+wgpu = "22.0"
+imgui = { version = "0.12", features = ["docking", "tables-api"] }
 imgui-winit-support = { git = "https://github.com/kelpsyberry/imgui-rs" }
 imgui-wgpu = { git = "https://github.com/kelpsyberry/imgui-wgpu" }
 opener = "0.7"

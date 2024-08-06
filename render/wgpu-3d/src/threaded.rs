@@ -314,9 +314,10 @@ pub fn init(
                                             );
                                     }
 
-                                    let command_buffer =
-                                        renderer.render_frame(&frame.rendering_data);
-                                    renderer.queue().submit([command_buffer]);
+                                    // FIXME: Depends on https://github.com/gfx-rs/wgpu/issues/5572
+                                    // let command_buffer =
+                                    //     renderer.render_frame(&frame.rendering_data);
+                                    // renderer.queue().submit([command_buffer]);
                                 }
                                 last_submitted_frame
                                     .0

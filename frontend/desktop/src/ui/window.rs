@@ -17,13 +17,13 @@ use std::{
 use winit::window::Icon;
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
-    event::{Event, StartCause, WindowEvent},
+    event::{Event, WindowEvent},
     event_loop::EventLoop,
-    window::{Window as WinitWindow, WindowBuilder as WinitWindowBuilder},
+    window::{Window as WinitWindow, WindowAttributes},
 };
 #[cfg(target_os = "macos")]
 use winit::{
-    platform::macos::WindowBuilderExtMacOS,
+    platform::macos::WindowAttributesExtMacOS,
     raw_window_handle::{HasWindowHandle, RawWindowHandle},
 };
 
@@ -73,6 +73,7 @@ impl GfxDevice {
                         max_bind_groups: 5,
                         ..wgpu::Limits::downlevel_webgl2_defaults()
                     },
+                    memory_hints: wgpu::MemoryHints::MemoryUsage,
                 },
                 None,
             )
@@ -329,16 +330,14 @@ impl ImGuiState {
 
 pub struct Builder {
     pub event_loop: EventLoop<()>,
-    window: HiddenWindow,
+    window: NewWindow,
     pub imgui: imgui::Context,
 }
 
-struct HiddenWindow {
-    window: WinitWindow,
-    scale_factor: f64,
+struct NewWindow {
     gfx_device: GfxDevice,
-    imgui: ImGuiState,
-    imgui_winit: imgui_winit_support::WinitPlatform,
+    title: String,
+    default_logical_size: (u32, u32),
     srgb_mode: SrgbMode,
     #[cfg(target_os = "macos")]
     macos_title_bar_is_hidden: bool,
@@ -517,7 +516,7 @@ pub enum ControlFlow {
 }
 
 enum WindowState {
-    Hidden(HiddenWindow),
+    New(NewWindow),
     Shown(Window),
 }
 
@@ -531,46 +530,16 @@ impl Builder {
         #[cfg(target_os = "macos")] macos_title_bar_is_hidden: bool,
     ) -> Self {
         let event_loop = EventLoop::new().expect("couldn't create event loop");
-        let window_builder = WinitWindowBuilder::new()
-            .with_title(title)
-            .with_inner_size(LogicalSize::new(
-                default_logical_size.0,
-                default_logical_size.1,
-            ))
-            .with_visible(false);
-        #[cfg(target_os = "macos")]
-        let window_builder = if macos_title_bar_is_hidden {
-            window_builder
-                .with_titlebar_transparent(true)
-                .with_fullsize_content_view(true)
-        } else {
-            window_builder
-        };
-        let window = window_builder
-            .build(&event_loop)
-            .expect("couldn't create window");
-        let scale_factor = window.scale_factor();
 
         let gfx_device = GfxDevice::new(features, adapter).await;
 
-        let mut imgui = imgui::Context::create();
-
-        let imgui_state = ImGuiState::new(scale_factor, &mut imgui);
-
-        let mut imgui_winit = imgui_winit_support::WinitPlatform::init(&mut imgui);
-        imgui_winit.attach_window(
-            imgui.io_mut(),
-            &window,
-            imgui_winit_support::HiDpiMode::Default,
-        );
+        let imgui = imgui::Context::create();
 
         #[allow(unused_mut)]
-        let mut window = HiddenWindow {
-            window,
-            scale_factor,
+        let mut window = NewWindow {
+            title: title.into(),
+            default_logical_size,
             gfx_device,
-            imgui: imgui_state,
-            imgui_winit,
             srgb_mode,
             #[cfg(target_os = "macos")]
             macos_title_bar_is_hidden,
@@ -623,71 +592,88 @@ impl Builder {
         let mut on_exit_imgui = ManuallyDrop::new(on_exit_imgui);
         let mut on_exit = ManuallyDrop::new(on_exit);
 
-        let mut window_ = ManuallyDrop::new(WindowState::Hidden(self.window));
+        let mut window_ = ManuallyDrop::new(WindowState::New(self.window));
         let mut imgui_ = ManuallyDrop::new(self.imgui);
         let mut state_ = ManuallyDrop::new(None);
 
         let _ = self.event_loop.run(move |event, elwt| {
             let imgui = &mut *imgui_;
 
-            if let Event::WindowEvent {
-                event: WindowEvent::RedrawRequested,
-                ..
-            } = &event
-            {
-                if matches!(&*window_, WindowState::Hidden(_)) {
-                    return;
+            if let Event::Resumed = &event {
+                if matches!(&*window_, WindowState::New(_)) {
+                    let window = unsafe {
+                        let WindowState::New(window) = ManuallyDrop::take(&mut window_) else {
+                            unreachable_unchecked()
+                        };
+                        window
+                    };
+
+                    let mut window_attrs = WinitWindow::default_attributes()
+                        .with_title(window.title)
+                        .with_inner_size(LogicalSize::new(
+                            window.default_logical_size.0,
+                            window.default_logical_size.1,
+                        ));
+                    #[cfg(target_os = "macos")]
+                    if window.macos_title_bar_is_hidden {
+                        window_attrs = window_attrs
+                            .with_titlebar_transparent(true)
+                            .with_fullsize_content_view(true);
+                    }
+
+                    let winit_window = elwt
+                        .create_window(window_attrs)
+                        .expect("couldn't create window");
+                    let scale_factor = winit_window.scale_factor();
+
+                    let imgui_state = ImGuiState::new(scale_factor, imgui);
+
+                    let mut imgui_winit = imgui_winit_support::WinitPlatform::init(imgui);
+                    imgui_winit.attach_window(
+                        imgui.io_mut(),
+                        &winit_window,
+                        imgui_winit_support::HiDpiMode::Default,
+                    );
+
+                    let gfx_surface =
+                        GfxSurface::new(&winit_window, &window.gfx_device, window.srgb_mode);
+                    let imgui_gfx = imgui_wgpu::Renderer::new(
+                        &window.gfx_device.device,
+                        &window.gfx_device.queue,
+                        imgui,
+                        gfx_surface.config.format,
+                        window.srgb_mode,
+                    );
+
+                    let mut window = Window {
+                        window: winit_window,
+                        scale_factor,
+                        last_frame: Instant::now(),
+                        gfx_device: window.gfx_device,
+                        gfx_surface,
+                        imgui: imgui_state,
+                        imgui_winit,
+                        imgui_gfx,
+                        is_occluded: false,
+                        #[cfg(target_os = "macos")]
+                        macos_title_bar_is_transparent: window.macos_title_bar_is_hidden,
+                        #[cfg(target_os = "macos")]
+                        macos_title_bar_height: 0.0,
+                    };
+
+                    #[cfg(target_os = "macos")]
+                    window.update_macos_title_bar_height();
+
+                    state_ =
+                        ManuallyDrop::new(Some(unsafe { ManuallyDrop::take(&mut init_state) }(
+                            &mut window,
+                        )));
+                    window_ = ManuallyDrop::new(WindowState::Shown(window));
                 }
             }
 
-            if let Event::NewEvents(StartCause::Init) = &event {
-                let window = unsafe {
-                    let WindowState::Hidden(window) = ManuallyDrop::take(&mut window_) else {
-                        unreachable_unchecked()
-                    };
-                    window
-                };
-
-                let gfx_surface =
-                    GfxSurface::new(&window.window, &window.gfx_device, window.srgb_mode);
-                let imgui_gfx = imgui_wgpu::Renderer::new(
-                    &window.gfx_device.device,
-                    &window.gfx_device.queue,
-                    imgui,
-                    gfx_surface.config.format,
-                    window.srgb_mode,
-                );
-
-                let mut window = Window {
-                    window: window.window,
-                    scale_factor: window.scale_factor,
-                    last_frame: Instant::now(),
-                    gfx_device: window.gfx_device,
-                    gfx_surface,
-                    imgui: window.imgui,
-                    imgui_winit: window.imgui_winit,
-                    imgui_gfx,
-                    is_occluded: false,
-                    #[cfg(target_os = "macos")]
-                    macos_title_bar_is_transparent: window.macos_title_bar_is_hidden,
-                    #[cfg(target_os = "macos")]
-                    macos_title_bar_height: 0.0,
-                };
-
-                #[cfg(target_os = "macos")]
-                window.update_macos_title_bar_height();
-
-                state_ = ManuallyDrop::new(Some(unsafe { ManuallyDrop::take(&mut init_state) }(
-                    &mut window,
-                )));
-                window_ = ManuallyDrop::new(WindowState::Shown(window));
-            }
-
-            let window = unsafe {
-                let WindowState::Shown(window) = &mut *window_ else {
-                    unreachable_unchecked()
-                };
-                window
+            let WindowState::Shown(window) = &mut *window_ else {
+                return;
             };
             let state = unsafe { state_.as_mut().unwrap_unchecked() };
 
@@ -701,14 +687,6 @@ impl Builder {
                 let now = Instant::now();
                 let delta_time = now - window.last_frame;
                 window.last_frame = now;
-
-                let frame = window
-                    .gfx_surface
-                    .start_frame(&window.gfx_device, window.window.inner_size());
-                let mut encoder = window
-                    .gfx_device
-                    .device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
                 if window.gfx_surface.format_changed {
                     window.imgui_gfx.change_swapchain_format(
@@ -728,6 +706,14 @@ impl Builder {
                 if draw_imgui(window, state, ui) == ControlFlow::Exit {
                     elwt.exit();
                 }
+
+                let frame = window
+                    .gfx_surface
+                    .start_frame(&window.gfx_device, window.window.inner_size());
+                let mut encoder = window
+                    .gfx_device
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
                 if draw(window, state, &frame, &mut encoder, delta_time) == ControlFlow::Exit {
                     elwt.exit();
@@ -756,11 +742,6 @@ impl Builder {
             };
 
             match event {
-                Event::NewEvents(StartCause::Init) => {
-                    redraw();
-                    window.window.set_visible(true);
-                }
-
                 Event::WindowEvent {
                     event: WindowEvent::CloseRequested,
                     ..

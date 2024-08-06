@@ -123,6 +123,7 @@ pub(crate) fn create_pipeline(
             module: &shader_module,
             entry_point: "vs_main",
             buffers: &[],
+            compilation_options: Default::default(),
         },
 
         primitive: wgpu::PrimitiveState {
@@ -147,8 +148,10 @@ pub(crate) fn create_pipeline(
                 blend: None,
                 write_mask: wgpu::ColorWrites::ALL,
             })],
+            compilation_options: Default::default(),
         }),
 
         multiview: None,
+        cache: None,
     })
 }

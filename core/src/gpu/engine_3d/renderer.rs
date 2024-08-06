@@ -1,5 +1,5 @@
 use super::{Polygon, RenderingState, ScreenVertex};
-use crate::{gpu::Scanline, utils::Bytes};
+use crate::{gpu::Scanline, utils::mem_prelude::*};
 
 pub trait RendererTx {
     fn set_capture_enabled(&mut self, capture_enabled: bool);

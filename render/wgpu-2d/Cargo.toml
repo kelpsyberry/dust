@@ -9,6 +9,6 @@ dust-core = { path = "../../core" }
 emu-utils = { git = "https://github.com/kelpsyberry/emu-utils", features = ["triple-buffer"] }
 dust-soft-2d-base = { path = "../soft-2d/base" }
 proc-bitfield = { version = "0.4", features = ["nightly"] }
-wgpu = "0.19"
+wgpu = "22.0"
 crossbeam-channel = "0.5"
 parking_lot = "0.12"

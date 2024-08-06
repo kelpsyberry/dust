@@ -13,6 +13,6 @@ dust-soft-3d = { path = "../soft-3d" }
 emu-utils = { git = "https://github.com/kelpsyberry/emu-utils", features = ["triple-buffer"], optional = true}
 proc-bitfield = { version = "0.4", features = ["nightly"] }
 ahash = "0.8"
-wgpu = "0.19"
+wgpu = "22.0"
 crossbeam-channel = { version = "0.5", optional = true }
 parking_lot = { version = "0.12", optional = true }
