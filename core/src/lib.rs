@@ -7,7 +7,7 @@
     maybe_uninit_uninit_array,
     maybe_uninit_slice,
     portable_simd,
-    new_uninit,
+    new_zeroed_alloc,
     str_from_utf16_endian,
     array_chunks,
     unsized_const_params
