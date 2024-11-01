@@ -1,5 +1,5 @@
 #![feature(
-    new_uninit,
+    new_zeroed_alloc,
     generic_const_exprs,
     const_mut_refs,
     const_trait_impl,

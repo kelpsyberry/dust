@@ -1,6 +1,6 @@
 #![feature(
     step_trait,
-    new_uninit,
+    new_zeroed_alloc,
     slice_ptr_get,
     array_chunks,
     portable_simd,
