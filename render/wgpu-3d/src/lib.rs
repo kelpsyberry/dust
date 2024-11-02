@@ -1,5 +1,6 @@
 #![feature(portable_simd, maybe_uninit_uninit_array, new_zeroed_alloc)]
 #![warn(clippy::all)]
+#![allow(clippy::manual_div_ceil)]
 
 mod data;
 pub use data::{FogData, FrameData, GxData, RenderingData};

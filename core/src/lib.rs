@@ -31,7 +31,8 @@
     clippy::must_use_candidate,
     clippy::missing_errors_doc,
     clippy::inline_always,
-    clippy::new_without_default
+    clippy::new_without_default,
+    clippy::manual_is_power_of_two
 )]
 
 pub extern crate emu_utils as utils;

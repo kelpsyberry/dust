@@ -124,7 +124,7 @@ impl Serialize for Map {
             &'a HashMap<T, U>,
             &'static [(T, &'static str)],
         );
-        impl<'a, T: 'static + Eq, U: 'static + Serialize> Serialize for TriggerMap<'a, T, U> {
+        impl<T: 'static + Eq, U: 'static + Serialize> Serialize for TriggerMap<'_, T, U> {
             fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
                 let mut map = serializer.serialize_map(Some(self.0.len()))?;
                 for (key, value) in self.0 {

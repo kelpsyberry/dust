@@ -425,8 +425,7 @@ impl Vram {
                 (&mut *self.writeback.$usage.get()).fill(0);
                 for (region, mapped) in self.map.$usage.iter().enumerate() {
                     let mapped = mapped.get();
-                    let mask = if mapped != 0
-                        && mapped & (mapped - 1) == 0
+                    let mask = if mapped.is_power_of_two()
                         && mapped & $mirrored_banks_mask == 0
                         && self.bg_obj_updates.is_none()
                     {

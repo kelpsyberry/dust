@@ -111,7 +111,7 @@ static HOME: LazyLock<Option<PathBuf>> =
 
 struct HomePathBufVisitor;
 
-impl<'de> serde::de::Visitor<'de> for HomePathBufVisitor {
+impl serde::de::Visitor<'_> for HomePathBufVisitor {
     type Value = HomePathBuf;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
