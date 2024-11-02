@@ -1,10 +1,4 @@
-#![feature(
-    new_zeroed_alloc,
-    generic_const_exprs,
-    const_mut_refs,
-    const_trait_impl,
-    portable_simd
-)]
+#![feature(generic_const_exprs, new_zeroed_alloc)]
 #![warn(clippy::all)]
 #![allow(incomplete_features, clippy::missing_safety_doc)]
 

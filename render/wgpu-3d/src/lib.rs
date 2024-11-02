@@ -1,11 +1,4 @@
-#![feature(
-    const_mut_refs,
-    const_trait_impl,
-    portable_simd,
-    array_windows,
-    maybe_uninit_uninit_array,
-    new_zeroed_alloc
-)]
+#![feature(portable_simd, maybe_uninit_uninit_array, new_zeroed_alloc)]
 #![warn(clippy::all)]
 
 mod data;

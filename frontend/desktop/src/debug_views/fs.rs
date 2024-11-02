@@ -886,7 +886,7 @@ impl MessageView for Fs {
 
                         ui.table_next_row();
                         ui.table_next_column();
-                        ui.text(&format!(
+                        ui.text(format!(
                             "{} \u{f061} {}",
                             export.source,
                             export.destination.display()

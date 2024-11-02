@@ -3,12 +3,7 @@
     new_zeroed_alloc,
     slice_ptr_get,
     array_chunks,
-    portable_simd,
-    associated_type_defaults,
-    const_trait_impl,
-    const_mut_refs,
     slice_as_chunks,
-    duration_constants,
     hash_extract_if
 )]
 #![warn(clippy::all)]

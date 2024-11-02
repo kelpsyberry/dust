@@ -608,6 +608,7 @@ impl Builder {
                         window
                     };
 
+                    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
                     let mut window_attrs = WinitWindow::default_attributes()
                         .with_title(window.title)
                         .with_inner_size(LogicalSize::new(

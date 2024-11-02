@@ -482,7 +482,7 @@ pub(super) fn run(
 
     const FRAME_BASE_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
     let mut frame_interval = framerate_ratio_limit.map(|value| FRAME_BASE_INTERVAL.div_f32(value));
-    let mut paused_frame_interval = Duration::SECOND.div_f32(paused_framerate_limit);
+    let mut paused_frame_interval = Duration::from_secs(1).div_f32(paused_framerate_limit);
     let mut last_frame_time = Instant::now();
 
     const FPS_CALC_INTERVAL: Duration = Duration::from_secs(1);
@@ -666,7 +666,7 @@ pub(super) fn run(
                 }
 
                 Message::UpdatePausedFramerateLimit(value) => {
-                    paused_frame_interval = Duration::SECOND.div_f32(value);
+                    paused_frame_interval = Duration::from_secs(1).div_f32(value);
                 }
 
                 Message::UpdateSyncToAudio(value) => {

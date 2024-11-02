@@ -1,10 +1,7 @@
 #![feature(
     maybe_uninit_uninit_array,
     maybe_uninit_slice,
-    const_mut_refs,
-    const_trait_impl,
     generic_const_exprs,
-    new_zeroed_alloc,
     portable_simd
 )]
 #![warn(clippy::all)]
