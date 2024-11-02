@@ -184,7 +184,7 @@ pub(crate) fn create_pipeline(
 
         vertex: wgpu::VertexState {
             module: &shader_module,
-            entry_point: "vs_main",
+            entry_point: None,
             buffers: &[wgpu::VertexBufferLayout {
                 array_stride: mem::size_of::<Vertex>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
@@ -211,7 +211,7 @@ pub(crate) fn create_pipeline(
 
         fragment: Some(wgpu::FragmentState {
             module: &shader_module,
-            entry_point: "fs_main",
+            entry_point: None,
             targets: if pipeline.attrs_enabled() {
                 &[
                     Some(wgpu::ColorTargetState {

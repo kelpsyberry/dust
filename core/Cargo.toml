@@ -32,7 +32,7 @@ debugger-hooks = ["bft-r", "bft-w"]
 
 [dependencies]
 emu-utils = { git = "https://github.com/kelpsyberry/emu-utils" }
-proc-bitfield = { version = "0.4", features = ["nightly"] }
+proc-bitfield = { version = "0.5", features = ["nightly"] }
 bitflags = "2.6"
 cfg-if = "1.0"
 slog = { version = "2.7", optional = true }

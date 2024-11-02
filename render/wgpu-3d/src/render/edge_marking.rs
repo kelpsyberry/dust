@@ -116,7 +116,7 @@ pub(crate) fn create_pipeline(
 
         vertex: wgpu::VertexState {
             module: &shader_module,
-            entry_point: "vs_main",
+            entry_point: None,
             buffers: &[],
             compilation_options: Default::default(),
         },
@@ -137,7 +137,7 @@ pub(crate) fn create_pipeline(
 
         fragment: Some(wgpu::FragmentState {
             module: &shader_module,
-            entry_point: "fs_main",
+            entry_point: None,
             targets: &[Some(wgpu::ColorTargetState {
                 format: wgpu::TextureFormat::Rgba8Unorm,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),

@@ -425,7 +425,7 @@ impl GfxThreadData {
 
             vertex: wgpu::VertexState {
                 module: &shader_module,
-                entry_point: "vs_main",
+                entry_point: None,
                 buffers: &[],
                 compilation_options: Default::default(),
             },
@@ -446,7 +446,7 @@ impl GfxThreadData {
 
             fragment: Some(wgpu::FragmentState {
                 module: &shader_module,
-                entry_point: "fs_main",
+                entry_point: None,
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Rgba8Unorm,
                     blend: None,
