@@ -1,7 +1,5 @@
 #![feature(
-    maybe_uninit_uninit_array,
     maybe_uninit_slice,
-    generic_const_exprs,
     portable_simd
 )]
 #![warn(clippy::all)]
@@ -90,9 +88,9 @@ pub trait Buffers {
 }
 
 #[allow(clippy::mut_from_ref)]
-pub trait Vram<R: Role> {
-    fn bg(&self) -> &Bytes<{ R::BG_VRAM_LEN }>;
-    fn obj(&self) -> &Bytes<{ R::OBJ_VRAM_LEN }>;
+pub trait Vram<R: Role, const BG_VRAM_LEN: usize, const OBJ_VRAM_LEN: usize> {
+    fn bg(&self) -> &Bytes<BG_VRAM_LEN>;
+    fn obj(&self) -> &Bytes<OBJ_VRAM_LEN>;
     fn bg_palette(&self) -> &Bytes<0x206>;
     fn obj_palette(&self) -> &Bytes<0x206>;
     fn bg_ext_palette(&self) -> &Bytes<0x8006>;

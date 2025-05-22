@@ -64,18 +64,12 @@ macro_rules! handle_mirroring {
                     );
                 }
             } else {
-                let value_bytes = $value.to_le_bytes();
-                let others_value_bytes = others_value.to_le_bytes();
-                for (i, (value_byte, others_value_byte)) in value_bytes
-                    .into_iter()
-                    .zip(others_value_bytes)
-                    .enumerate()
-                {
+                for i in 0..mem::size_of::<$T>() {
                     let addr = $mirror_addr | i;
                     if writeback & 1 << i == 0 {
                         $self.$usage.write(
                             addr,
-                            others_value_byte | value_byte,
+                            others_value.le_byte(i) | $value.le_byte(i),
                         );
                     } else {
                         let prev_value_byte = $self.$usage.read(addr);
@@ -89,7 +83,7 @@ macro_rules! handle_mirroring {
                                 }
                             }
                         )*
-                        $self.$usage.write(addr, prev_value_byte | value_byte);
+                        $self.$usage.write(addr, prev_value_byte | $value.le_byte(i));
                     }
                 }
             }
@@ -208,9 +202,7 @@ impl Vram {
         mirror_addr: usize,
         mirror_mapped: u8,
         value: T,
-    ) where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    ) {
         handle_mirroring!(
             self, a_bg, value, T, mirror_addr, mirror_mapped;
             0 => a,
@@ -222,10 +214,11 @@ impl Vram {
     }
 
     #[inline]
-    pub fn write_a_bg<T: MemValue + BitOr<Output = T> + BitOrAssign>(&mut self, addr: u32, value: T)
-    where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    pub fn write_a_bg<T: MemValue + BitOr<Output = T> + BitOrAssign>(
+        &mut self,
+        addr: u32,
+        value: T,
+    ) {
         let region = addr as usize >> 14 & 0x1F;
         let mapped = self.map.a_bg[region].get();
         if mapped == 0 {
@@ -266,9 +259,7 @@ impl Vram {
         mirror_addr: usize,
         mirror_mapped: u8,
         value: T,
-    ) where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    ) {
         handle_mirroring!(
             self, a_obj, value, T, mirror_addr, mirror_mapped;
             0 => a,
@@ -282,9 +273,7 @@ impl Vram {
         &mut self,
         addr: u32,
         value: T,
-    ) where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    ) {
         let region = addr as usize >> 14 & 0xF;
         let mapped = self.map.a_obj[region].get();
         if mapped == 0 {
@@ -337,9 +326,7 @@ impl Vram {
         addr: usize,
         mapped: u8,
         value: T,
-    ) where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    ) {
         let mirror_addr = addr ^ 0x1_0000;
         if mapped & 1 == 0 {
             unsafe {
@@ -364,10 +351,11 @@ impl Vram {
     }
 
     #[inline]
-    pub fn write_b_bg<T: MemValue + BitOr<Output = T> + BitOrAssign>(&mut self, addr: u32, value: T)
-    where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    pub fn write_b_bg<T: MemValue + BitOr<Output = T> + BitOrAssign>(
+        &mut self,
+        addr: u32,
+        value: T,
+    ) {
         let region = addr as usize >> 15 & 3;
         let mapped = self.map.b_bg[region].get();
         if mapped == 0 {
@@ -416,9 +404,7 @@ impl Vram {
         &mut self,
         addr: usize,
         value: T,
-    ) where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    ) {
         for mirror_addr in [
             addr ^ 0x4000,
             addr ^ 0x8000,
@@ -440,9 +426,7 @@ impl Vram {
         &mut self,
         addr: u32,
         value: T,
-    ) where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    ) {
         let mapped = self.map.b_obj[0].get();
         if mapped == 0 {
             return;
@@ -503,10 +487,7 @@ impl Vram {
     }
 
     #[inline]
-    pub fn write_a_bg_ext_pal<T: MemValue>(&mut self, addr: u32, value: T)
-    where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    pub fn write_a_bg_ext_pal<T: MemValue>(&mut self, addr: u32, value: T) {
         handle_non_writeback_write!(
             self,
             a_bg_ext_pal, 14, 0, bg_ext_palette,
@@ -545,10 +526,7 @@ impl Vram {
     }
 
     #[inline]
-    pub fn write_a_obj_ext_pal<T: MemValue>(&mut self, addr: u32, value: T)
-    where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    pub fn write_a_obj_ext_pal<T: MemValue>(&mut self, addr: u32, value: T) {
         handle_non_writeback_write!(
             self,
             a_obj_ext_pal, 0, obj_ext_palette,
@@ -591,10 +569,7 @@ impl Vram {
     }
 
     #[inline]
-    pub fn write_b_bg_ext_pal<T: MemValue>(&mut self, addr: u32, value: T)
-    where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    pub fn write_b_bg_ext_pal<T: MemValue>(&mut self, addr: u32, value: T) {
         if self.b_bg_ext_pal_ptr != self.zero_buffer.as_mut_ptr() {
             unsafe {
                 value.write_le_aligned(
@@ -640,10 +615,7 @@ impl Vram {
     }
 
     #[inline]
-    pub fn write_b_obj_ext_pal<T: MemValue>(&mut self, addr: u32, value: T)
-    where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    pub fn write_b_obj_ext_pal<T: MemValue>(&mut self, addr: u32, value: T) {
         if self.b_obj_ext_pal_ptr != self.zero_buffer.as_mut_ptr() {
             unsafe {
                 value.write_le_aligned(
@@ -704,10 +676,7 @@ impl Vram {
     }
 
     #[inline]
-    pub fn write_palette<T: MemValue>(&mut self, addr: u32, value: T)
-    where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    pub fn write_palette<T: MemValue>(&mut self, addr: u32, value: T) {
         self.palette.write_le(addr as usize, value);
         if let Some(updates) = &mut self.bg_obj_updates {
             updates.get_mut()[(addr >> 10 & 1) as usize].palette = true;
@@ -715,10 +684,7 @@ impl Vram {
     }
 
     #[inline]
-    pub fn write_oam<T: MemValue>(&mut self, addr: u32, value: T)
-    where
-        [(); mem::size_of::<T>()]: Sized,
-    {
+    pub fn write_oam<T: MemValue>(&mut self, addr: u32, value: T) {
         self.oam.write_le(addr as usize, value);
         if let Some(updates) = &mut self.bg_obj_updates {
             updates.get_mut()[(addr >> 10 & 1) as usize].oam = true;

@@ -12,3 +12,23 @@ pub enum DpOpSpecialTy {
     Cmp,
     Mov,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy, Debug)]
+pub enum LoadStoreMiscTy {
+    Half,
+    Double,
+    SignedByte,
+    SignedHalf,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, ConstParamTy, Debug)]
+pub enum ThumbLoadStoreTy {
+    Str,
+    Strh,
+    Strb,
+    Ldrsb,
+    Ldr,
+    Ldrh,
+    Ldrb,
+    Ldrsh,
+}

@@ -1479,8 +1479,6 @@ pub fn main() {
 
                             #[cfg(feature = "gdb-server")]
                             section! {{
-                                #[cfg(feature = "gdb-server")]
-
                                 let active = state.emu.as_ref().map_or(
                                     false,
                                     |emu| emu.shared_state.gdb_server_active.load(

@@ -3,10 +3,10 @@
     new_zeroed_alloc,
     slice_ptr_get,
     array_chunks,
-    slice_as_chunks,
-    hash_extract_if
+    rustc_attrs
 )]
 #![warn(clippy::all)]
+#![allow(internal_features)]
 
 #[cfg(target_os = "macos")]
 #[macro_use]

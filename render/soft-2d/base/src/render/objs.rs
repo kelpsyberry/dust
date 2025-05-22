@@ -4,14 +4,19 @@ use dust_core::{
     utils::mem_prelude::*,
 };
 
-pub fn prerender_objs<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
+pub fn prerender_objs<
+    R: Role,
+    B: Buffers,
+    D: RenderingData,
+    V: Vram<R, BG_VRAM_LEN, OBJ_VRAM_LEN>,
+    const BG_VRAM_LEN: usize,
+    const OBJ_VRAM_LEN: usize,
+>(
     buffers: &B,
     line: u8,
     data: &D,
     vram: &V,
-) where
-    [(); R::OBJ_VRAM_LEN]: Sized,
-{
+) {
     // Arisotura confirmed that shape 3 just forces 8 pixels of size
     #[rustfmt::skip]
     static OBJ_SIZE_SHIFT: [(u8, u8); 16] = [
@@ -96,9 +101,9 @@ pub fn prerender_objs<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
                     y_in_obj
                 };
                 (if attrs.1.x_flip() {
-                    prerender_obj_normal::<_, _, _, _, true>
+                    prerender_obj_normal::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, true>
                 } else {
-                    prerender_obj_normal::<_, _, _, _, false>
+                    prerender_obj_normal::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, false>
                 })(
                     buffers,
                     (attrs.0, (), attrs.2),
@@ -114,7 +119,14 @@ pub fn prerender_objs<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
 }
 
 #[allow(clippy::similar_names, clippy::too_many_arguments)]
-fn prerender_obj_rot_scale<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
+fn prerender_obj_rot_scale<
+    R: Role,
+    B: Buffers,
+    D: RenderingData,
+    V: Vram<R, BG_VRAM_LEN, OBJ_VRAM_LEN>,
+    const BG_VRAM_LEN: usize,
+    const OBJ_VRAM_LEN: usize,
+>(
     buffers: &B,
     attrs: (OamAttr0, OamAttr1, OamAttr2),
     bounds_x_start: i32,
@@ -124,9 +136,7 @@ fn prerender_obj_rot_scale<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
     bounds_width_shift: u8,
     data: &D,
     vram: &V,
-) where
-    [(); R::OBJ_VRAM_LEN]: Sized,
-{
+) {
     let (start_x, end_x, start_rel_x_in_square_obj) = {
         let bounds_width = 8 << bounds_width_shift;
         if bounds_x_start < 0 {
@@ -360,7 +370,15 @@ fn prerender_obj_rot_scale<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
     }
 }
 
-fn prerender_obj_normal<R: Role, B: Buffers, D: RenderingData, V: Vram<R>, const X_FLIP: bool>(
+fn prerender_obj_normal<
+    R: Role,
+    B: Buffers,
+    D: RenderingData,
+    V: Vram<R, BG_VRAM_LEN, OBJ_VRAM_LEN>,
+    const BG_VRAM_LEN: usize,
+    const OBJ_VRAM_LEN: usize,
+    const X_FLIP: bool,
+>(
     buffers: &B,
     attrs: (OamAttr0, (), OamAttr2),
     x_start: i32,
@@ -368,9 +386,7 @@ fn prerender_obj_normal<R: Role, B: Buffers, D: RenderingData, V: Vram<R>, const
     width_shift: u8,
     data: &D,
     vram: &V,
-) where
-    [(); R::OBJ_VRAM_LEN]: Sized,
-{
+) {
     let (start_x, end_x, mut x_in_obj, x_in_obj_incr) = {
         let width = 8 << width_shift;
         let (start_x, end_x, mut x_in_obj) = if x_start < 0 {

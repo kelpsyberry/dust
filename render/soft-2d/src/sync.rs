@@ -24,10 +24,14 @@ struct Buffers {
     bg_obj_scanline: UnsafeCell<Scanline<BgObjPixel>>,
 }
 
-type FnPtrs<R> = common::FnPtrs<R, Buffers, Engine2d<R>, Vram>;
+type FnPtrs<R, const BG_VRAM_LEN: usize, const OBJ_VRAM_LEN: usize> =
+    common::FnPtrs<R, Buffers, Engine2d<R>, Vram, BG_VRAM_LEN, OBJ_VRAM_LEN>;
 
 pub struct Renderer {
-    fns: (FnPtrs<EngineA>, FnPtrs<EngineB>),
+    fns: (
+        FnPtrs<EngineA, { EngineA::BG_VRAM_LEN }, { EngineA::OBJ_VRAM_LEN }>,
+        FnPtrs<EngineB, { EngineB::BG_VRAM_LEN }, { EngineB::OBJ_VRAM_LEN }>,
+    ),
     renderer_3d_rx: Box<dyn engine_3d::SoftRendererRx>,
     buffers: [Buffers; 2],
     framebuffer: Box<[[Scanline<u32>; SCREEN_HEIGHT]; 2]>,
@@ -56,21 +60,19 @@ impl Renderer {
         }
     }
 
-    fn render_scanline<R: Role>(
+    fn render_scanline<R: Role, const BG_VRAM_LEN: usize, const OBJ_VRAM_LEN: usize>(
         &mut self,
         line: u8,
         vcount: u8,
         engine: &mut Engine2d<R>,
         vram: &Vram,
-    ) where
-        [(); R::OBJ_VRAM_LEN]: Sized,
-    {
+    ) {
         let fns = unsafe {
             &*(if R::IS_A {
                 &self.fns.0 as *const _ as *const ()
             } else {
                 &self.fns.1 as *const _ as *const ()
-            } as *const FnPtrs<R>)
+            } as *const FnPtrs<R, BG_VRAM_LEN, OBJ_VRAM_LEN>)
         };
         let buffers = &mut self.buffers[!R::IS_A as usize];
 
@@ -202,7 +204,12 @@ impl Renderer {
         }
 
         if render_bg_obj_line && line < (SCREEN_HEIGHT - 1) as u8 {
-            prerender_objs::<R, _, _, _>(buffers, line + 1, engine, vram);
+            prerender_objs::<R, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN>(
+                buffers,
+                line + 1,
+                engine,
+                vram,
+            );
         }
 
         if R::IS_A && engine.capture_enabled_in_frame() && line < engine.capture_height() {
@@ -236,8 +243,18 @@ impl RendererTrait for Renderer {
         engines: (&mut Engine2d<EngineA>, &mut Engine2d<EngineB>),
         vram: &mut Vram,
     ) {
-        prerender_objs::<EngineA, _, _, _>(&self.buffers[0], 0, engines.0, vram);
-        prerender_objs::<EngineB, _, _, _>(&self.buffers[1], 0, engines.1, vram);
+        prerender_objs::<EngineA, _, _, _, { EngineA::BG_VRAM_LEN }, { EngineA::OBJ_VRAM_LEN }>(
+            &self.buffers[0],
+            0,
+            engines.0,
+            vram,
+        );
+        prerender_objs::<EngineB, _, _, _, { EngineB::BG_VRAM_LEN }, { EngineB::OBJ_VRAM_LEN }>(
+            &self.buffers[1],
+            0,
+            engines.1,
+            vram,
+        );
     }
 
     fn start_scanline(
@@ -259,7 +276,11 @@ impl RendererTrait for Renderer {
         engines: (&mut Engine2d<EngineA>, &mut Engine2d<EngineB>),
         vram: &mut Vram,
     ) {
-        self.render_scanline(line, vcount, engines.0, vram);
-        self.render_scanline(line, vcount, engines.1, vram);
+        self.render_scanline::<EngineA, { EngineA::BG_VRAM_LEN }, { EngineA::OBJ_VRAM_LEN }>(
+            line, vcount, engines.0, vram,
+        );
+        self.render_scanline::<EngineB, { EngineB::BG_VRAM_LEN }, { EngineB::OBJ_VRAM_LEN }>(
+            line, vcount, engines.1, vram,
+        );
     }
 }

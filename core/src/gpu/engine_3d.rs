@@ -1076,7 +1076,7 @@ impl Engine3d {
         // - Assumes that shared_verts_len == 0 or 2
         // - Assumes that verts.len() == 3 or 4
         // - Assumes that the clipped vertices will not exceed 10 (guaranteed geometrically)
-        let mut buffer_1 = MaybeUninit::uninit_array::<10>();
+        let mut buffer_1 = [MaybeUninit::uninit(); 10];
         unsafe {
             for i in 0..shared_verts_len {
                 *clip_buffer.get_unchecked_mut(i) = MaybeUninit::new(*verts.get_unchecked(i));
@@ -1107,7 +1107,7 @@ impl Engine3d {
         }
 
         let shared_verts_len = (self.connect_to_last_strip_prim as usize) << 1;
-        let mut clip_buffer = MaybeUninit::uninit_array::<10>();
+        let mut clip_buffer = [MaybeUninit::uninit(); 10];
         let Some((clipped_verts_len, clipped)) = self.clip_polygon(
             &self.cur_prim_verts[..self.cur_prim_max_verts.get() as usize],
             shared_verts_len,
@@ -1116,9 +1116,8 @@ impl Engine3d {
             self.connect_to_last_strip_prim = false;
             return;
         };
-        let clipped_verts = unsafe {
-            MaybeUninit::slice_assume_init_mut(&mut clip_buffer[..clipped_verts_len.get() as usize])
-        };
+        let clipped_verts =
+            unsafe { clip_buffer[..clipped_verts_len.get() as usize].assume_init_mut() };
 
         if self.vert_ram_level as usize
             > self.vert_ram.len() - (clipped_verts_len.get() as usize - shared_verts_len)
@@ -1314,7 +1313,7 @@ impl Engine3d {
             }
         }
 
-        let mut clip_buffer = MaybeUninit::uninit_array::<10>();
+        let mut clip_buffer = [MaybeUninit::uninit(); 10];
 
         for x in 0..2 {
             if self

@@ -714,7 +714,7 @@ impl Arm7Data for EngineData {
                     let instr = bus::read_32::<CpuAccess, _>(emu, addr);
                     emu.arm7.engine_data.prefetch_nseq = false;
                     arm::handle_instr(emu, instr);
-                };
+                }
             }
         }
     }

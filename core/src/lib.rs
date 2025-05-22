@@ -1,16 +1,13 @@
 #![feature(
     core_intrinsics,
-    generic_const_exprs,
-    generic_arg_infer,
     adt_const_params,
     doc_cfg,
-    maybe_uninit_uninit_array,
     maybe_uninit_slice,
     portable_simd,
     new_zeroed_alloc,
     str_from_utf16_endian,
     array_chunks,
-    unsized_const_params
+    rustc_attrs
 )]
 #![warn(clippy::pedantic)]
 #![allow(
@@ -32,7 +29,8 @@
     clippy::missing_errors_doc,
     clippy::inline_always,
     clippy::new_without_default,
-    clippy::manual_is_power_of_two
+    clippy::manual_is_power_of_two,
+    clippy::struct_field_names
 )]
 
 pub extern crate emu_utils as utils;

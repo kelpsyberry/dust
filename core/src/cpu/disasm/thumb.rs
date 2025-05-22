@@ -8,7 +8,7 @@ mod other;
 use other::*;
 
 use super::{
-    common::{DpOpImm8Ty, DpOpRegTy, DpOpSpecialTy, ShiftImmTy},
+    common::{DpOpImm8Ty, DpOpRegTy, DpOpSpecialTy, ShiftImmTy, ThumbLoadStoreTy},
     Context,
 };
 

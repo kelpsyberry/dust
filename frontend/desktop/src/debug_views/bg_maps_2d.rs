@@ -1378,7 +1378,7 @@ impl FrameView for BgMaps2d {
                     let mut encoder = png::Encoder::new(file, width as u32, height as u32);
                     encoder.set_color(png::ColorType::Rgba);
                     encoder.set_depth(png::BitDepth::Eight);
-                    encoder.set_srgb(png::SrgbRenderingIntent::Perceptual);
+                    encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);
                     let mut writer = encoder.write_header()?;
 
                     let mut data = Vec::with_capacity(4 * pixels_len);

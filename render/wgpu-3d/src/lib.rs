@@ -1,4 +1,4 @@
-#![feature(portable_simd, maybe_uninit_uninit_array, new_zeroed_alloc)]
+#![feature(portable_simd, new_zeroed_alloc)]
 #![warn(clippy::all)]
 #![allow(clippy::manual_div_ceil)]
 
@@ -1676,7 +1676,7 @@ impl Renderer {
 
                 if toon_used && frame.rendering.toon_colors != self.toon_colors {
                     self.toon_colors = frame.rendering.toon_colors;
-                    let mut toon_colors = MaybeUninit::uninit_array::<0x20>();
+                    let mut toon_colors = [MaybeUninit::uninit(); 0x20];
                     for (dst, src) in toon_colors.iter_mut().zip(&self.toon_colors) {
                         dst.write(src.cast::<u32>().to_array());
                     }

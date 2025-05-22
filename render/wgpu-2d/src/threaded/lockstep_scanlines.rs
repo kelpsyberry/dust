@@ -23,13 +23,9 @@ use dust_core::{
 };
 use std::{sync::Arc, thread};
 
-struct Vram<R: Role>
-where
-    [(); R::BG_VRAM_LEN]: Sized,
-    [(); R::OBJ_VRAM_LEN]: Sized,
-{
-    bg: Bytes<{ R::BG_VRAM_LEN }>,
-    obj: Bytes<{ R::OBJ_VRAM_LEN }>,
+struct Vram<const BG_VRAM_LEN: usize, const OBJ_VRAM_LEN: usize> {
+    bg: Bytes<BG_VRAM_LEN>,
+    obj: Bytes<OBJ_VRAM_LEN>,
     palette: Bytes<0x406>,
     bg_ext_palette: Bytes<0x8006>,
     obj_ext_palette: Bytes<0x2006>,
@@ -42,7 +38,10 @@ struct SharedData {
     processing_line: AtomicBool,
     vcount: AtomicU8,
 
-    vram: UnsafeCell<(Box<Vram<EngineA>>, Box<Vram<EngineB>>)>,
+    vram: UnsafeCell<(
+        Box<Vram<{ EngineA::BG_VRAM_LEN }, { EngineA::OBJ_VRAM_LEN }>>,
+        Box<Vram<{ EngineB::BG_VRAM_LEN }, { EngineB::OBJ_VRAM_LEN }>>,
+    )>,
     rendering_data: UnsafeCell<[RenderingData; 2]>,
     capture_scanlines: UnsafeCell<(Scanline<BgObjPixel>, Scanline<u32>)>,
 
@@ -536,13 +535,23 @@ struct Buffers {
     bg_obj_scanline: UnsafeCell<Scanline<BgObjPixel>>,
 }
 
-type FnPtrs<R> = common::FnPtrs<R, Buffers, RenderingData, Vram<R>>;
+type FnPtrs<R, const BG_VRAM_LEN: usize, const OBJ_VRAM_LEN: usize> = common::FnPtrs<
+    R,
+    Buffers,
+    RenderingData,
+    Vram<BG_VRAM_LEN, OBJ_VRAM_LEN>,
+    BG_VRAM_LEN,
+    OBJ_VRAM_LEN,
+>;
 
 struct ThreadData {
     cur_scanline: i16,
     shared_data: Arc<SharedData>,
 
-    fns: (FnPtrs<EngineA>, FnPtrs<EngineB>),
+    fns: (
+        FnPtrs<EngineA, { EngineA::BG_VRAM_LEN }, { EngineA::OBJ_VRAM_LEN }>,
+        FnPtrs<EngineB, { EngineB::BG_VRAM_LEN }, { EngineB::OBJ_VRAM_LEN }>,
+    ),
     buffers: [Buffers; 2],
     fb_scanline_flags: Box<[[ScanlineFlags; SCREEN_HEIGHT]; 2]>,
     gfx_data: GfxData,
@@ -595,11 +604,11 @@ impl ThreadData {
         )
     }
 
-    fn render_scanline<R: Role>(&mut self, vcount: u8, vram: &Vram<R>)
-    where
-        [(); R::BG_VRAM_LEN]: Sized,
-        [(); R::OBJ_VRAM_LEN]: Sized,
-    {
+    fn render_scanline<R: Role, const BG_VRAM_LEN: usize, const OBJ_VRAM_LEN: usize>(
+        &mut self,
+        vcount: u8,
+        vram: &Vram<BG_VRAM_LEN, OBJ_VRAM_LEN>,
+    ) {
         let data = &mut unsafe { &mut *self.shared_data.rendering_data.get() }[!R::IS_A as usize];
 
         let fns = unsafe {
@@ -607,7 +616,7 @@ impl ThreadData {
                 &self.fns.0 as *const _ as *const ()
             } else {
                 &self.fns.1 as *const _ as *const ()
-            } as *const FnPtrs<R>)
+            } as *const FnPtrs<R, BG_VRAM_LEN, OBJ_VRAM_LEN>)
         };
         let buffers = &mut self.buffers[!R::IS_A as usize];
 
@@ -775,7 +784,7 @@ impl ThreadData {
         };
 
         if render_obj_line {
-            prerender_objs::<R, _, _, _>(
+            prerender_objs::<R, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN>(
                 &self.buffers[!R::IS_A as usize],
                 (self.cur_scanline + 1) as u8,
                 data,
@@ -805,8 +814,12 @@ impl ThreadData {
             let vcount = self.shared_data.vcount.load(Ordering::Acquire);
             let vram = unsafe { &*self.shared_data.vram.get() };
 
-            self.render_scanline::<EngineA>(vcount, &vram.0);
-            self.render_scanline::<EngineB>(vcount, &vram.1);
+            self.render_scanline::<EngineA, { EngineA::BG_VRAM_LEN }, { EngineA::OBJ_VRAM_LEN }>(
+                vcount, &vram.0,
+            );
+            self.render_scanline::<EngineB, { EngineB::BG_VRAM_LEN }, { EngineB::OBJ_VRAM_LEN }>(
+                vcount, &vram.1,
+            );
 
             self.shared_data
                 .processing_line

@@ -156,8 +156,8 @@ mod interpreter {
                             ),
                             WbOff::Imm => write!(
                                 file,
-                                "{}{}::<{{WbOffTy::Imm}}, {}, {{WbAddressing::{}}}>",
-                                load_store, word_byte, offset_upwards, addressing
+                                "{load_store}{word_byte}::<{{WbOffTy::Imm}}, {offset_upwards}, \
+                                 {{WbAddressing::{addressing}}}>"
                             ),
                         }
                     }
@@ -841,15 +841,15 @@ mod disasm {
                     } => {
                         write!(
                             file,
-                            "load_store_misc::<{}, \"{}\", {}, {}, {{MiscAddressing::{}}}>",
+                            "load_store_misc::<{}, {{{}}}, {}, {}, {{MiscAddressing::{}}}>",
                             !matches!(ty, MiscTransferTy::Strh | MiscTransferTy::Strd),
                             match ty {
-                                MiscTransferTy::Ldrh => "h",
-                                MiscTransferTy::Strh => "h",
-                                MiscTransferTy::Ldrd => "d",
-                                MiscTransferTy::Strd => "d",
-                                MiscTransferTy::Ldrsb => "sb",
-                                MiscTransferTy::Ldrsh => "sh",
+                                MiscTransferTy::Ldrh => "LoadStoreMiscTy::Half",
+                                MiscTransferTy::Strh => "LoadStoreMiscTy::Half",
+                                MiscTransferTy::Ldrd => "LoadStoreMiscTy::Double",
+                                MiscTransferTy::Strd => "LoadStoreMiscTy::Double",
+                                MiscTransferTy::Ldrsb => "LoadStoreMiscTy::SignedByte",
+                                MiscTransferTy::Ldrsh => "LoadStoreMiscTy::SignedHalf",
                             },
                             offset_imm,
                             offset_upwards,
@@ -1010,10 +1010,10 @@ mod disasm {
                         write!(file, "ldr_pc_rel")
                     }
                     Instr::LoadStoreReg { ty, offset_reg: _ } => {
-                        let name = [
-                            "str", "strh", "strb", "ldrsb", "ldr", "ldrh", "ldrb", "ldrsh",
+                        let ty = [
+                            "Str", "Strh", "Strb", "Ldrsb", "Ldr", "Ldrh", "Ldrb", "Ldrsh",
                         ][ty as usize];
-                        write!(file, "ldr_str::<\"{name}\", 0, false>")
+                        write!(file, "ldr_str::<{{ThumbLoadStoreTy::{ty}}}, 0, false>")
                     }
                     Instr::LoadStoreWbImm {
                         byte,
@@ -1022,8 +1022,8 @@ mod disasm {
                     } => {
                         write!(
                             file,
-                            "ldr_str::<\"{}{}\", {}, true>",
-                            if load { "ldr" } else { "str" },
+                            "ldr_str::<{{ThumbLoadStoreTy::{}{}}}, {}, true>",
+                            if load { "Ldr" } else { "Str" },
                             if byte { "b" } else { "" },
                             if byte { 0 } else { 2 },
                         )
@@ -1031,8 +1031,8 @@ mod disasm {
                     Instr::LoadStoreHalfImm { load, offset: _ } => {
                         write!(
                             file,
-                            "ldr_str::<\"{}h\", 1, true>",
-                            if load { "ldr" } else { "str" }
+                            "ldr_str::<{{ThumbLoadStoreTy::{}h}}, 1, true>",
+                            if load { "Ldr" } else { "Str" }
                         )
                     }
                     Instr::LoadStoreStack { load, reg: _ } => {

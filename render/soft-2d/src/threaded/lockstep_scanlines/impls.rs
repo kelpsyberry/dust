@@ -90,16 +90,14 @@ impl RenderingDataTrait for RenderingData {
     }
 }
 
-impl<R: Role> VramTrait<R> for Vram<R>
-where
-    [(); R::BG_VRAM_LEN]: Sized,
-    [(); R::OBJ_VRAM_LEN]: Sized,
+impl<R: Role, const BG_VRAM_LEN: usize, const OBJ_VRAM_LEN: usize>
+    VramTrait<R, BG_VRAM_LEN, OBJ_VRAM_LEN> for Vram<BG_VRAM_LEN, OBJ_VRAM_LEN>
 {
-    fn bg(&self) -> &Bytes<{ R::BG_VRAM_LEN }> {
+    fn bg(&self) -> &Bytes<BG_VRAM_LEN> {
         &self.bg
     }
 
-    fn obj(&self) -> &Bytes<{ R::OBJ_VRAM_LEN }> {
+    fn obj(&self) -> &Bytes<OBJ_VRAM_LEN> {
         &self.obj
     }
 

@@ -12,7 +12,9 @@ pub fn render_scanline_bgs_and_objs<
     R: Role,
     B: Buffers,
     D: RenderingData,
-    V: Vram<R>,
+    V: Vram<R, BG_VRAM_LEN, OBJ_VRAM_LEN>,
+    const BG_VRAM_LEN: usize,
+    const OBJ_VRAM_LEN: usize,
     const BG_MODE: u8,
 >(
     buffers: &B,
@@ -20,9 +22,7 @@ pub fn render_scanline_bgs_and_objs<
     data: &mut D,
     vram: &V,
     scanline_3d: Option<&Scanline<u32>>,
-) where
-    [(); R::BG_VRAM_LEN]: Sized,
-{
+) {
     macro_rules! incr_affine {
         ($i: literal) => {
             data.increase_affine_bg_pos(AffineBgIndex::new($i));
@@ -37,13 +37,13 @@ pub fn render_scanline_bgs_and_objs<
     }
 
     let render_scanline_bg_affine = [
-        render_scanline_bg_affine::<_, _, _, _, false>,
-        render_scanline_bg_affine::<_, _, _, _, true>,
+        render_scanline_bg_affine::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, false>,
+        render_scanline_bg_affine::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, true>,
     ];
 
     let render_scanline_bg_extended = [
-        render_scanline_bg_extended::<_, _, _, _, false>,
-        render_scanline_bg_extended::<_, _, _, _, true>,
+        render_scanline_bg_extended::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, false>,
+        render_scanline_bg_extended::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, true>,
     ];
 
     for priority in (0..4).rev() {
@@ -99,8 +99,8 @@ pub fn render_scanline_bgs_and_objs<
                 }
                 6 => {
                     [
-                        render_scanline_bg_large::<_, _, _, _, false>,
-                        render_scanline_bg_large::<_, _, _, _, true>,
+                        render_scanline_bg_large::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, false>,
+                        render_scanline_bg_large::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, true>,
                     ][affine_display_area_overflow!(2) as usize](
                         buffers, data, vram
                     );
@@ -156,15 +156,20 @@ pub fn render_scanline_bgs_and_objs<
     }
 }
 
-pub fn render_scanline_bg_text<R: Role, B: Buffers, D: RenderingData, V: Vram<R>>(
+pub fn render_scanline_bg_text<
+    R: Role,
+    B: Buffers,
+    D: RenderingData,
+    V: Vram<R, BG_VRAM_LEN, OBJ_VRAM_LEN>,
+    const BG_VRAM_LEN: usize,
+    const OBJ_VRAM_LEN: usize,
+>(
     buffers: &B,
     bg_index: BgIndex,
     vcount: u8,
     data: &D,
     vram: &V,
-) where
-    [(); R::BG_VRAM_LEN]: Sized,
-{
+) {
     let control = data.control();
     let bg_control = data.bg_control(bg_index);
 
@@ -173,7 +178,9 @@ pub fn render_scanline_bg_text<R: Role, B: Buffers, D: RenderingData, V: Vram<R>
     let y = scroll[1] as u32 + vcount as u32;
 
     let mut tiles = TextTiles::new_uninit();
-    let tiles = read_bg_text_tiles::<R, V>(&mut tiles, control, bg_control, y, vram);
+    let tiles = read_bg_text_tiles::<R, V, BG_VRAM_LEN, OBJ_VRAM_LEN>(
+        &mut tiles, control, bg_control, y, vram,
+    );
 
     let tile_base = if R::IS_A {
         control.a_tile_base() + bg_control.tile_base()
@@ -306,16 +313,16 @@ pub fn render_scanline_bg_affine<
     R: Role,
     B: Buffers,
     D: RenderingData,
-    V: Vram<R>,
+    V: Vram<R, BG_VRAM_LEN, OBJ_VRAM_LEN>,
+    const BG_VRAM_LEN: usize,
+    const OBJ_VRAM_LEN: usize,
     const DISPLAY_AREA_OVERFLOW: bool,
 >(
     buffers: &B,
     bg_index: AffineBgIndex,
     data: &D,
     vram: &V,
-) where
-    [(); R::BG_VRAM_LEN]: Sized,
-{
+) {
     let control = data.control();
     let bg_control = data.bg_control(bg_index.into());
 
@@ -382,15 +389,15 @@ pub fn render_scanline_bg_large<
     R: Role,
     B: Buffers,
     D: RenderingData,
-    V: Vram<R>,
+    V: Vram<R, BG_VRAM_LEN, OBJ_VRAM_LEN>,
+    const BG_VRAM_LEN: usize,
+    const OBJ_VRAM_LEN: usize,
     const DISPLAY_AREA_OVERFLOW: bool,
 >(
     buffers: &B,
     data: &D,
     vram: &V,
-) where
-    [(); R::BG_VRAM_LEN]: Sized,
-{
+) {
     let bg_control = data.bg_control(BgIndex::new(2));
 
     let pixel_attrs = BgObjPixel(0).with_color_effects_mask(1 << 2);
@@ -448,16 +455,16 @@ pub fn render_scanline_bg_extended<
     R: Role,
     B: Buffers,
     D: RenderingData,
-    V: Vram<R>,
+    V: Vram<R, BG_VRAM_LEN, OBJ_VRAM_LEN>,
+    const BG_VRAM_LEN: usize,
+    const OBJ_VRAM_LEN: usize,
     const DISPLAY_AREA_OVERFLOW: bool,
 >(
     buffers: &B,
     bg_index: AffineBgIndex,
     data: &D,
     vram: &V,
-) where
-    [(); R::BG_VRAM_LEN]: Sized,
-{
+) {
     let bg_control = data.bg_control(bg_index.into());
 
     let bg_mask = 4 << bg_index.get();

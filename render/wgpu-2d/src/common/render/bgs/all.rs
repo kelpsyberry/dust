@@ -13,16 +13,16 @@ pub fn render_scanline_bgs_and_objs<
     R: Role,
     B: Buffers,
     D: RenderingData,
-    V: Vram<R>,
+    V: Vram<R, BG_VRAM_LEN, OBJ_VRAM_LEN>,
+    const BG_VRAM_LEN: usize,
+    const OBJ_VRAM_LEN: usize,
     const BG_MODE: u8,
 >(
     buffers: &B,
     vcount: u8,
     data: &mut D,
     vram: &V,
-) where
-    [(); R::BG_VRAM_LEN]: Sized,
-{
+) {
     macro_rules! incr_affine {
         ($i: literal) => {
             data.increase_affine_bg_pos(AffineBgIndex::new($i));
@@ -37,13 +37,13 @@ pub fn render_scanline_bgs_and_objs<
     }
 
     let render_scanline_bg_affine = [
-        render_scanline_bg_affine::<_, _, _, _, false>,
-        render_scanline_bg_affine::<_, _, _, _, true>,
+        render_scanline_bg_affine::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, false>,
+        render_scanline_bg_affine::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, true>,
     ];
 
     let render_scanline_bg_extended = [
-        render_scanline_bg_extended::<_, _, _, _, false>,
-        render_scanline_bg_extended::<_, _, _, _, true>,
+        render_scanline_bg_extended::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, false>,
+        render_scanline_bg_extended::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, true>,
     ];
 
     for priority in (0..4).rev() {
@@ -99,8 +99,8 @@ pub fn render_scanline_bgs_and_objs<
                 }
                 6 => {
                     [
-                        render_scanline_bg_large::<_, _, _, _, false>,
-                        render_scanline_bg_large::<_, _, _, _, true>,
+                        render_scanline_bg_large::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, false>,
+                        render_scanline_bg_large::<_, _, _, _, BG_VRAM_LEN, OBJ_VRAM_LEN, true>,
                     ][affine_display_area_overflow!(2) as usize](
                         buffers, data, vram
                     );

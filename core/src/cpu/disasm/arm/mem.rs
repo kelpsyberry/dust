@@ -1,5 +1,5 @@
 use super::super::{
-    common::{MiscAddressing, ShiftTy, WbAddressing, WbOffTy},
+    common::{LoadStoreMiscTy, MiscAddressing, ShiftTy, WbAddressing, WbOffTy},
     Context,
 };
 use core::fmt::Write;
@@ -74,7 +74,7 @@ pub(super) fn load_store_wb<
 
 pub(super) fn load_store_misc<
     const LOAD: bool,
-    const SUFFIX: &'static str,
+    const TY: LoadStoreMiscTy,
     const OFF_IMM: bool,
     const UPWARDS: bool,
     const ADDRESSING: MiscAddressing,
@@ -86,8 +86,14 @@ pub(super) fn load_store_misc<
     let src_dst_reg = instr >> 12 & 0xF;
     let base_reg = instr >> 16 & 0xF;
     ctx.next_instr.opcode = format!(
-        "{}{cond}{SUFFIX} r{src_dst_reg}, [r{base_reg}",
+        "{}{cond}{} r{src_dst_reg}, [r{base_reg}",
         if LOAD { "ldr" } else { "str" },
+        match TY {
+            LoadStoreMiscTy::Half => "h",
+            LoadStoreMiscTy::Double => "d",
+            LoadStoreMiscTy::SignedByte => "sb",
+            LoadStoreMiscTy::SignedHalf => "sh",
+        }
     );
     if !ADDRESSING.preincrement() {
         ctx.next_instr.opcode.push(']');
@@ -111,7 +117,7 @@ pub(super) fn load_store_misc<
     if src_dst_reg == 15
         || (!OFF_IMM && instr & 0xF00 != 0)
         || (ADDRESSING.writeback() && (base_reg == src_dst_reg || base_reg == 15))
-        || (SUFFIX == "d" && src_dst_reg & 1 != 0)
+        || (TY == LoadStoreMiscTy::Double && src_dst_reg & 1 != 0)
     {
         "Unpredictable".clone_into(&mut ctx.next_instr.comment);
     }

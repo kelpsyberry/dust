@@ -141,7 +141,7 @@ pub(crate) fn handle_call_instr_function<E: Engine, const ARM9: bool>(
                     for sector in start_sector..start_sector + sectors {
                         if !dldi.provider.read_sector(sector, &mut dldi.buffer) {
                             break 'outer false;
-                        };
+                        }
                         if dst_addr & 3 == 0 {
                             for i in (0..0x200).step_by(4) {
                                 (if ARM9 {
@@ -194,7 +194,7 @@ pub(crate) fn handle_call_instr_function<E: Engine, const ARM9: bool>(
                         src_addr += 0x200;
                         if !dldi.provider.write_sector(sector, &dldi.buffer) {
                             break 'outer false;
-                        };
+                        }
                     }
                     true
                 }

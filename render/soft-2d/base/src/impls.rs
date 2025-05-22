@@ -68,24 +68,28 @@ impl<R: Role> RenderingData for Engine2d<R> {
     }
 }
 
-impl<R: Role> VramTrait<R> for Vram {
-    fn bg(&self) -> &Bytes<{ R::BG_VRAM_LEN }> {
+impl<R: Role, const BG_VRAM_LEN: usize, const OBJ_VRAM_LEN: usize>
+    VramTrait<R, BG_VRAM_LEN, OBJ_VRAM_LEN> for Vram
+{
+    fn bg(&self) -> &Bytes<BG_VRAM_LEN> {
+        assert!(BG_VRAM_LEN == R::BG_VRAM_LEN);
         unsafe {
             &*(if R::IS_A {
                 self.a_bg.as_bytes_ptr() as *const ()
             } else {
                 self.b_bg.as_bytes_ptr() as *const ()
-            } as *const Bytes<{ R::BG_VRAM_LEN }>)
+            } as *const _)
         }
     }
 
-    fn obj(&self) -> &Bytes<{ R::OBJ_VRAM_LEN }> {
+    fn obj(&self) -> &Bytes<OBJ_VRAM_LEN> {
+        assert!(OBJ_VRAM_LEN == R::OBJ_VRAM_LEN);
         unsafe {
             &*(if R::IS_A {
                 self.a_obj.as_bytes_ptr() as *const ()
             } else {
                 self.b_obj.as_bytes_ptr() as *const ()
-            } as *const Bytes<{ R::OBJ_VRAM_LEN }>)
+            } as *const _)
         }
     }
 

@@ -1,19 +1,33 @@
-use super::super::Context;
+use super::super::{common::ThumbLoadStoreTy, Context};
 use core::fmt::Write;
 
-pub(super) fn ldr_str<const OPCODE: &'static str, const IMM_OFFSET_SHIFT: u8, const IMM: bool>(
+pub(super) fn ldr_str<
+    const TY: ThumbLoadStoreTy,
+    const IMM_OFFSET_SHIFT: u8,
+    const IMM: bool,
+>(
     ctx: &mut Context,
     instr: u16,
 ) {
     ctx.branch_addr_base = None;
     let src_dst_reg = instr & 7;
     let base_reg = instr >> 3 & 7;
+    let opcode = match TY {
+        ThumbLoadStoreTy::Str => "str",
+        ThumbLoadStoreTy::Strh => "strh",
+        ThumbLoadStoreTy::Strb => "strb",
+        ThumbLoadStoreTy::Ldrsb => "ldrsb",
+        ThumbLoadStoreTy::Ldr => "ldr",
+        ThumbLoadStoreTy::Ldrh => "ldrh",
+        ThumbLoadStoreTy::Ldrb => "ldrb",
+        ThumbLoadStoreTy::Ldrsh => "ldrsh",
+    };
     ctx.next_instr.opcode = if IMM {
         let offset = (instr >> 6 & 0x1F) << IMM_OFFSET_SHIFT;
-        format!("{OPCODE} r{src_dst_reg}, [r{base_reg}, #{offset:#04X}]")
+        format!("{opcode} r{src_dst_reg}, [r{base_reg}, #{offset:#04X}]")
     } else {
         let off_reg = instr >> 6 & 7;
-        format!("{OPCODE} r{src_dst_reg}, [r{base_reg}, r{off_reg}]")
+        format!("{opcode} r{src_dst_reg}, [r{base_reg}, r{off_reg}]")
     };
 }
 

@@ -8,7 +8,10 @@ mod other;
 use other::*;
 
 use super::{
-    common::{DpOpTy, DpOperand, MiscAddressing, ShiftTy, WbAddressing, WbOffTy, COND_STRINGS},
+    common::{
+        DpOpTy, DpOperand, LoadStoreMiscTy, MiscAddressing, ShiftTy, WbAddressing, WbOffTy,
+        COND_STRINGS,
+    },
     Context,
 };
 
