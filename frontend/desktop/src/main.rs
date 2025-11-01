@@ -1,10 +1,4 @@
-#![feature(
-    step_trait,
-    new_zeroed_alloc,
-    slice_ptr_get,
-    array_chunks,
-    rustc_attrs
-)]
+#![feature(step_trait, new_zeroed_alloc, slice_ptr_get, rustc_attrs)]
 #![warn(clippy::all)]
 #![allow(internal_features)]
 

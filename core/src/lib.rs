@@ -6,7 +6,6 @@
     portable_simd,
     new_zeroed_alloc,
     str_from_utf16_endian,
-    array_chunks,
     rustc_attrs
 )]
 #![warn(clippy::pedantic)]

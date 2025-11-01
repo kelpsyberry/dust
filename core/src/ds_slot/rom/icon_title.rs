@@ -135,7 +135,7 @@ impl Titles {
                 let mut bytes = [0; 0x100];
                 rom_contents.read_slice(icon_title_offset + $offset, &mut bytes);
                 let end_index = bytes
-                    .array_chunks::<2>()
+                    .chunks(2)
                     .position(|c| *c == [0; 2])
                     .unwrap_or(bytes.len())
                     << 1;
