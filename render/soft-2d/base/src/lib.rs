@@ -1,7 +1,4 @@
-#![feature(
-    maybe_uninit_slice,
-    portable_simd
-)]
+#![feature(maybe_uninit_slice, portable_simd)]
 #![warn(clippy::all)]
 #![allow(incomplete_features, clippy::missing_safety_doc)]
 

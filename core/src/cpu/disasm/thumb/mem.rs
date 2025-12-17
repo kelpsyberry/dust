@@ -1,11 +1,7 @@
 use super::super::{common::ThumbLoadStoreTy, Context};
 use core::fmt::Write;
 
-pub(super) fn ldr_str<
-    const TY: ThumbLoadStoreTy,
-    const IMM_OFFSET_SHIFT: u8,
-    const IMM: bool,
->(
+pub(super) fn ldr_str<const TY: ThumbLoadStoreTy, const IMM_OFFSET_SHIFT: u8, const IMM: bool>(
     ctx: &mut Context,
     instr: u16,
 ) {
