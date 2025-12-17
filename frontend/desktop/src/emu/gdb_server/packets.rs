@@ -288,7 +288,7 @@ impl GdbServer {
                     .ok_or(PacketError::InvalidParams)?;
 
                 let mut reg_values = [0; 17];
-                for (i, reg_data) in regs_data.as_chunks::<8>().enumerate() {
+                for (i, reg_data) in regs_data.as_chunks::<8>().0.iter().enumerate() {
                     reg_values[i] = parse_int!(reg_data).swap_bytes();
                 }
 
