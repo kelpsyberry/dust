@@ -1,2 +1,5 @@
 [target.'cfg(target_arch = "wasm32")']
-rustflags = ["-C", "target-feature=+atomics,+bulk-memory,+mutable-globals"]
+rustflags = [
+    "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals",
+    "-C", "link-args=--shared-memory --max-memory=1073741824 --import-memory --export=__wasm_init_tls --export=__tls_size --export=__tls_align --export=__tls_base"
+]

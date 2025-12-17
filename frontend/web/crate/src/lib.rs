@@ -1,5 +1,4 @@
 #![allow(clippy::unused_unit)]
-#![feature(new_zeroed_alloc)]
 
 mod audio;
 #[cfg(feature = "log")]
