@@ -175,7 +175,7 @@ impl Editor {
         let _button_color = (!self.state.is_manually_changing()
             && trigger
                 .as_ref()
-                .map_or(false, |trigger| trigger.activated(&self.pressed_keys)))
+                .is_some_and(|trigger| trigger.activated(&self.pressed_keys)))
         .then(|| {
             ui.push_style_color(
                 StyleColor::Button,

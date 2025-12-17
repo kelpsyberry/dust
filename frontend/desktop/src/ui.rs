@@ -733,7 +733,7 @@ impl UiState {
     }
 
     fn playing(&self) -> bool {
-        self.emu.as_ref().map_or(false, |emu| emu.playing)
+        self.emu.as_ref().is_some_and(|emu| emu.playing)
     }
 }
 
@@ -1479,8 +1479,7 @@ pub fn main() {
 
                             #[cfg(feature = "gdb-server")]
                             section! {{
-                                let active = state.emu.as_ref().map_or(
-                                    false,
+                                let active = state.emu.as_ref().is_some_and(
                                     |emu| emu.shared_state.gdb_server_active.load(
                                         Ordering::Relaxed,
                                     ),

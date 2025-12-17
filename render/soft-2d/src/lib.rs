@@ -1,4 +1,3 @@
-#![feature(new_zeroed_alloc)]
 #![warn(clippy::all)]
 
 mod common;

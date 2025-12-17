@@ -1,4 +1,4 @@
-#![feature(portable_simd, new_zeroed_alloc)]
+#![feature(portable_simd)]
 #![warn(clippy::all)]
 
 mod data;

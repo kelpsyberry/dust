@@ -178,7 +178,7 @@ impl serde::Serialize for HomePathBuf {
 pub struct HomePathBuf(pub PathBuf);
 
 impl HomePathBuf {
-    pub fn to_string(&self) -> Option<Cow<str>> {
+    pub fn to_string(&'_ self) -> Option<Cow<'_, str>> {
         if let Some(path) = HOME
             .as_ref()
             .and_then(|home_path| self.0.strip_prefix(home_path).ok())

@@ -904,7 +904,7 @@ impl MessageView for Fs {
                     }
 
                     self.in_progress_exports.retain(|export| {
-                        export.finish_time.as_ref().map_or(true, |finish_time| {
+                        export.finish_time.as_ref().is_some_and(|finish_time| {
                             now - *finish_time < InProgressExport::FADE_OUT_DURATION
                         })
                     });

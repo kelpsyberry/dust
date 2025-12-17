@@ -6,7 +6,7 @@ pub(super) fn invalid_dsp_mul(ctx: &mut Context, _instr: u32, cond: &'static str
         "<Invalid DSP multiply>".clone_into(&mut ctx.next_instr.opcode);
     } else {
         ctx.next_instr.opcode = format!("<Invalid DSP multiply, {cond}>");
-    };
+    }
 }
 
 pub(super) fn mrs<const SPSR: bool>(ctx: &mut Context, instr: u32, cond: &'static str) {

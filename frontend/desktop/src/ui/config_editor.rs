@@ -1329,7 +1329,7 @@ impl Editor {
             .always_use_window_padding(true)
             .build(|| {
                 drop(_window_padding);
-                self.data.game_loaded = emu_state.as_ref().map_or(false, |e| e.game_loaded);
+                self.data.game_loaded = emu_state.as_ref().is_some_and(|e| e.game_loaded);
 
                 let inner_cell_padding = [
                     style!(ui, item_spacing)[0] * 0.5,
@@ -1923,7 +1923,7 @@ The firmware boot sequence will always be skipped if any system files are not pr
         emu_state: Option<&mut EmuState>,
         opened: &mut bool,
     ) {
-        self.data.game_loaded = emu_state.as_ref().map_or(false, |e| e.game_loaded);
+        self.data.game_loaded = emu_state.as_ref().is_some_and(|e| e.game_loaded);
 
         let _window_padding = ui.push_style_var(StyleVar::WindowPadding([0.0; 2]));
         ui.window("Configuration")

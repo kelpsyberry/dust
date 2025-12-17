@@ -1,4 +1,4 @@
-#![feature(portable_simd, new_zeroed_alloc)]
+#![feature(portable_simd)]
 #![warn(clippy::all)]
 #![allow(clippy::manual_div_ceil)]
 

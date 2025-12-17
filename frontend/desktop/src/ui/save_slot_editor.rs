@@ -18,7 +18,7 @@ impl Editor {
         let mut shown = false;
         ui.menu_with_enabled(
             "\u{f0c7} Save slot",
-            emu_state.as_ref().map_or(false, |emu| emu.game_loaded),
+            emu_state.as_ref().is_some_and(|emu| emu.game_loaded),
             || {
                 shown = true;
 

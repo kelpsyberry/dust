@@ -733,7 +733,7 @@ impl FrameView for BgMaps2d {
     }
 
     fn emu_state(&self) -> <Self::EmuState as super::FrameViewEmuState>::InitData {
-        (self.selection.0, self.selection.1.map(Into::into))
+        (self.selection.0, self.selection.1)
     }
 
     fn update_from_frame_data(
