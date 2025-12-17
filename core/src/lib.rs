@@ -2,11 +2,8 @@
     core_intrinsics,
     adt_const_params,
     doc_cfg,
-    maybe_uninit_slice,
     portable_simd,
-    new_zeroed_alloc,
     str_from_utf16_endian,
-    array_chunks,
     rustc_attrs
 )]
 #![warn(clippy::pedantic)]
@@ -30,7 +27,8 @@
     clippy::inline_always,
     clippy::new_without_default,
     clippy::manual_is_power_of_two,
-    clippy::struct_field_names
+    clippy::struct_field_names,
+    clippy::manual_ilog2
 )]
 
 pub extern crate emu_utils as utils;

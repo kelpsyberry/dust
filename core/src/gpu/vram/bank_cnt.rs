@@ -597,6 +597,7 @@ impl Vram {
                 $usage: ident, $region_shift: expr,
                 ($($bit: literal => $bank: ident, $mask: literal,)*)
             ) => {{
+                #[allow(clippy::needless_continue)]
                 for (region, mapped) in self.map.$usage.iter().enumerate() {
                     let mapped = mapped.get();
                     let usage_addr_range = region << $region_shift..(region + 1) << $region_shift;
