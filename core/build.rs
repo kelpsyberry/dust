@@ -33,7 +33,7 @@ mod interpreter {
         ))?);
         writeln!(file, "[")?;
         let mut key = 0_u16;
-        for chunk in table.chunks(8) {
+        for chunk in table.as_chunks::<8>().0 {
             for instr in chunk.iter() {
                 match *instr {
                     Instr::Mrs { spsr } => write!(file, "mrs::<{spsr}>"),
@@ -218,7 +218,7 @@ mod interpreter {
         ))?);
         writeln!(file, "[")?;
         let mut key = 0_u16;
-        for chunk in table.chunks(8) {
+        for chunk in table.as_chunks::<8>().0 {
             for instr in chunk.iter() {
                 match *instr {
                     UncondInstr::Pld => write!(file, "pld"),
@@ -253,7 +253,7 @@ mod interpreter {
             filename
         ))?);
         writeln!(file, "[")?;
-        for chunk in table.chunks(8) {
+        for chunk in table.as_chunks::<8>().0 {
             for instr in chunk.iter() {
                 match *instr {
                     Instr::AddSubRegImm3 { sub, imm3, op } => {
@@ -424,7 +424,7 @@ mod jit {
             filename
         ))?);
         writeln!(file, "[")?;
-        for chunk in table.chunks(8) {
+        for chunk in table.as_chunks::<8>().0 {
             for instr in chunk.iter() {
                 match *instr {
                     Instr::Mrs { spsr } => write!(file, "mrs::<_, {spsr}>"),
@@ -592,7 +592,7 @@ mod jit {
             filename
         ))?);
         writeln!(file, "[")?;
-        for chunk in table.chunks(8) {
+        for chunk in table.as_chunks::<8>().0 {
             for instr in chunk.iter() {
                 match *instr {
                     UncondInstr::Pld => write!(file, "pld"),
@@ -622,7 +622,7 @@ mod jit {
             filename
         ))?);
         writeln!(file, "[")?;
-        for chunk in table.chunks(8) {
+        for chunk in table.as_chunks::<8>().0 {
             for instr in chunk.iter() {
                 match *instr {
                     Instr::AddSubRegImm3 { sub, imm3, op } => {
@@ -775,7 +775,7 @@ mod disasm {
             filename
         ))?);
         writeln!(file, "[")?;
-        for chunk in table.chunks(8) {
+        for chunk in table.as_chunks::<8>().0 {
             for instr in chunk.iter() {
                 match *instr {
                     Instr::Mrs { spsr } => write!(file, "mrs::<{spsr}>"),
@@ -935,7 +935,7 @@ mod disasm {
             filename
         ))?);
         writeln!(file, "[")?;
-        for chunk in table.chunks(8) {
+        for chunk in table.as_chunks::<8>().0 {
             for instr in chunk.iter() {
                 match *instr {
                     UncondInstr::Pld => write!(file, "pld"),
@@ -963,7 +963,7 @@ mod disasm {
             filename
         ))?);
         writeln!(file, "[")?;
-        for chunk in table.chunks(8) {
+        for chunk in table.as_chunks::<8>().0 {
             for instr in chunk.iter() {
                 match *instr {
                     Instr::AddSubRegImm3 { sub, imm3, .. } => {

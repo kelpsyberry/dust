@@ -288,7 +288,7 @@ impl GdbServer {
                     .ok_or(PacketError::InvalidParams)?;
 
                 let mut reg_values = [0; 17];
-                for (i, reg_data) in regs_data.chunks(8).enumerate() {
+                for (i, reg_data) in regs_data.as_chunks::<8>().enumerate() {
                     reg_values[i] = parse_int!(reg_data).swap_bytes();
                 }
 
@@ -397,7 +397,7 @@ impl GdbServer {
                     return Err(PacketError::InvalidParams.into());
                 }
 
-                for byte in bytes.chunks(2) {
+                for byte in bytes.as_chunks::<2>().0 {
                     let byte = u32_from_ascii_hex(byte).unwrap() as u8;
                     if self.g_thread.has_arm7() {
                         arm7::bus::write_8::<DebugCpuAccess, _>(emu, addr, byte);
