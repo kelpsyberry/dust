@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Dust</title>
+    <meta charset="utf-8" />
+    <meta name="viewport"
+        content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin" />
+    <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp" />
+    <link rel="stylesheet" href="ui.css" />
+    <link rel="stylesheet" href="fontawesome/css/fontawesome.min.css" />
+    <link rel="stylesheet" href="fontawesome/css/solid.min.css" />
+</head>
+
+<body class="paused">
+    <main id="canvas-container">
+        <canvas id="canvas"></canvas>
+        <div id="controls">
+            <div id="dpad" class="touch">
+                <div class="interaction"></div>
+                <div id="dpad-up">
+                    <div class="line"></div>
+                </div>
+                <div id="dpad-down">
+                    <div class="line"></div>
+                </div>
+                <div id="dpad-left">
+                    <div class="line"></div>
+                </div>
+                <div id="dpad-right">
+                    <div class="line"></div>
+                </div>
+                <div id="dpad-center"></div>
+            </div>
+            <div id="btn-a" class="button-control touch">
+                <div class="interaction"></div>
+                <button>A</button>
+            </div>
+            <div id="btn-b" class="button-control touch">
+                <div class="interaction"></div>
+                <button>B</button>
+            </div>
+            <div id="btn-x" class="button-control touch">
+                <div class="interaction"></div>
+                <button>X</button>
+            </div>
+            <div id="btn-y" class="button-control touch">
+                <div class="interaction"></div>
+                <button>Y</button>
+            </div>
+            <div id="btn-l" class="button-control touch">
+                <div class="interaction"></div>
+                <button>L</button>
+            </div>
+            <div id="btn-r" class="button-control touch">
+                <div class="interaction"></div>
+                <button>R</button>
+            </div>
+            <div id="btn-select" class="button-control touch">
+                <div class="interaction"></div>
+                <button>SELECT</button>
+            </div>
+            <div id="btn-start" class="button-control touch">
+                <div class="interaction"></div>
+                <button>START</button>
+            </div>
+            <div id="btn-pause" class="button-control">
+                <div class="interaction touch"></div>
+                <button>
+                    <span class="fas fa-pause" title="Pause"></span>
+                </button>
+            </div>
+        </div>
+    </main>
+    <div id="menu-container">
+        <div id="menu">
+            <section id="settings" aria-label="settings">
+                <section class="group">
+                    <h1 class="group-label">
+                        <span class="arrow fas fa-chevron-down"></span>System
+                    </h1>
+                    <span class="entry-label">ARM7 BIOS</span>
+                    <input type="file" autocomplete="off" id="bios7-input" />
+                    <label class="entry-contents label" for="bios7-input" title="Not loaded">
+                        <svg class="load-indicator" role="img">
+                            <use xlink:href="file-cross.svg#icon"></use>
+                        </svg>
+                        <span class="file-name"></span>
+                    </label>
+                    <span class="entry-label">ARM9 BIOS</span>
+                    <input type="file" autocomplete="off" id="bios9-input" />
+                    <label class="entry-contents label" for="bios9-input" title="Not loaded">
+                        <svg class="load-indicator" role="img">
+                            <use xlink:href="file-cross.svg#icon"></use>
+                        </svg>
+                        <span class="file-name"></span>
+                    </label>
+                    <span class="entry-label">Firmware</span>
+                    <input type="file" autocomplete="off" id="fw-input" />
+                    <label class="entry-contents label" for="fw-input" title="Not loaded">
+                        <svg class="load-indicator" role="img">
+                            <use xlink:href="file-cross.svg#icon"></use>
+                        </svg>
+                        <span class="file-name"></span>
+                    </label>
+                </section>
+                <section class="group">
+                    <h1 class="group-label">
+                        <span class="arrow fas fa-chevron-down"></span>Game
+                    </h1>
+                    <span class="entry-label">ROM</span>
+                    <input disabled type="file" autocomplete="off" id="rom-input" />
+                    <label class="entry-contents label" for="rom-input" title="Not loaded">
+                        <svg class="load-indicator" role="img">
+                            <use xlink:href="file-cross.svg#icon"></use>
+                        </svg>
+                        <span class="file-name"></span>
+                    </label>
+                    <span class="entry-label">Save</span>
+                    <div class="save">
+                        <input disabled type="file" autocomplete="off" id="import-save-input" />
+                        <label class="entry-contents label" for="import-save-input" title="Import">
+                            <span class="icon fas fa-file-import"></span>
+                        </label>
+                        <button disabled autocomplete="off" class="entry-contents button" id="export-save"
+                            title="Export">
+                            <span class="icon fas fa-file-export"></span>
+                        </button>
+                    </div>
+                </section>
+                <section class="group">
+                    <h1 class="group-label">
+                        <span class="arrow fas fa-chevron-down"></span>Emulation
+                    </h1>
+                    <span class="entry-label">Limit framerate</span>
+                    <div class="entry-contents toggle"><input disabled type="checkbox" autocomplete="off"
+                            id="toggle-framerate-limit" /><label for="toggle-framerate-limit"></label></div>
+                </section>
+                <section class="group">
+                    <h1 class="group-label">
+                        <span class="arrow fas fa-chevron-down"></span>Other
+                    </h1>
+                    <span class="entry-label">Touch controls</span>
+                    <div class="entry-contents toggle"><input type="checkbox" autocomplete="off"
+                            id="toggle-touch-controls" /><label for="toggle-touch-controls"></label></div>
+                </section>
+            </section>
+            <section id="game-controls" aria-label="Game controls">
+                <button disabled autocomplete="off" id="reset">
+                    <span class="fas fa-undo" title="Reset"></span>
+                </button>
+                <button disabled autocomplete="off" id="stop">
+                    <span class="fas fa-stop" title="Stop"></span>
+                </button>
+                <button disabled autocomplete="off" id="play">
+                    <span class="fas fa-play" title="Play"></span>
+                </button>
+            </section>
+        </div>
+    </div>
+    <script src="ui.bundle.js"></script>
+</body>
+
+</html>
